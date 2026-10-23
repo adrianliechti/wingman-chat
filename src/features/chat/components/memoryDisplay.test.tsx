@@ -1,0 +1,108 @@
+import { z } from "zod";
+import { BrainCircuit, FileText } from "lucide-react";
+import { renderToString } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+import type { ToolCallPart, ToolResultPart, UIMessage } from "@tanstack/ai";
+import { assistantMessage } from "@/shared/lib/messages";
+import type { Tool } from "@/shared/types/chat";
+import { resolveToolHeader } from "./toolDisplay";
+import { ChatToolMessage } from "./ChatToolMessage";
+import { collectTurnArtifactPaths, summarizeToolGroup } from "./chatMessageUtils";
+
+vi.mock("@/features/tools/hooks/useToolsContext", () => ({ useToolsContext: () => ({ providers: [] }) }));
+vi.mock("@/features/chat/hooks/useChat", () => ({
+  useChatConversation: () => ({ chat: null, messages: [] }),
+  useChatActions: () => ({ sendMessage: vi.fn() }),
+}));
+const result = (name: string, args: Record<string, unknown>, meta?: Record<string, unknown>): UIMessage =>
+  assistantMessage([
+    { type: "tool-call", id: name, name, arguments: JSON.stringify(args), state: "complete" },
+    {
+      type: "tool-result",
+      toolCallId: name,
+      content: [{ type: "text", content: JSON.stringify({ success: true, path: args.file_path }) }],
+      state: "complete",
+      ...(meta ? { metadata: { meta } } : {}),
+    },
+  ]);
+const round = (message: UIMessage) => ({
+  call: message.parts[0] as ToolCallPart,
+  result: message.parts[1] as ToolResultPart,
+});
+
+describe("memory operations in chat", () => {
+  it.each(["path", "file_path"])("recognizes the %s selector in saved memory calls", (key) => {
+    const args = JSON.stringify({ [key]: "/.memory/preferences/writing.md" });
+    expect(resolveToolHeader(undefined, "artifacts_read", args, {})).toMatchObject({
+      label: "Read memory",
+      preview: "preferences/writing",
+    });
+  });
+
+  it("includes the search pattern in memory hints", () => {
+    const args = JSON.stringify({ path: "/.memory", pattern: "tone" });
+    expect(resolveToolHeader(undefined, "artifacts_grep", args, {})).toMatchObject({
+      label: "Searched memory",
+      preview: "tone in All notes",
+    });
+  });
+
+  it.each([
+    ["read", "Read memory"],
+    ["create", "Remembered"],
+    ["edit", "Updated memory"],
+    ["delete", "Forgot memory"],
+    ["move", "Organized memory"],
+    ["grep", "Searched memory"],
+    ["glob", "Searched memory"],
+  ])("renders %s with a memory icon even without an active provider", (operation, label) => {
+    const args = {
+      file_path: "/.memory/preferences/writing.md",
+      path: "/.memory",
+      from: "/.memory/old.md",
+      to: "/.memory/new.md",
+      edits: [{ file_path: "/.memory/preferences/writing.md", old_string: "old", new_string: "new" }],
+    };
+    const header = resolveToolHeader(undefined, `artifacts_${operation}`, JSON.stringify(args), {});
+    expect(header.label).toBe(label);
+    expect(header.Icon).toBe(BrainCircuit);
+    expect(header.preview).not.toContain("/.memory");
+    const message = result(`artifacts_${operation}`, args);
+    const html = renderToString(<ChatToolMessage message={message} {...round(message)} index={0} />);
+    expect(html).toContain(label);
+    expect(html).toContain("lucide-brain-circuit");
+  });
+
+  it("shows running and failure states and leaves ordinary files alone", () => {
+    const raw = JSON.stringify({ file_path: "/.memory/note.md" });
+    expect(resolveToolHeader(undefined, "artifacts_create", raw, { running: true }).label).toBe("Remembering…");
+    expect(resolveToolHeader(undefined, "artifacts_create", raw, { error: true }).label).toBe("Could not remember");
+    const tool: Tool = {
+      name: "artifacts_read",
+      description: "Test tool",
+      inputSchema: z.unknown(),
+      execute: async () => [],
+      display: { header: () => ({ icon: FileText, label: "Read file" }) },
+    };
+    expect(resolveToolHeader(tool, tool.name, '{"file_path":"/report.md"}', {}).label).toBe("Read file");
+  });
+
+  it("separates memory in collapsed groups and never creates memory artifact chips", () => {
+    const messages = [
+      result("artifacts_read", { file_path: "/.memory/preferences/writing.md" }),
+      result("artifacts_create", { file_path: "/.memory/preferences/writing.md" }),
+      result("artifacts_delete", { file_path: "/.memory/old.md" }),
+      result(
+        "artifacts_create",
+        { path: "/report.md" },
+        {
+          artifactDelta: { mutations: [{ operation: "create", path: "/report.md" }] },
+        },
+      ),
+    ];
+    expect(collectTurnArtifactPaths(messages, 3)).toEqual(["/report.md"]);
+    expect(summarizeToolGroup(messages, [0, 1, 2, 3])).toBe(
+      "Edited 1 file, Read 1 memory note, Updated 1 memory note, Forgot 1 memory note",
+    );
+  });
+});

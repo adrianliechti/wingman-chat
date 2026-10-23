@@ -6,13 +6,16 @@ import json as _json
 
 
 async def llm(prompt, *, model=None, system=None, effort=None):
-    """Call a language model and return its text response.
+    """Call a language model with fresh context and return its text response.
+
+    Chat history and previous llm/vision calls are not included. Supply all
+    necessary context in prompt and system.
 
     Args:
         prompt: The user prompt to send.
         model: Optional model id; defaults to the model of the current chat.
         system: Optional system instructions.
-        effort: Optional reasoning effort: "none", "minimal", "low", "medium", "high" or "xhigh".
+        effort: Optional reasoning effort: "none", "minimal", "low", "medium", "high", "xhigh" or "max".
     """
     options = {k: v for k, v in {"model": model, "system": system, "effort": effort}.items() if v is not None}
     return await _wingman_llm(str(prompt), _json.dumps(options) if options else None)

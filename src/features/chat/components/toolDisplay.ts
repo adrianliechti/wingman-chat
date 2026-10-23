@@ -1,14 +1,13 @@
-import { toolArgumentHints, tryParseToolArguments } from "@/shared/lib/toolArguments";
+import { tryParseToolArguments } from "@/shared/lib/toolArguments";
 import { getToolDisplayName } from "@/shared/lib/utils";
-import type {
-  Content,
-  Tool,
-  ToolDisplayBlock,
-  ToolDisplayIcon,
-  ToolDisplayState,
-  ToolProvider,
-} from "@/shared/types/chat";
-import { getToolCallPreview } from "./chatMessageUtils";
+import type { ContentPart } from "@tanstack/ai";
+import { outputText } from "@/shared/lib/messages";
+import type { Tool, ToolDisplayBlock, ToolDisplayIcon, ToolDisplayState, ToolProvider } from "@/shared/types/chat";
+import { getToolCallPreview, toolPreviewList, toolPreviewText } from "@/shared/lib/toolPreview";
+import { memoryFileHeader } from "@/features/agent/lib/memoryFileDisplay";
+import { DISCOVERY_TOOL_NAME } from "@tanstack/ai";
+import { Search } from "lucide-react";
+import { ASK_QUESTIONS_TOOL } from "../lib/questionsTool";
 
 export interface ResolvedToolHeader {
   Icon?: ToolDisplayIcon;
@@ -21,11 +20,20 @@ export interface ResolvedToolHeader {
 /** Find a tool definition by name across the active providers. */
 export function findTool(providers: readonly ToolProvider[], name: string | undefined): Tool | undefined {
   if (!name) return undefined;
+  const find = (tools: readonly Tool[]): Tool | undefined => {
+    for (const tool of tools) {
+      if (tool.name === name) return tool;
+      const nested = tool.subagent && find(tool.subagent.tools);
+      if (nested) return nested;
+    }
+    return undefined;
+  };
   for (const provider of providers) {
-    const tool = provider.tools.find((t) => t.name === name);
+    const tool = find(provider.tools);
     if (tool) return tool;
   }
-  return undefined;
+  // Chat injects this tool only when no provider supplies the same name.
+  return name === ASK_QUESTIONS_TOOL.name ? ASK_QUESTIONS_TOOL : undefined;
 }
 
 /**
@@ -38,21 +46,47 @@ export function resolveToolHeader(
   rawArgs: string | undefined,
   state: ToolDisplayState,
 ): ResolvedToolHeader {
-  const h = tool?.display?.header?.(tryParseToolArguments(rawArgs ?? "", toolArgumentHints(tool?.parameters)), state);
+  // TanStack supplies the same partial JSON parsing used by its streaming UI.
+  const args = tryParseToolArguments(rawArgs ?? "");
+  if (name === DISCOVERY_TOOL_NAME) {
+    return {
+      Icon: Search,
+      label: state.error ? "Tool discovery failed" : "Find tools",
+      mono: false,
+      preview: toolPreviewText(
+        toolPreviewList(
+          Array.isArray(args?.toolNames)
+            ? args.toolNames.filter((item): item is string => typeof item === "string").map(getToolDisplayName)
+            : null,
+          "tools",
+        ),
+      ),
+    };
+  }
+  const h = memoryFileHeader(name, args, state) ?? tool?.display?.header?.(args, state);
+  const label = tool?.title ?? getToolDisplayName(name);
+  const progress = state.running ? state.progress : undefined;
+  const percentage =
+    progress?.total && progress.total > 0
+      ? `${Math.min(100, Math.max(0, Math.floor((progress.progress / progress.total) * 100)))}%`
+      : undefined;
+  const progressPreview = progress ? [progress.message, percentage].filter(Boolean).join(" · ") : undefined;
   return {
     Icon: h?.icon,
-    label: h?.label ?? tool?.title ?? getToolDisplayName(name),
+    label: h?.label ?? (state.error ? `${label} failed` : label),
     mono: h?.mono ?? false,
-    preview: h?.suppressPreview ? null : (h?.preview ?? (rawArgs ? getToolCallPreview(name, rawArgs) : null)),
+    preview: progressPreview
+      ? toolPreviewText(progressPreview)
+      : h?.suppressPreview
+        ? null
+        : toolPreviewText(h?.preview !== undefined ? h.preview : getToolCallPreview(args)),
   };
 }
 
 /** Expanded input blocks: the tool's `display.input`, else a best-effort arguments block. */
 export function resolveToolInput(tool: Tool | undefined, rawArgs: string | undefined): ToolDisplayBlock[] {
   const input = tool?.display?.input;
-  return input
-    ? input(tryParseToolArguments(rawArgs ?? "", toolArgumentHints(tool?.parameters)))
-    : defaultInputBlocks(rawArgs);
+  return input ? input(tryParseToolArguments(rawArgs ?? "")) : defaultInputBlocks(rawArgs);
 }
 
 /**
@@ -60,9 +94,13 @@ export function resolveToolInput(tool: Tool | undefined, rawArgs: string | undef
  * block of the textual result. Media (images/audio/files) renders separately, so
  * a pure-media result yields null.
  */
-export function resolveToolOutput(tool: Tool | undefined, result: Content[]): ToolDisplayBlock | null {
+export function resolveToolOutput(
+  tool: Tool | undefined,
+  result: ContentPart[],
+  rawArgs?: string,
+): ToolDisplayBlock | null {
   const output = tool?.display?.output;
-  return output ? output(result) : defaultOutputBlock(result);
+  return output ? output(result, tryParseToolArguments(rawArgs ?? "")) : defaultOutputBlock(result);
 }
 
 // ── Best-effort default formatting ──────────────────────────────────────────
@@ -100,8 +138,7 @@ function defaultInputBlocks(rawArgs: string | undefined): ToolDisplayBlock[] {
   return [{ ...jsonOrText(trimmed), name: "Arguments" }];
 }
 
-function defaultOutputBlock(result: Content[]): ToolDisplayBlock | null {
-  const texts = result.filter((c): c is Extract<Content, { type: "text" }> => c.type === "text").map((c) => c.text);
-  if (texts.length === 0) return null; // pure media — rendered separately
-  return { ...jsonOrText(texts.join("\n")), name: "Result" };
+function defaultOutputBlock(result: ContentPart[]): ToolDisplayBlock | null {
+  if (!result.some((part) => part.type === "text")) return null; // pure media — rendered separately
+  return { ...jsonOrText(outputText(result)), name: "Result" };
 }

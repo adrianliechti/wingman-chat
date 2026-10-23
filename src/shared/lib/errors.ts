@@ -1,255 +1,133 @@
-/**
- * Error classification and messaging utilities for OpenAI SDK errors
- */
-import {
-  APIConnectionError,
-  APIConnectionTimeoutError,
-  APIError,
-  APIUserAbortError,
-  AuthenticationError,
-  BadRequestError,
-  ContentFilterFinishReasonError,
-  InternalServerError,
-  LengthFinishReasonError,
-  NotFoundError,
-  PermissionDeniedError,
-  RateLimitError,
-} from "openai/error";
+import { CONTEXT_OVERFLOW_CODE } from "@tanstack/ai";
 
+/** Presentation of native TanStack/provider errors; retry policy belongs to the adapter. */
 export interface ErrorInfo {
   code: string;
   message: string;
 }
 
-/**
- * Check if error is from OpenAI SDK
- */
-export function isOpenAIError(error: unknown): error is APIError {
-  return error instanceof APIError;
+type ProviderError = {
+  code?: string;
+  status?: number;
+  name?: string;
+  message?: string;
+  type?: string;
+  error?: unknown;
+  rawEvent?: unknown;
+  retryAfterMs?: unknown;
+  metadata?: { tanstack?: { retryAfterMs?: unknown } };
+};
+function detail(error: unknown): ProviderError {
+  if (!error || typeof error !== "object") return {};
+  const value = error as ProviderError;
+  const body = value.rawEvent ?? value.error;
+  return body && typeof body === "object"
+    ? { ...value, name: value.name, message: value.message, ...(body as ProviderError) }
+    : value;
 }
-
-/**
- * Check whether an error represents a user-initiated cancellation
- * (either the OpenAI SDK's abort error or a native DOMException AbortError).
- */
 export function isAbortError(error: unknown): boolean {
-  if (error instanceof APIUserAbortError) return true;
-  if (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError") {
+  const value = detail(error);
+  return value.name === "AbortError" || value.name === "APIUserAbortError" || value.code === "CANCELLED";
+}
+export function isContextOverflowError(error: unknown): boolean {
+  const value = detail(error);
+  if (
+    [CONTEXT_OVERFLOW_CODE, "context_length_exceeded", "string_above_max_length", "CONTEXT_EXHAUSTED"].includes(
+      value.code ?? "",
+    )
+  )
     return true;
-  }
-  // Fallback: some environments throw plain Error with name "AbortError"
-  return error instanceof Error && error.name === "AbortError";
+  if (value.status && ![400, 413].includes(value.status)) return false;
+  return /context (length|window)|maximum context|too many tokens|(?:prompt|input|request) (?:is )?too long/i.test(
+    value.message ?? "",
+  );
 }
 
-/**
- * Extract retry-after delay in milliseconds from an OpenAI SDK error.
- *
- * Supports (in priority order):
- *  1. `Retry-After` header as integer or float seconds (e.g. "30", "2.5")
- *  2. `Retry-After` header as HTTP-date (RFC 7231 §7.1.3)
- *  3. `retry-after-ms` header as milliseconds (Azure OpenAI extension)
- */
-export function getRetryAfterMs(error: unknown): number | undefined {
-  if (!isOpenAIError(error)) return undefined;
-
-  const retryAfter = error.headers?.get("retry-after")?.trim();
-  if (retryAfter) {
-    // Numeric seconds (integer or float)
-    const seconds = Number.parseFloat(retryAfter);
-    if (!Number.isNaN(seconds) && Number.isFinite(seconds) && /^-?\d+(\.\d+)?$/.test(retryAfter)) {
-      return Math.max(0, Math.round(seconds * 1000));
-    }
-
-    // HTTP-date
-    const date = new Date(retryAfter);
-    if (!Number.isNaN(date.getTime())) {
-      return Math.max(0, date.getTime() - Date.now());
-    }
-  }
-
-  // Azure OpenAI non-standard millisecond header
-  const retryAfterMs = error.headers?.get("retry-after-ms")?.trim();
-  if (retryAfterMs) {
-    const ms = Number.parseFloat(retryAfterMs);
-    if (!Number.isNaN(ms) && Number.isFinite(ms)) {
-      return Math.max(0, Math.round(ms));
-    }
-  }
-
-  return undefined;
+/** A rejected input can be retried without its opaque reasoning, before any response content arrives. */
+export function isReasoningReplayError(error: unknown): boolean {
+  const value = detail(error);
+  if (value.status !== undefined && ![400, 413, 422].includes(value.status)) return false;
+  if (value.code === "invalid_encrypted_content") return true;
+  const message = (value.message ?? "").toLowerCase().replaceAll("`", "");
+  return (
+    message.includes("invalid_encrypted_content") ||
+    message.includes("encrypted content could not be verified") ||
+    (message.includes("reasoning") && message.includes("required following item")) ||
+    (message.includes("thinking") &&
+      (message.includes("invalid signature") ||
+        message.includes("signature verification failed") ||
+        message.includes("the final block in an assistant message cannot be thinking")))
+  );
 }
-
-/**
- * Best-effort extraction of the server-provided error message from an APIError.
- * OpenAI's SDK puts the parsed response body in `error.error`, which is the
- * user-facing text. Falls back to `error.message` (which may include the
- * raw HTTP status prefix).
- */
-function getServerMessage(error: APIError): string | undefined {
-  const body = error.error as { message?: unknown } | undefined;
-  const msg = body?.message;
-  if (typeof msg === "string" && msg.trim()) return msg;
-
-  // Streaming errors may embed raw JSON in the message (e.g. "received error
-  // while streaming: {...}"). Try to extract the human-readable message.
-  const raw = error.message;
-  if (raw) {
-    const jsonStart = raw.indexOf("{");
-    if (jsonStart >= 0) {
-      try {
-        const parsed = JSON.parse(raw.slice(jsonStart)) as { message?: string };
-        if (typeof parsed.message === "string" && parsed.message.trim()) {
-          return parsed.message;
-        }
-      } catch {
-        // not valid JSON, fall through
-      }
-    }
-  }
-
-  return raw || undefined;
-}
-
-/**
- * Convert error to user-friendly code and message
- */
 export function getErrorInfo(error: unknown): ErrorInfo {
-  // User-initiated cancellation (from AbortController or SDK runner.abort())
-  if (isAbortError(error)) {
-    return {
-      code: "CANCELLED",
-      message: "Request was cancelled.",
-    };
-  }
-
-  // Streaming finish-reason errors thrown by the SDK helpers
-  if (error instanceof ContentFilterFinishReasonError) {
-    return {
-      code: "CONTENT_FILTERED",
-      message: "The response was blocked by the content filter.",
-    };
-  }
-  if (error instanceof LengthFinishReasonError) {
+  if (isAbortError(error)) return { code: "CANCELLED", message: "Request was cancelled." };
+  const value = detail(error);
+  const original = error as ProviderError | null | undefined;
+  const message = value.message ?? "";
+  if (isContextOverflowError(error))
     return {
       code: "CONTEXT_EXHAUSTED",
+      message: message || "The conversation is too long for the model's context window.",
+    };
+  if (
+    /max_output_tokens|output.*truncat|(?:reached|exceeded).*output.*limit|output.*limit.*(?:reached|exceeded)/i.test(
+      message,
+    ) ||
+    value.code === "length"
+  )
+    return {
+      code: "OUTPUT_TRUNCATED",
       message: "The response was truncated because the maximum token limit was reached.",
     };
-  }
-
-  // OpenAI SDK errors
-  if (isOpenAIError(error)) {
-    // Network-level failures (no HTTP response received)
-    if (error instanceof APIConnectionTimeoutError) {
-      return {
-        code: "NETWORK_ERROR",
-        message: "The request timed out. Please check your connection and try again.",
-      };
-    }
-    if (error instanceof APIConnectionError) {
-      return {
-        code: "NETWORK_ERROR",
-        message: "Could not reach the server. Please check your internet connection and try again.",
-      };
-    }
-
-    if (error instanceof RateLimitError) {
-      const retryAfterMs = getRetryAfterMs(error);
-      const retryAfterMsg = retryAfterMs
-        ? ` Please wait ${Math.ceil(retryAfterMs / 1000)} seconds before trying again.`
-        : " Please wait a moment before trying again.";
-      return {
-        code: "RATE_LIMIT_ERROR",
-        message: `Rate limit exceeded.${retryAfterMsg}`,
-      };
-    }
-
-    if (error instanceof InternalServerError) {
-      return {
-        code: "SERVER_ERROR",
-        message: `Server error (${error.status ?? "5xx"}). Please try again in a moment.`,
-      };
-    }
-
-    if (error instanceof AuthenticationError) {
-      return {
-        code: "AUTH_ERROR",
-        message: "Authentication failed. Please check your API key or credentials.",
-      };
-    }
-
-    if (error instanceof PermissionDeniedError) {
-      return {
-        code: "AUTH_ERROR",
-        message: "Access denied. You may not have permission to use this model.",
-      };
-    }
-
-    if (error instanceof NotFoundError) {
-      return {
-        code: "NOT_FOUND_ERROR",
-        message: "The requested model or resource was not found.",
-      };
-    }
-
-    if (error instanceof BadRequestError) {
-      // Distinguish specific 400 sub-cases via OpenAI error code/type
-      const apiCode = error.code ?? "";
-      const apiType = error.type ?? "";
-      const serverMsg = getServerMessage(error);
-
-      if (apiCode === "context_length_exceeded" || apiCode === "string_above_max_length") {
-        return {
-          code: "CONTEXT_EXHAUSTED",
-          message: serverMsg || "The conversation is too long for the model's context window.",
-        };
-      }
-
-      if (apiCode === "content_policy_violation" || apiType === "content_filter") {
-        return {
-          code: "CONTENT_FILTERED",
-          message: serverMsg || "The request was blocked by the content policy.",
-        };
-      }
-
-      return {
-        code: "CLIENT_ERROR",
-        message: serverMsg || `Request error (${error.status}). Please check your input.`,
-      };
-    }
-
+  if (/content_filter|content_policy_violation/.test(`${value.code} ${value.type} ${message}`))
+    return { code: "CONTENT_FILTERED", message: "The response was blocked by the content filter." };
+  if (value.status === 429 || ["429", "rate_limit_exceeded", "RATE_LIMIT_ERROR"].includes(value.code ?? "")) {
+    const delay = value.metadata?.tanstack?.retryAfterMs ?? value.retryAfterMs;
+    const seconds =
+      typeof delay === "number" && Number.isFinite(delay) && delay >= 0 ? Math.ceil(delay / 1000) : undefined;
     return {
-      code: "API_ERROR",
-      message: getServerMessage(error) || `API error (${error.status ?? "unknown"}). Please try again.`,
+      code: "RATE_LIMIT_ERROR",
+      message:
+        seconds !== undefined
+          ? `Rate limit exceeded. Try again in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`
+          : original?.code === "RATE_LIMIT_ERROR" && original.message
+            ? original.message
+            : "Rate limit exceeded. Please wait a moment before trying again.",
     };
   }
-
-  // Non-SDK errors: native network failures from fetch()
-  if (error instanceof TypeError) {
+  if ((value.status ?? 0) >= 500 || ["server_error", "overloaded_error"].includes(value.code ?? ""))
+    return { code: "SERVER_ERROR", message: "Server error. Please try again in a moment." };
+  if (value.status === 401 || value.code === "invalid_api_key")
+    return { code: "AUTH_ERROR", message: "Authentication failed. Please check your credentials." };
+  if (value.status === 403)
+    return { code: "AUTH_ERROR", message: "Access denied. You may not have permission to use this model." };
+  if (value.status === 404 || value.code === "model_not_found")
+    return { code: "NOT_FOUND_ERROR", message: "The requested model or resource was not found." };
+  if (
+    value.code === "TIMEOUT" ||
+    value.code === "REQUEST_TIMEOUT" ||
+    value.name === "TimeoutError" ||
+    value.name === "APIConnectionTimeoutError" ||
+    /\btimed out\b/i.test(message)
+  )
     return {
-      code: "NETWORK_ERROR",
-      message: "Network connection failed. Please check your internet connection and try again.",
+      code: "TIMEOUT",
+      message: /timed out/i.test(message) ? message : "Request timed out. Please try again.",
     };
-  }
-
-  // Fallback string matching for anything else
-  const errorString = error?.toString() || "";
-
-  if (errorString.includes("timeout") || errorString.includes("network")) {
+  if (/network|connection|failed to fetch|fetch failed|load failed/i.test(message))
+    return { code: "NETWORK_ERROR", message: "Network connection failed. Please check your connection and try again." };
+  if (value.code && /^[A-Z_]+$/.test(value.code)) return { code: value.code, message };
+  if (value.status || value.code)
     return {
-      code: "NETWORK_ERROR",
-      message: "Network connection failed. Please check your internet connection and try again.",
+      code: value.status === 400 ? "CLIENT_ERROR" : "API_ERROR",
+      message: message || "The model request failed.",
     };
-  }
-
   return {
     code: "COMPLETION_ERROR",
-    message: "An unexpected error occurred while generating the response.",
+    message: message || "An unexpected error occurred while generating the response.",
   };
 }
-
-/** Best-effort human-readable text for a caught value of unknown type. */
 export function errorText(error: unknown): string {
   if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  return String(error);
+  return typeof error === "string" ? error : String(error);
 }

@@ -32,11 +32,13 @@ const ASPECT_OPTIONS = [
 const QUALITY_OPTIONS: { value: ImageQuality; label: string; description: string }[] = [
   { value: "low", label: "Low", description: "Fastest, lower detail" },
   { value: "medium", label: "Medium", description: "Balanced" },
-  { value: "high", label: "High", description: "Slowest, best detail" },
+  { value: "high", label: "High", description: "More detail, slower" },
+  { value: "xhigh", label: "Extra high", description: "Extra detail, higher cost" },
+  { value: "max", label: "Max", description: "Maximum quality, highest cost" },
 ];
 
 const RESOLUTION_OPTIONS: { value: ImageResolution; label: string; description: string }[] = [
-  { value: "1K", label: "1K", description: "1024px (default)" },
+  { value: "1K", label: "1K", description: "Standard size" },
   { value: "2K", label: "2K", description: "Sharper, slower" },
   { value: "4K", label: "4K", description: "Highest, slowest" },
 ];
@@ -169,8 +171,8 @@ export function CanvasInput({
       options: aspectOptions,
       value: selectedAspect,
       onChange: onSelectAspect,
+      allowDeselect: true,
       defaultLabel: "Auto",
-      defaultDescription: "Model default",
     });
   }
   if (qualityOptions.length) {
@@ -180,8 +182,8 @@ export function CanvasInput({
       options: qualityOptions,
       value: selectedQuality,
       onChange: (v) => onSelectQuality(v as ImageQuality | null),
+      allowDeselect: true,
       defaultLabel: "Auto",
-      defaultDescription: "Model default",
     });
   }
   if (resolutionOptions.length) {
@@ -191,8 +193,8 @@ export function CanvasInput({
       options: resolutionOptions,
       value: selectedResolution,
       onChange: (v) => onSelectResolution(v as ImageResolution | null),
+      allowDeselect: true,
       defaultLabel: "Auto",
-      defaultDescription: "Model default",
     });
   }
   if (backgroundOptions.length) {
@@ -202,8 +204,8 @@ export function CanvasInput({
       options: backgroundOptions,
       value: selectedBackground,
       onChange: (v) => onSelectBackground(v as ImageBackground | null),
+      allowDeselect: true,
       defaultLabel: "Auto",
-      defaultDescription: "Model default",
     });
   }
 

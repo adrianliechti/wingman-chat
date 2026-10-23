@@ -1,20 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
-import { supportedEfforts } from "@/shared/lib/models";
+import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
+import { defaultModelId, findModel } from "@/shared/lib/models";
 import type { Model } from "@/shared/types/chat";
 
 const STORAGE_KEY = "app_model";
+// Kept apart from STORAGE_KEY so its "id@effort" format stays readable by older builds.
+const VERBOSITY_STORAGE_KEY = "app_model_verbosity";
+const VERBOSITIES = new Set<string>(["low", "medium", "high"]);
 
 type Effort = NonNullable<Model["effort"]>;
-const EFFORTS = new Set<string>(["none", "minimal", "low", "medium", "high", "xhigh"]);
-
-// Fill in heuristic reasoning-effort levels when config didn't specify them.
-// An explicit `supportedEfforts` (including `[]` to hide the picker) is kept.
-function withEffortFallback(model: Model): Model {
-  if (model.supportedEfforts !== undefined) return model;
-  const efforts = supportedEfforts(model.id);
-  return efforts ? { ...model, supportedEfforts: efforts } : model;
-}
+const EFFORTS = new Set<string>(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 // The default model is persisted as "id" or "id@effort". Parse from the right and
 // validate the suffix against the known efforts so legacy values (plain id) and
@@ -35,78 +31,114 @@ export function getSavedModelId(): string | null {
   }
 }
 
+/**
+ * The saved default model with its saved effort and verbosity, or null when it's
+ * no longer available. Used to leave voice mode without losing those settings.
+ */
+export function getSavedModel(models: readonly Model[]): Model | null {
+  let saved: { id: string; effort?: Effort } | null = null;
+  let verbosity: string | null = null;
+  try {
+    saved = parseSavedModel(localStorage.getItem(STORAGE_KEY));
+    verbosity = localStorage.getItem(VERBOSITY_STORAGE_KEY);
+  } catch {
+    // Ignore localStorage errors.
+  }
+  const model = findModel(models, saved?.id);
+  if (!model) return null;
+  const effort = saved?.effort;
+  return {
+    ...model,
+    ...(effort && (!model.supportedEfforts || model.supportedEfforts.includes(effort)) ? { effort } : {}),
+    ...(verbosity && VERBOSITIES.has(verbosity) ? { verbosity: verbosity as Model["verbosity"] } : {}),
+  };
+}
+
+/**
+ * The configured default for new chats (`chat.model`) with its effort and
+ * verbosity, or null when none is configured or the model is unavailable.
+ */
+export function getConfiguredModel(models: readonly Model[]): Model | null {
+  const chat = getConfig().chat;
+  const model = findModel(models, chat?.model);
+  if (!model) return null;
+  return {
+    ...model,
+    ...(chat?.effort && (!model.supportedEfforts || model.supportedEfforts.includes(chat.effort))
+      ? { effort: chat.effort }
+      : {}),
+    ...(chat?.verbosity && VERBOSITIES.has(chat.verbosity) ? { verbosity: chat.verbosity } : {}),
+  };
+}
+
+/** The model a new chat starts on: the configured default, else the last saved choice. */
+export function getDefaultModel(models: readonly Model[]): Model | null {
+  return (
+    getConfiguredModel(models) ??
+    getSavedModel(models) ??
+    models.find((model) => model.id === defaultModelId([...models])) ??
+    models[0] ??
+    null
+  );
+}
+
+function saveSelectedModel(model: Model | null) {
+  try {
+    if (model && model.id !== "realtime") {
+      // Persist the effort alongside the id ("id@effort") so a fresh chat after
+      // reload defaults to the last chosen effort, not just the last model.
+      localStorage.setItem(STORAGE_KEY, model.effort ? `${model.id}@${model.effort}` : model.id);
+      // Verbosity a slider preset chose; unset leaves the model's own default.
+      if (model.verbosity) localStorage.setItem(VERBOSITY_STORAGE_KEY, model.verbosity);
+      else localStorage.removeItem(VERBOSITY_STORAGE_KEY);
+    } else if (!model) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(VERBOSITY_STORAGE_KEY);
+    }
+  } catch {
+    // Silently handle localStorage errors
+  }
+}
+
 export function useModels() {
   const config = getConfig();
-  const [models, setModels] = useState<Model[]>([]);
-  const [selectedModel, setSelectedModelState] = useState<Model | null>(null);
+  const available = useModelCatalog("completer");
+  // undefined means no choice has been made yet; an explicit null is a choice too.
+  const [selectedModel, setSelectedModelState] = useState<Model | null | undefined>(undefined);
+  const models = useMemo(() => {
+    const byId = new Map(available.map((model) => [model.id, model]));
+    const configured = config.models.flatMap((model) => {
+      const resolved = byId.get(model.id);
+      byId.delete(model.id);
+      return resolved ? [resolved] : [];
+    });
+    // Only configured chat models curate the chat picker. A renderer-only config
+    // must not hide every chat model. Unconfigured chat models stay reachable via
+    // Option-click when there is a curated list.
+    return configured.length
+      ? [...configured, ...Array.from(byId.values(), (model) => ({ ...model, hidden: true }))]
+      : available;
+  }, [available, config.models]);
 
-  // Load models from API, filtering config models to only those that exist
+  // Restore once, without overwriting a choice made while loading (including
+  // realtime), or changing an active chat's model/effort on background refresh.
   useEffect(() => {
-    const loadModels = async () => {
-      try {
-        const apiModels = await config.client.listModels("completer");
-        const apiModelIds = new Set(apiModels.map((m) => m.id));
-
-        let resolvedModels: Model[];
-
-        if (config.models.length > 0) {
-          // Configured models drive the visible list; everything else the API
-          // exposes is appended as hidden so it can still be reached via the
-          // Option-click escape hatch in the model selector.
-          const configured = config.models.filter((m) => apiModelIds.has(m.id));
-          const configuredIds = new Set(configured.map((m) => m.id));
-          const extras = apiModels.filter((m) => !configuredIds.has(m.id)).map((m) => ({ ...m, hidden: true }));
-          resolvedModels = [...configured, ...extras].map(withEffortFallback);
-        } else {
-          resolvedModels = apiModels.map(withEffortFallback);
-        }
-
-        setModels(resolvedModels);
-
-        // Restore selected model (and its saved effort) from localStorage, or default to first
-        if (resolvedModels.length > 0) {
-          let saved: { id: string; effort?: Effort } | null = null;
-          try {
-            saved = parseSavedModel(localStorage.getItem(STORAGE_KEY));
-          } catch {
-            // ignore localStorage errors
-          }
-          const savedModel = saved ? resolvedModels.find((model) => model.id === saved.id) : undefined;
-          if (savedModel) {
-            setSelectedModelState(saved?.effort ? { ...savedModel, effort: saved.effort } : savedModel);
-            return;
-          }
-          setSelectedModelState(resolvedModels[0]);
-        }
-      } catch (error) {
-        console.error("error loading models", error);
-      }
-    };
-
-    void loadModels();
-  }, [config.client, config.models]);
+    if (!models.length) return;
+    setSelectedModelState((current) => {
+      if (current !== undefined) return current;
+      return getDefaultModel(models);
+    });
+  }, [models]);
 
   // Function to update selected model and save to localStorage
   const setSelectedModel = useCallback((model: Model | null) => {
     setSelectedModelState(model);
-
-    try {
-      if (model && model.id !== "realtime") {
-        // Persist the effort alongside the id ("id@effort") so a fresh chat after
-        // reload defaults to the last chosen effort, not just the last model.
-        localStorage.setItem(STORAGE_KEY, model.effort ? `${model.id}@${model.effort}` : model.id);
-      } else if (!model) {
-        localStorage.removeItem(STORAGE_KEY);
-      }
-    } catch {
-      // Silently handle localStorage errors
-    }
+    saveSelectedModel(model);
   }, []);
 
   return {
     models,
-    selectedModel,
+    selectedModel: selectedModel ?? null,
     setSelectedModel,
-    getSavedModelId,
   };
 }

@@ -1,11 +1,30 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
+import {
+  columnResizingFeature,
+  columnSizingFeature,
+  type ColumnDef,
+  createSortedRowModel,
+  rowSortingFeature,
+  type SortingState,
+  sortFns,
+  tableFeatures,
+  useTable,
+} from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Maximize2, X } from "lucide-react";
 import { Fragment, memo, useMemo, useRef, useState } from "react";
 import { ACTION_ICON_SIZE, actionButtonClassName } from "@/shared/ui/actionButton";
+import { cn } from "@/shared/lib/cn";
 import { CopyButton } from "@/shared/ui/CopyButton";
 import { RendererFrame } from "./RendererFrame";
+
+const features = tableFeatures({
+  columnSizingFeature,
+  columnResizingFeature,
+  rowSortingFeature,
+  sortedRowModel: createSortedRowModel(),
+  sortFns,
+});
 
 interface CsvRendererProps {
   csv: string;
@@ -99,9 +118,10 @@ const CsvTable = ({ parsedData, scrollClassName }: { parsedData: string[][]; scr
   "use no memo";
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [sorting, setSorting] = useState<SortingState>([]);
   const rows = useMemo(() => parsedData.slice(1), [parsedData]);
 
-  const columns = useMemo<ColumnDef<string[]>[]>(() => {
+  const columns = useMemo<ColumnDef<typeof features, string[]>[]>(() => {
     const headers = parsedData.length > 0 ? parsedData[0] : [];
     return headers.map((header, index) => ({
       id: String(index),
@@ -113,10 +133,13 @@ const CsvTable = ({ parsedData, scrollClassName }: { parsedData: string[][]; scr
     }));
   }, [parsedData]);
 
-  const table = useReactTable({
+  const table = useTable({
+    features,
     data: rows,
     columns,
-    getCoreRowModel: getCoreRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
+    columnResizeMode: "onChange",
   });
 
   const tableRows = table.getRowModel().rows;
@@ -137,11 +160,40 @@ const CsvTable = ({ parsedData, scrollClassName }: { parsedData: string[][]; scr
               {headerGroup.headers.map((header) => (
                 <th
                   key={header.id}
-                  className={`px-3 py-2 text-left text-sm font-semibold truncate ${cellBorder}`}
+                  className={`relative px-3 py-2 text-left text-sm font-semibold truncate select-none group ${cellBorder}`}
                   style={{ width: header.getSize(), flex: "none" }}
                   title={(header.column.columnDef.meta as { title: string } | undefined)?.title ?? ""}
                 >
-                  {flexRender(header.column.columnDef.header, header.getContext())}
+                  <button
+                    type="button"
+                    className={cn("text-left", header.column.getCanSort() && "cursor-pointer")}
+                    onClick={header.column.getToggleSortingHandler()}
+                    disabled={!header.column.getCanSort()}
+                  >
+                    <table.FlexRender header={header} />
+                    {{ asc: " ▲", desc: " ▼" }[header.column.getIsSorted() as string] ?? ""}
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={header.getResizeHandler()}
+                    onTouchStart={header.getResizeHandler()}
+                    onDoubleClick={() => header.column.resetSize()}
+                    aria-label={`Resize ${
+                      (header.column.columnDef.meta as { title: string } | undefined)?.title ?? header.id
+                    } column`}
+                    className={`absolute right-0 top-0 h-full w-2 z-10 select-none touch-none flex items-center justify-end ${
+                      header.column.getIsResizing() ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    }`}
+                    style={{ cursor: "col-resize" }}
+                  >
+                    <span
+                      className={`block h-full w-0.5 ${
+                        header.column.getIsResizing()
+                          ? "bg-blue-500 dark:bg-blue-400"
+                          : "bg-neutral-400 dark:bg-neutral-500"
+                      }`}
+                    />
+                  </button>
                 </th>
               ))}
             </tr>
@@ -169,14 +221,14 @@ const CsvTable = ({ parsedData, scrollClassName }: { parsedData: string[][]; scr
                   width: "100%",
                 }}
               >
-                {row.getVisibleCells().map((cell) => (
+                {row.getAllCells().map((cell) => (
                   <td
                     key={cell.id}
                     className={`px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 truncate ${cellBorder}`}
                     style={{ width: cell.column.getSize(), flex: "none" }}
                     title={String(cell.getValue())}
                   >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    <table.FlexRender cell={cell} />
                   </td>
                 ))}
               </tr>

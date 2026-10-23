@@ -2,13 +2,14 @@ import { getConfig } from "@/shared/config";
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
-import { resolveModel } from "./commandUtils";
+import { resolveModel } from "@/shared/lib/modelSelection";
 import type { RenderInput } from "./interpreterProtocol";
 
 export async function runRenderImage(
   prompt: string,
   inputs: RenderInput[],
   options?: ImageRenderOptions,
+  requestOptions: { signal?: AbortSignal } = {},
 ): Promise<Uint8Array> {
   const config = getConfig();
   if (!config.renderer) {
@@ -33,7 +34,7 @@ export async function runRenderImage(
   });
 
   const model = await resolveModel(config.renderer.model, "renderer");
-  const blob = await config.client.generateImage(model, prompt, images, options);
+  const blob = await config.client.generateImage(model, prompt, images, options, requestOptions);
   const data = new Uint8Array(await blob.arrayBuffer());
   if (data.length === 0) {
     throw new Error("render: service returned an empty image");

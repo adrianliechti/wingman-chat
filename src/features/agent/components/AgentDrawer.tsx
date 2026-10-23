@@ -17,12 +17,12 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
+import { useEffect, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
 import { exportSingleAgentAsZip, triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
+import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
 import { DropdownMenu, DropdownMenuDivider, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
@@ -50,9 +50,9 @@ function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
       <ModelSection agent={agent} />
       <InstructionsSection agent={agent} />
       <ToolsSection agent={agent} />
-      <SkillsSection agent={agent} />
+      <SkillsSection key={agent.id} agent={agent} />
       {config.repository && <FilesSection agent={agent} />}
-      {config.memory && <MemorySection agent={agent} />}
+      {config.memory && <MemorySection key={agent.id} agent={agent} />}
       <div className="shrink-0 px-3 py-3 mt-auto border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center justify-end gap-2">
         <button
           type="button"
@@ -78,45 +78,27 @@ function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
 // ─── Main AgentDrawer component ───
 
 export function AgentDrawer() {
-  const { agents, currentAgent, setCurrentAgent, updateAgent, deleteAgent, setShowAgentDrawer, agentDrawerView } =
-    useAgents();
+  const {
+    agents,
+    currentAgent,
+    setCurrentAgent,
+    updateAgent,
+    deleteAgent,
+    setShowAgentDrawer,
+    agentDrawerView: view,
+    setAgentDrawerView: setView,
+  } = useAgents();
   const config = getConfig();
 
-  // "list" shows the agent list; "details" shows the selected agent's configuration
-  const [view, setView] = useState<"list" | "details">("list");
+  // On mobile, tapping an agent activates it and closes the drawer instead of opening details.
+  const isMobile = !useBreakpoint("md");
 
-  // Sync view whenever the drawer is (re-)opened
-  useEffect(() => {
-    setView(agentDrawerView);
-  }, [agentDrawerView]);
-
+  // "list" shows the agent list; "details" shows the selected agent's configuration.
+  // The view lives in the agent context so it survives the drawer remounting (e.g. when a new chat is created).
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
   const inlineEditInputRef = useRef<HTMLInputElement>(null);
-
-  // Pending file uploads after wizard creation
-  const [pendingWizardFiles, setPendingWizardFiles] = useState<File[] | null>(null);
-  const { addFile } = useAgentFiles(currentAgent?.id || "");
-
-  // Process pending file uploads when agent becomes current
-  useEffect(() => {
-    if (!currentAgent || !pendingWizardFiles) return;
-
-    setPendingWizardFiles(null);
-
-    void (async () => {
-      for (const file of pendingWizardFiles) {
-        await addFile(file);
-      }
-    })();
-  }, [currentAgent, addFile, pendingWizardFiles]);
-
-  const handleWizardCreated = useCallback((_agent: Agent, pendingFiles: File[]) => {
-    if (pendingFiles.length > 0) {
-      setPendingWizardFiles(pendingFiles);
-    }
-  }, []);
 
   useEffect(() => {
     if (!inlineEditingId) return;
@@ -169,6 +151,17 @@ export function AgentDrawer() {
   const handleListSelect = (agent: Agent) => {
     cancelInlineEdit();
     setCurrentAgent(agent);
+    if (isMobile) {
+      setShowAgentDrawer(false);
+    } else {
+      setView("details");
+    }
+  };
+
+  // Explicit "Edit" action from the row menu always opens details, even on mobile.
+  const handleEditAgent = (agent: Agent) => {
+    cancelInlineEdit();
+    setCurrentAgent(agent);
     setView("details");
   };
 
@@ -177,9 +170,9 @@ export function AgentDrawer() {
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-neutral-50 dark:bg-neutral-950 pt-2 md:pt-0">
+    <div className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-neutral-50 dark:bg-neutral-950">
       {/* Panel header: back (details only) + inline agent selector + close */}
-      <div className="shrink-0 h-12 md:h-10 flex items-center px-4 gap-2">
+      <div className="shrink-0 flex items-center px-3.5 pt-3.5 pb-2 gap-2">
         {view === "list" ? (
           <>
             <span className="flex-1 min-w-0 text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate">
@@ -296,7 +289,7 @@ export function AgentDrawer() {
                 </div>
                 <div className="flex items-center gap-2">
                   <MessageSquare size={12} className="shrink-0 text-neutral-400" />
-                  <span>Configure tools &amp; MCP servers</span>
+                  <span>Configure tools</span>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -419,7 +412,7 @@ export function AgentDrawer() {
                                 </span>
                               </div>
                               {(() => {
-                                const toolsCount = agent.tools.length + agent.servers.length;
+                                const toolsCount = agent.tools.length;
                                 return (
                                   (agent.skills.length > 0 ||
                                     toolsCount > 0 ||
@@ -472,7 +465,7 @@ export function AgentDrawer() {
                               <DropdownMenuItem icon={<PenLine size={12} />} onClick={() => startInlineEdit(agent)}>
                                 Rename
                               </DropdownMenuItem>
-                              <DropdownMenuItem icon={<SquarePen size={12} />} onClick={() => handleListSelect(agent)}>
+                              <DropdownMenuItem icon={<SquarePen size={12} />} onClick={() => handleEditAgent(agent)}>
                                 Edit
                               </DropdownMenuItem>
                               <DropdownMenuDivider />
@@ -489,7 +482,7 @@ export function AgentDrawer() {
                                   )
                                     return;
                                   if (isActive) setCurrentAgent(null);
-                                  void deleteAgent(agent.id);
+                                  void deleteAgent(agent.id).catch(() => {});
                                 }}
                               >
                                 Delete
@@ -509,7 +502,7 @@ export function AgentDrawer() {
         <AgentDetails
           key={currentAgent.id}
           agent={currentAgent}
-          onExport={() => exportSingleAgentAsZip(currentAgent.id)}
+          onExport={() => exportSingleAgentAsZip(currentAgent.id, { name: currentAgent.name })}
           onDelete={async () => {
             if (
               !(await confirm({
@@ -519,13 +512,13 @@ export function AgentDrawer() {
               }))
             )
               return;
-            void deleteAgent(currentAgent.id);
+            void deleteAgent(currentAgent.id).catch(() => {});
             handleAgentSelect(null);
           }}
         />
       ) : null}
 
-      <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} onCreated={handleWizardCreated} />
+      <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} />
     </div>
   );
 }

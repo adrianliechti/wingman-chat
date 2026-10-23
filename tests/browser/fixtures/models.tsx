@@ -1,0 +1,58 @@
+import { StrictMode, useState } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "../../../src/shared/lib/queryClient";
+import { createRoot } from "react-dom/client";
+import { useModels } from "../../../src/features/chat/hooks/useModels";
+import { useRendererModels } from "../../../src/features/canvas/hooks/useRendererModels";
+import { resolveModel } from "../../../src/shared/lib/modelSelection";
+import { loadConfig } from "../../../src/shared/config";
+import { useModelCatalog } from "../../../src/shared/hooks/useModelCatalog";
+import { fetchModelCatalog } from "../../../src/shared/lib/modelCatalog";
+import type { Model } from "../../../src/shared/types/chat";
+
+const loaded = await loadConfig();
+if (!loaded) throw new Error("Missing fixture config");
+const config = loaded;
+
+function Consumer() {
+  const chat = useModels();
+  const renderers = useRendererModels();
+  const all = useModelCatalog();
+  const state = { all, chat: chat.models, renderers, selected: chat.selectedModel };
+  window.modelsE2E = {
+    state: () => state,
+    select: chat.setSelectedModel,
+    refresh: () => fetchModelCatalog(config, true).then(() => undefined),
+    resolveRenderer: () => resolveModel(undefined, "renderer"),
+  };
+  return <pre data-testid="state">{JSON.stringify(state)}</pre>;
+}
+
+function Fixture() {
+  const [mounted, setMounted] = useState(true);
+  return (
+    <>
+      <button onClick={() => setMounted((current) => !current)}>Toggle consumer</button>
+      {mounted && <Consumer />}
+    </>
+  );
+}
+
+declare global {
+  interface Window {
+    modelsE2E: {
+      state(): { all: Model[]; chat: Model[]; renderers: Model[]; selected: Model | null };
+      select(model: Model | null): void;
+      refresh(): Promise<void>;
+      resolveRenderer(): Promise<string>;
+    };
+  }
+}
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <Fixture />
+    </QueryClientProvider>
+  </StrictMode>,
+);

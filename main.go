@@ -32,11 +32,6 @@ func main() {
 		skillsDir = "skills"
 	}
 
-	notebookDir := os.Getenv("NOTEBOOKS_PATH")
-	if notebookDir == "" {
-		notebookDir = "notebook"
-	}
-
-	handler := server.New(cfg, prefix, url, token, dist, skillsDir, notebookDir)
+	handler := server.New(cfg, prefix, url, token, dist, skillsDir)
 	http.ListenAndServe(":"+port, handler)
 }

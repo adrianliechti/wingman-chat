@@ -1,5 +1,6 @@
 import { createContext } from "react";
 import type { Skill } from "@/features/skills/lib/skillParser";
+import type { LibrarySection } from "@/features/agent/components/LibraryDialog";
 
 export type { Skill } from "@/features/skills/lib/skillParser";
 
@@ -11,8 +12,8 @@ export interface SkillsContextType {
   getSkill: (name: string) => Skill | undefined;
   showSkillCatalog: boolean;
   skillCatalogTarget: string | null;
-  skillCatalogReadOnly: boolean;
-  openSkillCatalog: (name?: string, readOnly?: boolean) => void;
+  skillCatalogSection: LibrarySection;
+  openSkillCatalog: (name?: string, section?: LibrarySection) => void;
   closeSkillCatalog: () => void;
 }
 

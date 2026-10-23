@@ -29,7 +29,7 @@ const ICON_BY_KIND: Record<ArtifactKind, LucideIcon> = {
   image: FileImage,
   audio: FileAudio,
   video: FileVideo,
-  csv: FileSpreadsheet,
+  data: FileSpreadsheet,
   xlsx: FileSpreadsheet,
   docx: FileText,
   pptx: Presentation,

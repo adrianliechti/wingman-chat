@@ -1,89 +1,193 @@
-import type { ImageBackground, ImageQuality, ImageResolution, Model, ModelType } from "@/shared/types/chat";
-
-type Effort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+import type {
+  ImageBackground,
+  ImageQuality,
+  ImageResolution,
+  Model,
+  ModelType,
+  ReasoningEffort,
+} from "@/shared/types/chat";
 
 /**
- * Model id a fresh selection should default to: the saved app default when it's
- * still in the list, otherwise the first visible model. Used by new agents and
- * other "no model chosen yet" spots so they inherit the user's chosen default.
+ * Resolve an ID to an available model, preferring explicit replacements even
+ * while the old model is available. Conflicting or cyclic rules fall back to
+ * the original ID; they must not choose a model based on inventory ordering.
  */
-export function defaultModelId(models: Model[], savedId?: string | null): string {
-  if (savedId && models.some((m) => m.id === savedId)) return savedId;
-  return models.find((m) => !m.hidden)?.id ?? models[0]?.id ?? "";
+export function findModel(models: readonly Model[], id?: string | null): Model | undefined {
+  if (!id) return undefined;
+  let current = id;
+  const visited = new Set<string>();
+  while (!visited.has(current)) {
+    visited.add(current);
+    const replacements = models.filter((model) => model.id !== current && model.replaces?.includes(current));
+    if (replacements.length > 1) break;
+    if (!replacements.length) return models.find((model) => model.id === current);
+    current = replacements[0].id;
+  }
+  return models.find((model) => model.id === id);
 }
 
 /**
- * Best-guess reasoning-effort levels for a model id, used as a fallback when a
- * model's config omits `supportedEfforts`. Levels are derived from the models.dev
- * catalog (https://models.dev) and kept forgiving: `undefined` (no picker) is the
- * safe default for unknown ids, and config always wins, so an explicit
- * `supportedEfforts: []` still hides the picker. The catalog's separate "max" tier
- * is folded into our top `xhigh` (which the picker labels "Max").
+ * Model id a fresh selection should default to: the saved app default when it's
+ * available (or replaced), otherwise the first visible model. Used by new
+ * agents and other "no model chosen yet" spots to inherit the chosen default.
  */
-export function supportedEfforts(id: string): Effort[] | undefined {
-  const lowerId = id.toLowerCase();
+/** Whether two selections share model, effective effort and verbosity. */
+export function sameModelSettings(a: Model, b: Model) {
+  return (
+    a.id === b.id && (a.effort ?? a.defaultEffort) === (b.effort ?? b.defaultEffort) && a.verbosity === b.verbosity
+  );
+}
 
-  // ── OpenAI ──
-  // GPT-5.x widened its effort set across point releases. Parse the minor version
-  // (accepting "." or "-", e.g. gpt-5.1 / gpt-5-1) and bucket accordingly.
-  const gpt5 = lowerId.match(/gpt-?5(?:[.-](\d+))?/);
-  if (gpt5) {
-    if (lowerId.includes("chat")) return undefined; // chat-latest aliases expose no effort picker
-    if (lowerId.includes("codex-max")) return ["low", "medium", "high", "xhigh"]; // codex-max tops out at xhigh
-    const minor = gpt5[1] ? Number(gpt5[1]) : 0;
-    if (minor >= 2) return ["none", "low", "medium", "high", "xhigh"]; // 5.2+
-    if (minor === 1) return ["none", "low", "medium", "high"]; // 5.1
-    return ["minimal", "low", "medium", "high"]; // 5 (base / mini / nano / codex)
+export function defaultModelId(models: Model[], savedId?: string | null): string {
+  const fallback = models.find((model) => !model.hidden) ?? models[0];
+  return findModel(models, savedId)?.id ?? findModel(models, fallback?.id)?.id ?? "";
+}
+
+// Ordered profiles for known models, not predictions about future versions.
+// Sources and gateway limitations are recorded in docs/model-catalog.md.
+// Config can replace these levels, including [] to hide the effort picker.
+type ModelProfile = [
+  pattern: RegExp,
+  efforts?: ReasoningEffort[],
+  defaultEffort?: ReasoningEffort,
+  maxOutputTokens?: number,
+];
+const MODEL_PROFILES: ModelProfile[] = [
+  [/\bgpt-?6\.1-sol(?=$|[/:]|-\d{4})/, ["low", "medium", "high", "xhigh", "max"], "medium", 128_000],
+  [/\bgpt-?6-astra\b/, ["low", "medium", "high", "xhigh", "max"], undefined, 128_000],
+  [/\bgpt-?6-(?:sol|luna)(?=$|[/:]|-\d{4})/, ["none", "low", "medium", "high", "xhigh", "max"], "medium", 128_000],
+  [
+    /\bgpt-?5\.6(?:-(?:sol|terra|luna))?(?=$|[/:]|-\d{4})/,
+    ["none", "low", "medium", "high", "xhigh", "max"],
+    "medium",
+    128_000,
+  ],
+  [/\bgpt-?5\.4-pro\b/, ["medium", "high", "xhigh"], "medium", 128_000],
+  [/\bgpt-?5\.5(?=$|[/:]|-\d{4})/, ["none", "low", "medium", "high", "xhigh"], "medium", 128_000],
+  [/\bgpt-?5\.1-codex-max\b/, ["low", "medium", "high", "xhigh"], undefined, 128_000],
+  [/\bgpt-?5\.[23]-codex\b/, ["low", "medium", "high", "xhigh"], undefined, 128_000],
+  [/\bgpt-?5(?:\.1)?-codex\b/, ["low", "medium", "high"], undefined, 128_000],
+  [
+    /\bgpt-?5\.[234](?:-(?:mini|nano))?(?=$|[/:]|-\d{4})/,
+    ["none", "low", "medium", "high", "xhigh"],
+    undefined,
+    128_000,
+  ],
+  [/\bgpt-?5\.1(?=$|[/:]|-\d{4})/, ["none", "low", "medium", "high"], undefined, 128_000],
+  [/\bgpt-?5(?:-(?:mini|nano))?(?=$|[/:]|-\d{4})/, ["minimal", "low", "medium", "high"], undefined, 128_000],
+  [/\bgpt-oss\b|\bo[13](?:-mini)?(?=$|[/:]|-\d{4})|\bo4-mini\b/, ["low", "medium", "high"]],
+
+  [/\b(?:fable|mythos)-5(?:\.1)?(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "high", 128_000],
+  // Unlike Opus 5, Opus 5.5 documents medium as its default effort.
+  [/\bopus-5\.5(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "medium", 128_000],
+  // Sonnet 5.5 can turn off up-front thinking (between_tools), unlike Opus 5.5.
+  [/\bsonnet-5\.5(?=$|[-/:])/, ["none", "low", "medium", "high", "xhigh", "max"], "high", 128_000],
+  // Haiku 5.5 supports adaptive thinking, or disabled thinking via gateway none.
+  [/\bhaiku-5\.5(?=$|[-/:])/, ["none", "low", "medium", "high", "xhigh", "max"], "medium", 128_000],
+  [/\b(?:opus-4\.[78]|(?:opus|sonnet)-5)(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "high", 128_000],
+  [/\banthropic\.claude-sonnet-4\.6(?=$|[-/:])/, ["low", "medium", "high", "max"], "high", 64_000],
+  [/\b(?:(?:opus|sonnet)-4\.6|mythos-preview)(?=$|[-/:])/, ["low", "medium", "high", "max"], "high", 128_000],
+  [/\bopus-4\.5(?=$|[-/:])/, ["low", "medium", "high"], "high", 64_000],
+  [/\b(?:sonnet-4(?:\.[05])?|haiku-4\.5)(?=$|[-/:])/, undefined, undefined, 64_000],
+  [/\bopus-4\.1(?=$|[-/:])/, undefined, undefined, 32_000],
+
+  [/\bgemini-?4-argon\b/, ["low", "medium", "high"], "medium", 65_536],
+  [/\bgemini-?3\.[78]-flash\b/, ["low", "medium", "high"], "medium", 65_536],
+  [/\bgemini-?3\.1-pro\b/, ["low", "medium", "high"], "high", 65_536],
+  [/\bgemini-?3-pro\b/, ["low", "high"], "high", 65_536],
+  [/\bgemini-?3(?:\.[156])?-flash\b/, ["minimal", "low", "medium", "high"], undefined, 65_536],
+  [/\bgemini-?2\.5-(?:pro|flash)\b/, ["low", "medium", "high"], undefined, 65_536],
+  [/\bgemini-?2\.0-flash(?:-lite)?(?=$|[/:]|-001$)/, undefined, undefined, 8_192],
+
+  [/\bgpt-?4\.1(?:-(?:mini|nano))?(?=$|[/:]|-\d{4})/, undefined, undefined, 32_768],
+  // Only known newer GPT-4o snapshots support this output capacity.
+  [/\bgpt-?4o(?:-mini)?(?=$|[/:]|-2024[.-](?:07|08|11)-)/, undefined, undefined, 16_384],
+
+  [/\bqwen-?3\.8(?:-|$)/, ["none", "low", "medium", "xhigh"], "xhigh"],
+  [/\bdeepseek-?v4-(?:flash|pro)\b/, ["none", "low", "high", "max"], "high"],
+];
+
+function normalizedModelId(id: string): string {
+  return id
+    .toLowerCase()
+    .replaceAll("_", "-")
+    .replace(/-(\d+)-(\d{1,2})(?=-|$|:)/g, "-$1.$2");
+}
+
+function modelProfile(id: string): ModelProfile | undefined {
+  if (modelType(id) !== "completer") return undefined;
+  const normalized = normalizedModelId(id);
+  return MODEL_PROFILES.find(([pattern]) => pattern.test(normalized));
+}
+
+/** Supported effort choices where known; unknown models use the backend default. */
+export function supportedEfforts(id: string): ReasoningEffort[] | undefined {
+  return modelProfile(id)?.[1]?.slice();
+}
+
+/** Documented baseline, independent of a per-chat effort override. */
+export function defaultEffort(id: string): ReasoningEffort | undefined {
+  return modelProfile(id)?.[2];
+}
+
+/** Output capacity from the shared model profile, independent of request budgets. */
+export function modelMaxOutputTokens(id: string): number | undefined {
+  return modelProfile(id)?.[3];
+}
+
+/** Default to 64k, with every explicit budget capped by the known model maximum. */
+export function outputTokenAllowance(
+  maxOutputTokens: number | undefined,
+  requested?: number,
+  defaultBudget = 64_000,
+): number | undefined {
+  for (const value of [maxOutputTokens, requested, defaultBudget]) {
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+      throw new RangeError("Output token limits must be non-negative safe integers (0 uses the provider default).");
+    }
   }
-  if (lowerId.includes("gpt-oss")) return ["low", "medium", "high"];
-  if (/\bo[134]\b/.test(lowerId)) return ["low", "medium", "high"]; // o1 / o3 / o4 series
-  if (/gpt-?[6-9]/.test(lowerId)) return ["none", "low", "medium", "high", "xhigh"]; // GPT-6+ (guess)
+  if (requested === 0) return undefined;
+  if (!maxOutputTokens) return requested;
+  return Math.min(requested ?? defaultBudget, maxOutputTokens);
+}
 
-  // ── Anthropic ──
-  // Opus 4.6+, Sonnet 4.6+ and Fable add a top "Max" tier (folded into xhigh);
-  // Opus 4.5 and older Claude stop at high.
-  if (
-    /opus-?4[.-][6-9]\b/.test(lowerId) ||
-    /sonnet-?4[.-][6-9]\b/.test(lowerId) ||
-    /(opus|sonnet)-?[5-9]\b/.test(lowerId) ||
-    lowerId.includes("fable")
-  ) {
-    return ["low", "medium", "high", "xhigh"];
-  }
-  if (lowerId.includes("claude")) return ["low", "medium", "high"];
+/** Resolve chat capabilities once, after applying deployment overrides. */
+function withChatFallback(model: Model): Model {
+  const supported = model.supportedEfforts ?? supportedEfforts(model.id);
+  const baseline = model.effort ?? model.defaultEffort ?? defaultEffort(model.id);
+  return {
+    ...model,
+    supportedEfforts: supported,
+    defaultEffort: baseline && (!supported || supported.includes(baseline)) ? baseline : undefined,
+    maxOutputTokens: model.maxOutputTokens ?? modelMaxOutputTokens(model.id),
+  };
+}
 
-  // ── Google ──
-  // Gemini 3+ Flash adds a "minimal" tier; other Gemini use low/medium/high.
-  if (/gemini-?[3-9].*flash/.test(lowerId)) return ["minimal", "low", "medium", "high"];
-  if (lowerId.includes("gemini")) return ["low", "medium", "high"];
+/** Lowest-cost reasoning effort known to be supported by a model. */
+export function minimalEffort(model: string | Model): ReasoningEffort | undefined {
+  const supported =
+    typeof model === "string" ? supportedEfforts(model) : (model.supportedEfforts ?? supportedEfforts(model.id));
+  if (!supported) return undefined;
 
-  // ── Mistral ──
-  // mistral-small / mistral-medium expose a none/high toggle (magistral has none).
-  if (/mistral-(small|medium)/.test(lowerId)) return ["none", "high"];
+  const ordered: ReasoningEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+  return ordered.find((effort) => supported.includes(effort));
+}
 
-  // ── DeepSeek (e.g. hosted on nvidia) ──
-  if (/deepseek-?v[4-9]/.test(lowerId)) return ["none", "high", "xhigh"];
-
-  // ── Z.ai GLM ──
-  // GLM 5.2+ adds a top "Max" tier (folded into xhigh); earlier GLM stop at high.
-  // Levels are host-dependent (many expose none, official z.ai only high/max); we
-  // pick the common low/medium/high baseline.
-  if (/glm-?5[.-][2-9]/.test(lowerId) || /glm-?[6-9]/.test(lowerId)) return ["low", "medium", "high", "xhigh"];
-  if (lowerId.includes("glm")) return ["low", "medium", "high"];
-
-  // ── Moonshot Kimi ──
-  // Effort exposure is host-dependent; low/medium/high is the portable baseline.
-  if (lowerId.includes("kimi")) return ["low", "medium", "high"];
-
-  // ── NVIDIA Nemotron ──
-  // Effort exposure is host-dependent; low/medium/high is the portable baseline.
-  if (lowerId.includes("nemotron")) return ["low", "medium", "high"];
-
-  // ── Alibaba Qwen ──
-  // Effort exposure is host-dependent; low/medium/high is the portable baseline.
-  if (lowerId.includes("qwen")) return ["low", "medium", "high"];
-
-  return undefined;
+/**
+ * Operational compaction budget, not the model's advertised context window.
+ * Keep room for output and recovery and avoid expensive long-input tiers.
+ * Deployments with smaller windows should set compactThreshold explicitly;
+ * config, including 0 to disable compaction, wins at the call site.
+ */
+export function compactThreshold(id: string): number {
+  const lowerId = normalizedModelId(id);
+  // Haiku 5.5 has 1M context, but its higher input-price tier starts above 100k.
+  if (/\bhaiku-5\.5(?=$|[-/:])/.test(lowerId)) return 90_000;
+  if (/\bgpt-?4o\b|\bgpt-?4-turbo\b|\bo1\b/.test(lowerId)) return 100_000;
+  if (/\bo[34]\b|\bhaiku\b|\bclaude-?[123]\b/.test(lowerId)) return 176_000;
+  if (/\b(opus|sonnet)-?4(?:\.[0-5])?(?=$|[-/:])/.test(lowerId)) return 176_000;
+  if (/\bgemini\b/.test(lowerId)) return 200_000;
+  return 272_000;
 }
 
 export interface RendererCapabilities {
@@ -107,13 +211,23 @@ const GENERIC_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"];
 export function rendererCapabilities(id: string): RendererCapabilities {
   const lowerId = id.toLowerCase();
 
-  // ── OpenAI gpt-image ──
-  // gpt-image-1 / 1.5 expose low/medium/high quality plus an opaque/transparent
-  // background control; gpt-image-2 keeps the quality tiers but drops background.
-  if (/gpt-?image-?2/.test(lowerId)) {
-    return { qualities: ["low", "medium", "high"], aspectRatios: ["1:1", "3:2", "2:3"] };
+  // Image 2.5 adds higher quality tiers, custom sizes, and transparent output
+  // through the gateway for both Sunburst and Flare.
+  if (/\bgpt-?image-?2[.-]5-(?:sunburst|flare)(?=$|[/:]|-\d{4})/.test(lowerId)) {
+    return {
+      qualities: ["low", "medium", "high", "xhigh", "max"],
+      aspectRatios: GENERIC_ASPECTS,
+      resolutions: ["1K", "2K", "4K"],
+      backgrounds: ["opaque", "transparent"],
+    };
   }
-  if (lowerId.includes("gpt-image") || lowerId.includes("gptimage")) {
+
+  // GPT Image 2 has upstream transparent output in preview, but the gateway
+  // does not forward it for that version.
+  if (/\bgpt-?image-?2\b/.test(lowerId)) {
+    return { qualities: ["low", "medium", "high"], aspectRatios: ["1:1", "3:2", "2:3", "16:9", "9:16"] };
+  }
+  if (/\bgpt-?image-?1\b/.test(lowerId)) {
     return {
       qualities: ["low", "medium", "high"],
       aspectRatios: ["1:1", "3:2", "2:3"],
@@ -129,9 +243,14 @@ export function rendererCapabilities(id: string): RendererCapabilities {
   // ── Google Gemini image ("nano-banana") ── no quality tiers; the size lever is
   // a 1K/2K/4K output resolution instead.
   if (/gemini.*image|nano-?banana/.test(lowerId)) {
+    const resolutions: ImageResolution[] = /gemini-?3[.-]1-flash-image/.test(lowerId)
+      ? ["512", "1K", "2K", "4K"]
+      : /gemini-?3(?:[.-]1)?-(?:pro|flash)-image|nano-?banana-pro/.test(lowerId)
+        ? ["1K", "2K", "4K"]
+        : ["1K"];
     return {
-      aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9"],
-      resolutions: ["1K", "2K", "4K"],
+      aspectRatios: ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
+      resolutions,
     };
   }
 
@@ -153,7 +272,7 @@ export function rendererCapabilities(id: string): RendererCapabilities {
 /**
  * Fill in heuristic renderer capabilities a model's config didn't specify. An
  * explicit config value (including `[]` to hide a picker) is kept, exactly like
- * `withEffortFallback` does for chat reasoning efforts.
+ * `withChatFallback` does for chat capabilities.
  */
 export function withRendererFallback(model: Model): Model {
   const caps = rendererCapabilities(model.id);
@@ -166,61 +285,73 @@ export function withRendererFallback(model: Model): Model {
   };
 }
 
-export function modelType(id: string): ModelType | undefined {
-  const lowerId = id.toLowerCase();
+// Endpoint cues, in precedence order. A live transcriber needs WebSocket, and a
+// BGE reranker is not an embedder. Token boundaries avoid reading "clip" inside
+// an unrelated deployment alias. Generic "audio" does not imply TTS: audio chat
+// models also accept ordinary completion requests.
+const MODEL_TYPE_CUES: [ModelType, RegExp][] = [
+  // A standalone "live" token marks Live API models, including
+  // gemini-3.8-live and gemini-3.8-live-extended-thinking.
+  ["realtime", /(?:^|[^a-z0-9])(?:realtime|sonic|live|native-audio)(?:$|[^a-z0-9])/],
+  ["reranker", /(?:^|[^a-z0-9])(?:rerank|reranker)(?:$|[^a-z0-9])/],
+  ["embedder", /(?:^|[^a-z0-9])(?:embedding|embeddings|embed|bge|clip|gte|minilm)(?:$|[^a-z0-9])/],
+  ["transcriber", /(?:^|[^a-z0-9])(?:stt|transcribe|whisper)(?:$|[^a-z0-9])/],
+  ["synthesizer", /(?:^|[^a-z0-9])(?:tts|eleven|elevenlabs|mai-voice|stable-audio|speech)(?:$|[^a-z0-9])/],
+  ["renderer", /(?:^|[^a-z0-9])(?:image|imagen|flux|dall-e|stable-diffusion|midjourney|nano-banana)(?:$|[^a-z0-9])/],
+];
 
-  // Check for embedding models
-  if (
-    lowerId.includes("embedding") ||
-    lowerId.includes("embed") ||
-    lowerId.includes("bge") ||
-    lowerId.includes("clip") ||
-    lowerId.includes("gte") ||
-    lowerId.includes("minilm")
-  ) {
-    return "embedder";
-  }
+export function isModelType(value: unknown): value is ModelType {
+  return value === "completer" || MODEL_TYPE_CUES.some(([type]) => type === value);
+}
 
-  // Check for transcription models first — these speech-to-text ids ("…-stt",
-  // whisper, gpt-4o-transcribe) often also contain "voice"/"audio", so match the
-  // more specific transcriber cue before the text-to-speech catch-all below.
-  if (lowerId.includes("stt") || lowerId.includes("transcribe") || lowerId.includes("whisper")) {
-    return "transcriber";
-  }
+/** Best effort for APIs without type metadata; opaque aliases remain usable in chat. */
+export function modelType(id: string): ModelType {
+  const normalized = id.toLowerCase().replaceAll("_", "-");
+  return MODEL_TYPE_CUES.find(([, pattern]) => pattern.test(normalized))?.[0] ?? "completer";
+}
 
-  // Check for text-to-speech / voice models
-  if (
-    lowerId.includes("tts") ||
-    lowerId.includes("voice") ||
-    lowerId.includes("speech") ||
-    lowerId.includes("audio") ||
-    lowerId.includes("eleven")
-  ) {
-    return "synthesizer";
-  }
+/** Optional gateway extensions to the standard /models record. */
+export function modelFromAPI(model: {
+  id: string;
+  type?: unknown;
+  name?: unknown;
+  description?: unknown;
+  max_output_tokens?: unknown;
+}): Model {
+  return {
+    id: model.id,
+    type: isModelType(model.type) ? model.type : modelType(model.id),
+    name: typeof model.name === "string" && model.name.trim() ? model.name : modelName(model.id),
+    ...(typeof model.description === "string" && { description: model.description }),
+    ...(typeof model.max_output_tokens === "number" &&
+      Number.isSafeInteger(model.max_output_tokens) &&
+      model.max_output_tokens > 0 && { maxOutputTokens: model.max_output_tokens }),
+  };
+}
 
-  // Check for reranker models
-  if (lowerId.includes("reranker")) {
-    return "reranker";
-  }
-
-  // Check for image generation models (renderer)
-  if (
-    lowerId.includes("image") ||
-    lowerId.includes("flux") ||
-    lowerId.includes("dall-e") ||
-    lowerId.includes("stable-diffusion") ||
-    lowerId.includes("midjourney")
-  ) {
-    return "renderer";
-  }
-
-  // Default to completer
-  return "completer";
+/** Config overrides API metadata before filtering, so opaque aliases can change endpoint type. */
+export function configureModels(models: Model[], configured: Model[]): Model[] {
+  const overrides = new Map(configured.map((model) => [model.id, model]));
+  return models.map((model) => {
+    const override = overrides.get(model.id);
+    const resolved: Model = {
+      ...model,
+      ...override,
+      name: override?.name || model.name,
+      type: isModelType(override?.type) ? override.type : (model.type ?? modelType(model.id)),
+    };
+    if (resolved.type === "completer") return withChatFallback(resolved);
+    if (resolved.type === "renderer") return withRendererFallback(resolved);
+    return resolved;
+  });
 }
 
 export function modelName(id: string): string {
-  const normalizedId = id.replace(/-(\d+)-(\d+)(?=(?:-|$))/g, "-$1.$2");
+  const normalizedId = id
+    // Provider-qualified ids use dots as namespace separators (for example,
+    // `anthropic.claude-…`). Keep decimal version dots such as `4.6` intact.
+    .replace(/([a-z])\.([a-z])/gi, "$1-$2")
+    .replace(/-(\d+)-(\d+)(?=(?:-|$))/g, "-$1.$2");
 
   return normalizedId
     .split("-")
@@ -258,4 +389,23 @@ export function modelName(id: string): string {
       return word.charAt(0).toUpperCase() + word.slice(1);
     })
     .join(" ");
+}
+
+const REGION_QUALIFIED_MODEL_ID =
+  /^(?:[a-z]{2}|global)\.(?=(?:[a-z0-9-]+\.)?(?:claude|gpt|o[134]|gemini|imagen|dall-e|flux|llama|mistral|magistral|deepseek|glm|kimi|qwen|nemotron|nova|command|jamba|grok|phi|mai|fable)(?:[.-]|$))/i;
+const CHAT_MODEL_VENDOR_PREFIX = /^(?:anthropic|openai)[./:-]+/i;
+
+export function shortModelName(id: string): string {
+  const unqualifiedId = id
+    // Cross-region inference profiles prefix the real model id with a country
+    // code (for example `eu.` or `ch.`) or `global.`. Only strip it when the
+    // remainder starts with a known model family, avoiding clashes with real
+    // two-letter namespaces.
+    .replace(REGION_QUALIFIED_MODEL_ID, "")
+    // The chat footer already has limited space and the family identifies these
+    // models clearly enough. Keep full vendor names elsewhere, such as pickers.
+    .replace(CHAT_MODEL_VENDOR_PREFIX, "")
+    .replace(/-(\d{4}-\d{2}-\d{2}|\d{8})$/, "");
+
+  return modelName(unqualifiedId);
 }

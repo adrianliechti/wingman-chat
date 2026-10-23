@@ -1,4 +1,6 @@
-import { downloadBlob } from "@/shared/lib/utils";
+import type JSZip from "jszip";
+import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import { decodeDataURL, downloadBlob } from "@/shared/lib/utils";
 
 /**
  * A bundled support file shipped alongside a skill (script, reference, asset).
@@ -43,7 +45,7 @@ export type SkillParseResult =
 // No start/end hyphens, no consecutive hyphens
 const SKILL_NAME_REGEX = /^[\p{Ll}\p{N}]+(-[\p{Ll}\p{N}]+)*$/u;
 
-export const SKILL_DESCRIPTION_MAX_LENGTH = 1024;
+const SKILL_DESCRIPTION_MAX_LENGTH = 1024;
 
 /**
  * Validate a skill name against the agentskills.io specification
@@ -69,6 +71,26 @@ export function validateSkillName(name: string): { valid: boolean; error?: strin
 }
 
 /**
+ * Validate a bundled resource path: relative to the skill folder, no traversal,
+ * and never SKILL.md itself.
+ */
+export function validateSkillResourcePath(path: string): { valid: boolean; error?: string } {
+  if (
+    !path ||
+    path === "SKILL.md" ||
+    /[\\\0]/.test(path) ||
+    path.startsWith("/") ||
+    path.split("/").some((part) => !part || part === "." || part === "..")
+  ) {
+    return {
+      valid: false,
+      error: `Invalid resource path "${path}". Use a relative path like "references/guide.md" (no leading slash, "..", backslashes, or SKILL.md).`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
  * Validate a skill description (required, max length)
  */
 export function validateSkillDescription(description: string): { valid: boolean; error?: string } {
@@ -77,7 +99,10 @@ export function validateSkillDescription(description: string): { valid: boolean;
   }
 
   if (description.length > SKILL_DESCRIPTION_MAX_LENGTH) {
-    return { valid: false, error: `Description must be ${SKILL_DESCRIPTION_MAX_LENGTH} characters or less` };
+    return {
+      valid: false,
+      error: `Description must be ${SKILL_DESCRIPTION_MAX_LENGTH} characters or less`,
+    };
   }
 
   return { valid: true };
@@ -107,9 +132,13 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
       const key = line.substring(0, colonIndex).trim();
       let value = line.substring(colonIndex + 1).trim();
       // Remove quotes if present
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
+      if (value.startsWith('"') && value.endsWith('"')) {
+        try {
+          value = JSON.parse(value);
+        } catch {
+          value = value.slice(1, -1);
+        }
+      } else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1).replace(/''/g, "'");
       frontmatter[key] = value;
     }
   }
@@ -118,9 +147,14 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
 }
 
 /**
- * Parse a SKILL.md file content and validate it
+ * Parse a SKILL.md file content and validate it. Set `requireDescription` to
+ * false at import time so partially-authored skills with a missing or empty
+ * description still restore.
  */
-export function parseSkillFile(content: string): SkillParseResult {
+export function parseSkillFile(
+  content: string,
+  { requireDescription = true }: { requireDescription?: boolean } = {},
+): SkillParseResult {
   const errors: SkillValidationError[] = [];
 
   const parsed = parseFrontmatter(content);
@@ -147,8 +181,8 @@ export function parseSkillFile(content: string): SkillParseResult {
   }
 
   // Validate description
-  const description = frontmatter.description;
-  if (!description) {
+  const description = frontmatter.description ?? "";
+  if (requireDescription && !description) {
     errors.push({ field: "description", message: "Description is required in frontmatter" });
   } else if (description.length > SKILL_DESCRIPTION_MAX_LENGTH) {
     errors.push({
@@ -157,15 +191,9 @@ export function parseSkillFile(content: string): SkillParseResult {
     });
   }
 
-  if (errors.length > 0) {
+  // A missing name was already reported above; this only narrows the type.
+  if (errors.length > 0 || !name) {
     return { success: false, errors };
-  }
-
-  if (!name || !description) {
-    return {
-      success: false,
-      errors: [{ field: "format", message: "Missing required frontmatter fields" }],
-    };
   }
 
   return {
@@ -180,23 +208,53 @@ export function parseSkillFile(content: string): SkillParseResult {
 }
 
 /**
+ * Import-time check: valid frontmatter and a well-formed name, tolerating a
+ * missing or empty description so partially-authored skills still restore.
+ */
+export function parseSkillFileForImport(content: string): SkillParseResult {
+  return parseSkillFile(content, { requireDescription: false });
+}
+
+/**
  * Serialize a skill to SKILL.md format with YAML frontmatter
  */
 export function serializeSkill(skill: Skill): string {
-  const lines = ["---", `name: ${skill.name}`, `description: ${skill.description}`];
-  if (skill.compatibility) lines.push(`compatibility: ${skill.compatibility}`);
+  const lines = ["---", `name: ${skill.name}`, `description: ${JSON.stringify(skill.description)}`];
+  if (skill.compatibility) lines.push(`compatibility: ${JSON.stringify(skill.compatibility)}`);
   lines.push("---", "", skill.content);
 
   return lines.join("\n");
 }
 
 /**
- * Download a single skill as a SKILL.md file
+ * Zip skills as `{name}/SKILL.md` plus their bundled resources at the original
+ * relative paths — the same layout the OPFS skill folder uses, so an exported
+ * archive re-imports losslessly.
  */
-export function downloadSkill(skill: Skill): void {
-  const content = serializeSkill(skill);
-  const blob = new Blob([content], { type: "text/markdown" });
-  downloadBlob(blob, `${skill.name}.SKILL.md`);
+async function downloadSkillZip(skills: Skill[], filename: string): Promise<void> {
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+
+  for (const skill of skills) {
+    zip.file(`${skill.name}/SKILL.md`, serializeSkill(skill));
+    for (const { path, content } of skill.resources ?? []) {
+      zip.file(`${skill.name}/${path}`, content.startsWith("data:") ? decodeDataURL(content) : content);
+    }
+  }
+
+  await downloadBlob(await zip.generateAsync({ type: "blob" }), filename);
+}
+
+/**
+ * Download a single skill. Skills with bundled resources export as a zip so the
+ * resources travel with them; a plain skill stays a single SKILL.md.
+ */
+export async function downloadSkill(skill: Skill): Promise<void> {
+  if (skill.resources?.length) {
+    await downloadSkillZip([skill], `${skill.name}.zip`);
+    return;
+  }
+  await downloadBlob(new Blob([serializeSkill(skill)], { type: "text/markdown" }), `${skill.name}.SKILL.md`);
 }
 
 /**
@@ -206,19 +264,69 @@ export async function downloadSkillsAsZip(skills: Skill[], filename: string = "s
   if (skills.length === 0) {
     throw new Error("No skills to download");
   }
+  await downloadSkillZip(skills, filename);
+}
 
-  const JSZip = (await import("jszip")).default;
-  const zip = new JSZip();
+/** Dotfiles and OS metadata (macOS resource forks, `.DS_Store`) in a zip. */
+function isHiddenZipPath(path: string): boolean {
+  return path.split("/").some((segment) => segment.startsWith("."));
+}
 
-  for (const skill of skills) {
-    const content = serializeSkill(skill);
-    zip.file(`${skill.name}.SKILL.md`, content);
+/**
+ * Parse every skill in a zip, pairing each SKILL.md with the sibling files in
+ * its folder as resources — the inverse of `downloadSkillZip`. A loose `.md` at
+ * the archive root still imports, without resources.
+ *
+ * `rootIsSkill` opts into treating a root-level `SKILL.md` as owning every other
+ * root-level file as a resource (the plugin-hub "skill folder" archive layout,
+ * where a skill is distributed as a whole archive rather than a named folder
+ * inside one). Off by default so plain user imports keep ignoring siblings of a
+ * loose root `.md`.
+ */
+export async function parseSkillsFromZip(zip: JSZip, options?: { rootIsSkill?: boolean }): Promise<ParsedSkill[]> {
+  const skills: ParsedSkill[] = [];
+  const rootIsSkill = options?.rootIsSkill ?? false;
+
+  for (const [path, entry] of Object.entries(zip.files)) {
+    if (entry.dir || !path.endsWith(".md") || isHiddenZipPath(path)) continue;
+
+    let result: SkillParseResult;
+    try {
+      result = parseSkillFile(await entry.async("string"));
+    } catch {
+      continue;
+    }
+    if (!result.success) continue;
+
+    // Only a real skill folder can own resources; a loose .md at the archive
+    // root would otherwise claim every sibling file - unless rootIsSkill opts
+    // the whole archive in as a single skill folder.
+    const dir = path.endsWith("/SKILL.md")
+      ? path.slice(0, -"SKILL.md".length)
+      : rootIsSkill && path === "SKILL.md"
+        ? ""
+        : null;
+    const resources: SkillResource[] = [];
+
+    if (dir !== null) {
+      for (const [siblingPath, sibling] of Object.entries(zip.files)) {
+        if (sibling.dir || siblingPath === path) continue;
+        if (!siblingPath.startsWith(dir) || isHiddenZipPath(siblingPath)) continue;
+        if (dir === "" && (siblingPath === "plugin.json" || siblingPath === "mcp.json")) continue;
+
+        const relative = siblingPath.slice(dir.length);
+        if (relative.split("/").some((segment) => segment === "..")) continue;
+
+        const contentType = inferContentTypeFromPath(relative);
+        const content = isTextContentType(contentType)
+          ? await sibling.async("string")
+          : `data:${contentType || "application/octet-stream"};base64,${await sibling.async("base64")}`;
+        resources.push({ path: relative, content, contentType });
+      }
+    }
+
+    skills.push({ ...result.skill, ...(resources.length ? { resources } : {}) });
   }
 
-  try {
-    const zipBlob = await zip.generateAsync({ type: "blob" });
-    downloadBlob(zipBlob, filename);
-  } catch (error) {
-    throw new Error(`Failed to create zip file: ${error instanceof Error ? error.message : "Unknown error"}`);
-  }
+  return skills;
 }

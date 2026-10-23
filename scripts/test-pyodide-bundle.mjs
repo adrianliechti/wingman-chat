@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * Offline end-to-end test of the bundled Pyodide distribution in public/pyodide/.
+ * Offline end-to-end test of the bundled Pyodide distribution in
+ * public/pyodide/<pyodide-version>/.
  *
  * Boots a real Pyodide runtime in Node pointed at the bundle (indexURL), then
  * loads packages purely from the (injected) pyodide-lock.json — no network, no
- * micropip. The `loadFor` helper mirrors the worker's loading strategy
- * (loadPackagesFromImports + tzdata detection + explicit extras), so this also
+ * micropip. The `loadFor` helper uses the worker's loading strategy
+ * (static imports + bundled optional engines + tzdata detection), so this also
  * exercises that strategy, not just the lock. Proves that:
  *   - base-interpreter stdlib (sqlite3, ssl, lzma) imports with nothing to load
  *   - tzdata is pulled in for zoneinfo/pandas tz use (never imported by name)
@@ -20,17 +21,60 @@
  */
 
 import path from "node:path";
-import { loadPyodide } from "pyodide";
+import { loadPyodide, version } from "pyodide";
+import { loadPythonPackages } from "../src/features/tools/lib/pythonPackages.ts";
 
-const indexURL = `${path.resolve("public/pyodide")}/`;
+// Same version-scoped path the worker derives; see bundle-pyodide-packages.mjs.
+const indexURL = `${path.resolve("public/pyodide", version)}/`;
 const light = process.argv.includes("--light");
 
-// Keep in sync with TZDATA_USAGE in interpreter.worker.ts.
-const TZDATA_USAGE = /\bzoneinfo\b|\bZoneInfo\(|\.tz_localize\(|\.tz_convert\(|\btz\s*=\s*['"]/;
-
-// [name, code, { extras?, heavy? }]
-/** @type {Array<[string, string, ({ extras?: string[]; heavy?: boolean })?]>} */
+// [name, code, { heavy? }]
+/** @type {Array<[string, string, ({ heavy?: boolean })?]>} */
 const CASES = [
+  // Run before pdfplumber (or anything else that loads cryptography), so this
+  // catches missing pypdf dependency edges even when the crypto wheel is bundled.
+  [
+    "pypdf AES encryption/decryption (first import)",
+    `from io import BytesIO
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import ArrayObject, DictionaryObject, NameObject, TextStringObject
+
+for algorithm in ("AES-128", "AES-256-R5", "AES-256"):
+    for password in ("", "secret"):
+        writer = PdfWriter()
+        writer.add_blank_page(width=72, height=144)
+        writer.add_metadata({"/Title": "Encrypted document"})
+        writer.add_attachment("note.txt", b"Encrypted attachment")
+        field = writer.add_annotation(0, {
+            "/Subtype": "/Widget", "/Rect": [0, 0, 72, 12],
+            "/FT": "/Tx", "/T": "name", "/V": "Encrypted field",
+        })
+        writer.root_object[NameObject("/AcroForm")] = DictionaryObject({
+            NameObject("/Fields"): ArrayObject([field.indirect_reference]),
+        })
+        writer.root_object[NameObject("/Lang")] = TextStringObject("en-US")
+        writer.encrypt(password, owner_password="owner", algorithm=algorithm)
+        output = BytesIO()
+        writer.write(output)
+        data = output.getvalue()
+        assert b"Encrypted document" not in data
+        assert b"Encrypted attachment" not in data
+
+        reader = PdfReader(BytesIO(data))
+        assert reader.is_encrypted
+        assert reader.decrypt("wrong password") == 0
+        assert reader.decrypt(password) != 0
+        assert reader.get_fields()["name"]["/V"] == "Encrypted field"
+        assert len(reader.pages) == 1
+        assert reader.pages[0].mediabox.height == 144
+        assert reader.metadata.title == "Encrypted document"
+        assert reader.attachments["note.txt"] == [b"Encrypted attachment"]
+        owner = PdfReader(BytesIO(data), password="owner")
+        assert "en-US" in str(owner.trailer.raw_get("/Root"))
+        assert owner.metadata.title == "Encrypted document"
+"AES-128, AES-256-R5, AES-256: password and empty-password PDFs"`,
+  ],
+
   // --- Base-interpreter stdlib (built in since Pyodide 314, no loading) ---
   [
     "stdlib sqlite3",
@@ -57,6 +101,28 @@ const CASES = [
   [
     "pandas tz_convert (tzdata)",
     "import pandas as pd\nstr(pd.Timestamp('2026-06-14 12:00').tz_localize('Europe/Zurich').tz_convert('UTC').tz)",
+    { heavy: true },
+  ],
+  [
+    "duckdb + Arrow + Parquet files",
+    `import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
+table = pa.table({"id": pa.array([9007199254740993, None], type=pa.int64()), "amount": [4.5, 2.5]})
+with duckdb.connect("analysis.duckdb") as con:
+    con.register("input_data", table)
+    con.execute("CREATE TABLE saved AS SELECT * FROM input_data")
+    con.execute("COPY saved TO 'result.parquet' (FORMAT PARQUET)")
+    result = con.sql("SELECT * FROM saved").to_arrow_table()
+    assert isinstance(result, pa.Table) and result.equals(table)
+    assert con.sql("SELECT * FROM saved").to_arrow_reader(batch_size=1).read_all().equals(table)
+assert pq.read_table("result.parquet").equals(table)
+with pa.ipc.new_file("result.arrow", table.schema) as writer:
+    writer.write_table(table)
+assert pa.ipc.open_file("result.arrow").read_all().equals(table)
+with duckdb.connect("analysis.duckdb") as con:
+    assert con.execute("SELECT sum(amount) FROM saved").fetchone()[0] == 7.0
+"DuckDB database, Parquet and Arrow round-trips"`,
     { heavy: true },
   ],
 
@@ -107,27 +173,14 @@ const CASES = [
   // --- Misc helpers ---
   ["regex (unicode props)", "import regex\nbool(regex.fullmatch(r'\\p{Greek}+','αβγ'))"],
   ["requests import (no network)", "import requests\nhasattr(requests,'get')"],
-
-  // --- Explicit `packages` arg path (tolerant): junk name must not abort ---
-  ["explicit junk pkg tolerated", "1+1", { extras: ["json", "definitely-not-a-real-pkg"] }],
 ];
 
 const py = await loadPyodide({ indexURL });
 const warn = (m) => console.warn(`  [warn] ${m}`);
 
-// Mirrors interpreter.worker.ts: imports auto-load; tzdata + explicit extras are
-// loaded tolerantly on top.
-async function loadFor(code, extras = []) {
-  await py.loadPackagesFromImports(code, { errorCallback: warn });
-  const pkgs = new Set(extras);
-  if (TZDATA_USAGE.test(code)) pkgs.add("tzdata");
-  for (const pkg of pkgs) {
-    try {
-      await py.loadPackage(pkg, { errorCallback: warn });
-    } catch (err) {
-      console.warn(`  skipped ${pkg}: ${String(err)}`);
-    }
-  }
+// Exercise the same static-import and optional-engine loader as the worker.
+async function loadFor(code) {
+  await loadPythonPackages(py, [code], warn);
 }
 
 let passed = 0;
@@ -139,7 +192,7 @@ for (const [name, code, opts = {}] of CASES) {
     continue;
   }
   try {
-    await loadFor(code, opts.extras);
+    await loadFor(code);
     const result = await py.runPythonAsync(code);
     console.log(`PASS  ${name} -> ${String(result).trim()}`);
     passed++;

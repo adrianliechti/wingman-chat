@@ -389,5 +389,5 @@ export function csvToMarkdownTable(csv: string): string {
 export function downloadCsv(csv: string, filename: string): void {
   // Prepend UTF-8 BOM so Excel detects encoding correctly
   const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
-  downloadBlob(blob, filename.endsWith(".csv") ? filename : `${filename}.csv`);
+  void downloadBlob(blob, filename.endsWith(".csv") ? filename : `${filename}.csv`);
 }

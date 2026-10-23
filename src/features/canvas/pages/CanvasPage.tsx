@@ -7,7 +7,7 @@ import { useRendererModels } from "@/features/canvas/hooks/useRendererModels";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { decodeDataURL, downloadFromUrl, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
 import type { ImageBackground, ImageQuality, ImageResolution, Model } from "@/shared/types/chat";
@@ -45,18 +45,20 @@ function CanvasBackground() {
   );
 }
 
+function loadDisclaimer() {
+  try {
+    const config = getConfig();
+    return config.renderer?.disclaimer?.trim()
+      ? sanitizeHtmlToReact(config.renderer.disclaimer, { keyPrefix: "canvas-disclaimer" })
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 // Memoized disclaimer component to avoid re-computing on every render
 const Disclaimer = () => {
-  const disclaimer = useMemo(() => {
-    try {
-      const config = getConfig();
-      return config.renderer?.disclaimer?.trim()
-        ? sanitizeHtmlToReact(config.renderer.disclaimer, { keyPrefix: "canvas-disclaimer" })
-        : null;
-    } catch {
-      return null;
-    }
-  }, []);
+  const disclaimer = useMemo(() => loadDisclaimer(), []);
 
   if (!disclaimer) return null;
 
@@ -172,21 +174,12 @@ export function CanvasPage() {
   const handleDriveFiles = useCallback(
     async (files: SelectedFile[]) => {
       setIsFetchingDrive(true);
-      try {
-        const fetched = await Promise.all(
-          files.map(async (f) => {
-            const url = getDriveContentUrl(f.driveId, f.id);
-            const resp = await fetch(url);
-            const blob = await resp.blob();
-            return new File([blob], f.name, { type: f.mime || blob.type });
-          }),
-        );
-        await handleImageUpload(fetched);
-      } finally {
-        setIsFetchingDrive(false);
-      }
+      const maxBytes = config.vision?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES;
+      await Promise.all(files.map((f) => downloadDriveFile(f, maxBytes)))
+        .then(handleImageUpload)
+        .finally(() => setIsFetchingDrive(false));
     },
-    [handleImageUpload],
+    [config.vision?.maxFileSize, handleImageUpload],
   );
 
   const removeReferenceImage = useCallback((index: number) => {
@@ -250,33 +243,29 @@ export function CanvasPage() {
     const currentRefImages = referenceImages;
     setReferenceImages([]);
 
+    const model = selectedModel?.id || config.renderer?.model || "";
+
+    // Build the full prompt with style if selected. The style may no longer
+    // exist if the served skill changed under us, so guard the lookup.
+    const styleFragment = selectedStyle ? stylePrompts[selectedStyle] : undefined;
+    const fullPrompt = styleFragment
+      ? `${activePrompt}${activePrompt.trim() ? ", " : ""}${styleFragment}`
+      : activePrompt;
+    const imageOptions = {
+      aspectRatio: selectedAspect ?? undefined,
+      quality: selectedQuality ?? undefined,
+      resolution: selectedResolution ?? undefined,
+      background: selectedBackground ?? undefined,
+    };
+
     try {
-      const model = selectedModel?.id || config.renderer?.model || "";
-
-      // Build the full prompt with style if selected. The style may no longer
-      // exist if the served skill changed under us, so guard the lookup.
-      const styleFragment = selectedStyle ? stylePrompts[selectedStyle] : undefined;
-      const fullPrompt = styleFragment
-        ? `${activePrompt}${activePrompt.trim() ? ", " : ""}${styleFragment}`
-        : activePrompt;
-
       // Collect reference images: user-uploaded + optionally the source image for refinement
       const refImages: Blob[] = currentRefImages.map((img) => img.blob);
       if (sourceImageData) {
         refImages.push(decodeDataURL(sourceImageData));
       }
 
-      const resultBlob = await config.client.generateImage(
-        model,
-        fullPrompt,
-        refImages.length > 0 ? refImages : undefined,
-        {
-          aspectRatio: selectedAspect ?? undefined,
-          quality: selectedQuality ?? undefined,
-          resolution: selectedResolution ?? undefined,
-          background: selectedBackground ?? undefined,
-        },
-      );
+      const resultBlob = await config.client.generateImage(model, fullPrompt, refImages, imageOptions);
 
       // Convert to data URL for persistence and display
       const dataUrl = await readAsDataURL(resultBlob);
@@ -292,9 +281,8 @@ export function CanvasPage() {
       setPrompt("");
     } catch (err) {
       console.error("Image generation failed:", err);
-    } finally {
-      setIsGenerating(false);
     }
+    setIsGenerating(false);
   };
 
   const handleDownload = (imageUrl: string) => {

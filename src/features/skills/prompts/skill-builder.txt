@@ -1,30 +1,12 @@
-## Skill Builder
+## Skill builder
+Use create_skill for requested reusable workflows and update_skill for revisions. Skills persist in the library; new skills also enable on the active agent. Recurrence can justify a suggestion, not an unsolicited library change.
 
-You can author skills — reusable, specialized prompts that capture how to do a recurring task well. Use `create_skill` to add a new one and `update_skill` to revise an existing one. Skills are saved to the user's library; when an agent is active, a new skill is also enabled on that agent.
+Before creating, list_skills to avoid duplicates. Keep scope focused. Descriptions state the capability and triggering user intent, with exclusions for likely confusion; keywords alone should not trigger a workflow.
 
-### When to create a skill
+Instructions cover inputs, actions, decisions, outputs and checks. Preserve useful tool/resource references; invent no capabilities, dependencies or permissions. Names: 1–64 lowercase letters, digits and hyphens; no leading, trailing or consecutive hyphens.
 
-- The user asks you to capture, save, or "make a skill" for a workflow
-- A task has clear, repeatable steps worth reusing across conversations
-- You find yourself giving the same specialized guidance more than once
+Before updating, read the full current personal skill with list_skills({name}); list_skills without name supplies metadata only. load_skill activates a selected skill and can resolve a built-in instead of the intended library entry. Reuse complete library content and your subsequent edits from this run; reread by name if that content is missing or truncated.
 
-Do NOT create a skill for a one-off request, a trivial task, or something an existing skill already covers — check `list_skills` first.
+Resources are bundled text files (references, templates, scripts) stored next to SKILL.md. Attach them with create_skill's resources or write_skill_resource, remove with delete_skill_resource, and read one in full with list_skills({name, path}). Keep SKILL.md concise and move long reference material, templates or reusable scripts into resources; mention each resource's path and when to use it in the instructions. Paths are relative (e.g. references/guide.md, scripts/run.py); binary files cannot be created here. write_skill_resource replaces the whole file, so read it first and send complete content when editing.
 
-### What makes a good skill
-
-- **Focused**: one clear capability per skill, not a grab-bag
-- **Description is the trigger**: the description is how a skill gets matched to a request. Write it to say *what the skill does and when to use it* — include the phrases or situations that should trigger it, not just a title.
-- **Actionable content**: the markdown body holds the actual instructions — concrete steps, inputs needed, and the expected output. Write it as directions to follow, in the imperative.
-- **Self-contained**: assume the reader has only the skill and the current conversation; spell out anything non-obvious.
-
-### Naming
-
-- Lowercase letters, digits, and hyphens only (e.g. `release-notes`, `vendor-check`)
-- 1–64 characters; no leading, trailing, or consecutive hyphens
-
-### Editing skills
-
-- `update_skill` REPLACES the description and/or content you pass — it is not a diff. Always send the complete new value.
-- Before changing a skill you did not just author, read its current content first (`read_skill` if available, or `list_skills` for the overview) so you don't drop existing instructions.
-- Use `list_skills` to see what already exists before creating (to avoid duplicates) or to find the exact name to update or delete.
-- `delete_skill` permanently removes a skill and cannot be undone. Confirm with the user before deleting any skill you didn't just create this turn.
+Each supplied update_skill field replaces its value: send complete content, preserve unrelated instructions/resources and never substitute summaries or omission markers. Shorten only as requested; there is no version history. Confirm permanent delete_skill actions unless the skill was created this turn.

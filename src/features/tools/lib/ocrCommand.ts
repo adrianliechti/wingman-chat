@@ -2,7 +2,11 @@ import { getConfig } from "@/shared/config";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
 
-export async function runOcr(bytes: Uint8Array, path: string): Promise<string> {
+export async function runOcr(
+  bytes: Uint8Array,
+  path: string,
+  requestOptions: { signal?: AbortSignal } = {},
+): Promise<string> {
   const config = getConfig();
   if (!config.extractor) {
     throw new Error("ocr: no document extraction service configured");
@@ -18,7 +22,7 @@ export async function runOcr(bytes: Uint8Array, path: string): Promise<string> {
   if (!type) {
     throw new Error(`ocr: cannot determine document type of ${name} — use a known file extension like .pdf or .docx`);
   }
-  const text = await config.client.extractText(new File([bytes as BlobPart], name, { type }));
+  const text = await config.client.extractText(new File([bytes as BlobPart], name, { type }), requestOptions);
   console.debug(`ocr: ${path} (${type}, ${bytes.length} bytes) → ${text.length} chars`);
   return text;
 }

@@ -4,13 +4,22 @@
  * llm/ocr/vision/render/synthesize/transcribe globals proxy back over RPC.
  */
 
-import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodide";
+import { loadPyodide as loadPyodideRuntime, type PyodideInterface, version as pyodideVersion } from "pyodide";
+import type { PyProxy } from "pyodide/ffi";
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import type { RasterizedPage } from "@/shared/lib/pdf";
-import { SANDBOX_HOME } from "@/shared/lib/sandbox";
+import { normalizeArtifactPath, SANDBOX_HOME } from "@/shared/lib/sandbox";
 import ASYNCIO_SHIM from "./asyncioShim.py?raw";
+import DUCKDB_SCOPE from "./duckdbScope.py?raw";
+import {
+  BoundedOutput,
+  CodeExecutionLimitError,
+  DEFAULT_CODE_EXECUTION_LIMITS,
+  resolveCodeExecutionLimits,
+  validateArtifactFiles,
+} from "./executionLimits";
 import type {
   ArtifactFile,
   ArtifactFiles,
@@ -23,11 +32,15 @@ import type {
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
-import { callMainThread } from "./interpreterRpc";
+import { callMainThread, describeError } from "./interpreterRpc";
+import { formatPythonTraceback } from "./pythonTraceback";
+import { loadPythonPackages } from "./pythonPackages";
 import LLM_SHIM from "./llmShim.py?raw";
 import OCR_SHIM from "./ocrShim.py?raw";
 import PDF_RASTERIZE_SHIM from "./pdfRasterizeShim.py?raw";
+import PYTHON_SCRIPTS from "./pythonScripts.py?raw";
 import RENDER_SHIM from "./renderShim.py?raw";
+import SQL_SHIM from "./sqlShim.py?raw";
 import SYNTHESIZE_SHIM from "./synthesizeShim.py?raw";
 import TRANSCRIBE_SHIM from "./transcribeShim.py?raw";
 import TRANSLATE_SHIM from "./translateShim.py?raw";
@@ -39,37 +52,68 @@ const ctx = self as unknown as {
   addEventListener(type: "message", listener: (event: MessageEvent<ExecuteMessage>) => void): void;
 };
 
-// Maps import names to lock/package names, only for the explicit `packages` arg
-// (code imports auto-resolve via Pyodide's lock index). The model is told to pass
-// pip names but sometimes passes an import name; these map the common slips back.
-const PACKAGE_ALIASES: Record<string, string> = {
-  docx: "python-docx",
-  pptx: "python-pptx",
-  pdfminer: "pdfminer-six",
-  msoffcrypto: "msoffcrypto-tool",
-  pil: "pillow",
-  cv2: "opencv-python",
-  sklearn: "scikit-learn",
-  skimage: "scikit-image",
-  bs4: "beautifulsoup4",
-  yaml: "pyyaml",
+const workerGlobal = self as unknown as Record<string, unknown>;
+const nativeFetch =
+  typeof workerGlobal.fetch === "function" ? (workerGlobal.fetch as typeof fetch).bind(self) : undefined;
+const NETWORK_DISABLED = "Direct network access is disabled in the Python sandbox";
+const blockedNetwork = () => {
+  throw new TypeError(NETWORK_DISABLED);
 };
 
-function normalizePackageName(name: string): string {
-  // Strip a "." (e.g. "docx.shared"), then PEP 503-normalize (`scikit_learn` →
-  // `scikit-learn`); aliases run on the un-normalized root for `PIL`/`bs4` renames.
-  const root = name.trim().toLowerCase().split(".")[0];
-  if (!root) return root;
-  return PACKAGE_ALIASES[root] ?? root.replace(/[_.]+/g, "-");
+/** Keep Pyodide's package loader online only while it reads same-origin bundled assets. */
+async function withRuntimeFetch<T>(run: () => Promise<T>): Promise<T> {
+  if (nativeFetch) workerGlobal.fetch = nativeFetch;
+  try {
+    return await run();
+  } finally {
+    lockDownUserNetwork();
+  }
 }
 
-// zoneinfo/pandas read the IANA tz db from `tzdata` but never import it by name,
-// so find_imports misses it; detect timezone usage and load tzdata explicitly.
-// (pytz ships its own data and is skipped.)
-const TZDATA_USAGE = /\bzoneinfo\b|\bZoneInfo\(|\.tz_localize\(|\.tz_convert\(|\btz\s*=\s*['"]/;
-function needsTzdata(code: string): boolean {
-  return TZDATA_USAGE.test(code);
+function lockDownUserNetwork(): void {
+  workerGlobal.fetch = blockedNetwork;
+  for (const name of [
+    "XMLHttpRequest",
+    "WebSocket",
+    "EventSource",
+    "importScripts",
+    "WebTransport",
+    "RTCPeerConnection",
+    "Worker",
+    "SharedWorker",
+    "BroadcastChannel",
+    "indexedDB",
+    "caches",
+  ]) {
+    try {
+      Object.defineProperty(workerGlobal, name, { configurable: true, value: blockedNetwork });
+    } catch {
+      try {
+        workerGlobal[name] = blockedNetwork;
+      } catch {
+        // Best effort for non-writable worker globals.
+      }
+    }
+  }
+  try {
+    const nav = (workerGlobal.navigator ?? {}) as Record<string, unknown>;
+    for (const name of ["sendBeacon", "storage", "locks", "serviceWorker", "credentials"]) {
+      try {
+        Object.defineProperty(nav, name, { configurable: true, value: blockedNetwork });
+      } catch {
+        // navigator may expose non-configurable properties.
+      }
+    }
+  } catch {
+    // navigator may expose read-only properties.
+  }
 }
+
+// This chunk is content-hashed, the bundle it loads is not — so the bundle path
+// carries the version the glue was built against (see bundle-pyodide-packages.mjs).
+// Sharing one path across versions let a cached older runtime pair with a freshly
+// deployed glue: "Pyodide version does not match: '<js>' <==> '<wasm>'".
+const PYODIDE_INDEX_URL = `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}pyodide/${pyodideVersion}/`;
 
 let pyodideReady: Promise<PyodideInterface> | null = null;
 
@@ -77,6 +121,22 @@ let pyodideReady: Promise<PyodideInterface> | null = null;
 // entrypoints (asyncio.run, ...) into top-level await; sync blocking would need
 // JSPI, which Safari lacks. Cached as a callable proxy at load time.
 let rewriteAsyncEntrypoints: ((code: string) => string) | null = null;
+
+type PythonValue = string | number | bigint | boolean | null | undefined | PyProxy;
+type PythonScope = {
+  namespace: PyodideInterface["globals"];
+  close(): void;
+  destroy(): void;
+};
+let scriptSources: ((code: string, filename?: string) => { toJs(): string[]; destroy(): void }) | undefined;
+let scriptScope: ((filename: string | undefined, argsJson: string) => PythonScope) | undefined;
+let runScript:
+  | ((
+      code: string,
+      namespace: PyodideInterface["globals"],
+      filename?: string,
+    ) => PromiseLike<PythonValue> & { destroy(): void })
+  | undefined;
 
 // The Pyodide FS is a session-long singleton, so we sync /home/user incrementally
 // rather than wiping it each call. `lastSyncedFiles` mirrors what's materialized;
@@ -87,7 +147,9 @@ let lastSyncedFiles: ArtifactFiles | null = null;
 let lastSyncedPyodide: PyodideInterface | null = null;
 
 function artifactFsPath(path: string): string {
-  return `${SANDBOX_HOME}/${path.startsWith("/") ? path.slice(1) : path}`;
+  const normalized = normalizeArtifactPath(path);
+  if (!normalized || normalized === "/") throw new Error(`Invalid artifact path: ${path}`);
+  return `${SANDBOX_HOME}${normalized}`;
 }
 
 function writeFileToPyodide(pyodide: PyodideInterface, path: string, file: ArtifactFile): void {
@@ -137,8 +199,15 @@ function isUnmodifiedSince(mtime: unknown, runStart: number): boolean {
   return mtime instanceof Date && mtime.getTime() < runStart;
 }
 
-function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFiles, runStart: number): ArtifactFiles {
+function collectPyodideFiles(
+  pyodide: PyodideInterface,
+  sourceFiles: ArtifactFiles,
+  runStart: number,
+  limits: ReturnType<typeof resolveCodeExecutionLimits>,
+): ArtifactFiles {
   const files: ArtifactFiles = {};
+  let fileCount = 0;
+  let totalBytes = 0;
 
   const walk = (dir: string) => {
     let entries: string[];
@@ -155,6 +224,23 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
         if (pyodide.FS.isDir(stat.mode)) {
           walk(fullPath);
           continue;
+        }
+
+        fileCount++;
+        if (fileCount > limits.maxFiles) {
+          throw new CodeExecutionLimitError(`Interpreter filesystem has more than ${limits.maxFiles} files`);
+        }
+        const fileBytes = typeof stat.size === "number" ? stat.size : 0;
+        if (fileBytes > limits.maxFileBytes) {
+          throw new CodeExecutionLimitError(
+            `${fullPath} is ${fileBytes} bytes; per-file limit is ${limits.maxFileBytes}`,
+          );
+        }
+        totalBytes += fileBytes;
+        if (totalBytes > limits.maxTotalFileBytes) {
+          throw new CodeExecutionLimitError(
+            `Interpreter filesystem is over the ${limits.maxTotalFileBytes}-byte total limit`,
+          );
         }
 
         const artifactPath = `/${fullPath.slice(SANDBOX_HOME.length + 1)}`;
@@ -180,7 +266,8 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
           const ct = contentType ?? "application/octet-stream";
           files[artifactPath] = { content: bytesToDataUrl(bytes, ct), contentType: ct };
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof CodeExecutionLimitError) throw error;
         // Skip unreadable files.
       }
     }
@@ -191,63 +278,114 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
 }
 
 /**
- * Load everything the code needs from the offline lock in /pyodide/. The bundler
+ * Load everything the code needs from the offline lock in the bundle. The bundler
  * injects the bundled PyPI wheels into pyodide-lock.json alongside the built-ins,
  * so Pyodide's own lock-driven loader resolves them all by import name — no
  * micropip or dep bookkeeping. (sqlite3/ssl/lzma ship in the base interpreter.)
  */
-async function ensurePackagesLoaded(
-  pyodide: PyodideInterface,
-  code: string,
-  explicitPackages: string[],
-): Promise<void> {
+async function ensurePackagesLoaded(pyodide: PyodideInterface, code: string, filename?: string): Promise<void> {
   const warn = (msg: string) => console.warn(`package load: ${msg}`);
-
-  // All imports resolve from the lock index by name; transitive deps via `depends`.
-  await pyodide.loadPackagesFromImports(code, { errorCallback: warn });
-
-  // Extras the import scan can't see: tzdata (data-only) and packages the model
-  // lists explicitly (mainly lazily-imported deps like a pandas Excel engine).
-  const extra = new Set<string>();
-  if (needsTzdata(code)) extra.add("tzdata");
-  for (const raw of explicitPackages) {
-    const pkg = normalizePackageName(raw);
-    if (pkg) extra.add(pkg);
+  const discovered = scriptSources!(code, filename);
+  let sources: string[];
+  try {
+    sources = discovered.toJs();
+  } finally {
+    discovered.destroy();
   }
 
-  // Load each independently: `loadPackage` *throws* on an unknown name (model-guessed
-  // or a stdlib module) even with an errorCallback, and that must not abort the run.
-  // A genuinely missing module still raises ModuleNotFoundError at import.
-  for (const pkg of extra) {
-    try {
-      await pyodide.loadPackage(pkg, { errorCallback: warn });
-    } catch (err) {
-      console.warn(`package load: skipped ${pkg} (${String(err)})`);
-    }
-  }
+  await withRuntimeFetch(() => loadPythonPackages(pyodide, sources, warn));
 }
 
-async function runPythonCode(pyodide: PyodideInterface, code: string): Promise<string> {
-  let output = "";
+/** Python tracebacks without runtime frames; anything else keeps its JavaScript stack. */
+function describeExecutionError(error: unknown): string {
+  if (error instanceof Error && error.name === "PythonError") return formatPythonTraceback(error.message);
+  return describeError(error);
+}
+
+async function runPythonCode(
+  pyodide: PyodideInterface,
+  code: string,
+  globals: PyodideInterface["globals"],
+  output: BoundedOutput,
+  maxOutputBytes: number,
+  filename?: string,
+): Promise<string> {
   const collect = (text: string) => {
-    output += `${text}\n`;
+    output.append(`${text}\n`);
   };
 
   pyodide.setStdout({ batched: collect });
   pyodide.setStderr({ batched: collect });
 
-  const result = await pyodide.runPythonAsync(code);
-
-  if (result !== undefined && result !== null && !output.trim()) {
-    return String(result);
+  const pending = runScript!(code, globals, filename);
+  let result: PythonValue;
+  try {
+    result = await pending;
+    const captured = output.value();
+    if (result !== undefined && result !== null && !captured.trim()) {
+      const value = new BoundedOutput(maxOutputBytes);
+      value.append(String(result));
+      return value.value();
+    }
+    return captured.trim() || NO_OUTPUT_MESSAGE;
+  } finally {
+    pending.destroy();
+    if (result instanceof pyodide.ffi.PyProxy) {
+      result.destroy();
+    }
   }
+}
 
-  return output.trim() || NO_OUTPUT_MESSAGE;
+const USER_SHIMS = [
+  LLM_SHIM,
+  OCR_SHIM,
+  VISION_SHIM,
+  RENDER_SHIM,
+  SYNTHESIZE_SHIM,
+  TRANSCRIBE_SHIM,
+  TRANSLATE_SHIM,
+  PDF_RASTERIZE_SHIM,
+  SQL_SHIM,
+];
+
+async function installExecutionHelpers(
+  pyodide: PyodideInterface,
+  signal: AbortSignal,
+  globals: PyodideInterface["globals"],
+): Promise<void> {
+  // Python tasks can retain their globals after runPythonAsync returns. Bind
+  // bridges to this execution so delayed work cannot borrow the next run's
+  // model, budget, or workspace through the reused worker's active RPC slot.
+  const setBridge = <Args extends unknown[], Result>(name: string, fn: (...args: Args) => Result) => {
+    globals.set(name, (...args: Args) => {
+      signal.throwIfAborted();
+      return fn(...args);
+    });
+  };
+  setBridge("_wingman_llm", requestLlm);
+  setBridge("_wingman_ocr", (path: string) => requestOcr(pyodide, path));
+  setBridge("_wingman_vision", (path: string, prompt: string | null) => requestVision(pyodide, path, prompt));
+  setBridge("_wingman_render", (prompt: string, output: string, inputsJson: string, optionsJson: string | null) =>
+    requestRenderImage(pyodide, prompt, output, inputsJson, optionsJson),
+  );
+  setBridge("_wingman_synthesize", (text: string, output: string, voice: string | null) =>
+    requestSynthesize(pyodide, text, output, voice),
+  );
+  setBridge("_wingman_transcribe", (path: string) => requestTranscribe(pyodide, path));
+  setBridge("_wingman_translate_text", (lang: string, text: string) => requestTranslateText(lang, text));
+  setBridge("_wingman_sql", (query: string, paramsJson: string | null) => requestSql(query, paramsJson));
+  setBridge("_wingman_translate_file", (lang: string, output: string, input: string) =>
+    requestTranslateFile(pyodide, lang, output, input),
+  );
+  setBridge("_wingman_rasterize_pdf", (path: string, optionsJson: string | null) =>
+    requestRasterizePdf(pyodide, path, optionsJson),
+  );
+  for (const shim of USER_SHIMS) await pyodide.runPythonAsync(shim, { globals, filename: "<wingman-shim>" });
 }
 
 function loadPyodide(): Promise<PyodideInterface> {
   if (!pyodideReady) {
-    pyodideReady = loadPyodideRuntime({ indexURL: "/pyodide/" })
+    pyodideReady = loadPyodideRuntime({ indexURL: PYODIDE_INDEX_URL })
       .then(async (p) => {
         // Default cwd is /home/pyodide, which is outside the synced tree —
         // relative-path writes (open("out.csv", "w")) would be silently lost.
@@ -256,36 +394,17 @@ function loadPyodide(): Promise<PyodideInterface> {
         // Matplotlib's default backend wants a DOM canvas the worker lacks, so figure
         // creation would fail. Force the headless Agg backend (savefig still works);
         // an explicit matplotlib.use(...) in user code still wins.
-        p.runPython("import os; os.environ.setdefault('MPLBACKEND', 'Agg')");
-        p.globals.set("_wingman_llm", requestLlm);
-        p.globals.set("_wingman_ocr", (path: string) => requestOcr(p, path));
-        p.globals.set("_wingman_vision", (path: string, prompt: string | null) => requestVision(p, path, prompt));
-        p.globals.set(
-          "_wingman_render",
-          (prompt: string, output: string, inputsJson: string, optionsJson: string | null) =>
-            requestRenderImage(p, prompt, output, inputsJson, optionsJson),
-        );
-        p.globals.set("_wingman_synthesize", (text: string, output: string, voice: string | null) =>
-          requestSynthesize(p, text, output, voice),
-        );
-        p.globals.set("_wingman_transcribe", (path: string) => requestTranscribe(p, path));
-        p.globals.set("_wingman_translate_text", (lang: string, text: string) => requestTranslateText(lang, text));
-        p.globals.set("_wingman_translate_file", (lang: string, output: string, input: string) =>
-          requestTranslateFile(p, lang, output, input),
-        );
-        p.globals.set("_wingman_rasterize_pdf", (path: string, optionsJson: string | null) =>
-          requestRasterizePdf(p, path, optionsJson),
-        );
-        await p.runPythonAsync(LLM_SHIM);
-        await p.runPythonAsync(OCR_SHIM);
-        await p.runPythonAsync(VISION_SHIM);
-        await p.runPythonAsync(RENDER_SHIM);
-        await p.runPythonAsync(SYNTHESIZE_SHIM);
-        await p.runPythonAsync(TRANSCRIBE_SHIM);
-        await p.runPythonAsync(TRANSLATE_SHIM);
-        await p.runPythonAsync(PDF_RASTERIZE_SHIM);
-        await p.runPythonAsync(ASYNCIO_SHIM);
+        p.runPython("import os; os.environ.setdefault('MPLBACKEND', 'Agg'); _wingman_base_environ = dict(os.environ)", {
+          filename: "<wingman-setup>",
+        });
+        await p.runPythonAsync(ASYNCIO_SHIM, { filename: "<wingman-asyncio>" });
         rewriteAsyncEntrypoints = p.globals.get("_wingman_rewrite_async") as (code: string) => string;
+        // Internal code runs under "<wingman-*" filenames so "<exec>" means user code only.
+        p.runPython(PYTHON_SCRIPTS, { filename: "<wingman-scripts>" });
+        scriptSources = p.globals.get("_wingman_script_sources") as typeof scriptSources;
+        scriptScope = p.globals.get("_wingman_script_scope") as typeof scriptScope;
+        runScript = p.globals.get("_wingman_run_script") as typeof runScript;
+        lockDownUserNetwork();
         console.log("Pyodide loaded successfully");
         return p;
       })
@@ -299,46 +418,92 @@ function loadPyodide(): Promise<PyodideInterface> {
 }
 
 async function executeCode(request: CodeExecutionRequest, onStarted?: () => void): Promise<CodeExecutionResult> {
-  const { packages = [], files = {} } = request;
+  const { files = {} } = request;
+  let maxOutputBytes = DEFAULT_CODE_EXECUTION_LIMITS.maxOutputBytes;
+  // Declared outside the try so a failed run still returns what it printed.
+  let captured: BoundedOutput | undefined;
 
   try {
+    const limits = resolveCodeExecutionLimits(request.limits);
+    maxOutputBytes = limits.maxOutputBytes;
+    captured = new BoundedOutput(maxOutputBytes);
+    validateArtifactFiles(files, limits, "Interpreter input filesystem");
     const pyodide = await loadPyodide();
 
-    let code = request.code;
+    let code = request.code.replace(/^\uFEFF/, "");
     if (rewriteAsyncEntrypoints) {
       try {
-        code = rewriteAsyncEntrypoints(request.code);
+        code = rewriteAsyncEntrypoints(code);
       } catch (error) {
         // A rewrite failure must never block execution — run the original.
         console.error("asyncio entrypoint rewrite failed; running original code:", error);
       }
     }
 
+    pyodide.FS.chdir(SANDBOX_HOME);
+    pyodide.runPython("import os; os.environ.clear(); os.environ.update(_wingman_base_environ)", {
+      filename: "<wingman-setup>",
+    });
     syncFilesToPyodide(pyodide, files);
-    await ensurePackagesLoaded(pyodide, code, packages);
+    const filename = request.path ? artifactFsPath(request.path) : undefined;
+    await ensurePackagesLoaded(pyodide, code, filename);
 
-    onStarted?.();
+    const executionController = new AbortController();
+    activeRpcSignal = executionController.signal;
+    let globals: PyodideInterface["globals"] | undefined;
+    let scope: PythonScope | undefined;
+    let closeDuckDb: ((() => void) & { destroy(): void }) | undefined;
 
-    const runStart = Date.now();
-    const output = await runPythonCode(pyodide, code);
+    try {
+      scope = scriptScope!(filename, JSON.stringify(request.args ?? []));
+      globals = scope.namespace;
+      // Attribute proxies are borrowed from scope; retain their owner until cleanup.
+      await installExecutionHelpers(pyodide, executionController.signal, globals);
+      if (pyodide.loadedPackages.duckdb) {
+        closeDuckDb = pyodide.runPython(DUCKDB_SCOPE, { globals, filename: "<wingman-duckdb>" }) as typeof closeDuckDb;
+      }
+      onStarted?.();
 
-    const resultFiles = collectPyodideFiles(pyodide, files, runStart);
-    // Remember the materialized tree so the next call can sync incrementally.
-    lastSyncedFiles = resultFiles;
+      const runStart = Date.now();
+      const output = await runPythonCode(pyodide, code, globals, captured, limits.maxOutputBytes, filename);
 
-    return {
-      success: true,
-      output,
-      files: resultFiles,
-    };
+      // Flush database files and discard SQL state before capturing the run.
+      closeDuckDb?.();
+      const resultFiles = collectPyodideFiles(pyodide, files, runStart, limits);
+      validateArtifactFiles(resultFiles, limits);
+      // Remember the materialized tree so the next call can sync incrementally.
+      lastSyncedFiles = resultFiles;
+
+      return {
+        success: true,
+        output,
+        files: resultFiles,
+      };
+    } finally {
+      executionController.abort();
+      activeRpcSignal = undefined;
+      try {
+        closeDuckDb?.();
+      } finally {
+        try {
+          scope?.close();
+        } finally {
+          closeDuckDb?.destroy();
+          scope?.destroy();
+          lockDownUserNetwork();
+        }
+      }
+    }
   } catch (error) {
     console.error("Code execution error:", error);
     // FS state may be inconsistent — force a clean rebuild on the next call.
     lastSyncedFiles = null;
+    const boundedError = new BoundedOutput(maxOutputBytes);
+    boundedError.append(describeExecutionError(error));
     return {
       success: false,
-      output: "",
-      error: error instanceof Error ? error.message : String(error),
+      output: captured?.value().trim() ?? "",
+      error: boundedError.value(),
     };
   }
 }
@@ -375,8 +540,9 @@ function clearDirectory(pyodide: PyodideInterface, dir: string): void {
 // RPC to the main thread — each call ships its own reply port, so responses
 // need no correlation or routing.
 
+let activeRpcSignal: AbortSignal | undefined;
 const callMain = <T>(build: (port: MessagePort) => WorkerToMainMessage): Promise<T> =>
-  callMainThread<T>((message, transfer) => ctx.postMessage(message, transfer), build);
+  callMainThread<T>((message, transfer) => ctx.postMessage(message, transfer), build, activeRpcSignal);
 
 /**
  * Bridge behind the Python `llm` helper (llmShim.py), resolved by the main thread.
@@ -471,6 +637,21 @@ async function requestTranscribe(pyodide: PyodideInterface, path: string): Promi
 }
 
 /** Bridge behind the Python `translate` helper (translateShim.py), resolved by the main thread. */
+/** Bridge behind the Python `sql` helper (sqlShim.py); the result is JSON so Pyodide needs no proxy conversion. */
+async function requestSql(query: string, paramsJson?: string | null): Promise<string> {
+  let params: unknown[] | undefined;
+  if (paramsJson) {
+    try {
+      const parsed: unknown = JSON.parse(paramsJson);
+      if (Array.isArray(parsed)) params = parsed;
+    } catch {
+      // Malformed parameters — run without them rather than failing the call.
+    }
+  }
+  const result = await callMain<unknown>((port) => ({ type: "duckdb-query-request", sql: query, params, port }));
+  return JSON.stringify(result);
+}
+
 function requestTranslateText(lang: string, text: string): Promise<string> {
   return callMain<string>((port) => ({ type: "translate-text-request", lang, text, port }));
 }

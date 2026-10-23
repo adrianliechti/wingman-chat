@@ -1,10 +1,11 @@
 /**
- * Message protocol between the main thread and the Pyodide interpreter worker.
- * Some Python globals (llm/ocr/vision/render/synthesize/transcribe/translate/
- * rasterize_pdf) need the main thread, so the worker calls back over RPC.
+ * Shared message protocol between the main thread and the interpreter workers.
+ * Helpers (llm/ocr/vision/render/synthesize/transcribe/translate/rasterize_pdf)
+ * and Bash service commands call back to the main thread over RPC.
  */
 
 import type { ImageRenderOptions } from "@/shared/lib/client";
+import type { ReasoningEffort } from "@/shared/types/chat";
 
 export interface ArtifactFile {
   content: string;
@@ -13,10 +14,21 @@ export interface ArtifactFile {
 
 export type ArtifactFiles = Record<string, ArtifactFile>;
 
+export interface CodeExecutionLimits {
+  maxOutputBytes?: number;
+  maxFiles?: number;
+  maxFileBytes?: number;
+  maxTotalFileBytes?: number;
+}
+
 export interface CodeExecutionRequest {
   code: string;
-  packages?: string[];
+  /** Canonical artifact/resource path when running a script file. */
+  path?: string;
+  /** Script arguments, excluding the executable and script path. */
+  args?: string[];
   files?: ArtifactFiles;
+  limits?: CodeExecutionLimits;
 }
 
 export interface CodeExecutionResult {
@@ -38,11 +50,11 @@ export interface RenderInput {
   path: string;
 }
 
-/** Per-call options for the `llm` helper; `model` falls back to the chat's currently selected model. */
+/** Each `llm` call starts with no history; `model` defaults to the owning run's model. */
 export interface LlmCallOptions {
   model?: string;
   system?: string;
-  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  effort?: ReasoningEffort;
 }
 
 // Every request carries a dedicated MessagePort for its reply, so no id
@@ -62,6 +74,8 @@ export type WorkerToMainMessage =
   | { type: "transcribe-request"; data: Uint8Array; path: string; port: MessagePort }
   | { type: "translate-text-request"; lang: string; text: string; port: MessagePort }
   | { type: "translate-file-request"; lang: string; data: Uint8Array; path: string; port: MessagePort }
-  | { type: "pdf-rasterize-request"; data: Uint8Array; pages?: number[]; scale?: number; port: MessagePort };
+  | { type: "pdf-rasterize-request"; data: Uint8Array; pages?: number[]; scale?: number; port: MessagePort }
+  | { type: "svg-rasterize-request"; svg: string; width?: number; height?: number; port: MessagePort }
+  | { type: "duckdb-query-request"; sql: string; params?: unknown[]; port: MessagePort };
 
 export type RpcReply = { ok: true; value: unknown } | { ok: false; error: string };

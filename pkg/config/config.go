@@ -16,12 +16,18 @@ func Load() *Config {
 		Disclaimer: os.Getenv("DISCLAIMER"),
 	}
 
-	if u := os.Getenv("SUPPORT_URL"); u != "" {
-		cfg.Support = &Support{URL: u}
+	if companionURL := os.Getenv("BRIDGE_URL"); companionURL != "" {
+		cfg.Companion = &Companion{URL: companionURL}
 	}
 
-	if bridgeURL := os.Getenv("BRIDGE_URL"); bridgeURL != "" {
-		cfg.Bridge = &Bridge{URL: bridgeURL}
+	if pluginsURL := os.Getenv("PLUGINS_URL"); pluginsURL != "" {
+		if u, err := url.Parse(pluginsURL); err == nil {
+			u.Fragment = ""
+			if !strings.HasSuffix(u.Path, "/") {
+				u.Path += "/"
+			}
+			cfg.Plugins = &Plugins{URL: u.String()}
+		}
 	}
 
 	loadConfigFiles(cfg)
@@ -31,20 +37,44 @@ func Load() *Config {
 }
 
 func loadConfigFiles(cfg *Config) {
+	loadLinks(cfg)
 	loadYAML("tools.yaml", &cfg.Tools)
 	loadYAML("models.yaml", &cfg.Models)
 	loadYAML("drives.yaml", &cfg.Drives)
 	loadYAML("backgrounds.yaml", &cfg.Backgrounds)
 
 	loadYAMLPtr("chat.yaml", &cfg.Chat)
-	loadYAMLPtr("notebook.yaml", &cfg.Notebook)
 	loadYAMLPtr("translator.yaml", &cfg.Translator)
 	loadYAMLPtr("vision.yaml", &cfg.Vision)
 	loadYAMLPtr("text.yaml", &cfg.Text)
 	loadYAMLPtr("extractor.yaml", &cfg.Extractor)
-	loadYAMLPtr("internet.yaml", &cfg.Internet)
 	loadYAMLPtr("renderer.yaml", &cfg.Renderer)
 	loadYAMLPtr("repository.yaml", &cfg.Repository)
+	loadYAMLPtr("artifacts.yaml", &cfg.Artifacts)
+}
+
+// loadLinks reads the ordered account-menu links from links.yaml. The old
+// support/cost mapping remains supported for existing deployments.
+func loadLinks(cfg *Config) {
+	data, err := os.ReadFile("links.yaml")
+	if err != nil {
+		return
+	}
+
+	var links []Link
+	if err := yaml.Unmarshal(data, &links); err == nil {
+		cfg.Links = links
+		return
+	}
+
+	var legacy struct {
+		Support *Link `yaml:"support"`
+		Cost    *Link `yaml:"cost"`
+	}
+	if err := yaml.Unmarshal(data, &legacy); err == nil {
+		cfg.Support = legacy.Support
+		cfg.Cost = legacy.Cost
+	}
 }
 
 func applyEnvOverrides(cfg *Config) {
@@ -63,15 +93,6 @@ func applyEnvOverrides(cfg *Config) {
 
 	withFeature("VISION_ENABLED", &cfg.Vision, nil)
 
-	withFeature("INTERNET_ENABLED", &cfg.Internet, func(i *Internet) {
-		envOverride("INTERNET_SCRAPER", &i.Scraper)
-		envOverride("INTERNET_SEARCHER", &i.Searcher)
-		envOverride("INTERNET_RESEARCHER", &i.Researcher)
-		if envBool("INTERNET_ELICITATION") {
-			i.Elicitation = true
-		}
-	})
-
 	withFeature("RENDERER_ENABLED", &cfg.Renderer, func(r *Renderer) {
 		envOverride("RENDERER_MODEL", &r.Model)
 		envOverride("RENDERER_DISCLAIMER", &r.Disclaimer)
@@ -88,11 +109,6 @@ func applyEnvOverrides(cfg *Config) {
 	})
 
 	withFeature("MEMORY_ENABLED", &cfg.Memory, nil)
-
-	withFeature("NOTEBOOK_ENABLED", &cfg.Notebook, func(n *Notebook) {
-		envOverride("NOTEBOOK_MODEL", &n.Model)
-		envOverride("NOTEBOOK_RENDERER", &n.Renderer)
-	})
 
 	withFeature("EXTRACTOR_ENABLED", &cfg.Extractor, func(e *Extractor) {
 		envOverride("EXTRACTOR_MODEL", &e.Model)
@@ -122,6 +138,27 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Chat.Optimizer = v
 	}
 
+	if v := os.Getenv("CHAT_MODEL"); v != "" {
+		cfg.Chat = ensurePtr(cfg.Chat)
+		cfg.Chat.Model = v
+	}
+
+	if v := os.Getenv("CHAT_EFFORT"); v != "" {
+		cfg.Chat = ensurePtr(cfg.Chat)
+		cfg.Chat.Effort = v
+	}
+
+	if envBool("CHAT_COMPACTION_ENABLED") {
+		cfg.Chat = ensurePtr(cfg.Chat)
+		cfg.Chat.Compaction = ensurePtr(cfg.Chat.Compaction)
+	}
+
+	if v := envPositiveInt("CHAT_COMPACTION_THRESHOLD", nil); v != nil {
+		cfg.Chat = ensurePtr(cfg.Chat)
+		cfg.Chat.Compaction = ensurePtr(cfg.Chat.Compaction)
+		cfg.Chat.Compaction.Threshold = *v
+	}
+
 	withFeature("STORE_ENABLED", &cfg.Store, func(s *Store) {
 		envOverride("STORE_TYPE", &s.Type)
 		envOverride("STORE_PATH", &s.Path)
@@ -134,6 +171,10 @@ func applyEnvOverrides(cfg *Config) {
 	})
 
 	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)
+
+	if cfg.Telemetry != nil {
+		envOverride("TELEMETRY_NAME", &cfg.Telemetry.Name)
+	}
 }
 
 // PlatformToken returns the API token from environment variables.

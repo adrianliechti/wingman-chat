@@ -15,6 +15,10 @@ const host = createWorkerHost({
   // No heavy runtime to bootstrap (unlike Pyodide) — a short startup budget is
   // plenty.
   startupStallMs: 30_000,
+  // A fresh worker is a cheap, reliable isolation boundary. It also clears
+  // nested mutations (for example Object.prototype) that cannot be safely
+  // undone by restoring only global property descriptors.
+  reuseWorker: false,
 });
 
 export function executeJavaScript(

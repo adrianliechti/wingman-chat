@@ -1,304 +1,68 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { getConfig } from "@/shared/config";
-import { readLocalMirror, stashPendingTarget } from "@/shared/lib/chatSync";
 import * as storeSession from "@/shared/lib/storeSession";
-import type { StoredChat } from "@/shared/lib/opfs";
-import * as opfs from "@/shared/lib/opfs";
-import type { Chat } from "@/shared/types/chat";
+import { reportPersistenceError, usePersistenceQueue } from "@/shared/hooks/usePersistenceQueue";
+import { notify } from "@/shared/lib/notify";
+import { ChatStore } from "../lib/chatStore";
+import { syncedChatStorage } from "../lib/syncedChatStorage";
 
-const COLLECTION = "chats";
-
-// OPFS-only path (used when the server store is not enabled in config).
-// Each chat is stored as: /chats/{id}/chat.json with blobs in /chats/{id}/blobs/
-
-async function storeChatLocal(chat: Chat): Promise<void> {
-  const stored = await opfs.extractChatBlobs(chat);
-  await opfs.writeJson(`${COLLECTION}/${chat.id}/chat.json`, stored);
-  await opfs.upsertIndexEntry(COLLECTION, {
-    id: chat.id,
-    title: chat.title,
-    customTitle: chat.customTitle,
-    customIndex: chat.customIndex,
-    updated: stored.updated || new Date().toISOString(),
-  });
-}
-
-async function loadChatLocal(id: string): Promise<Chat | undefined> {
-  let stored = await opfs.readJson<StoredChat>(`${COLLECTION}/${id}/chat.json`);
-  if (!stored) {
-    stored = await opfs.readJson<StoredChat>(`${COLLECTION}/${id}.json`);
-    if (stored) console.log(`Migrating chat ${id} to folder structure`);
-  }
-  if (!stored) return undefined;
-  return opfs.rehydrateChatBlobs(stored);
-}
-
-async function removeChatLocal(id: string): Promise<void> {
-  await opfs.deleteDirectory(`${COLLECTION}/${id}`);
-  await opfs.deleteFile(`${COLLECTION}/${id}.json`);
-  await opfs.removeIndexEntry(COLLECTION, id);
-}
-
-async function loadChatIndex(): Promise<opfs.IndexEntry[]> {
-  return opfs.readIndex(COLLECTION);
-}
-
-async function loadAllLocal(): Promise<Chat[]> {
-  const index = await loadChatIndex();
-  const config = getConfig();
-  const retentionDays = config.chat?.retentionDays;
-  if (retentionDays && retentionDays > 0) {
-    const expired = getExpiredChatIds(index, retentionDays);
-    if (expired.length > 0) {
-      console.log(`Chat retention: deleting ${expired.length} chat(s) older than ${retentionDays} days`);
-      for (const id of expired) await removeChatLocal(id);
-    }
-  }
-  const updatedIndex = await loadChatIndex();
-  const loaded: Chat[] = [];
-  for (const entry of updatedIndex) {
-    const chat = await loadChatLocal(entry.id);
-    if (chat) loaded.push(chat);
-  }
-  return loaded;
-}
-
-function getExpiredChatIds(entries: opfs.IndexEntry[], retentionDays: number): string[] {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - retentionDays);
-  const out: string[] = [];
-  for (const entry of entries) {
-    if (!entry.updated) continue;
-    if (new Date(entry.updated) < cutoff) out.push(entry.id);
-  }
-  return out;
-}
-
-// Server-synced path -----------------------------------------------------
-
-async function storeChatRemote(chat: Chat): Promise<void> {
-  // Never let a save wait on (or die with) the session: while it is
-  // locked or errored, persist the edit locally as a pending target —
-  // the next ready session hydrates and flushes it.
-  const current = storeSession.getSession();
-  if (current.status === "locked" || current.status === "error") {
-    return stashPendingTarget(chat);
-  }
-  try {
-    const session = await storeSession.whenReady();
-    await session.sync.saveChat(chat);
-  } catch {
-    await stashPendingTarget(chat);
-  }
-}
-
-async function removeChatRemote(id: string): Promise<void> {
-  const session = await storeSession.whenReady();
-  await session.sync.deleteChat(id);
-}
-
-async function loadAllRemote(): Promise<Chat[]> {
-  const session = await storeSession.whenReady();
-  return session.sync.pull();
-}
-
-// Dispatch ---------------------------------------------------------------
-
-function isServerMode(): boolean {
-  return storeSession.isEnabled();
-}
-
-async function storeChat(chat: Chat): Promise<void> {
-  return isServerMode() ? storeChatRemote(chat) : storeChatLocal(chat);
-}
-
-async function removeChat(id: string): Promise<void> {
-  return isServerMode() ? removeChatRemote(id) : removeChatLocal(id);
-}
-
-async function loadAll(): Promise<Chat[]> {
-  return isServerMode() ? loadAllRemote() : loadAllLocal();
-}
-
-export function useChats() {
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  // Track which chats have been modified and need saving
-  const pendingSaves = useRef<Set<string>>(new Set());
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Keep a ref to the current chats for use in async callbacks
-  const chatsRef = useRef<Chat[]>(chats);
+/** `selectedId` subscribes to that conversation's record, not just the index. */
+export function useChats(selectedId: string | null = null) {
+  const queue = usePersistenceQueue();
+  const [store] = useState(() => new ChatStore(queue, getConfig().store ? syncedChatStorage : undefined));
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const getSelected = () => (selectedId ? (store.getChat(selectedId) ?? null) : null);
+  const selectedChat = useSyncExternalStore(store.subscribe, getSelected, getSelected);
   useEffect(() => {
-    chatsRef.current = chats;
-  }, [chats]);
-
-  // Load all chats on mount (needed for sidebar display)
+    void store.initialize().catch((error) => notify.error("Couldn't load saved chats", error));
+  }, [store]);
   useEffect(() => {
+    if (!getConfig().store) return;
     let cancelled = false;
-
-    async function load() {
-      try {
-        const loadedChats = await loadAll();
-        loadedChats.sort((a, b) => {
-          const aTime = a.updated?.getTime() || 0;
-          const bTime = b.updated?.getTime() || 0;
-          return bTime - aTime;
-        });
-        if (!cancelled) setChats(loadedChats);
-      } catch (error) {
-        console.error("Error loading chats:", error);
-      } finally {
-        if (!cancelled) setIsLoaded(true);
-      }
-    }
-
-    // The local mirror is plaintext — only the server copies are PIN
-    // protected — so a locked (or errored) session can still show it.
-    async function loadMirror() {
-      try {
-        const mirror = await readLocalMirror();
-        mirror.sort((a, b) => (b.updated?.getTime() || 0) - (a.updated?.getTime() || 0));
-        if (!cancelled) setChats(mirror);
-      } catch (error) {
-        console.error("Error loading local mirror:", error);
-      } finally {
-        if (!cancelled) setIsLoaded(true);
-      }
-    }
-
-    void storeSession.initSession();
-    if (!isServerMode()) void load();
-
-    // Server mode is session-driven: mirror while locked, pull when ready
-    // (also fires after a PIN unlock), and adopt the fresh list whenever a
-    // pull applies remote changes (auto sync, manual sync, 409 recovery).
-    // Unlock replaces the ChatSync instance, so re-subscribe on every "ready".
-    let unsubRemote: (() => void) | undefined;
-    const unsub = storeSession.subscribeSession((s) => {
-      if (s.status === "locked" || s.status === "error") {
-        void loadMirror();
-        return;
-      }
-      if (s.status !== "ready") return;
-      void load();
-      unsubRemote?.();
-      unsubRemote = s.sync.subscribeRemoteChanges((remoteChats) => {
-        if (cancelled) return;
-        if (pendingSaves.current.size > 0) return; // mid-edit/stream — the next pull delivers it
-        const sorted = [...remoteChats].sort((a, b) => (b.updated?.getTime() || 0) - (a.updated?.getTime() || 0));
-        setChats(sorted);
-      });
+    let unsubscribeRemote: (() => void) | undefined;
+    const unsubscribe = storeSession.subscribeSession((session) => {
+      unsubscribeRemote?.();
+      unsubscribeRemote = undefined;
+      if (session.status !== "ready") return;
+      unsubscribeRemote = session.sync.subscribeRemoteChanges(store.applyRemoteChats);
+      void (async () => {
+        await store.initialize();
+        const chats = await session.sync.pull();
+        if (!cancelled) store.applyRemoteChats(chats);
+      })().catch((error) => notify.error("Couldn't sync saved chats", error));
     });
-
+    void storeSession.initSession();
     return () => {
       cancelled = true;
-      unsub();
-      unsubRemote?.();
+      unsubscribe();
+      unsubscribeRemote?.();
     };
-  }, []);
-
-  // Debounced save function
-  const scheduleSave = useCallback((chatId: string) => {
-    pendingSaves.current.add(chatId);
-
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
-    saveTimeoutRef.current = setTimeout(async () => {
-      const idsToSave = Array.from(pendingSaves.current);
-      pendingSaves.current.clear();
-
-      for (const id of idsToSave) {
-        const chat = chatsRef.current.find((c) => c.id === id);
-        if (chat) {
-          try {
-            await storeChat(chat);
-          } catch (error) {
-            console.error(`Error saving chat ${id}:`, error);
-          }
-        }
+  }, [store]);
+  const createChat = useCallback(
+    async (id?: string) => {
+      try {
+        return await store.createChat(id);
+      } catch (error) {
+        reportPersistenceError(error);
+        throw error;
       }
-    }, 100);
-  }, []);
-
-  const createChat = useCallback(async () => {
-    const chat: Chat = {
-      id: crypto.randomUUID(),
-      created: new Date(),
-      updated: new Date(),
-      model: null,
-      messages: [],
-    };
-
-    setChats((prev) => [chat, ...prev]);
-
-    try {
-      await storeChat(chat);
-    } catch (error) {
-      console.error("Error saving new chat:", error);
-    }
-
-    return chat;
-  }, []);
-
-  const updateChat = useCallback(
-    (chatId: string, updater: (chat: Chat) => Partial<Chat>, options?: { preserveDates?: boolean }): void => {
-      setChats((prev) => {
-        const updated = prev.map((chat) => {
-          if (chat.id === chatId) {
-            const updates = updater(chat);
-            if (options?.preserveDates) {
-              return { ...chat, ...updates };
-            }
-            return { ...chat, ...updates, updated: new Date() };
-          }
-          return chat;
-        });
-
-        const updatedChat = updated.find((c) => c.id === chatId);
-        if (updatedChat) {
-          setTimeout(() => scheduleSave(chatId), 0);
-        }
-
-        return updated;
-      });
     },
-    [scheduleSave],
+    [store],
   );
-
-  const deleteChat = useCallback((chatId: string) => {
-    setChats((prev) => prev.filter((chat) => chat.id !== chatId));
-
-    removeChat(chatId).catch((error) => {
-      console.error(`Error deleting chat ${chatId}:`, error);
-    });
-  }, []);
-
-  // Cleanup on unmount - flush pending saves
-  useEffect(() => {
-    const pending = pendingSaves;
-    const chatsReference = chatsRef;
-    const timeout = saveTimeoutRef;
-
-    return () => {
-      if (timeout.current) {
-        clearTimeout(timeout.current);
-      }
-
-      const idsToSave = Array.from(pending.current);
-      pending.current.clear();
-
-      for (const id of idsToSave) {
-        const chat = chatsReference.current.find((c) => c.id === id);
-        if (chat) {
-          storeChat(chat).catch(console.warn);
-        }
-      }
-    };
-  }, []);
-
-  return { chats, isLoaded, createChat, updateChat, deleteChat };
+  const deleteChat = useCallback(
+    (id: string) => {
+      void store.deleteChat(id).catch(reportPersistenceError);
+    },
+    [store],
+  );
+  return {
+    ...state,
+    selectedChat,
+    createChat,
+    deleteChat,
+    updateChat: store.updateChat,
+    getChat: store.getChat,
+    loadChat: store.loadChat,
+    searchChats: store.searchChats,
+  };
 }

@@ -1,0 +1,1205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "catalogId": "urn:wingman:inline-ui:catalog:1",
+  "components": {
+    "Grid": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "columns": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "gap": { "type": "string", "enum": ["none", "sm", "md", "lg"] },
+        "children": { "$ref": "#/$defs/ChildList" },
+        "component": { "const": "Grid" }
+      },
+      "required": ["id", "children", "component"]
+    },
+    "Collapsible": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "title": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "description": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "defaultOpen": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "children": { "$ref": "#/$defs/ChildList" },
+        "component": { "const": "Collapsible" }
+      },
+      "required": ["id", "title", "children", "component"]
+    },
+    "Heading": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "text": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "level": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "component": { "const": "Heading" }
+      },
+      "required": ["id", "text", "component"]
+    },
+    "Metric": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "value": {
+          "$ref": "#/$defs/DynamicValue",
+          "description": "A value that can be a literal, a path, or a function call returning any type."
+        },
+        "format": { "type": "string", "enum": ["number", "integer", "currency", "percent", "compact", "text"] },
+        "currency": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "digits": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "unit": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "delta": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "deltaLabel": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "description": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "component": { "const": "Metric" }
+      },
+      "required": ["id", "label", "value", "component"]
+    },
+    "Callout": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "text": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "title": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "tone": { "type": "string", "enum": ["info", "success", "warning", "error"] },
+        "component": { "const": "Callout" }
+      },
+      "required": ["id", "text", "component"]
+    },
+    "Badge": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "text": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "tone": { "type": "string", "enum": ["neutral", "info", "success", "warning", "error"] },
+        "component": { "const": "Badge" }
+      },
+      "required": ["id", "text", "component"]
+    },
+    "Code": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "text": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "language": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "component": { "const": "Code" }
+      },
+      "required": ["id", "text", "component"]
+    },
+    "Progress": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "value": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "max": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "format": { "type": "string", "enum": ["number", "integer", "currency", "percent", "compact", "text"] },
+        "component": { "const": "Progress" }
+      },
+      "required": ["id", "value", "component"]
+    },
+    "Svg": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "markup": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "height": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "component": { "const": "Svg" }
+      },
+      "required": ["id", "markup", "component"]
+    },
+    "Link": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "text": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "href": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "description": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "kind": { "type": "string", "enum": ["link", "chip"] },
+        "component": { "const": "Link" }
+      },
+      "required": ["id", "text", "href", "component"]
+    },
+    "Html": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "markup": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "height": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "title": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "component": { "const": "Html" }
+      },
+      "required": ["id", "markup", "component"]
+    },
+    "Timeline": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "items": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "type": "string" },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+                      "time": {
+                        "$ref": "#/$defs/DynamicValue",
+                        "description": "A value that can be a literal, a path, or a function call returning any type."
+                      },
+                      "description": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" }
+                    },
+                    "required": ["label"],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "maxItems": 200
+            },
+            { "$ref": "#/$defs/DataBinding" },
+            {
+              "$ref": "#/$defs/FunctionCall",
+              "description": "Invokes a named function, combining common function properties with the catalog function definition."
+            }
+          ]
+        },
+        "active": {
+          "oneOf": [
+            { "type": ["string", "number"] },
+            { "$ref": "#/$defs/DataBinding" },
+            {
+              "$ref": "#/$defs/FunctionCall",
+              "description": "Invokes a named function, combining common function properties with the catalog function definition."
+            }
+          ]
+        },
+        "component": { "const": "Timeline" }
+      },
+      "required": ["id", "items", "component"]
+    },
+    "KeyValue": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "items": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+                  "value": {
+                    "$ref": "#/$defs/DynamicValue",
+                    "description": "A value that can be a literal, a path, or a function call returning any type."
+                  }
+                },
+                "required": ["label", "value"],
+                "additionalProperties": false
+              },
+              "maxItems": 100
+            },
+            { "$ref": "#/$defs/DataBinding" },
+            {
+              "$ref": "#/$defs/FunctionCall",
+              "description": "Invokes a named function, combining common function properties with the catalog function definition."
+            }
+          ]
+        },
+        "columns": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "component": { "const": "KeyValue" }
+      },
+      "required": ["id", "items", "component"]
+    },
+    "TextList": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "items": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+              "maxItems": 500
+            },
+            { "$ref": "#/$defs/DataBinding" },
+            {
+              "$ref": "#/$defs/FunctionCall",
+              "description": "Invokes a named function, combining common function properties with the catalog function definition."
+            }
+          ]
+        },
+        "ordered": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "component": { "const": "TextList" }
+      },
+      "required": ["id", "items", "component"]
+    },
+    "Table": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "rows": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/DynamicValue",
+                  "description": "A value that can be a literal, a path, or a function call returning any type."
+                }
+              },
+              "maxItems": 10000
+            },
+            { "$ref": "#/$defs/DataBinding" },
+            {
+              "$ref": "#/$defs/FunctionCall",
+              "description": "Invokes a named function, combining common function properties with the catalog function definition."
+            }
+          ]
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" },
+              "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+              "align": { "type": "string", "enum": ["start", "center", "end"] },
+              "format": { "type": "string", "enum": ["number", "integer", "currency", "percent", "compact", "text"] },
+              "currency": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+              "digits": {
+                "$ref": "#/$defs/DynamicNumber",
+                "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+              }
+            },
+            "required": ["key"],
+            "additionalProperties": false
+          }
+        },
+        "sortable": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "pageSize": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "emptyText": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "caption": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "component": { "const": "Table" }
+      },
+      "required": ["id", "rows", "component"]
+    },
+    "Chart": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "kind": { "type": "string", "enum": ["line", "area", "bar", "pie", "donut", "scatter"] },
+        "data": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/DynamicValue",
+                  "description": "A value that can be a literal, a path, or a function call returning any type."
+                }
+              },
+              "maxItems": 10000
+            },
+            { "$ref": "#/$defs/DataBinding" },
+            {
+              "$ref": "#/$defs/FunctionCall",
+              "description": "Invokes a named function, combining common function properties with the catalog function definition."
+            }
+          ]
+        },
+        "x": { "type": "string" },
+        "y": { "type": "string" },
+        "series": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "properties": {
+                  "key": { "type": "string" },
+                  "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" }
+                },
+                "required": ["key"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "title": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "stacked": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "horizontal": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "height": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "format": { "type": "string", "enum": ["number", "integer", "currency", "percent", "compact", "text"] },
+        "currency": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "xLabel": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "yLabel": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "caption": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "component": { "const": "Chart" }
+      },
+      "required": ["id", "kind", "data", "component"]
+    },
+    "Select": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "description": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckRule",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object)."
+          },
+          "maxItems": 20
+        },
+        "value": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "value": { "type": "string" },
+              "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" }
+            },
+            "required": ["value", "label"],
+            "additionalProperties": false
+          },
+          "maxItems": 500
+        },
+        "component": { "const": "Select" }
+      },
+      "required": ["id", "value", "options", "component"]
+    },
+    "MultiSelect": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "description": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckRule",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object)."
+          },
+          "maxItems": 20
+        },
+        "value": {
+          "$ref": "#/$defs/DynamicStringList",
+          "description": "Represents a value that can be either a literal array of strings, a path to a string array in the data model, or a function call returning a string array."
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "value": { "type": "string" },
+              "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" }
+            },
+            "required": ["value", "label"],
+            "additionalProperties": false
+          },
+          "maxItems": 500
+        },
+        "component": { "const": "MultiSelect" }
+      },
+      "required": ["id", "value", "options", "component"]
+    },
+    "Segmented": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "description": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckRule",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object)."
+          },
+          "maxItems": 20
+        },
+        "value": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "value": { "type": "string" },
+              "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" }
+            },
+            "required": ["value", "label"],
+            "additionalProperties": false
+          },
+          "maxItems": 500
+        },
+        "component": { "const": "Segmented" }
+      },
+      "required": ["id", "value", "options", "component"]
+    },
+    "Radio": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "description": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckRule",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object)."
+          },
+          "maxItems": 20
+        },
+        "value": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "value": { "type": "string" },
+              "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" }
+            },
+            "required": ["value", "label"],
+            "additionalProperties": false
+          },
+          "maxItems": 500
+        },
+        "component": { "const": "Radio" }
+      },
+      "required": ["id", "value", "options", "component"]
+    },
+    "Toggle": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "description": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckRule",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object)."
+          },
+          "maxItems": 20
+        },
+        "value": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "component": { "const": "Toggle" }
+      },
+      "required": ["id", "value", "component"]
+    },
+    "Stepper": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "description": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckRule",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object)."
+          },
+          "maxItems": 20
+        },
+        "value": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "min": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "max": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "step": {
+          "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number."
+        },
+        "unit": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "component": { "const": "Stepper" }
+      },
+      "required": ["id", "value", "component"]
+    },
+    "Checklist": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "description": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckRule",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object)."
+          },
+          "maxItems": 20
+        },
+        "value": {
+          "$ref": "#/$defs/DynamicStringList",
+          "description": "Represents a value that can be either a literal array of strings, a path to a string array in the data model, or a function call returning a string array."
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "properties": {
+                  "label": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+                  "time": {
+                    "$ref": "#/$defs/DynamicValue",
+                    "description": "A value that can be a literal, a path, or a function call returning any type."
+                  },
+                  "description": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" }
+                },
+                "required": ["label"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "component": { "const": "Checklist" }
+      },
+      "required": ["id", "value", "items", "component"]
+    },
+    "Form": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+        },
+        "visible": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "disabled": {
+          "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean)."
+        },
+        "weight": { "type": "number" },
+        "children": { "$ref": "#/$defs/ChildList" },
+        "action": {
+          "$ref": "#/$defs/Action",
+          "description": "Defines an interaction handler that can either trigger an agent-side event or execute a local renderer-side function."
+        },
+        "submit": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckRule",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object)."
+          },
+          "maxItems": 20
+        },
+        "component": { "const": "Form" }
+      },
+      "required": ["id", "children", "action", "submit", "component"]
+    }
+  },
+  "functions": {
+    "evaluate": {
+      "type": "object",
+      "description": "Evaluate a restricted Wingman arithmetic/collection expression using explicitly bound variables. No JavaScript, globals, or side effects.",
+      "returnType": "any",
+      "allowedCallers": "rendererOrAgent",
+      "properties": {
+        "@call": { "const": "evaluate" },
+        "args": {
+          "type": "object",
+          "properties": {
+            "expression": { "type": "string", "maxLength": 4000 },
+            "values": {
+              "$ref": "#/$defs/DynamicValue",
+              "description": "A value that can be a literal, a path, or a function call returning any type."
+            }
+          },
+          "required": ["expression", "values"],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": ["@call", "args"]
+    },
+    "setValue": {
+      "type": "object",
+      "description": "Set a JSON Pointer to a value after a user action. Use '/' with an object to reset the data model.",
+      "returnType": "void",
+      "allowedCallers": "rendererOnly",
+      "requiresUserActivation": true,
+      "properties": {
+        "@call": { "const": "setValue" },
+        "args": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" },
+            "value": {
+              "$ref": "#/$defs/DynamicValue",
+              "description": "A value that can be a literal, a path, or a function call returning any type."
+            }
+          },
+          "required": ["path", "value"],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": ["@call", "args"]
+    },
+    "copyText": {
+      "type": "object",
+      "description": "Copy text to the clipboard after a user action.",
+      "returnType": "void",
+      "allowedCallers": "rendererOnly",
+      "requiresUserActivation": true,
+      "properties": {
+        "@call": { "const": "copyText" },
+        "args": {
+          "type": "object",
+          "properties": { "text": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" } },
+          "required": ["text"],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": ["@call", "args"]
+    }
+  },
+  "$defs": {
+    "anyComponent": {
+      "oneOf": [
+        { "$ref": "#/components/Grid" },
+        { "$ref": "#/components/Collapsible" },
+        { "$ref": "#/components/Heading" },
+        { "$ref": "#/components/Metric" },
+        { "$ref": "#/components/Callout" },
+        { "$ref": "#/components/Badge" },
+        { "$ref": "#/components/Code" },
+        { "$ref": "#/components/Progress" },
+        { "$ref": "#/components/Svg" },
+        { "$ref": "#/components/Link" },
+        { "$ref": "#/components/Html" },
+        { "$ref": "#/components/Timeline" },
+        { "$ref": "#/components/KeyValue" },
+        { "$ref": "#/components/TextList" },
+        { "$ref": "#/components/Table" },
+        { "$ref": "#/components/Chart" },
+        { "$ref": "#/components/Select" },
+        { "$ref": "#/components/MultiSelect" },
+        { "$ref": "#/components/Segmented" },
+        { "$ref": "#/components/Radio" },
+        { "$ref": "#/components/Toggle" },
+        { "$ref": "#/components/Stepper" },
+        { "$ref": "#/components/Checklist" },
+        { "$ref": "#/components/Form" }
+      ],
+      "discriminator": { "propertyName": "component" }
+    },
+    "anyFunction": {
+      "oneOf": [
+        { "$ref": "#/functions/evaluate" },
+        { "$ref": "#/functions/setValue" },
+        { "$ref": "#/functions/copyText" }
+      ]
+    },
+    "ComponentId": {
+      "type": "string",
+      "description": "The unique identifier for a component, used for both definitions and references within the same surface."
+    },
+    "DynamicBoolean": {
+      "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
+      "oneOf": [{ "type": "boolean" }, { "$ref": "#/$defs/DataBinding" }, { "$ref": "#/$defs/FunctionCall" }]
+    },
+    "DynamicNumber": {
+      "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
+      "oneOf": [{ "type": "number" }, { "$ref": "#/$defs/DataBinding" }, { "$ref": "#/$defs/FunctionCall" }]
+    },
+    "ChildList": {
+      "oneOf": [
+        {
+          "type": "array",
+          "description": "A static list of child component IDs.",
+          "items": { "$ref": "#/$defs/ComponentId" }
+        },
+        {
+          "type": "object",
+          "description": "A template for generating a dynamic list of children from a data model list. The `componentId` is the component to use as a template.",
+          "properties": {
+            "componentId": { "$ref": "#/$defs/ComponentId" },
+            "path": {
+              "type": "string",
+              "description": "The path to the list of component property objects in the data model."
+            }
+          },
+          "required": ["componentId", "path"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "DynamicString": {
+      "description": "Represents a string",
+      "oneOf": [{ "type": "string" }, { "$ref": "#/$defs/DataBinding" }, { "$ref": "#/$defs/FunctionCall" }]
+    },
+    "DynamicValue": {
+      "description": "A value that can be a literal, a path, or a function call returning any type.",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "type": "array" },
+        {
+          "type": "object",
+          "propertyNames": { "not": { "pattern": "^@([^@]|$)" } },
+          "not": { "anyOf": [{ "required": ["@path"] }, { "required": ["@call"] }] }
+        },
+        { "$ref": "#/$defs/DataBinding" },
+        { "$ref": "#/$defs/FunctionCall" }
+      ]
+    },
+    "DataBinding": {
+      "type": "object",
+      "properties": {
+        "@path": { "type": "string", "description": "A JSON Pointer path to a value in the data model." }
+      },
+      "required": ["@path"],
+      "additionalProperties": false
+    },
+    "FunctionCall": {
+      "type": "object",
+      "description": "Invokes a named function, combining common function properties with the catalog function definition.",
+      "allOf": [
+        { "$ref": "#/$defs/FunctionCommon" },
+        { "oneOf": [{ "$ref": "#/$defs/anyFunction" }, { "$ref": "#/$defs/IndexSystemFunction" }] }
+      ],
+      "unevaluatedProperties": false
+    },
+    "CheckRule": {
+      "type": "object",
+      "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
+      "properties": {
+        "condition": {
+          "description": "Path or function call evaluating to a structured validation result object or a boolean.",
+          "oneOf": [{ "$ref": "#/$defs/DataBinding" }, { "$ref": "#/$defs/FunctionCall" }]
+        },
+        "message": { "type": "string", "description": "Optional fallback error message." }
+      },
+      "required": ["condition"],
+      "additionalProperties": false
+    },
+    "DynamicStringList": {
+      "description": "Represents a value that can be either a literal array of strings, a path to a string array in the data model, or a function call returning a string array.",
+      "oneOf": [
+        { "type": "array", "items": { "type": "string" } },
+        { "$ref": "#/$defs/DataBinding" },
+        { "$ref": "#/$defs/FunctionCall" }
+      ]
+    },
+    "Action": {
+      "description": "Defines an interaction handler that can either trigger an agent-side event or execute a local renderer-side function.",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "Triggers an agent-side event.",
+          "properties": {
+            "event": {
+              "type": "object",
+              "description": "The event to dispatch to the agent.",
+              "properties": {
+                "name": { "type": "string", "description": "The name of the action to be dispatched to the agent." },
+                "userMessage": {
+                  "$ref": "#/$defs/DynamicString",
+                  "description": "An optional human-readable message describing the action performed by the user, resolved by the renderer and included in the outbound action message."
+                },
+                "context": {
+                  "type": "object",
+                  "description": "A JSON object containing the key-value pairs for the action context. Values can be literals or paths. Use literal values unless the value must be dynamically bound to the data model. Do NOT use paths for static IDs.",
+                  "additionalProperties": { "$ref": "#/$defs/DynamicValue" }
+                }
+              },
+              "required": ["name"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["event"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Executes a renderer or agent-side function.",
+          "properties": { "functionCall": { "$ref": "#/$defs/FunctionCall" } },
+          "required": ["functionCall"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "FunctionCommon": {
+      "type": "object",
+      "description": "Baseline envelope properties common to all function calls. Function-specific argument schemas ('args') are defined individually by each function in the active catalog.",
+      "properties": {
+        "@call": { "type": "string", "description": "The name of the function to call." },
+        "catalogId": {
+          "type": "string",
+          "description": "The catalog ID for this function, overriding any surface-level default catalogId."
+        }
+      },
+      "required": ["@call"]
+    },
+    "IndexSystemFunction": {
+      "type": "object",
+      "description": "Returns the 0-based index of the current item when rendering a dynamic list from a template. This function MUST ONLY be available when evaluating template items within a list context.",
+      "properties": {
+        "@call": { "const": "@index" },
+        "args": {
+          "type": "object",
+          "properties": {
+            "offset": {
+              "$ref": "#/$defs/DynamicNumber",
+              "description": "Optional. An offset to add to the 0-based index (e.g., 1 for 1-based indexing). Defaults to 0.",
+              "default": 0
+            }
+          },
+          "unevaluatedProperties": false
+        }
+      },
+      "required": ["@call"],
+      "unevaluatedProperties": false
+    }
+  },
+  "$id": "urn:wingman:inline-ui:catalog:1",
+  "protocolVersion": "v1.0"
+}

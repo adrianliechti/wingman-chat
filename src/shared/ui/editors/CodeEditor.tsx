@@ -1,13 +1,16 @@
 import { memo, useEffect, useMemo, useState } from "react";
+import { highlightCode } from "@/shared/lib/highlight";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { useTheme } from "@/shell/hooks/useTheme";
 
 interface CodeEditorProps {
   content: string;
   language?: string;
+  /** Receives the element whose text selection the host watches. */
+  onSelectionRoot?: (element: HTMLElement | null) => void;
 }
 
-export const CodeEditor = memo(function CodeEditor({ content, language = "" }: CodeEditorProps) {
+export const CodeEditor = memo(function CodeEditor({ content, language = "", onSelectionRoot }: CodeEditorProps) {
   const [html, setHtml] = useState<string>("");
   const { isDark } = useTheme();
   const renderedHtml = useMemo(
@@ -19,22 +22,10 @@ export const CodeEditor = memo(function CodeEditor({ content, language = "" }: C
   useEffect(() => {
     if (!content) return;
 
+    const langId = language.toLowerCase() || "text";
     const highlight = async () => {
       try {
-        const langId = language.toLowerCase();
-
-        const { codeToHtml } = await import("shiki");
-
-        const highlighted = await codeToHtml(content, {
-          lang: langId || "text",
-          theme: isDark ? "one-dark-pro" : "one-light",
-          colorReplacements: {
-            "#fafafa": "transparent", // one-light background
-            "#282c34": "transparent", // one-dark-pro background
-          },
-        });
-
-        setHtml(highlighted);
+        setHtml(await highlightCode(content, langId, isDark));
       } catch (error) {
         console.error("Highlighting failed:", error);
         // Fallback to plain text
@@ -46,7 +37,7 @@ export const CodeEditor = memo(function CodeEditor({ content, language = "" }: C
   }, [content, language, isDark]);
 
   return (
-    <div className="h-full relative">
+    <div ref={onSelectionRoot} className="h-full relative">
       {html?.trim() ? (
         <div
           className="h-full overflow-auto"

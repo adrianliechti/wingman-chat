@@ -1,4 +1,6 @@
+import { useDebouncer } from "@tanstack/react-pacer";
 import { memo, useEffect, useMemo, useState } from "react";
+import { highlightCode } from "@/shared/lib/highlight";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { useTheme } from "@/shell/hooks/useTheme";
 import { CopyButton } from "./CopyButton";
@@ -6,9 +8,7 @@ import { RendererFrame } from "./renderers/RendererFrame";
 
 const HIGHLIGHT_DEBOUNCE_MS = 120;
 const MAX_HIGHLIGHT_CACHE_SIZE = 200;
-const MAX_BLOCK_HIGHLIGHT_CACHE_SIZE = 200;
 const highlightCache = new Map<string, string>();
-const blockHighlightCache = new Map<string, string>();
 
 function getCacheEntry(cache: Map<string, string>, key: string): string | undefined {
   const cached = cache.get(key);
@@ -53,128 +53,88 @@ interface CodeRendererProps {
   code: string;
   language: string;
   name?: string;
-  blockId?: string;
   isStreaming?: boolean;
   /** Strip the header bar and borders for inline contexts (e.g. tool details). */
   subtle?: boolean;
 }
 
-const CodeRenderer = memo(
-  ({ code, language, name, blockId, isStreaming = false, subtle = false }: CodeRendererProps) => {
-    const { isDark } = useTheme();
-    const normalizedLanguage = language.toLowerCase();
-    const cacheKey = `${isDark ? "dark" : "light"}:${normalizedLanguage}:${code}`;
-    const blockCacheKey = blockId ? `${isDark ? "dark" : "light"}:${blockId}` : null;
-    const [html, setHtml] = useState<string>(() => {
-      return highlightCache.get(cacheKey) ?? (blockCacheKey ? (blockHighlightCache.get(blockCacheKey) ?? "") : "");
-    });
+const CodeRenderer = memo(({ code, language, name, isStreaming = false, subtle = false }: CodeRendererProps) => {
+  const { isDark } = useTheme();
+  const normalizedLanguage = language.toLowerCase();
+  const cacheKey = `${isDark ? "dark" : "light"}:${normalizedLanguage}:${code}`;
+  const [highlighted, setHighlighted] = useState(() => ({ key: cacheKey, html: highlightCache.get(cacheKey) ?? "" }));
+  // While a block streams, wait for a pause before highlighting the growing source.
+  const scheduleHighlight = useDebouncer((run: () => void) => run(), { wait: isStreaming ? HIGHLIGHT_DEBOUNCE_MS : 0 });
 
-    useEffect(() => {
-      if (!blockCacheKey) {
-        return;
-      }
-
-      return () => {
-        blockHighlightCache.delete(blockCacheKey);
-      };
-    }, [blockCacheKey]);
-
-    useEffect(() => {
-      if (!code) {
-        setHtml("");
-        return;
-      }
-
-      let cancelled = false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const cached = getCacheEntry(highlightCache, cacheKey);
-
-      if (cached) {
-        setHtml(cached);
-        if (blockCacheKey) {
-          setCacheEntry(blockHighlightCache, blockCacheKey, cached, MAX_BLOCK_HIGHLIGHT_CACHE_SIZE);
-        }
-        return;
-      }
-
-      if (blockCacheKey) {
-        const previousBlockHtml = getCacheEntry(blockHighlightCache, blockCacheKey);
-        if (previousBlockHtml) {
-          setHtml(previousBlockHtml);
-        }
-      }
-
-      const highlight = async () => {
-        try {
-          const { codeToHtml } = await import("shiki");
-          const highlighted = await codeToHtml(code, {
-            lang: normalizedLanguage,
-            theme: isDark ? "one-dark-pro" : "one-light",
-            colorReplacements: {
-              "#fafafa": "transparent",
-              "#282c34": "transparent",
-            },
-          });
-
-          setCacheEntry(highlightCache, cacheKey, highlighted, MAX_HIGHLIGHT_CACHE_SIZE);
-          if (blockCacheKey) {
-            setCacheEntry(blockHighlightCache, blockCacheKey, highlighted, MAX_BLOCK_HIGHLIGHT_CACHE_SIZE);
-          }
-
-          if (!cancelled) {
-            setHtml(highlighted);
-          }
-        } catch (error) {
-          console.error("Failed to highlight code:", error);
-          if (!cancelled) {
-            setHtml("");
-          }
-        }
-      };
-
-      timer = setTimeout(highlight, isStreaming ? HIGHLIGHT_DEBOUNCE_MS : 0);
-
-      return () => {
-        cancelled = true;
-        if (timer) {
-          clearTimeout(timer);
-        }
-      };
-    }, [blockCacheKey, cacheKey, code, isDark, isStreaming, normalizedLanguage]);
-
-    const effectiveHtml = code ? html : "";
-    const renderedHtml = useMemo(
-      () => sanitizeHtmlToReact(effectiveHtml, { keyPrefix: blockCacheKey ?? cacheKey }),
-      [blockCacheKey, cacheKey, effectiveHtml],
-    );
-
-    // Tool details (subtle) show just the name (Result/Error); everywhere else
-    // keeps the language hint as the tag, with an optional name (e.g. a filename).
-    const renderCodeBlock = (content: React.ReactNode) => (
-      <RendererFrame
-        label={subtle ? (name ?? "") : language}
-        name={subtle ? undefined : name}
-        actions={<CopyButton text={code} label="Copy" />}
-      >
-        {content}
-      </RendererFrame>
-    );
-
-    if (!effectiveHtml) {
-      return renderCodeBlock(
-        <pre className="p-3 text-gray-800 dark:text-neutral-300 text-sm whitespace-pre overflow-x-auto">
-          <code>{code}</code>
-        </pre>,
-      );
+  useEffect(() => {
+    if (!code) {
+      return;
     }
 
+    let cancelled = false;
+    const cached = getCacheEntry(highlightCache, cacheKey);
+
+    if (cached) {
+      setHighlighted({ key: cacheKey, html: cached });
+      return;
+    }
+
+    const highlight = async () => {
+      try {
+        const highlighted = await highlightCode(code, normalizedLanguage, isDark);
+
+        if (!cancelled) {
+          // Retain completed blocks, not hundreds of growing stream prefixes.
+          if (!isStreaming) setCacheEntry(highlightCache, cacheKey, highlighted, MAX_HIGHLIGHT_CACHE_SIZE);
+          setHighlighted({ key: cacheKey, html: highlighted });
+        }
+      } catch (error) {
+        console.error("Failed to highlight code:", error);
+        if (!cancelled) {
+          setHighlighted({ key: cacheKey, html: "" });
+        }
+      }
+    };
+
+    scheduleHighlight.maybeExecute(() => void highlight());
+
+    return () => {
+      cancelled = true;
+      scheduleHighlight.cancel();
+    };
+  }, [cacheKey, code, isDark, isStreaming, normalizedLanguage, scheduleHighlight]);
+
+  // Never show an older snapshot while the new source waits for highlighting.
+  const effectiveHtml = code && highlighted.key === cacheKey ? highlighted.html : "";
+  const renderedHtml = useMemo(() => sanitizeHtmlToReact(effectiveHtml), [effectiveHtml]);
+
+  // Tool details (subtle) show just the name (Result/Error); everywhere else
+  // keeps the language hint as the tag, with an optional name (e.g. a filename).
+  const renderCodeBlock = (content: React.ReactNode) => (
+    <RendererFrame
+      label={subtle ? (name ?? "") : language}
+      name={subtle ? undefined : name}
+      actions={<CopyButton text={code} label="Copy" />}
+      compact={subtle}
+    >
+      {content}
+    </RendererFrame>
+  );
+
+  if (!effectiveHtml) {
     return renderCodeBlock(
-      <div className="overflow-x-auto" style={highlightedCodeStyle}>
-        {renderedHtml}
-      </div>,
+      <pre className="p-3 text-gray-800 dark:text-neutral-300 text-sm whitespace-pre overflow-x-auto">
+        <code>{code}</code>
+      </pre>,
     );
-  },
-);
+  }
+
+  return renderCodeBlock(
+    <div className="overflow-x-auto" style={highlightedCodeStyle}>
+      {renderedHtml}
+    </div>,
+  );
+});
 
 CodeRenderer.displayName = "CodeRenderer";
 

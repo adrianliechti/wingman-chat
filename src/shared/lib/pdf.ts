@@ -1,7 +1,8 @@
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
 // Use the bundled worker via URL import so Vite includes it in the build.
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import type { PDFPageProxy, TextContent, TextItem } from "pdfjs-dist/types/src/display/api";
+import { withAbort } from "./abortSignals";
+import type { PDFDocumentProxy, PDFPageProxy, TextContent, TextItem } from "pdfjs-dist/types/src/display/api";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -21,6 +22,55 @@ export const pdfAssetOptions = {
   standardFontDataUrl: `${pdfAssetBase}standard_fonts/`,
 } as const;
 
+/** The loading task owns pdf.js's worker, including when opening the document fails. */
+export async function withPdfDocument<T>(
+  data: ArrayBuffer | Uint8Array,
+  signal: AbortSignal,
+  use: (pdf: PDFDocumentProxy) => Promise<T>,
+): Promise<T> {
+  signal.throwIfAborted();
+  const loading = getDocument({ data, useSystemFonts: true, ...pdfAssetOptions });
+  let closing: Promise<void> | undefined;
+  const close = () => (closing ??= loading.destroy());
+  const abort = () => {
+    void close().catch(() => {});
+  };
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    const pdf = await withAbort(signal, () => loading.promise);
+    return await withAbort(signal, () => use(pdf));
+  } finally {
+    signal.removeEventListener("abort", abort);
+    await close();
+  }
+}
+
+/** Bound each canvas's backing store, even for unusually large page dimensions. */
+export async function renderPdfPage(
+  page: PDFPageProxy,
+  canvas: HTMLCanvasElement,
+  scale: number,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  let viewport = page.getViewport({ scale });
+  const pixels = Math.ceil(viewport.width) * Math.ceil(viewport.height);
+  if (!Number.isFinite(pixels) || pixels <= 0) throw new Error("Invalid PDF page dimensions.");
+  if (pixels > 8_000_000) viewport = page.getViewport({ scale: scale * Math.sqrt(8_000_000 / pixels) });
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("PDF rendering: 2D canvas context unavailable");
+  const rendering = page.render({ canvasContext: context, viewport, canvas });
+  const abort = () => rendering.cancel();
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    await withAbort(signal, () => rendering.promise);
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+}
+
 /**
  * Converts a PDF file to Markdown using pdf.js text extraction.
  *
@@ -30,26 +80,24 @@ export const pdfAssetOptions = {
  * - Line breaks within a paragraph are collapsed; blank gaps produce a new block.
  * - Bullet-like prefixes (•, -, *, numbered) are preserved.
  */
-export async function pdfToMarkdown(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const pdf = await getDocument({ data: buffer, useSystemFonts: true, ...pdfAssetOptions }).promise;
-
-  const pages: string[] = [];
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await readTextContent(page);
-    const items = content.items.filter((it): it is TextItem => "str" in it);
-
-    if (items.length === 0) continue;
-
-    const lines = groupIntoLines(items);
-    const medianFontSize = computeMedianFontSize(items);
-    const md = renderLines(lines, medianFontSize);
-    if (md) pages.push(md);
-  }
-
-  return pages.join("\n\n---\n\n");
+export async function pdfToMarkdown(file: File, signal = new AbortController().signal): Promise<string> {
+  const buffer = await withAbort(signal, () => file.arrayBuffer());
+  return withPdfDocument(buffer, signal, async (pdf) => {
+    const pages: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await withAbort(signal, () => pdf.getPage(i));
+      try {
+        const content = await readTextContent(page, signal);
+        const items = content.items.filter((it): it is TextItem => "str" in it);
+        if (items.length === 0) continue;
+        const md = renderLines(groupIntoLines(items), computeMedianFontSize(items));
+        if (md) pages.push(md);
+      } finally {
+        page.cleanup();
+      }
+    }
+    return pages.join("\n\n---\n\n");
+  });
 }
 
 // ============================================================================
@@ -58,20 +106,24 @@ export async function pdfToMarkdown(file: File): Promise<string> {
 // which pdfjs-dist v5 uses internally. Use the reader API instead.
 // ============================================================================
 
-async function readTextContent(page: PDFPageProxy): Promise<TextContent> {
+async function readTextContent(page: PDFPageProxy, signal: AbortSignal): Promise<TextContent> {
   const stream = page.streamTextContent();
   const reader = stream.getReader();
   const textContent: TextContent = { items: [], styles: Object.create(null), lang: null };
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    textContent.lang ??= value.lang;
-    Object.assign(textContent.styles, value.styles);
-    textContent.items.push(...value.items);
+  try {
+    for (;;) {
+      const { done, value } = await withAbort(signal, () => reader.read());
+      if (done) break;
+      textContent.lang ??= value.lang;
+      Object.assign(textContent.styles, value.styles);
+      textContent.items.push(...value.items);
+    }
+    return textContent;
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
-
-  return textContent;
 }
 
 // ============================================================================
@@ -217,6 +269,7 @@ export interface RasterizedPage {
 }
 
 export interface RasterizeOptions {
+  signal?: AbortSignal;
   /** 1-based page numbers to render; omitted or empty renders every page. */
   pages?: number[];
   /** Viewport scale; 1 ≈ 72 DPI. Defaults to 2 (≈144 DPI), clamped to 8. */
@@ -233,9 +286,8 @@ export async function rasterizePdf(bytes: Uint8Array, options?: RasterizeOptions
   // Clamp the upper bound: this renders on the main thread, and an oversized
   // canvas silently yields a blank image (or throws) past browser limits.
   const scale = Math.min(options?.scale && options.scale > 0 ? options.scale : 2, 8);
-  const loadingTask = getDocument({ data: bytes, useSystemFonts: true, ...pdfAssetOptions });
-  const pdf = await loadingTask.promise;
-  try {
+  const signal = options?.signal ?? new AbortController().signal;
+  return withPdfDocument(bytes, signal, async (pdf) => {
     const requested =
       options?.pages && options.pages.length > 0
         ? options.pages.filter((n) => Number.isInteger(n) && n >= 1 && n <= pdf.numPages)
@@ -250,21 +302,18 @@ export async function rasterizePdf(bytes: Uint8Array, options?: RasterizeOptions
 
     const pages: RasterizedPage[] = [];
     for (const n of wanted) {
-      const page = await pdf.getPage(n);
-      const viewport = page.getViewport({ scale });
+      const page = await withAbort(signal, () => pdf.getPage(n));
       const canvas = document.createElement("canvas");
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("rasterize_pdf: 2D canvas context unavailable");
-      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
-      pages.push({ page: n, data: await canvasToPng(canvas) });
-      page.cleanup();
+      try {
+        await renderPdfPage(page, canvas, scale, signal);
+        pages.push({ page: n, data: await withAbort(signal, () => canvasToPng(canvas)) });
+      } finally {
+        canvas.width = canvas.height = 0;
+        page.cleanup();
+      }
     }
     return pages;
-  } finally {
-    await loadingTask.destroy();
-  }
+  });
 }
 
 function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {

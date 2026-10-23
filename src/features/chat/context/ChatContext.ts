@@ -1,7 +1,8 @@
 import { createContext } from "react";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
-import type { Chat, Message, Model } from "@/shared/types/chat";
+import type { UIMessage } from "@tanstack/ai";
+import type { Chat, ChatEntry, Model } from "@/shared/types/chat";
 import type {
   ConsentResult,
   Elicitation,
@@ -9,6 +10,9 @@ import type {
   PendingConsent,
   PendingElicitation,
 } from "@/shared/types/elicitation";
+import type { ChatInterruptState, QueuedMessage } from "@tanstack/ai-client";
+
+export type RunStatus = "idle" | "compacting" | "thinking" | "responding" | "running_tool" | "waiting";
 
 export interface ChatContextType {
   // Models
@@ -18,13 +22,23 @@ export interface ChatContextType {
   /** Per-chat reasoning effort selection; null means the model/backend default. */
   effort: Model["effort"] | null;
   setEffort: (effort: Model["effort"] | null) => void;
+  /** Per-chat verbosity override; null means the model's configured default. */
+  verbosity: Model["verbosity"] | null;
+  setVerbosity: (verbosity: Model["verbosity"] | null) => void;
 
   // Chats
-  chats: Chat[];
+  chats: ChatEntry[];
   chatsLoaded: boolean;
+  chatId: string | null;
+  chatLoading: boolean;
+  chatError: string | null;
+  hasMessages: boolean;
+  loadChat: (id: string) => Promise<Chat>;
+  searchChats: (query: string, signal: AbortSignal) => Promise<Set<string>>;
   chat: Chat | null;
-  messages: Message[];
+  messages: UIMessage[];
   isResponding: boolean;
+  status: RunStatus;
   stopStreaming: () => void;
 
   // Chat actions
@@ -41,19 +55,29 @@ export interface ChatContextType {
    */
   ensureChat: () => Promise<{ chat: Chat; fs: FileSystemManager }>;
 
-  addMessage: (message: Message) => Promise<void>;
-  sendMessage: (message: Message, historyOverride?: Message[], artifactFiles?: ProcessedFile[]) => Promise<void>;
+  addMessage: (message: UIMessage, targetChatId?: string) => Promise<void>;
+  sendMessage: (
+    message: UIMessage,
+    historyOverride?: UIMessage[],
+    artifactFiles?: ProcessedFile[],
+    deletedPaths?: string[],
+  ) => Promise<void>;
   retryMessage: () => Promise<void>;
+  queuedSends: readonly QueuedMessage[];
+  interruptState: ChatInterruptState | null;
+  removeQueuedMessage: (id: string) => void;
   setVoiceToolCall: (toolName: string | null, callId?: string) => void;
 
   // Elicitation state
   pendingElicitation: PendingElicitation | null;
   resolveElicitation: (result: ElicitationResult) => void;
-  requestElicitation: (toolCallId: string, toolName: string, elicitation: Elicitation) => Promise<ElicitationResult>;
-
-  /** Live meta for in-flight tool calls; cleared on commit (data persists on `tool_result.meta`). */
-  toolMeta: Record<string, Record<string, unknown>>;
-  updateToolMeta: (toolCallId: string, meta: Record<string, unknown>) => void;
+  requestElicitation: (
+    toolCallId: string,
+    toolName: string,
+    elicitation: Elicitation,
+    signal?: AbortSignal,
+    onCancel?: () => void,
+  ) => Promise<ElicitationResult>;
 
   // Post-turn advisory overlay — covers both category consent and risk warnings.
   pendingConsent: PendingConsent | null;
@@ -61,3 +85,45 @@ export interface ChatContextType {
 }
 
 export const ChatContext = createContext<ChatContextType | undefined>(undefined);
+
+export type ChatListContextType = Pick<
+  ChatContextType,
+  "chats" | "chatsLoaded" | "chatId" | "chatLoading" | "chatError" | "hasMessages"
+>;
+export const ChatListContext = createContext<ChatListContextType | undefined>(undefined);
+
+export type ChatModelContextType = Pick<
+  ChatContextType,
+  "models" | "model" | "effort" | "verbosity" | "setModel" | "setEffort" | "setVerbosity"
+>;
+export const ChatModelContext = createContext<ChatModelContextType | undefined>(undefined);
+
+export type ChatConversationContextType = Pick<ChatContextType, "chat" | "messages">;
+export const ChatConversationContext = createContext<ChatConversationContextType | undefined>(undefined);
+
+export type ChatRunStateContextType = Pick<
+  ChatContextType,
+  "isResponding" | "status" | "queuedSends" | "interruptState" | "pendingElicitation" | "pendingConsent"
+>;
+export const ChatRunStateContext = createContext<ChatRunStateContextType | undefined>(undefined);
+
+export type ChatActionsContextType = Pick<
+  ChatContextType,
+  | "stopStreaming"
+  | "createChat"
+  | "selectChat"
+  | "deleteChat"
+  | "updateChat"
+  | "loadChat"
+  | "searchChats"
+  | "ensureChat"
+  | "addMessage"
+  | "sendMessage"
+  | "retryMessage"
+  | "removeQueuedMessage"
+  | "setVoiceToolCall"
+  | "resolveElicitation"
+  | "requestElicitation"
+  | "resolveConsent"
+>;
+export const ChatActionsContext = createContext<ChatActionsContextType | undefined>(undefined);

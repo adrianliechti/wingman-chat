@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { dataUrlToBytes } from "@/shared/lib/fileContent";
+import { dataUrlDecodedByteLength, dataUrlToBytes } from "@/shared/lib/fileContent";
+import { assertOoxmlInputByteLength } from "@/shared/lib/ooxml";
 import { getFileName } from "@/shared/lib/utils";
 
 /**
@@ -12,6 +13,19 @@ import { getFileName } from "@/shared/lib/utils";
  * no external resources, so scripting it is safe.
  */
 export const OFFICE_IFRAME_SANDBOX = "allow-scripts allow-popups allow-popups-to-escape-sandbox";
+
+function decodeOfficeDataUrl(content: string) {
+  const declaredBytes = dataUrlDecodedByteLength(content);
+  if (declaredBytes === null) throw new TypeError("Office artifact is not a valid base64 data URL");
+  // Reject from encoded length before decoding allocates the byte buffer.
+  assertOoxmlInputByteLength(declaredBytes);
+  const parsed = dataUrlToBytes(content);
+  if (!parsed) throw new TypeError("Office artifact is not a valid base64 data URL");
+  // The decoded buffer is authoritative if the input decoder ever accepts a
+  // representation the length preflight did not account for.
+  assertOoxmlInputByteLength(parsed.bytes.byteLength);
+  return parsed;
+}
 
 /**
  * Shared loader for the office preview editors: decodes the artifact's binary
@@ -34,14 +48,18 @@ export function useOfficeConversion<T>(
     setResult(null);
     setFailed(false);
 
-    const parsed = dataUrlToBytes(content);
-    if (!parsed) {
+    let parsed: ReturnType<typeof decodeOfficeDataUrl>;
+    try {
+      parsed = decodeOfficeDataUrl(content);
+    } catch (error) {
+      console.error(`Office preview failed for ${path}, falling back to text preview:`, error);
       setFailed(true);
       return;
     }
 
-    // `.slice()` narrows the backing buffer to a fresh ArrayBuffer for BlobPart
-    const file = new File([parsed.bytes.slice()], getFileName(path), {
+    // Base64 decoding already owns an exact-sized ArrayBuffer. Passing its view
+    // directly avoids another full-size copy before the converter admission gate.
+    const file = new File([parsed.bytes], getFileName(path), {
       type: contentType ?? parsed.mimeType,
     });
 

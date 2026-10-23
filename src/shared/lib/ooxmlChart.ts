@@ -1,4 +1,4 @@
-import { child, descend, escapeHtml } from "./ooxml";
+import { child, descend, escapeHtml, sanitizeCssColor } from "./ooxml";
 
 /**
  * Shared DrawingML chart renderer (c:chartSpace) used by both pptx and xlsx.
@@ -91,12 +91,12 @@ export function parseChart(
     });
     const cats = chartCachePts(child(ser, "c:cat"));
     if (cats.length > categories.length) categories = cats;
-    const color = resolveFill(child(ser, "c:spPr")) || accents[si % 6] || "#4472C4";
+    const color = sanitizeCssColor(resolveFill(child(ser, "c:spPr"))) || sanitizeCssColor(accents[si % 6]) || "#4472C4";
     // Per-point colors (pie/doughnut slices)
     const ptColors: (string | undefined)[] = [];
     for (const dPt of els(ser, "dPt")) {
       const idx = parseInt(els(dPt, "idx")[0]?.getAttribute("val") || "0", 10);
-      ptColors[idx] = resolveFill(child(dPt, "c:spPr"));
+      ptColors[idx] = sanitizeCssColor(resolveFill(child(dPt, "c:spPr")));
     }
     series.push({ name, color, values, ptColors: ptColors.length ? ptColors : undefined });
   });

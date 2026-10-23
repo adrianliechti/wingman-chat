@@ -12,6 +12,28 @@ export function splitLines(text: string): string[] {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 }
 
+/** Format of the decoded text, not the encoding of an original imported document. */
+export function textFormat(content: string): {
+  utf8_bom: boolean;
+  line_endings: "none" | "LF" | "CRLF" | "CR" | "mixed";
+} {
+  let endings = 0;
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === "\r") {
+      if (content[i + 1] === "\n") {
+        endings |= 2;
+        i++;
+      } else endings |= 4;
+    } else if (content[i] === "\n") endings |= 1;
+    if (endings !== 0 && (endings & (endings - 1)) !== 0) break;
+  }
+  return {
+    utf8_bom: content.startsWith("\uFEFF"),
+    line_endings:
+      endings === 0 ? "none" : endings === 1 ? "LF" : endings === 2 ? "CRLF" : endings === 4 ? "CR" : "mixed",
+  };
+}
+
 /**
  * Get a range of lines from an array (1-indexed, inclusive).
  * Returns empty array if range is invalid.
@@ -60,6 +82,7 @@ export function formatLineOutput(lines: string[], startLine: number = 1): string
  * - ** matches any characters including /
  * - ? matches a single character except /
  * - Character classes [abc], [a-z], [!abc]
+ * - Brace alternatives, including nested groups and wildcards: {*.{ts,tsx},*.md}
  *
  * @param filename - The filename to test
  * @param pattern - The glob pattern
@@ -77,8 +100,8 @@ export function matchGlob(filename: string, pattern: string): boolean {
     const regex = new RegExp(`^${regexPattern}$`, "i");
     return regex.test(normalizedFilename);
   } catch {
-    // Invalid regex, fall back to simple includes check
-    return normalizedFilename.toLowerCase().includes(normalizedPattern.toLowerCase());
+    // A malformed pattern must not become an unrelated substring search.
+    return false;
   }
 }
 
@@ -86,6 +109,22 @@ export function matchGlob(filename: string, pattern: string): boolean {
  * Convert a glob pattern to a regex pattern string.
  */
 function globToRegex(glob: string): string {
+  // Pair braces before compiling so nested alternatives stay linear in size,
+  // without expanding every combination or recursing on model-provided input.
+  const bracePairs = new Map<number, number>();
+  const openBraces: number[] = [];
+  for (let index = 0; index < glob.length; index++) {
+    if (glob[index] === "[") {
+      const end = glob.indexOf("]", index + 1);
+      if (end !== -1) index = end;
+    } else if (glob[index] === "{") openBraces.push(index);
+    else if (glob[index] === "}") {
+      const start = openBraces.pop();
+      if (start !== undefined) bracePairs.set(start, index);
+    }
+  }
+  const closingBraces = new Set(bracePairs.values());
+  let braceDepth = 0;
   let regex = "";
   let i = 0;
 
@@ -96,12 +135,13 @@ function globToRegex(glob: string): string {
       // Check for **
       if (glob[i + 1] === "*") {
         // ** matches everything including /
-        regex += ".*";
         i += 2;
-        // Skip trailing / after **
+        // **/ includes zero directories: src/**/*.ts must match src/app.ts.
         if (glob[i] === "/") {
-          regex += "(?:/|$)";
+          regex += "(?:.*/)?";
           i++;
+        } else {
+          regex += ".*";
         }
       } else {
         // * matches everything except /
@@ -128,17 +168,17 @@ function globToRegex(glob: string): string {
         regex += `[${classContent}]`;
         i = classEnd + 1;
       }
-    } else if (c === "{") {
-      // Brace expansion {a,b,c}
-      const braceEnd = glob.indexOf("}", i + 1);
-      if (braceEnd === -1) {
-        regex += escapeRegex(c);
-        i++;
-      } else {
-        const options = glob.slice(i + 1, braceEnd).split(",");
-        regex += `(?:${options.map(escapeRegex).join("|")})`;
-        i = braceEnd + 1;
-      }
+    } else if (c === "{" && bracePairs.has(i)) {
+      regex += "(?:";
+      braceDepth++;
+      i++;
+    } else if (c === "}" && closingBraces.has(i)) {
+      regex += ")";
+      braceDepth--;
+      i++;
+    } else if (c === "," && braceDepth > 0) {
+      regex += "|";
+      i++;
     } else {
       // Escape special regex characters
       regex += escapeRegex(c);
@@ -157,144 +197,6 @@ function escapeRegex(str: string): string {
 }
 
 /**
- * Line match result from grep operation.
- */
-export interface LineMatch {
-  lineNumber: number;
-  content: string;
-  matches: Array<{
-    start: number;
-    end: number;
-    text: string;
-  }>;
-  /** True when this line is included only as surrounding context. */
-  isContext?: boolean;
-}
-
-/**
- * File match result from grep operation.
- */
-export interface FileMatch {
-  fileName: string;
-  matches: LineMatch[];
-  truncated: boolean;
-}
-
-/**
- * Search for a pattern in text content using regex.
- *
- * @param text - The text content to search
- * @param pattern - Regex pattern to search for
- * @param options - Search options
- * @returns Array of line matches
- */
-export function grepText(
-  text: string,
-  pattern: string,
-  options: {
-    caseSensitive?: boolean;
-    ignoreCase?: boolean;
-    literal?: boolean;
-    maxMatches?: number;
-    contextLines?: number;
-  } = {},
-): { matches: LineMatch[]; truncated: boolean; matchCount: number } {
-  const { caseSensitive = false, ignoreCase, literal = false, maxMatches = 50, contextLines = 0 } = options;
-
-  const lines = splitLines(text);
-  const matchesByLine = new Map<number, LineMatch>();
-  const contextLineNumbers = new Set<number>();
-  let matchCount = 0;
-  let truncated = false;
-
-  // Create regex
-  let regex: RegExp;
-  try {
-    const effectiveCaseSensitive = ignoreCase === true ? false : caseSensitive;
-    const flags = effectiveCaseSensitive ? "g" : "gi";
-    if (literal) {
-      const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      regex = new RegExp(escaped, flags);
-    } else {
-      regex = new RegExp(pattern, flags);
-    }
-  } catch {
-    // Invalid regex, treat as literal
-    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const effectiveCaseSensitive = ignoreCase === true ? false : caseSensitive;
-    const flags = effectiveCaseSensitive ? "g" : "gi";
-    regex = new RegExp(escaped, flags);
-  }
-
-  // Search each line
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const lineMatches: LineMatch["matches"] = [];
-
-    // Reset regex state for global flag
-    regex.lastIndex = 0;
-
-    let match: RegExpExecArray | null = regex.exec(line);
-    while (match !== null) {
-      lineMatches.push({
-        start: match.index,
-        end: match.index + match[0].length,
-        text: match[0],
-      });
-
-      // Prevent infinite loop on zero-length matches
-      if (match[0].length === 0) {
-        regex.lastIndex++;
-      }
-
-      match = regex.exec(line);
-    }
-
-    if (lineMatches.length > 0) {
-      matchCount += 1;
-
-      matchesByLine.set(i, {
-        lineNumber: i + 1, // 1-indexed
-        content: line,
-        matches: lineMatches,
-      });
-
-      // Add context lines (including the matched line)
-      for (let c = Math.max(0, i - contextLines); c <= Math.min(lines.length - 1, i + contextLines); c++) {
-        contextLineNumbers.add(c);
-      }
-
-      // Check limit (match lines only)
-      if (matchCount >= maxMatches) {
-        truncated = true;
-        break;
-      }
-    }
-  }
-
-  if (matchCount === 0) {
-    return { matches: [], truncated: false, matchCount: 0 };
-  }
-
-  const orderedLineNumbers = Array.from(contextLineNumbers).sort((a, b) => a - b);
-  const matches: LineMatch[] = orderedLineNumbers.map((lineIndex) => {
-    const match = matchesByLine.get(lineIndex);
-    if (match) {
-      return match;
-    }
-
-    return {
-      lineNumber: lineIndex + 1,
-      content: lines[lineIndex] ?? "",
-      matches: [],
-      isContext: true,
-    };
-  });
-
-  return { matches, truncated, matchCount };
-}
-
-/**
  * Truncate long lines for display.
  *
  * @param line - The line to truncate
@@ -306,13 +208,4 @@ export function truncateLine(line: string, maxLength: number = 500): string {
     return line;
   }
   return `${line.slice(0, maxLength)}... (truncated)`;
-}
-
-/**
- * Get the base name (filename without path) from a file path.
- */
-export function getBaseName(filepath: string): string {
-  const normalized = filepath.replace(/\\/g, "/");
-  const lastSlash = normalized.lastIndexOf("/");
-  return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
 }

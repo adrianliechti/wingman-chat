@@ -1,36 +1,21 @@
+import type { UIResourcePart, UIMessage } from "@tanstack/ai";
 import { useMemo } from "react";
-import type { Message, ToolResultContent } from "@/shared/types/chat";
 
-export function useLastFullscreenApp(
-  messages: Message[],
-  index: number,
-  toolResultParts: ToolResultContent[],
-): boolean {
+/** Whether `app` (in the message at `index`) is the latest app that may take the panel. */
+export function useLastFullscreenApp(messages: UIMessage[], index: number, app?: UIResourcePart): boolean {
   return useMemo(() => {
-    if (!toolResultParts.length) return false;
-    const tr = toolResultParts[0];
-    if (typeof tr?.meta?.toolProvider !== "string" || typeof tr?.meta?.toolResource !== "string") return false;
+    if (!app?.serverId) return false;
 
-    // Find the last message index with a fullscreen-capable tool result
-    let lastFullscreenIndex = -1;
+    // Before initialization, the saved initial-mode hint is all we know.
+    // Each live app checks its own handshake before taking the panel.
     for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      for (const part of msg.content) {
-        if (part.type !== "tool_result") continue;
-        const p = part as ToolResultContent;
-        if (typeof p.meta?.toolProvider !== "string" || typeof p.meta?.toolResource !== "string") continue;
-        const modes = p.meta?.appDisplayModes as string[] | undefined;
-        const defaultMode = p.meta?.defaultDisplayMode as string | undefined;
-        // Check if fullscreen is supported: explicit modes, defaultDisplayMode hint, or absent (backward compat = both)
-        const supportsFullscreen = modes ? modes.includes("fullscreen") : defaultMode !== "inline"; // "fullscreen" or absent both mean fullscreen is supported
-        if (supportsFullscreen) {
-          lastFullscreenIndex = i;
-          break;
+      for (const part of messages[i].parts.toReversed()) {
+        if (part.type !== "ui-resource" || !part.serverId || !part.resource.uri.startsWith("ui://")) continue;
+        if (part.meta?.appDisplayMode !== "inline") {
+          return i === index && part.toolCallId === app.toolCallId && part.serverId === app.serverId;
         }
       }
-      if (lastFullscreenIndex >= 0) break;
     }
-
-    return lastFullscreenIndex === index;
-  }, [messages, index, toolResultParts]);
+    return false;
+  }, [messages, index, app]);
 }

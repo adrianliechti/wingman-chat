@@ -1,65 +1,22 @@
 ---
 name: canvas-design
-description: Create beautiful static visual art — posters, design pieces, cover art — as .png or .pdf, driven by a design philosophy. Use when the user asks for a poster, a piece of art, a design, or any static, design-forward visual. Create original work, never copying existing artists.
+description: "Create or edit static imagery, illustrations, posters, covers or visual design pieces. Includes image style direction; use infographic for fact-led graphics and algorithmic-art for art made through code."
 ---
 
-# Canvas Design
+# Static visual design
 
-Make an art object, not a decorated document. Work in two steps: **(1) write a design philosophy**
-(a short manifesto, saved as `.md`), then **(2) express it on a canvas** as a single highly-visual
-`.png` or `.pdf`. Output is 90% visual, 10% essential text.
+Read the brief and references for subject, required copy, dimensions, medium and style. Choose a coherent composition, palette, material/texture and type treatment. Preserve the user's visual direction; do not force abstraction, sparse text or a house style.
 
-This is **art-led** — aesthetics lead. For a data/fact one-pager driven by numbers, use `infographic`.
+Choose the production method from the work:
 
-## Step 1 — Design philosophy (.md)
+- Use create_image for photographic, painterly or illustrative images, or the interpreter's render helper within a file-processing pipeline. Use supplied reference inputs when editing and supported controls for transparency, shape and quality.
+- Use authored SVG, Pillow, matplotlib or ReportLab for exact geometry, diagrams or typography.
+- Combine generated imagery with deterministic typesetting when required words, logos, labels or numbers must be exact.
 
-Invent an aesthetic movement, not a layout. Name it (1–2 words: "Brutalist Joy", "Chromatic
-Silence"). Write 4–6 concise paragraphs on how it manifests through space & form, color & material,
-scale & rhythm, composition & balance, visual hierarchy. Keep it generic enough to leave the
-expression room. **Emphasize craftsmanship repeatedly** — the final work must look meticulously
-crafted, labored over, master-level. Save as `philosophy.md`.
+Keep the required text and content central to the composition. Use supplied branding and assets where available; do not replace a specific logo with a generated approximation. Plan safe areas, crop and aspect ratio before generating. Overlap or bleed may be intentional; prevent accidental clipping of required content.
 
-Examples of the register:
+For a requested style, describe the few visible properties that distinguish it: material, line weight, perspective, lighting or texture. Preserve the subject, identity and explicit constraints; avoid conflicting style lists. [Image styles](references/image-styles.md) provides optional prompt fragments and the Canvas picker's choices. Read it only to match a named preset or compare style options; do not choose a preset for every task.
 
-- _"Concrete Poetry"_ — communication through monumental form: massive color blocks, sculptural
-  typography (huge single words, tiny labels), Brutalist spatial tension. Text as rare gesture.
-- _"Analog Meditation"_ — quiet contemplation: paper grain, ink bleeds, vast negative space,
-  whispered typography, Japanese photobook calm.
-- _"Geometric Silence"_ — pure order: grid precision, stark graphics, dramatic negative space,
-  Swiss formalism. Structure communicates, not words.
+If image generation is unavailable, use a suitable code-based method and state any material difference. Do not claim an image was generated when it was not.
 
-## The subtle reference
-
-Identify the conceptual thread from the request and weave it **invisibly** into form/color/
-composition — like a jazz musician quoting a song. Those who know feel it; everyone else sees a
-masterful abstract composition. Never announce it.
-
-## Step 2 — Express it (.png / .pdf)
-
-Build with the interpreter. The image generator makes far richer art than hand-drawn code, so reach
-for it first:
-
-- **Rich / painterly / illustrative (default)** → write a detailed art-direction prompt and
-  `await render(prompt, "art.png")`. For a named look, `read_skill image-styles` and fold the matching
-  fragment in. This register is mostly visual, so keep words minimal anyway; modern renderers spell
-  short titles fine, but if a specific title or label must be exact you can composite it over the
-  result with `Pillow`.
-- **Geometric / typographic / precise** → when the piece is built on exact shapes, a strict grid, or
-  type itself (Swiss / Brutalist / concrete-poetry registers), draw it with `reportlab` (PDF: precise
-  placement) or `Pillow` / `matplotlib` (PNG: generative patterns, color fields, repeated marks) —
-  code gives the precision diffusion can't.
-
-Direction: museum/magazine quality, single page, design-forward. Favor repeating patterns, perfect
-shapes, dense accumulation of marks, a limited cohesive palette, sparse clinical typography as visual
-accent. Treat the abstract subject with the reverence of a scientific diagram. Typography is part of
-the art (mostly thin, design-forward). **Nothing falls off the page; nothing overlaps; everything has
-breathing room** — non-negotiable.
-
-## Refine
-
-Make a second pass: don't add graphics — make what's there crisper and more cohesive. Re-open the
-rendered `.png`/`.pdf` and look at it critically (use `vision()` if available) — fix anything that fell
-off the page, overlaps, or reads as generic. If the instinct
-is to draw a new shape, ask instead "how do I make what's here more of a piece of art?" Output the
-final `.png`/`.pdf` alongside `philosophy.md`. Multi-page → bundle as a coffee-table sequence, each
-page a distinct twist on the philosophy.
+Inspect the actual output for requested text, proportions, unwanted artifacts and readability at the delivery size. Revise visible misses rather than adding arbitrary polish rounds. Save in the requested format, or choose one suited to the medium, and identify the file.

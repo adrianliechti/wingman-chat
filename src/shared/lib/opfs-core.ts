@@ -1,5 +1,6 @@
 import { contentToBlob } from "./fileContent";
 import { inferContentTypeFromPath } from "./fileTypes";
+import { stopPersistence, withPersistenceLock } from "./persistence";
 import { decodeDataURL, readAsDataURL } from "./utils";
 
 /**
@@ -15,7 +16,7 @@ import { decodeDataURL, readAsDataURL } from "./utils";
  *   /skills/index.json        # Skills index for fast listing
  *
  *   /chats/{id}/
- *   ├── chat.json             # Metadata + messages (with blob refs)
+ *   ├── chat.json             # Metadata + native transcript (media as blob refs); pre-v2 records migrate on load
  *   ├── blobs/{uuid}.bin      # Co-located message blobs (images, audio)
  *   └── artifacts/{path}      # Artifact files stored as real files
  *   /chats/index.json         # Chats index for fast listing
@@ -28,28 +29,6 @@ import { decodeDataURL, readAsDataURL } from "./utils";
  *       ├── content.txt       # Extracted text content
  *       └── embeddings.bin    # Embedding vectors as Float32Array
  *   /repositories/index.json  # Repositories index for fast listing
- *
- *   /notebooks/{id}/
- *   ├── notebook.json         # Metadata (id, title, dates)
- *   ├── messages.json         # Chat messages
- *   ├── sources/
- *   │   ├── index.json        # Source listing
- *   │   └── {sourceId}/
- *   │       ├── metadata.json # Source metadata
- *   │       └── content.txt   # Extracted text content
- *   └── outputs/
- *       ├── index.json        # Output listing
- *       └── {outputId}/
- *           ├── metadata.json # Output metadata
- *           ├── content.txt   # Text content
- *           ├── audio.wav     # Audio (podcast)
- *           ├── image.png     # Image (infographic)
- *           ├── quiz.json     # Questions (quiz)
- *           ├── mindmap.json  # Tree (mindmap)
- *           └── slides/       # Slide images (slides)
- *               ├── 000.png
- *               └── ...
- *   /notebooks/index.json     # Notebooks index for fast listing
  *
  *   /images/{id}/
  *   ├── metadata.json         # Metadata
@@ -90,6 +69,8 @@ function notifyMutation(path: string, kind: OpfsMutationKind): void {
 // ============================================================================
 
 let rootHandle: FileSystemDirectoryHandle | null = null;
+let storageReset = false;
+const activeWrites = new Set<Promise<void>>();
 
 /**
  * Get the OPFS root directory handle.
@@ -128,6 +109,7 @@ export async function getDirectory(
  */
 export async function writeJson<T>(path: string, data: T): Promise<void> {
   const json = JSON.stringify(data);
+  if (json === undefined) throw new TypeError(`Cannot write undefined JSON to ${path}`);
   await writeText(path, json, "application/json");
 }
 
@@ -146,16 +128,46 @@ export async function writeText(
  * Write binary data to a file.
  * Uses FileSystemWritableFileStream for Safari compatibility.
  */
-export async function writeBlob(path: string, blob: Blob): Promise<void> {
-  const { dir, name } = parsePath(path);
-  const directory = await getDirectory(dir, { create: true });
-  const fileHandle = await directory.getFileHandle(name, { create: true });
+export function writeBlob(path: string, blob: Blob): Promise<void> {
+  return writeFileBlob(path, blob, false);
+}
 
-  const writable = await fileHandle.createWritable();
+async function writeFileBlob(path: string, blob: Blob, append: boolean): Promise<void> {
+  if (storageReset) throw new Error("Storage was reset. Reload before saving changes.");
+  const { dir, name } = parsePath(path);
+  const result = withPersistenceLock(`file:${dir}/${name}`, async () => {
+    if (storageReset) throw new Error("Storage was reset. Reload before saving changes.");
+    const directory = await getDirectory(dir, { create: true });
+    let fileHandle: FileSystemFileHandle;
+    let created = false;
+    try {
+      fileHandle = await directory.getFileHandle(name);
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== "NotFoundError") throw error;
+      fileHandle = await directory.getFileHandle(name, { create: true });
+      created = true;
+    }
+    let writable: FileSystemWritableFileStream | undefined;
+    try {
+      writable = await fileHandle.createWritable(append ? { keepExistingData: true } : undefined);
+      if (append) await writable.seek((await fileHandle.getFile()).size);
+      await writable.write(blob);
+      await writable.close();
+    } catch (error) {
+      // Closing after a failed write can commit truncated data over the last
+      // good file. Abort the staging stream and preserve the original error.
+      await writable?.abort().catch(() => {});
+      // create:true makes an empty file before the write starts. Leaving it
+      // behind poisons JSON loads and can masquerade as a stored hash blob.
+      if (created) await directory.removeEntry(name).catch(() => {});
+      throw error;
+    }
+  });
+  activeWrites.add(result);
   try {
-    await writable.write(blob);
+    await result;
   } finally {
-    await writable.close();
+    activeWrites.delete(result);
   }
 
   notifyMutation(path, "write");
@@ -169,23 +181,8 @@ export async function writeBlob(path: string, blob: Blob): Promise<void> {
  * append-only logs (e.g. JSONL chat logs) from being rewritten in full
  * on every save.
  */
-export async function appendBlob(path: string, blob: Blob): Promise<void> {
-  const { dir, name } = parsePath(path);
-  const directory = await getDirectory(dir, { create: true });
-  const fileHandle = await directory.getFileHandle(name, { create: true });
-
-  const file = await fileHandle.getFile();
-  const offset = file.size;
-
-  const writable = await fileHandle.createWritable({ keepExistingData: true });
-  try {
-    await writable.seek(offset);
-    await writable.write(blob);
-  } finally {
-    await writable.close();
-  }
-
-  notifyMutation(path, "write");
+export function appendBlob(path: string, blob: Blob): Promise<void> {
+  return writeFileBlob(path, blob, true);
 }
 
 /**
@@ -200,8 +197,7 @@ export async function readJson<T>(path: string): Promise<T | undefined> {
   try {
     return JSON.parse(text) as T;
   } catch (error) {
-    console.error(`Error parsing JSON from ${path}:`, error);
-    return undefined;
+    throw new Error(`Invalid JSON in ${path}`, { cause: error });
   }
 }
 
@@ -376,6 +372,9 @@ export async function deleteDirectory(path: string): Promise<void> {
  * Clear all OPFS storage.
  */
 export async function clearAll(): Promise<void> {
+  storageReset = true;
+  await stopPersistence();
+  await Promise.allSettled(activeWrites);
   const root = await getRoot();
 
   for await (const [name] of root.entries()) {
@@ -401,61 +400,58 @@ export interface IndexEntry {
  * Read the index for a collection.
  */
 export async function readIndex(collection: string): Promise<IndexEntry[]> {
-  const index = await readJson<IndexEntry[]>(`${collection}/index.json`);
-  return index || [];
+  let index: unknown;
+  try {
+    index = await readJson<unknown>(`${collection}/index.json`);
+  } catch (error) {
+    if (!(error instanceof Error && error.cause instanceof SyntaxError)) throw error;
+    return healIndex(collection, error);
+  }
+  if (index === undefined) return [];
+  if (!Array.isArray(index) || index.some((entry) => !entry || typeof entry.id !== "string" || !entry.id)) {
+    return healIndex(collection, new Error(`Invalid index in ${collection}/index.json`));
+  }
+  return index as IndexEntry[];
+}
+
+/**
+ * A damaged listing would otherwise hide every record and fail every save
+ * until the user finds "Rebuild indexes". The folders are the source of
+ * truth, so rebuild the listing from them and store it. Callers hold the
+ * collection lock, which serializes this with every other index writer.
+ */
+async function healIndex(collection: string, reason: Error): Promise<IndexEntry[]> {
+  console.warn(`Repairing ${collection}/index.json from stored records:`, reason);
+  // Loaded lazily: the scanner depends on record parsers built on this module.
+  const { isRebuildableCollection, salvageIndexEntries, scanFolderIndex } = await import("./opfs-index");
+  const salvaged = await salvageIndexEntries(collection);
+  const entries = isRebuildableCollection(collection) ? await scanFolderIndex(collection, salvaged) : salvaged;
+  await writeJson(`${collection}/index.json`, entries);
+  return entries;
 }
 
 /**
  * Write the index for a collection.
  */
-export async function writeIndex(collection: string, entries: IndexEntry[]): Promise<void> {
-  await writeJson(`${collection}/index.json`, entries);
+/** Lock the complete read/modify/write, including updates from other tabs. */
+export async function updateIndex(collection: string, update: (entries: IndexEntry[]) => IndexEntry[]): Promise<void> {
+  await withPersistenceLock(`index:${collection}`, async () => {
+    await writeJson(`${collection}/index.json`, update(await readIndex(collection)));
+  });
 }
 
 /**
  * Add or update an entry in the collection index.
  */
 export async function upsertIndexEntry(collection: string, entry: IndexEntry): Promise<void> {
-  const index = await readIndex(collection);
-  const existingIdx = index.findIndex((e) => e.id === entry.id);
-
-  if (existingIdx >= 0) {
-    index[existingIdx] = entry;
-  } else {
-    index.push(entry);
-  }
-
-  await writeIndex(collection, index);
+  await updateIndex(collection, (index) => [...index.filter((item) => item.id !== entry.id), entry]);
 }
 
 /**
  * Remove an entry from the collection index.
  */
 export async function removeIndexEntry(collection: string, id: string): Promise<void> {
-  const index = await readIndex(collection);
-  const filtered = index.filter((e) => e.id !== id);
-  await writeIndex(collection, filtered);
-}
-
-/**
- * Rebuild an index by scanning all files in the collection.
- * The extractMeta function should extract id, title, and updated from the data.
- */
-export async function rebuildIndex<T>(collection: string, extractMeta: (data: T) => IndexEntry): Promise<IndexEntry[]> {
-  const files = await listFiles(collection);
-  const entries: IndexEntry[] = [];
-
-  for (const file of files) {
-    if (file === "index.json") continue;
-
-    const data = await readJson<T>(`${collection}/${file}`);
-    if (data) {
-      entries.push(extractMeta(data));
-    }
-  }
-
-  await writeIndex(collection, entries);
-  return entries;
+  await updateIndex(collection, (index) => index.filter((entry) => entry.id !== id));
 }
 
 // ============================================================================
@@ -528,13 +524,6 @@ export function blobToDataUrl(blob: Blob, contentType?: string): Promise<string>
  */
 export function isDataUrl(str: string): boolean {
   return str.startsWith("data:");
-}
-
-/**
- * Check if a string is a blob reference (path to blob storage).
- */
-export function isBlobRef(str: string): boolean {
-  return str.startsWith("blob:");
 }
 
 /**

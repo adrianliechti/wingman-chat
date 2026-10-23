@@ -11,10 +11,19 @@
  */
 
 import type { Chat } from "@/shared/types/chat";
-import type { StoredChat, StoredMessage } from "./opfs-chat";
+import { normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
+import { STORED_CHAT_VERSION, type StoredChat } from "./opfs-chat";
+
+type StoredMessage = StoredChat["messages"][number];
 
 export type LogEntry =
-  | { type: "init"; id: string; created: string | null; model: Chat["model"] | null }
+  | {
+      type: "init";
+      version?: typeof STORED_CHAT_VERSION;
+      id: string;
+      created: string | null;
+      model: Chat["model"] | null;
+    }
   | {
       type: "meta";
       title?: string | null;
@@ -22,6 +31,8 @@ export type LogEntry =
       customIndex?: number | null;
       model?: Chat["model"] | null;
       updated?: string | null;
+      resume?: Chat["resume"] | null;
+      metadata?: Chat["metadata"] | null;
     }
   | ({ type: "message" } & StoredMessage)
   | { type: "replace"; index: number; message: StoredMessage }
@@ -85,6 +96,7 @@ export interface ReplayResult {
 
 export function replayLog(chatId: string, entries: LogEntry[]): ReplayResult {
   let chat: StoredChat | null = {
+    version: STORED_CHAT_VERSION,
     id: chatId,
     created: null,
     updated: null,
@@ -92,6 +104,7 @@ export function replayLog(chatId: string, entries: LogEntry[]): ReplayResult {
     messages: [],
   };
 
+  let legacy = false;
   for (const e of entries) {
     if (e.type === "tombstone") {
       chat = null;
@@ -99,13 +112,21 @@ export function replayLog(chatId: string, entries: LogEntry[]): ReplayResult {
     }
     if (!chat) {
       // Re-create on writes after a tombstone (very unusual but harmless).
-      chat = { id: chatId, created: null, updated: null, model: null, messages: [] };
+      chat = { version: STORED_CHAT_VERSION, id: chatId, created: null, updated: null, model: null, messages: [] };
     }
     switch (e.type) {
       case "init":
         // init starts a chat from scratch — compaction snapshots rely on
         // this to reset whatever state was replayed before them.
-        chat = { id: e.id, created: e.created, updated: null, model: e.model, messages: [] };
+        legacy = e.version === undefined;
+        chat = {
+          version: STORED_CHAT_VERSION,
+          id: e.id,
+          created: e.created,
+          updated: null,
+          model: e.model,
+          messages: [],
+        };
         break;
       case "meta":
         if (e.title !== undefined) chat.title = e.title ?? undefined;
@@ -113,6 +134,14 @@ export function replayLog(chatId: string, entries: LogEntry[]): ReplayResult {
         if (e.customIndex !== undefined) chat.customIndex = e.customIndex ?? undefined;
         if (e.model !== undefined) chat.model = e.model ?? null;
         if (e.updated !== undefined) chat.updated = e.updated;
+        if (e.resume !== undefined) {
+          if (e.resume === null) delete chat.resume;
+          else chat.resume = e.resume;
+        }
+        if (e.metadata !== undefined) {
+          if (e.metadata === null) delete chat.metadata;
+          else chat.metadata = e.metadata;
+        }
         break;
       case "message": {
         const { type: _t, ...m } = e;
@@ -136,6 +165,12 @@ export function replayLog(chatId: string, entries: LogEntry[]): ReplayResult {
     }
   }
 
+  // Unversioned logs contain the pre-native transcript. The same migration
+  // used by local chat storage keeps existing synced conversations readable.
+  if (chat && legacy) {
+    const raw = { ...chat, version: undefined } as unknown as LegacyStoredChat;
+    chat = normalizeStoredChat(raw);
+  }
   return { chat };
 }
 
@@ -167,14 +202,23 @@ export function diffChat(prev: StoredChat | null, next: StoredChat): LogEntry[] 
   const out: LogEntry[] = [];
 
   if (!prev) {
-    out.push({ type: "init", id: next.id, created: next.created, model: next.model });
-    if (next.title || next.customTitle || next.customIndex !== undefined || next.updated) {
+    out.push({ type: "init", version: STORED_CHAT_VERSION, id: next.id, created: next.created, model: next.model });
+    if (
+      next.title ||
+      next.customTitle ||
+      next.customIndex !== undefined ||
+      next.updated ||
+      next.resume ||
+      next.metadata
+    ) {
       out.push({
         type: "meta",
         title: next.title,
         customTitle: next.customTitle,
         customIndex: next.customIndex,
         updated: next.updated,
+        ...(next.resume ? { resume: next.resume } : {}),
+        ...(next.metadata ? { metadata: next.metadata } : {}),
       });
     }
     for (const m of next.messages) {
@@ -204,6 +248,14 @@ export function diffChat(prev: StoredChat | null, next: StoredChat): LogEntry[] 
   }
   if (prev.updated !== next.updated) {
     meta.updated = next.updated;
+    metaDirty = true;
+  }
+  if (JSON.stringify(prev.resume) !== JSON.stringify(next.resume)) {
+    meta.resume = next.resume ?? null;
+    metaDirty = true;
+  }
+  if (JSON.stringify(prev.metadata) !== JSON.stringify(next.metadata)) {
+    meta.metadata = next.metadata ?? null;
     metaDirty = true;
   }
   if (metaDirty) out.push(meta);
@@ -247,17 +299,5 @@ export function applyEntriesInPlace(chat: StoredChat | null, entries: LogEntry[]
 }
 
 function toReplayBaseline(chat: StoredChat): LogEntry[] {
-  // Reconstruct a minimal entry sequence equivalent to the current state.
-  const out: LogEntry[] = [{ type: "init", id: chat.id, created: chat.created, model: chat.model }];
-  if (chat.title || chat.customTitle || chat.customIndex !== undefined || chat.updated) {
-    out.push({
-      type: "meta",
-      title: chat.title,
-      customTitle: chat.customTitle,
-      customIndex: chat.customIndex,
-      updated: chat.updated,
-    });
-  }
-  for (const m of chat.messages) out.push({ type: "message", ...m });
-  return out;
+  return diffChat(null, chat);
 }

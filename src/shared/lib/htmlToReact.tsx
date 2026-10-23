@@ -55,6 +55,22 @@ function getAttributeValue(attributeName: string, value: string): string | numbe
   return value;
 }
 
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+const SVG_ATTRIBUTE_NAME_MAP: Record<string, string> = {
+  class: "className",
+  "xlink:href": "xlinkHref",
+  "xml:space": "xmlSpace",
+  "xml:lang": "xmlLang",
+};
+
+/** React wants camelCase for hyphenated SVG presentation attributes (`stroke-width` → `strokeWidth`). */
+export function svgAttributeName(name: string): string {
+  const mapped = SVG_ATTRIBUTE_NAME_MAP[name];
+  if (mapped) return mapped;
+  if (name.startsWith("data-") || name.startsWith("aria-")) return name;
+  return name.includes("-") ? toCamelCase(name) : name;
+}
+
 function htmlNodeToReact(node: ChildNode, key: string): ReactNode {
   if (node.nodeType === Node.TEXT_NODE) {
     return node.textContent;
@@ -65,11 +81,14 @@ function htmlNodeToReact(node: ChildNode, key: string): ReactNode {
   }
 
   const element = node as HTMLElement;
-  const tagName = element.tagName.toLowerCase();
   const props: Record<string, unknown> = { key };
 
+  const isSvg = element.namespaceURI === SVG_NAMESPACE;
+  const tagName = isSvg ? element.localName : element.tagName.toLowerCase();
   for (const attribute of Array.from(element.attributes)) {
-    const attributeName = ATTRIBUTE_NAME_MAP[attribute.name] ?? attribute.name;
+    const attributeName = isSvg
+      ? svgAttributeName(attribute.name)
+      : (ATTRIBUTE_NAME_MAP[attribute.name] ?? attribute.name);
     props[attributeName] = getAttributeValue(attributeName, attribute.value);
   }
 
@@ -82,7 +101,10 @@ function htmlNodeToReact(node: ChildNode, key: string): ReactNode {
   return createElement(tagName, props, ...children);
 }
 
-export function sanitizeHtmlToReact(html: string, options: { keyPrefix?: string; config?: Config } = {}): ReactNode[] {
+export function sanitizeHtmlToReact(
+  html: string,
+  options: { keyPrefix?: string; config?: Config; namespace?: "svg" } = {},
+): ReactNode[] {
   if (typeof DOMParser === "undefined") {
     return [html];
   }
@@ -94,7 +116,11 @@ export function sanitizeHtmlToReact(html: string, options: { keyPrefix?: string;
     return [];
   }
 
-  const parsed = new DOMParser().parseFromString(`<div>${sanitized}</div>`, "text/html");
+  // SVG profiles may return a fragment without its outer svg. Parse it in the
+  // right namespace so tag case and presentation attributes stay intact.
+  const wrapper =
+    options.namespace === "svg" ? `<svg xmlns="${SVG_NAMESPACE}">${sanitized}</svg>` : `<div>${sanitized}</div>`;
+  const parsed = new DOMParser().parseFromString(wrapper, "text/html");
   const root = parsed.body.firstElementChild;
 
   if (!root) {

@@ -1,11 +1,23 @@
-import { FileCode2, Plus, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { lazyRouteComponent } from "@tanstack/react-router";
+import { FileCode2, Loader2, Plus, X } from "lucide-react";
+import { Suspense, useRef, useState } from "react";
 import type { SkillResource } from "@/features/skills/lib/skillParser";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { isDataUrl } from "@/shared/lib/opfs-core";
 import { readAsDataURL } from "@/shared/lib/utils";
 import { FileIcon } from "@/shared/ui/FileIcon";
 import { SectionEmptyState } from "./SectionEmptyState";
+
+const PdfEditor = lazyRouteComponent(() => import("@/shared/ui/editors/PdfEditor"), "PdfEditor");
+const DocxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/DocxEditor"), "DocxEditor");
+const XlsxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/XlsxEditor"), "XlsxEditor");
+const PptxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/PptxEditor"), "PptxEditor");
+
+const OFFICE_CONTENT_TYPES: Record<string, typeof DocxEditor> = {
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DocxEditor,
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": XlsxEditor,
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": PptxEditor,
+};
 
 interface SkillResourcesEditorProps {
   resources: SkillResource[];
@@ -131,7 +143,7 @@ export function SkillResourcesEditor({ resources, onChange }: SkillResourcesEdit
         <SectionEmptyState
           icon={<FileCode2 size={12} />}
           label={readOnly ? "No resources" : "No resources yet"}
-          description={readOnly ? undefined : "Upload scripts, references, or assets"}
+          description={readOnly ? undefined : "Upload files"}
           onClick={readOnly ? undefined : openPicker}
         />
       ) : (
@@ -139,6 +151,7 @@ export function SkillResourcesEditor({ resources, onChange }: SkillResourcesEdit
           {resources.map((r) => {
             const isText = !isDataUrl(r.content);
             const isOpen = expanded === r.path;
+            const OfficeEditor = r.contentType ? OFFICE_CONTENT_TYPES[r.contentType] : undefined;
             return (
               <div key={r.path}>
                 <div className="group flex items-center gap-2 rounded-lg py-1.5 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/40">
@@ -175,6 +188,30 @@ export function SkillResourcesEditor({ resources, onChange }: SkillResourcesEdit
                       <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-neutral-600 dark:text-neutral-400">
                         {r.content}
                       </pre>
+                    ) : r.contentType === "application/pdf" ? (
+                      <div className="h-96">
+                        <Suspense
+                          fallback={
+                            <div className="h-full flex items-center justify-center">
+                              <Loader2 className="h-5 w-5 animate-spin text-neutral-400 dark:text-neutral-500" />
+                            </div>
+                          }
+                        >
+                          <PdfEditor content={r.content} />
+                        </Suspense>
+                      </div>
+                    ) : OfficeEditor ? (
+                      <div className="h-96">
+                        <Suspense
+                          fallback={
+                            <div className="h-full flex items-center justify-center">
+                              <Loader2 className="h-5 w-5 animate-spin text-neutral-400 dark:text-neutral-500" />
+                            </div>
+                          }
+                        >
+                          <OfficeEditor path={r.path} content={r.content} contentType={r.contentType} />
+                        </Suspense>
+                      </div>
                     ) : (
                       <p className="text-xs italic text-neutral-400 dark:text-neutral-500">
                         Binary file — not readable as text by the skill.

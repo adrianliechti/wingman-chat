@@ -1,33 +1,33 @@
 import { lazyRouteComponent } from "@tanstack/react-router";
-import {
-  ChevronDown,
-  Code,
-  Download,
-  Eye,
-  File as FileIcon2,
-  Loader2,
-  PanelRightOpen,
-  Play,
-  Shapes,
-  Upload,
-} from "lucide-react";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Code, Download, Eye, File as FileIcon2, Loader2, PanelRight, Play, Shapes, Upload } from "lucide-react";
+import { Suspense, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
-import type { FileSystemManager } from "@/features/artifacts/lib/fs";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { useArtifactEntries, useArtifactFile } from "@/features/artifacts/hooks/useArtifactFiles";
+import {
+  artifactKind,
+  artifactLanguage,
+  processUploadedFile,
+  type ProcessedFile,
+} from "@/features/artifacts/lib/artifacts";
+import type { ArtifactKind } from "@/features/artifacts/lib/artifacts";
+import type { ArtifactRevisionListing, FileSystemManager } from "@/features/artifacts/lib/fs";
+import { useChatActions } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
+import type { File } from "@/shared/types/file";
 import { cn } from "@/shared/lib/cn";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
-import { downloadBlob, getFileName } from "@/shared/lib/utils";
-import type { File, FileEntry } from "@/shared/types/file";
+import { locateInSource } from "@/shared/ui/selection/locateInSource";
+import { SelectionActionPopover } from "@/shared/ui/selection/SelectionActionPopover";
+import { useTextSelection, type TextSelectionSnapshot } from "@/shared/ui/selection/useTextSelection";
+import { downloadMarkdownAsDocx, getFileName } from "@/shared/lib/utils";
 import { DriveIcon } from "@/shared/ui/DriveIcon";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, Menu, MenuButton, MenuItem, MenuItems } from "@/shared/ui/DropdownMenu";
-import { FileIcon } from "@/shared/ui/FileIcon";
-import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
+import { ArtifactHistoryPopover } from "./ArtifactHistoryPopover";
+import { ArtifactRevisionBanner } from "./ArtifactRevisionBanner";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
+import { ArtifactsNavigator } from "./ArtifactsNavigator";
 
 // Editors are loaded on demand. Each pulls in heavy, format-specific
 // dependencies (pdfjs, the docx/xlsx/pptx converters, mediabunny, shiki, …)
@@ -35,10 +35,11 @@ import { ArtifactsBrowser } from "./ArtifactsBrowser";
 // `lazyRouteComponent` is the same primitive the router uses — it also reloads
 // gracefully when a chunk goes missing after a deploy.
 const CodeEditor = lazyRouteComponent(() => import("@/shared/ui/editors/CodeEditor"), "CodeEditor");
-const CsvEditor = lazyRouteComponent(() => import("@/shared/ui/editors/CsvEditor"), "CsvEditor");
+const DataEditor = lazyRouteComponent(() => import("@/shared/ui/editors/DataEditor"), "DataEditor");
 const DocxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/DocxEditor"), "DocxEditor");
 const HtmlEditor = lazyRouteComponent(() => import("@/shared/ui/editors/HtmlEditor"), "HtmlEditor");
 const JsEditor = lazyRouteComponent(() => import("@/shared/ui/editors/JsEditor"), "JsEditor");
+const BashEditor = lazyRouteComponent(() => import("@/shared/ui/editors/BashEditor"), "BashEditor");
 const MarkdownEditor = lazyRouteComponent(() => import("@/shared/ui/editors/MarkdownEditor"), "MarkdownEditor");
 const MediaEditor = lazyRouteComponent(() => import("@/shared/ui/editors/MediaEditor"), "MediaEditor");
 const MermaidEditor = lazyRouteComponent(() => import("@/shared/ui/editors/MermaidEditor"), "MermaidEditor");
@@ -53,32 +54,231 @@ const SvgEditor = lazyRouteComponent(() => import("@/shared/ui/editors/SvgEditor
 const TextEditor = lazyRouteComponent(() => import("@/shared/ui/editors/TextEditor"), "TextEditor");
 const XlsxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/XlsxEditor"), "XlsxEditor");
 
+const ArtifactRevisionDiff = lazyRouteComponent(() => import("./ArtifactRevisionDiff"), "ArtifactRevisionDiff");
+
+const WIDE_DRAWER_PX = 680;
+/** Remembers whether a wide drawer shows the file column beside the editor. */
+const ARTIFACTS_BROWSER_KEY = "app_artifacts_browser";
+
+function readFileColumnPreference(): boolean {
+  try {
+    return localStorage.getItem(ARTIFACTS_BROWSER_KEY) === "shown";
+  } catch {
+    return false;
+  }
+}
+
+/** File kinds whose revisions can be compared as a line diff. */
+const DIFFABLE_KINDS = new Set<ArtifactKind>(["text", "code", "svg", "mermaid", "html", "markdown"]);
+
+/** An archived revision loaded for display in place of the live file. */
+interface RevisionView {
+  fs: FileSystemManager;
+  path: string;
+  entry: ArtifactRevisionListing;
+  content: string;
+  contentType?: string;
+}
+
+/** Processes uploads into one ingestion batch; returns the last ingested path. */
+async function ingestUploads(
+  fs: FileSystemManager,
+  source: globalThis.File[] | (() => Promise<globalThis.File[]>),
+): Promise<string | undefined> {
+  const fileList = typeof source === "function" ? await source() : source;
+  const batch: ProcessedFile[] = [];
+  for (const file of fileList) {
+    batch.push(...(await processUploadedFile(file)));
+  }
+  const ingestion = await fs.ingestFiles(batch, { origin: { actor: "user", reason: "upload" } });
+  return ingestion.paths.at(-1);
+}
+
 export function ArtifactsDrawer() {
   const config = getConfig();
-  const { fs, activeFile, openFile } = useArtifacts();
-  const { ensureChat } = useChat();
+  const { fs, activeFile, openFile, requestEdit } = useArtifacts();
+  const { ensureChat } = useChatActions();
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
-  const [isRunning, setIsRunning] = useState(false);
-  const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
-  const [showFilePicker, setShowFilePicker] = useState(false);
-  const filePickerRef = useRef<HTMLDivElement>(null);
-  const [showFilesBrowser, setShowFilesBrowser] = useState(false);
+  const [runner, setRunner] = useState<{
+    fs: FileSystemManager | null;
+    path: string | null;
+    run: () => Promise<void>;
+    isRunning: boolean;
+  } | null>(null);
+  const currentRunner = runner?.fs === fs && runner?.path === activeFile ? runner : null;
+  const runHandler = currentRunner?.run;
+  const isRunning = currentRunner?.isRunning ?? false;
+  // The file tree gets its own column only when the drawer can hold it next to a
+  // comfortable preview; below that it folds into the breadcrumb's popover.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [wide, setWide] = useState(false);
+  // On wide drawers the file column is optional; narrow drawers always use the navigator.
+  const [fileColumn, setFileColumn] = useState(readFileColumnPreference);
+  const toggleFileColumn = useCallback(() => {
+    setFileColumn((shown) => {
+      try {
+        if (shown) localStorage.removeItem(ARTIFACTS_BROWSER_KEY);
+        else localStorage.setItem(ARTIFACTS_BROWSER_KEY, "shown");
+      } catch {
+        // Preference stays for this session only.
+      }
+      return !shown;
+    });
+  }, []);
+  const showFileColumn = wide && fileColumn;
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const update = () => setWide(root.clientWidth >= WIDE_DRAWER_PX);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
   const viewSliderRef = useRef<HTMLDivElement>(null);
   const [viewSliderStyle, setViewSliderStyle] = useState({ left: 0, width: 0 });
   const dragCounterRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // State for files list (loaded from async fs.listFiles)
-  const [files, setFiles] = useState<FileEntry[]>([]);
+  const files = useArtifactEntries(fs);
+  // Data files (CSV, Parquet, databases, …) are read through DuckDB; their
+  // possibly huge bytes never enter the editor, so only a stub is loaded.
+  const activeIsData = !!activeFile && artifactKind(activeFile) === "data";
+  const loadedFileData = useArtifactFile(fs, activeIsData ? null : activeFile);
+  const activeEntry = activeIsData ? files.find((entry) => entry.path === activeFile) : undefined;
+  const activeFileData = useMemo<File | null>(
+    () =>
+      activeIsData && activeFile
+        ? { path: activeFile, content: "", contentType: activeEntry?.contentType }
+        : loadedFileData,
+    [activeIsData, activeFile, activeEntry?.contentType, loadedFileData],
+  );
 
-  // State for active file content (loaded from async fs.getFile)
-  const [activeFileData, setActiveFileData] = useState<File | null>(null);
+  // Archived revisions shown in place of the live file: a hover preview from
+  // the history list and a pinned one with restore/compare actions.
+  const [hoverRevision, setHoverRevision] = useState<RevisionView | null>(null);
+  const [pinnedRevision, setPinnedRevision] = useState<RevisionView | null>(null);
+  const [compareRevision, setCompareRevision] = useState(false);
+  const [restoringRevision, setRestoringRevision] = useState(false);
+  const revisionRequest = useRef(0);
+
+  const closeRevision = useCallback(() => {
+    revisionRequest.current++;
+    setHoverRevision(null);
+    setPinnedRevision(null);
+    setCompareRevision(false);
+  }, []);
+
+  // Another file, another workspace, or a change to the live file retires any
+  // archived view so the banner never describes a stale "current".
+  useEffect(() => {
+    closeRevision();
+    if (!fs || !activeFile) return;
+    const retire = (changed: string) => {
+      if (changed === activeFile) closeRevision();
+    };
+    const subscriptions = [
+      fs.subscribe("fileUpdated", retire),
+      fs.subscribe("fileDeleted", retire),
+      fs.subscribe("fileRenamed", (from) => retire(from)),
+    ];
+    return () => subscriptions.forEach((unsubscribe) => unsubscribe());
+  }, [fs, activeFile, closeRevision]);
+
+  const loadRevision = useCallback(
+    async (entry: ArtifactRevisionListing): Promise<RevisionView | null> => {
+      if (!fs || !activeFile) return null;
+      const file = await fs.readRevision(activeFile, entry.revision);
+      return file ? { fs, path: activeFile, entry, content: file.content, contentType: file.contentType } : null;
+    },
+    [fs, activeFile],
+  );
+
+  const handlePeekRevision = useCallback(
+    (entry: ArtifactRevisionListing | null) => {
+      const request = ++revisionRequest.current;
+      if (!entry || entry.current) {
+        setHoverRevision(null);
+        return;
+      }
+      loadRevision(entry)
+        .then((view) => {
+          if (request === revisionRequest.current) setHoverRevision(view);
+        })
+        .catch((error) => console.error("Error loading artifact revision:", error));
+    },
+    [loadRevision],
+  );
+
+  const handlePinRevision = useCallback(
+    (entry: ArtifactRevisionListing) => {
+      const request = ++revisionRequest.current;
+      setHoverRevision(null);
+      setCompareRevision(false);
+      if (entry.current) {
+        setPinnedRevision(null);
+        return;
+      }
+      loadRevision(entry)
+        .then((view) => {
+          if (request === revisionRequest.current) setPinnedRevision(view);
+        })
+        .catch((error) => console.error("Error loading artifact revision:", error));
+    },
+    [loadRevision],
+  );
+
+  const restoreRevision = useCallback(async () => {
+    if (!pinnedRevision) return;
+    setRestoringRevision(true);
+    try {
+      await pinnedRevision.fs.restoreRevision(pinnedRevision.path, pinnedRevision.entry.revision);
+      closeRevision();
+    } catch (error) {
+      console.error("Failed to restore revision:", error);
+      notify.error("Restore failed", error instanceof Error ? error.message : "The revision couldn't be restored.");
+    }
+    setRestoringRevision(false);
+  }, [pinnedRevision, closeRevision]);
+
+  const shownRevision =
+    [hoverRevision, pinnedRevision].find((view) => view && view.fs === fs && view.path === activeFile) ?? null;
+  const canCompareRevision =
+    !!activeFileData && DIFFABLE_KINDS.has(artifactKind(activeFileData.path, activeFileData.contentType));
+
+  // Select-to-edit: the editor reports the element (or preview iframe) whose
+  // selection to watch; a floating control turns the highlight into a request
+  // for the conversation. Archived revisions are read-only, so no control there.
+  const [selectionRoot, setSelectionRoot] = useState<HTMLElement | null>(null);
+  const selectionEnabled = !!requestEdit && !!activeFileData && !shownRevision;
+  const {
+    selection,
+    clear: clearSelection,
+    document: selectionDocument,
+  } = useTextSelection(selectionRoot, { enabled: selectionEnabled });
+  const onSelectionRoot = requestEdit ? setSelectionRoot : undefined;
+  const submitSelectionEdit = useCallback(
+    (instruction: string, snapshot: TextSelectionSnapshot) => {
+      if (!requestEdit || !activeFileData) return;
+      const lines = snapshot.lines ?? locateInSource(activeFileData.content, snapshot.text) ?? undefined;
+      requestEdit({
+        path: activeFileData.path,
+        text: snapshot.text,
+        startLine: lines?.start,
+        endLine: lines?.end,
+        instruction,
+      });
+      clearSelection();
+    },
+    [requestEdit, activeFileData, clearSelection],
+  );
 
   // Processing state for file uploads
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [pendingUploads, setPendingUploads] = useState(0);
+  const isProcessing = pendingUploads > 0;
 
   // Ensure a chat exists and return its `FileSystemManager`. Delegates to the
   // chat feature so artifacts has no chat-creation logic of its own. Using
@@ -91,52 +291,58 @@ export function ArtifactsDrawer() {
   }, [fs, ensureChat]);
 
   const uploadFiles = useCallback(
-    async (fileList: globalThis.File[]) => {
-      const activeFs = await ensureFs();
-      setIsProcessing(true);
+    async (source: globalThis.File[] | (() => Promise<globalThis.File[]>)) => {
+      if (Array.isArray(source) && source.length === 0) return;
+      setPendingUploads((count) => count + 1);
       try {
-        for (const file of fileList) {
-          try {
-            const processedFiles = await processUploadedFile(file);
-            for (const processed of processedFiles) {
-              await activeFs.createFile(processed.path, processed.content, processed.contentType);
-              openFile(processed.path);
-            }
-          } catch (error) {
-            console.error(`Error uploading file ${file.name}:`, error);
-            notify.error("Upload failed", error instanceof Error ? error.message : `"${file.name}" couldn't be added.`);
-          }
-        }
-      } finally {
-        setIsProcessing(false);
+        const activeFs = await ensureFs();
+        const lastPath = await ingestUploads(activeFs, source);
+        if (lastPath) openFile(lastPath, activeFs);
+      } catch (error) {
+        console.error("Error uploading files:", error);
+        notify.error(
+          "Upload failed",
+          error instanceof Error ? error.message : "The files couldn't be added; the workspace was left unchanged.",
+        );
       }
+      setPendingUploads((count) => count - 1);
     },
     [ensureFs, openFile],
   );
 
   const handleDriveFiles = useCallback(
-    async (selected: SelectedFile[]) => {
-      setIsProcessing(true);
-      try {
+    (selected: SelectedFile[]) => {
+      // Bind the upload's workspace before downloads can outlast navigation.
+      return uploadFiles(async () => {
         const fetched: globalThis.File[] = [];
         for (const f of selected) {
-          const url = getDriveContentUrl(f.driveId, f.id);
-          const resp = await fetch(url);
-          const blob = await resp.blob();
-          fetched.push(new globalThis.File([blob], f.name, { type: f.mime || blob.type || "" }));
+          fetched.push(await downloadDriveFile(f, config.artifacts?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES));
         }
-        await uploadFiles(fetched);
-      } finally {
-        setIsProcessing(false);
-      }
+        return fetched;
+      });
     },
-    [uploadFiles],
+    [config.artifacts?.maxFileSize, uploadFiles],
   );
 
   // Callback for editors to register their run handler
-  const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
-    setRunHandler(() => handler);
-  }, []);
+  const onRunReady = useCallback(
+    (handler: (() => Promise<void>) | null) => {
+      setRunner((current) => {
+        const ownsRunner = current?.fs === fs && current?.path === activeFile;
+        if (!handler) return ownsRunner ? null : current;
+        return { fs, path: activeFile, run: handler, isRunning: ownsRunner && current.isRunning };
+      });
+    },
+    [fs, activeFile],
+  );
+  const onRunningChange = useCallback(
+    (isRunning: boolean) => {
+      setRunner((current) =>
+        current?.fs === fs && current?.path === activeFile ? { ...current, isRunning } : current,
+      );
+    },
+    [fs, activeFile],
+  );
 
   // Download a single artifact by path, logging (not surfacing) failures.
   const downloadFile = useCallback(
@@ -151,121 +357,33 @@ export function ArtifactsDrawer() {
     [fs],
   );
 
-  // Subscribe to filesystem events and load data
-  useEffect(() => {
-    if (!fs) {
-      setFiles([]);
-      setActiveFileData(null);
-      return;
+  const downloadAll = useCallback(async () => {
+    if (!fs) return;
+    try {
+      await fs.downloadAsZip();
+    } catch (error) {
+      console.error("Failed to download files:", error);
+      notify.error("Download failed", "The files couldn't be downloaded. Please try again.");
     }
-
-    let cancelled = false;
-
-    // Helper to load files list
-    const loadFiles = async () => {
-      try {
-        const fileList = await fs.listEntries();
-        if (!cancelled) {
-          setFiles(fileList);
-        }
-      } catch (error) {
-        console.error("Error loading files:", error);
-        if (!cancelled) {
-          setFiles([]);
-        }
-      }
-    };
-
-    // Helper to load active file content
-    const loadActiveFile = async () => {
-      if (!activeFile) {
-        if (!cancelled) {
-          setActiveFileData(null);
-        }
-        return;
-      }
-
-      try {
-        const file = await fs.getFile(activeFile);
-        if (!cancelled) {
-          setActiveFileData(file ?? null);
-        }
-      } catch (error) {
-        console.error("Error loading active file:", error);
-        if (!cancelled) {
-          setActiveFileData(null);
-        }
-      }
-    };
-
-    // Load initial data
-    void loadFiles();
-    void loadActiveFile();
-
-    // Subscribe to events for subsequent updates.
-    // Reload the sidebar list for every filesystem change, but only refresh
-    // the active editor content when that specific file is affected.
-    const handleFileCreated = () => {
-      void loadFiles();
-    };
-
-    const handleFileDeleted = (path: string) => {
-      void loadFiles();
-
-      if (path === activeFile && !cancelled) {
-        setActiveFileData(null);
-      }
-    };
-
-    const handleFileRenamed = (oldPath: string, newPath: string) => {
-      void loadFiles();
-
-      if (activeFile === oldPath || activeFile === newPath) {
-        void loadActiveFile();
-      }
-    };
-
-    const handleFileUpdated = (path: string) => {
-      void loadFiles();
-
-      if (path === activeFile) {
-        void loadActiveFile();
-      }
-    };
-
-    const unsubscribeCreated = fs.subscribe("fileCreated", handleFileCreated);
-    const unsubscribeDeleted = fs.subscribe("fileDeleted", handleFileDeleted);
-    const unsubscribeRenamed = fs.subscribe("fileRenamed", handleFileRenamed);
-    const unsubscribeUpdated = fs.subscribe("fileUpdated", handleFileUpdated);
-
-    return () => {
-      cancelled = true;
-      unsubscribeCreated();
-      unsubscribeDeleted();
-      unsubscribeRenamed();
-      unsubscribeUpdated();
-    };
-  }, [fs, activeFile]);
-
+  }, [fs]);
   // Handle auto-opening a file when none is active but files are available.
   // Prefers the most recently modified file; falls back to alphabetical first.
   // Only re-run when the `files` list changes — not when `activeFile` toggles.
   // Otherwise a deletion flow races: clearing `activeFile` re-runs this effect
   // before `loadFiles()` finishes, so `files` is still stale with the deleted
   // entry and we'd immediately reopen it.
-  const activeFileRef = useRef(activeFile);
-  activeFileRef.current = activeFile;
-  useEffect(() => {
-    if (!activeFileRef.current && files.length > 0) {
-      const best = files.reduce((prev, curr) => {
+  const autoOpenFile = useEffectEvent((available: typeof files, currentFs: typeof fs) => {
+    if (!activeFile && available.length > 0) {
+      const best = available.reduce((prev, curr) => {
         const prevTime = prev.lastModified ?? 0;
         const currTime = curr.lastModified ?? 0;
         if (currTime !== prevTime) return currTime > prevTime ? curr : prev;
         return curr.path < prev.path ? curr : prev;
       });
-      openFile(best.path);
+      if (currentFs) openFile(best.path, currentFs);
     }
-  }, [files, openFile]);
+  });
+  useEffect(() => autoOpenFile(files, fs), [files, fs]);
 
   // Drag and drop handlers
   const handleDrop = async (e: React.DragEvent) => {
@@ -301,18 +419,6 @@ export function ArtifactsDrawer() {
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
-
-  // Close file picker when clicking outside
-  useEffect(() => {
-    if (!showFilePicker) return;
-    const handleClick = (e: MouseEvent) => {
-      if (!filePickerRef.current?.contains(e.target as Node)) {
-        setShowFilePicker(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [showFilePicker]);
 
   // Render the file-specific editor
   const renderFileEditor = () => {
@@ -358,8 +464,16 @@ export function ArtifactsDrawer() {
       return null;
     }
 
-    const editorKey = activeFileData.path;
-    const kind = artifactKind(activeFileData.path, activeFileData.contentType);
+    // A hovered or pinned revision replaces the live content in the same editor.
+    const shownFile = shownRevision
+      ? {
+          ...activeFileData,
+          content: shownRevision.content,
+          contentType: shownRevision.contentType ?? activeFileData.contentType,
+        }
+      : activeFileData;
+    const editorKey = JSON.stringify([fs?.chatId, shownFile.path, shownRevision?.entry.revision ?? "current"]);
+    const kind = artifactKind(shownFile.path, shownFile.contentType);
 
     switch (kind) {
       case "image":
@@ -367,8 +481,8 @@ export function ArtifactsDrawer() {
           <div className="h-full flex items-center justify-center bg-neutral-50 dark:bg-neutral-900/60 p-6 overflow-auto">
             <img
               key={editorKey}
-              src={activeFileData.content}
-              alt={getFileName(activeFileData.path)}
+              src={shownFile.content}
+              alt={getFileName(shownFile.path)}
               className="max-w-full max-h-full object-contain rounded-md shadow-sm"
               draggable={false}
             />
@@ -379,47 +493,47 @@ export function ArtifactsDrawer() {
         return (
           <MediaEditor
             key={editorKey}
-            path={activeFileData.path}
-            content={activeFileData.content}
-            contentType={activeFileData.contentType}
+            path={shownFile.path}
+            content={shownFile.content}
+            contentType={shownFile.contentType}
           />
         );
       case "pdf":
-        return <PdfEditor key={editorKey} content={activeFileData.content} />;
+        return <PdfEditor key={editorKey} content={shownFile.content} />;
       case "pptx":
         return (
           <PptxEditor
             key={editorKey}
-            path={activeFileData.path}
-            content={activeFileData.content}
-            contentType={activeFileData.contentType}
+            path={shownFile.path}
+            content={shownFile.content}
+            contentType={shownFile.contentType}
           />
         );
       case "docx":
         return (
           <DocxEditor
             key={editorKey}
-            path={activeFileData.path}
-            content={activeFileData.content}
-            contentType={activeFileData.contentType}
+            path={shownFile.path}
+            content={shownFile.content}
+            contentType={shownFile.contentType}
           />
         );
       case "xlsx":
         return (
           <XlsxEditor
             key={editorKey}
-            path={activeFileData.path}
-            content={activeFileData.content}
-            contentType={activeFileData.contentType}
+            path={shownFile.path}
+            content={shownFile.content}
+            contentType={shownFile.contentType}
           />
         );
       case "email":
         return (
           <OfficeMarkdownEditor
             key={editorKey}
-            path={activeFileData.path}
-            content={activeFileData.content}
-            contentType={activeFileData.contentType}
+            path={shownFile.path}
+            content={shownFile.content}
+            contentType={shownFile.contentType}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
           />
@@ -434,7 +548,7 @@ export function ArtifactsDrawer() {
                 This file is stored as binary data and cannot be edited as plain text here.
               </p>
               <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
-                {activeFileData.contentType || "application/octet-stream"}
+                {shownFile.contentType || "application/octet-stream"}
               </p>
             </div>
           </div>
@@ -443,58 +557,49 @@ export function ArtifactsDrawer() {
         return (
           <HtmlEditor
             key={editorKey}
-            path={activeFileData.path}
-            content={activeFileData.content}
+            path={shownFile.path}
+            content={shownFile.content}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
+            onSelectionRoot={onSelectionRoot}
           />
         );
       case "svg":
         return (
-          <SvgEditor
-            key={editorKey}
-            content={activeFileData.content}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-          />
+          <SvgEditor key={editorKey} content={shownFile.content} viewMode={viewMode} onViewModeChange={setViewMode} />
         );
       case "mermaid":
         return (
           <MermaidEditor
             key={editorKey}
-            content={activeFileData.content}
+            content={shownFile.content}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
           />
         );
-      case "csv":
-        return (
-          <CsvEditor
-            key={editorKey}
-            content={activeFileData.content}
-            viewMode={viewMode === "preview" ? "table" : "code"}
-            onViewModeChange={(mode) => setViewMode(mode === "table" ? "preview" : "code")}
-          />
-        );
+      case "data":
+        return <DataEditor key={editorKey} path={shownFile.path} snapshot={shownRevision ? shownFile : undefined} />;
       case "markdown":
         return (
           <MarkdownEditor
             key={editorKey}
-            content={activeFileData.content}
-            path={activeFileData.path}
+            content={shownFile.content}
+            path={shownFile.path}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
+            onSelectionRoot={onSelectionRoot}
           />
         );
       case "code": {
-        const lang = artifactLanguage(activeFileData.path);
+        const lang = artifactLanguage(shownFile.path);
         if (lang === "py") {
           return (
             <PythonEditor
               key={editorKey}
-              content={activeFileData.content}
+              content={shownFile.content}
               onRunReady={onRunReady}
-              onRunningChange={setIsRunning}
+              onRunningChange={onRunningChange}
+              onSelectionRoot={onSelectionRoot}
             />
           );
         }
@@ -502,16 +607,30 @@ export function ArtifactsDrawer() {
           return (
             <JsEditor
               key={editorKey}
-              content={activeFileData.content}
+              content={shownFile.content}
               onRunReady={onRunReady}
-              onRunningChange={setIsRunning}
+              onRunningChange={onRunningChange}
+              onSelectionRoot={onSelectionRoot}
             />
           );
         }
-        return <CodeEditor key={editorKey} content={activeFileData.content} language={lang} />;
+        if (lang === "sh" || lang === "bash") {
+          return (
+            <BashEditor
+              key={editorKey}
+              content={shownFile.content}
+              onRunReady={onRunReady}
+              onRunningChange={onRunningChange}
+              onSelectionRoot={onSelectionRoot}
+            />
+          );
+        }
+        return (
+          <CodeEditor key={editorKey} content={shownFile.content} language={lang} onSelectionRoot={onSelectionRoot} />
+        );
       }
       default:
-        return <TextEditor key={editorKey} content={activeFileData.content} />;
+        return <TextEditor key={editorKey} content={shownFile.content} onSelectionRoot={onSelectionRoot} />;
     }
   };
 
@@ -540,7 +659,7 @@ export function ArtifactsDrawer() {
     const kind = activeFileData
       ? artifactKind(activeFileData.path, activeFileData.contentType)
       : artifactKind(activeFile);
-    return ["html", "svg", "mermaid", "csv", "markdown"].includes(kind);
+    return ["html", "svg", "mermaid", "markdown"].includes(kind);
   };
 
   // Handle run button click
@@ -556,6 +675,7 @@ export function ArtifactsDrawer() {
 
   return (
     <div
+      ref={rootRef}
       className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative pt-2 md:pt-0 bg-neutral-50 dark:bg-neutral-950"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -587,123 +707,36 @@ export function ArtifactsDrawer() {
         }}
       />
 
-      {/* Outer horizontal split: left = top bar + editor; right = files browser (full height) */}
-      <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
-        {/* Left column: top bar + editor */}
-        <ResizablePanel defaultSize={75} minSize={200} className="h-full flex flex-col overflow-hidden">
-          {/* Top bar — lives inside the left column so the files browser spans full drawer height */}
+      {/* Left = top bar + editor; right = the file column when the drawer is wide */}
+      <div className="flex flex-1 min-h-0">
+        <div className="h-full flex-1 min-w-0 flex flex-col overflow-hidden">
+          {/* Top bar — lives inside the left column so the file column spans the full drawer height */}
           <div className="@container shrink-0 h-12 md:h-10 flex items-center px-2 gap-1">
             {/* File title */}
-            <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative" ref={filePickerRef}>
+            <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative">
               {isEmpty && (
                 <span className="text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate">
                   Artifacts
                 </span>
               )}
-              {activeFile && (
-                <button
-                  type="button"
-                  onClick={() => files.length > 1 && setShowFilePicker((v) => !v)}
-                  className={cn(
-                    "flex items-center gap-1.5 min-w-0 rounded px-1 -mx-1 py-0.5 transition-all duration-150 ease-out",
-                    files.length > 1
-                      ? "hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-                      : "cursor-default pointer-events-none",
-                  )}
-                >
-                  <FileIcon name={activeFile} className="shrink-0 @[18rem]:inline hidden" />
-                  <span
-                    className="text-sm md:text-xs font-medium truncate text-neutral-600 dark:text-neutral-400"
-                    title={getFileName(activeFile)}
-                  >
-                    {getFileName(activeFile)}
-                  </span>
-                  {files.length > 1 && (
-                    <ChevronDown
-                      size={12}
-                      className={cn(
-                        "shrink-0 w-3.5 h-3.5 md:w-3 md:h-3 text-neutral-400 transition-transform duration-150",
-                        showFilePicker && "rotate-180",
-                      )}
-                    />
-                  )}
-                </button>
+              {activeFile && fs && (
+                <ArtifactsNavigator
+                  fs={fs}
+                  files={files}
+                  activePath={activeFile}
+                  onOpen={openFile}
+                  popover={!showFileColumn && files.length > 1}
+                  drives={config.drives}
+                  isProcessing={isProcessing}
+                  onUploadLocal={() => fileInputRef.current?.click()}
+                  onUploadDrive={(drive) => setActiveDrive(drive)}
+                  onDownloadAll={downloadAll}
+                  onDownloadFile={downloadFile}
+                />
               )}
               {/* The "Text preview" disclosure for extracted-text rendering
                   lives inside OfficeMarkdownEditor so it also covers the
                   fallback paths of the high-fidelity office editors. */}
-              {/* View mode segmented control — inline after filename */}
-              {supportsPreview() && (
-                <div
-                  ref={viewSliderRef}
-                  className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 ml-2"
-                >
-                  {/* responsive segmented control */}
-                  {/* Animated slider background */}
-                  {viewSliderStyle.width > 0 && (
-                    <div
-                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
-                      style={{
-                        left: `${viewSliderStyle.left}px`,
-                        width: `${viewSliderStyle.width}px`,
-                        height: "calc(100% - 4px)",
-                        top: "2px",
-                      }}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    data-view="preview"
-                    onClick={() => setViewMode("preview")}
-                    title="Preview"
-                    className={cn(
-                      "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
-                      viewMode === "preview"
-                        ? "text-neutral-900 dark:text-neutral-50"
-                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                    )}
-                  >
-                    <Eye size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
-                  </button>
-                  <button
-                    type="button"
-                    data-view="code"
-                    onClick={() => setViewMode("code")}
-                    title="Code"
-                    className={cn(
-                      "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
-                      viewMode === "code"
-                        ? "text-neutral-900 dark:text-neutral-50"
-                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                    )}
-                  >
-                    <Code size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
-                  </button>
-                </div>
-              )}
-              {showFilePicker && files.length > 1 && (
-                <div className="absolute top-full left-0 mt-1 z-50 min-w-48 max-w-72 rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 overflow-hidden p-1">
-                  {files.map((f) => (
-                    <button
-                      key={f.path}
-                      type="button"
-                      onClick={() => {
-                        openFile(f.path);
-                        setShowFilePicker(false);
-                      }}
-                      className={cn(
-                        "w-full flex items-center gap-2 px-3 py-2.5 md:py-1.5 rounded-lg text-left text-sm md:text-xs transition-colors duration-100 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/60 dark:hover:bg-white/5",
-                        f.path === activeFile && "font-medium",
-                      )}
-                    >
-                      <FileIcon name={f.path} className="shrink-0" />
-                      <span className="truncate" title={f.path}>
-                        {getFileName(f.path)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Empty-state Upload action — mirrors the Agent drawer's subtle header actions. */}
@@ -747,8 +780,66 @@ export function ArtifactsDrawer() {
             {(runHandler || activeFileData) && (
               <>
                 <div className="flex items-center gap-0.5">
-                  {/* Run button */}
-                  {runHandler && (
+                  {/* Preview / code toggle, grouped with the other file actions */}
+                  {supportsPreview() && (
+                    <div
+                      ref={viewSliderRef}
+                      className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 mr-1"
+                    >
+                      {/* responsive segmented control */}
+                      {/* Animated slider background */}
+                      {viewSliderStyle.width > 0 && (
+                        <div
+                          className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
+                          style={{
+                            left: `${viewSliderStyle.left}px`,
+                            width: `${viewSliderStyle.width}px`,
+                            height: "calc(100% - 4px)",
+                            top: "2px",
+                          }}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        data-view="preview"
+                        onClick={() => setViewMode("preview")}
+                        title="Preview"
+                        className={cn(
+                          "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
+                          viewMode === "preview"
+                            ? "text-neutral-900 dark:text-neutral-50"
+                            : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                        )}
+                      >
+                        <Eye size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
+                      </button>
+                      <button
+                        type="button"
+                        data-view="code"
+                        onClick={() => setViewMode("code")}
+                        title="Code"
+                        className={cn(
+                          "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
+                          viewMode === "code"
+                            ? "text-neutral-900 dark:text-neutral-50"
+                            : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                        )}
+                      >
+                        <Code size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
+                      </button>
+                    </div>
+                  )}
+                  {/* Revision history */}
+                  {activeFileData && fs && (
+                    <ArtifactHistoryPopover
+                      fs={fs}
+                      path={activeFileData.path}
+                      onPeek={handlePeekRevision}
+                      onPin={handlePinRevision}
+                    />
+                  )}
+                  {/* Run button (the live file only; an archived revision is read-only) */}
+                  {runHandler && !shownRevision && (
                     <button
                       type="button"
                       onClick={handleRun}
@@ -774,22 +865,20 @@ export function ArtifactsDrawer() {
                           <button
                             type="button"
                             onClick={() => downloadFile(activeFileData.path)}
-                            className="flex items-center gap-1 px-2 py-1.5 md:px-1.5 md:py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-sm md:text-xs"
+                            className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
                             title={`Download ${getFileName(activeFileData.path)}`}
                           >
                             <Download size={13} className="w-4 h-4 md:w-3.25 md:h-3.25" />
-                            <span className="@[18rem]:inline hidden">Download</span>
                           </button>
                         );
                       }
                       return (
                         <Menu>
                           <MenuButton
-                            className="flex items-center gap-1 px-2 py-1.5 md:px-1.5 md:py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-sm md:text-xs"
+                            className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
                             title="Download"
                           >
                             <Download size={13} className="w-4 h-4 md:w-3.25 md:h-3.25" />
-                            <span className="@[18rem]:inline hidden">Download</span>
                           </MenuButton>
                           <MenuItems
                             modal={false}
@@ -811,11 +900,9 @@ export function ArtifactsDrawer() {
                               <button
                                 type="button"
                                 onClick={async () => {
+                                  const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, "");
                                   try {
-                                    const { markdownToDocx } = await import("@/shared/lib/markdownToDocx");
-                                    const blob = await markdownToDocx(activeFileData.content);
-                                    const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, "");
-                                    downloadBlob(blob, `${baseName}.docx`);
+                                    await downloadMarkdownAsDocx(activeFileData.content, `${baseName}.docx`);
                                   } catch (error) {
                                     console.error("Failed to convert to Word:", error);
                                   }
@@ -836,68 +923,84 @@ export function ArtifactsDrawer() {
                         </Menu>
                       );
                     })()}
+                  {/* File column toggle (wide drawers only) */}
+                  {wide && files.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={toggleFileColumn}
+                      aria-pressed={fileColumn}
+                      title={fileColumn ? "Hide file list" : "Show file list"}
+                      aria-label={fileColumn ? "Hide file list" : "Show file list"}
+                      className={cn(
+                        "p-2 md:p-1.5 rounded transition-all duration-150 ease-out hover:bg-black/5 dark:hover:bg-white/5",
+                        fileColumn
+                          ? "text-neutral-800 dark:text-neutral-200"
+                          : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                      )}
+                    >
+                      <PanelRight size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                    </button>
+                  )}
                 </div>
-
-                {files.length > 0 && !showFilesBrowser && (
-                  <div className="w-px h-4 bg-black/10 dark:bg-white/10 mx-0.5" />
-                )}
               </>
-            )}
-
-            {files.length > 0 && !showFilesBrowser && (
-              <button
-                type="button"
-                onClick={() => setShowFilesBrowser(true)}
-                className="flex items-center p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
-                title="Show files"
-              >
-                <PanelRightOpen size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
-              </button>
             )}
           </div>
 
           {/* Editor fills the left column */}
-          <div className="flex-1 min-h-0 overflow-hidden relative z-0">
-            <Suspense
-              fallback={
-                <div className="h-full flex items-center justify-center">
-                  <Loader2 className="h-5 w-5 animate-spin text-neutral-400 dark:text-neutral-500" />
-                </div>
-              }
-            >
-              {renderFileEditor()}
-            </Suspense>
-          </div>
-        </ResizablePanel>
-
-        {/* Files browser — right panel shown alongside the editor */}
-        {files.length > 0 && fs && showFilesBrowser && (
-          <ResizablePanel defaultSize={25} minSize={120}>
-            <div className="h-full overflow-hidden border-l border-black/10 dark:border-white/10">
-              <ArtifactsBrowser
-                fs={fs}
-                files={files}
-                openTabs={activeFile ? [activeFile] : []}
-                onFileClick={openFile}
-                drives={config.drives}
-                isProcessing={isProcessing}
-                onClose={() => setShowFilesBrowser(false)}
-                onUploadLocal={() => fileInputRef.current?.click()}
-                onUploadDrive={(drive) => setActiveDrive(drive)}
-                onDownloadAll={async () => {
-                  try {
-                    await fs.downloadAsZip();
-                  } catch (error) {
-                    console.error("Failed to download files:", error);
-                    notify.error("Download failed", "The files couldn't be downloaded. Please try again.");
-                  }
-                }}
-                onDownloadFile={downloadFile}
+          <div className="flex-1 min-h-0 overflow-hidden relative z-0 flex flex-col">
+            {pinnedRevision && shownRevision === pinnedRevision && (
+              <ArtifactRevisionBanner
+                entry={pinnedRevision.entry}
+                canCompare={canCompareRevision}
+                comparing={compareRevision}
+                restoring={restoringRevision}
+                onToggleCompare={() => setCompareRevision((value) => !value)}
+                onRestore={restoreRevision}
+                onClose={closeRevision}
               />
+            )}
+            <div className="flex-1 min-h-0 overflow-hidden relative">
+              <Suspense
+                fallback={
+                  <div className="h-full flex items-center justify-center">
+                    <Loader2 className="h-5 w-5 animate-spin text-neutral-400 dark:text-neutral-500" />
+                  </div>
+                }
+              >
+                {compareRevision && pinnedRevision && activeFileData ? (
+                  <ArtifactRevisionDiff before={pinnedRevision.content} after={activeFileData.content} />
+                ) : (
+                  renderFileEditor()
+                )}
+              </Suspense>
             </div>
-          </ResizablePanel>
+          </div>
+        </div>
+
+        {showFileColumn && files.length > 0 && fs && (
+          <ArtifactsBrowser
+            key={fs.chatId}
+            className="w-52 shrink-0"
+            fs={fs}
+            files={files}
+            activePath={activeFile}
+            onOpen={openFile}
+            drives={config.drives}
+            isProcessing={isProcessing}
+            onUploadLocal={() => fileInputRef.current?.click()}
+            onUploadDrive={(drive) => setActiveDrive(drive)}
+            onDownloadAll={downloadAll}
+            onDownloadFile={downloadFile}
+          />
         )}
-      </ResizablePanelGroup>
+      </div>
+
+      <SelectionActionPopover
+        selection={selection}
+        onSubmit={submitSelectionEdit}
+        onDismiss={clearSelection}
+        pressDocument={selectionDocument}
+      />
 
       {activeDrive && (
         <DrivePicker

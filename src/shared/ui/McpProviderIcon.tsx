@@ -12,18 +12,27 @@ function isSvgSource(src: string): boolean {
   return /\.svg(\?|#|$)/i.test(src) || src.startsWith("data:image/svg+xml");
 }
 
+/** Whether a URL is safe to mask: cross-origin SVGs need CORS, which most icon hosts lack. */
+function isMaskable(src: string): boolean {
+  if (src.startsWith("data:")) return true;
+  try {
+    return new URL(src, window.location.origin).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Renders an MCP provider icon from a URL (server-published icon or favicon).
  *
- * SVG sources are tinted to `currentColor` via a CSS mask, so a monochrome logo
- * follows the surrounding text color and stays visible in dark mode. Raster logos
- * keep their real colors and fall back to the Lucide Server icon if they fail to
- * load (a mask can't report load errors, so SVGs just render blank if missing).
+ * Same-origin SVGs are tinted via a CSS mask so they follow the surrounding text
+ * color; cross-origin SVGs skip the mask (CORS) and render as a plain `<img>`.
+ * Raster logos keep their colors and fall back to the Server icon on load failure.
  */
 export function McpProviderIcon({ src, size = 14, className }: McpProviderIconProps) {
   const [erroredSrc, setErroredSrc] = useState<string | null>(null);
 
-  if (isSvgSource(src)) {
+  if (isSvgSource(src) && isMaskable(src)) {
     return (
       <span
         aria-hidden

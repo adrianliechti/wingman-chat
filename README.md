@@ -10,8 +10,11 @@ conversations, retrieval over your own files, and a library of reusable skills.
 ### Chat
 
 - **Multi-model chat** with configurable models, system instructions, and per-model defaults.
-- **Rich Markdown rendering** — GitHub-flavored Markdown, syntax highlighting (Shiki), math (KaTeX),
+- **Rich Markdown rendering** — TanStack Markdown with GitHub-style tables, task lists and footnotes, syntax highlighting (Shiki), math (KaTeX),
   Mermaid diagrams, emoji, and tables.
+- **Inline UI** — replies can embed small interactive interfaces (what-if calculators, filtered
+  tables, charts, option buttons) as a validated JSON component tree with reactive state. See
+  [docs/inline-ui.md](docs/inline-ui.md).
 - **Conversation management** with optional retention, automatic summarization, and history
   optimization.
 - **Attachments & vision** — drop in images and documents; PDF/Office files are extracted to text.
@@ -19,22 +22,29 @@ conversations, retrieval over your own files, and a library of reusable skills.
 
 ### Tools & Agents
 
-- **In-browser code interpreter** — a sandboxed Python runtime (Pyodide) with bundled scientific
-  packages. The model writes and runs real code; charts, files, and results land back in the chat.
+- **In-browser code interpreters** — one `execute_script` tool for sandboxed Python (Pyodide), JavaScript,
+  and Bash (just-bash) workers, sharing artifact files and selected skill resources. File scripts select
+  their runtime by shebang or extension; inline code specifies `language`. Bundled libraries and
+  Bash pipelines cover data, document, media and text processing. The model writes and runs real code; charts, files, and results
+  land back in the workspace.
 - **Web search & browsing** for grounded, up-to-date answers.
+  Research tools batch and reuse retrieval, and select relevant passages from long pages.
+  See [research benchmarks](docs/research-benchmarks.md) for repeatable quality and tool-usage comparisons.
 - **Sub-agents** for delegating focused, multi-step work.
 - **Model Context Protocol (MCP)** — connect external tool servers through a configurable bridge.
 - **Built-in tool shims** for OCR, vision, translation, transcription, speech synthesis, and rendering.
 
-### Studio — documents, visuals & media
+### Documents, visuals & media
 
-Ask for a real deliverable and Wingman builds it for real, then drops it in your workspace:
+Built-in skills are available in every chat and agent without a mode toggle. Instructions and
+runtime references load on demand. Ask for a deliverable and Wingman saves it in your workspace:
 
 - **Slide decks** (`.pptx`), **Word documents** (`.docx`), **spreadsheets** (`.xlsx`), and **PDFs**.
 - **Charts, dashboards, and data visualizations** built from real numbers.
-- **Diagrams** — BPMN, swimlane, C4, sequence, mind maps, and other process/architecture diagrams.
+- **Diagrams** — BPMN-style flows, swimlanes, C4-style views, sequences and mind maps.
 - **Infographics, posters, and generative/algorithmic art** across many visual styles.
-- **Self-contained web pages / UI prototypes** (offline-ready, no external CDNs).
+- **Web pages / UI prototypes** with bundled libraries and preview services, or standalone HTML when requested.
+- **Structured documents and internal communications** adapted to the audience and supplied sources.
 - **Generated images** (when an image tool is configured) and **podcast-style audio**.
 
 ### Artifacts workspace
@@ -42,11 +52,52 @@ Ask for a real deliverable and Wingman builds it for real, then drops it in your
 A per-conversation file system where generated and uploaded files live, with native in-app rendering
 and download. Browse, preview, and iterate on artifacts side-by-side with the chat.
 
-### Notebook
+### Data analysis & workflows
 
-Turn source material into polished, long-form output: **reports**, **slide decks**, **infographics**,
-**podcasts** (briefing, debate, deep-dive, overview, story formats).
-**quizzes**, **mind maps**, and **podcasts** (briefing, debate, deep-dive, overview, story formats).
+Python includes DuckDB, pandas and PyArrow for local analysis and file generation. JavaScript exposes
+Apache Arrow as the `arrow` global. Python and JavaScript can also query saved workspace files through
+`await sql(...)`; HTML previews use `wingman.duckdb`. Libraries load on demand from the bundled assets.
+
+| Capability                                 | Python interpreter                                | JavaScript interpreter                               | HTML preview                                      |
+| ------------------------------------------ | ------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------- |
+| SQL over CSV/TSV, JSON/JSONL and Parquet   | Local `duckdb`, or `await sql(...)` bridge        | `await sql(...)` bridge                              | `wingman.duckdb.query(...)`                       |
+| Query pandas / Arrow objects               | Register them with a local DuckDB connection      | Write an Arrow IPC file for Python                   | Query prepared workspace datasets                 |
+| Read/write Arrow IPC files                 | `pyarrow.ipc`                                     | `arrow.tableFromIPC` / `arrow.tableToIPC` with `vfs` | Use Parquet for SQL dashboards                    |
+| Write Parquet datasets                     | DuckDB `COPY` or `pyarrow.parquet`                | Hand off to Python                                   | Consume generated datasets                        |
+| Write CSV / JSON                           | DuckDB `COPY`, pandas or standard library         | `vfs.write` / `vfs.writeJSON`                        | Consume generated datasets                        |
+| Read Excel                                 | pandas/openpyxl; bridge also supports `read_xlsx` | Bridge `read_xlsx`                                   | Bridge `read_xlsx`                                |
+| Query files created during the current run | Local DuckDB reads them immediately               | Bridge sees them after a successful run              | Sees committed workspace files                    |
+| Save a database for later runs             | `duckdb.connect("analysis.duckdb")`               | Preserve/download the binary file                    | No `.duckdb` data viewer                          |
+| Interactive filtered dashboards            | Prepare data and statistical results              | Generate charts and HTML                             | Query current workspace data for each filter/view |
+
+Use **Parquet to hand datasets between Python, the SQL bridge and HTML dashboards**. Use Arrow IPC
+when exchanging typed tables between Python and JavaScript. SQL sessions are separate: local Python
+tables and bridge tables are not shared, and temporary tables end with their run or preview session.
+
+Python's DuckDB wheel includes `core_functions`, `icu`, `json` and `parquet`; Excel and full-text-search
+extensions are available through the bridge, not the Python wheel. Local DuckDB connections default
+to one thread and a 256 MB buffer-memory limit. This is not a limit on all Python, Arrow or result
+memory: use `COPY` or `to_arrow_reader()` for larger results; `df()` and `to_arrow_table()` materialize
+them. Bridge JSON results are capped at 100,000 rows / 16 MiB. Interpreter file/output limits also apply.
+
+Successful interpreter runs commit file changes to the workspace; failed or cancelled runs do not.
+Close database connections before finishing (prefer `with duckdb.connect(...) as con:`). The runtime
+also closes connections opened through `duckdb.connect` and resets the default connection per run.
+Database revisions store whole changed files, so Parquet outputs are usually preferable to frequent
+updates of a growing database. Direct networking and runtime package installation are unavailable.
+
+Example requests:
+
+- **Sales dashboard:** “Join these monthly CSVs, normalize regions, save a Parquet dataset, and build
+  a dashboard with date and region filters.”
+- **Reconciliation:** “Compare the invoice spreadsheet with payment exports; give me unmatched
+  records, duplicate IDs and a downloadable exception report.”
+- **Event analysis:** “Read these gzipped JSONL logs, calculate funnel conversion and session counts,
+  and save the results with charts.”
+- **Data quality:** “Profile missing values, invalid dates and outliers; produce a cleaned dataset
+  and an audit report explaining every rule.”
+- **Typed data exchange:** “Generate a table in Python, save Arrow IPC, and use JavaScript to build
+  a visualization without losing large integer IDs.”
 
 ### Repository (retrieval)
 
@@ -61,7 +112,21 @@ including live transcription.
 ### Translate
 
 A dedicated mode for translating documents (PDF and more) and text, with selectable tone and style
-across many languages.
+across many languages. When `translator.yaml` lists more than one provider, users can pick which
+translator to use; each `id` must match a translator configured on the platform. A provider's
+`files` and `languages` override the translator-wide lists:
+
+```yaml
+providers:
+  - id: azure-translator
+    name: Azure
+  - id: google-translator
+    name: Google
+    languages: [en, de, fr, ja, zh]
+
+files: [.pdf, .docx]
+languages: [en, de, fr, it, es]
+```
 
 ### Canvas
 
@@ -71,7 +136,8 @@ A focused surface for generating and iterating on images.
 
 100+ reusable, domain-specific skills the model can read on demand — spanning engineering, product,
 design, data, finance, legal, HR, marketing, sales, operations, customer support, knowledge, writing,
-and the Studio output formats. Skills are plain Markdown, so they're easy to add, edit, and share.
+and artifact output formats. General document, data and design skills are included by default;
+personal and plugin skills extend the catalog. Skills are plain Markdown, so they're easy to add, edit, and share.
 
 ### Cloud drives
 
@@ -87,80 +153,258 @@ or a **local** directory.
 
 ## Architecture
 
-| Layer          | Stack                                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------- |
-| Frontend       | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack Router/Table/Virtual, React Compiler |
-| Code execution | Pyodide (Python in WebAssembly), bundled at build time                                      |
-| Server         | Go — static hosting, API proxy, skills/notebook libraries, drive providers, OpenTelemetry   |
-| Packaging      | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`)                             |
+| Layer          | Stack                                                                                          |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| Frontend       | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack AI/Router/Table/Virtual, React Compiler |
+| Code execution | `execute_script`: Python/Pyodide, JavaScript and Bash workers; DuckDB-Wasm preview bridge      |
+| Server         | Go — static hosting, API proxy, skills library, drive providers, OpenTelemetry                 |
+| Packaging      | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`)                                |
 
 The Go server (`main.go`, `pkg/`) serves the built SPA from `dist/`, proxies requests under the API
-prefix (default `/api`) to the configured platform, and mounts the `skills/` and `notebook/`
-directories as libraries the client can read.
+prefix (default `/api`) to the configured platform, and mounts the `skills/` directory as a library
+the client can read.
+
+AI execution runs in the browser through TanStack AI. The Go server remains the
+existing proxy. See [AI integration](docs/ai-integration.md) for the framework
+boundaries and gateway compatibility adapters.
+
+Production builds generate Brotli and gzip variants of WASM, JavaScript, CSS, HTML, and other text
+assets. The Go server negotiates the encoding and serves those files directly, with no compression
+work during requests. Hot files use the OS page cache rather than a separate Go memory cache.
+Hashed assets keep their one-year immutable browser cache; other files revalidate on reuse.
 
 ## Getting started
 
 ### Prerequisites
 
-- Node.js (LTS) and npm
+- Node.js 24.11+ (LTS) and npm (see `package.json` for other supported Node versions)
 - Go 1.x (only to run the server locally)
 - Access to a Wingman or OpenAI-compatible API endpoint
 
 ### Development
 
 ```bash
-npm install
+npm ci
 
 # Point at your platform
-export WINGMAN_URL=http://localhost:8080      # or OPENAI_BASE_URL
+export WINGMAN_URL=http://localhost:4242      # or OPENAI_BASE_URL
 export WINGMAN_TOKEN=...                      # or OPENAI_API_KEY
 
 # Frontend dev server (bundles Pyodide packages on first run)
 npm run dev
 ```
 
+### Gateway end-to-end tests
+
+The opt-in E2E suites start the application development proxy and run the real `Client` and agent loop against a live
+Wingman gateway. The smoke suite covers model discovery, Responses streaming, tool-call correlation, cancellation, the
+terminal error contract, and a Sonnet 4.6 artifact creation, validation, and mutation metadata flow.
+
+The challenge suite uses the machine's existing `WINGMAN_URL` and `WINGMAN_TOKEN`. It prefers Bedrock Sonnet 4.6 when
+that gateway exposes it (otherwise direct Sonnet 4.6) and also runs GPT-5.4. It injects a real mid-stream connection
+failure, checks interruption reporting, explicit retry and cancellation, exercises model-driven tool recovery, runtime verification,
+nested-agent iteration limits, running-tool aborts and runaway-loop limits, and executes quote-heavy multiline Python through
+the exact production interpreter schema. Its artifact scenarios use production file tools against an isolated disk
+workspace to cover invalid structured-file repair, revision/delta metadata, file verification, and moves. It makes
+many real model requests and requires `python3`; use the smoke suite for
+quick checks.
+
+The smoke suite covers inline Word documents, structured extraction, persisted
+signed reasoning, model switching, and compaction alongside the agent lifecycle
+checks. Word and signed-reasoning fixtures use GPT-5.4-mini by default; set
+`WINGMAN_E2E_COMPATIBILITY_MODEL` to another deployment supporting both features.
+Word input and conversation replay are also checked with Bedrock Sonnet 4.6,
+along with raw CSV input. Set `WINGMAN_E2E_DOCUMENT_MODEL` to its gateway alias
+(default `claude-sonnet-4-6`); this must resolve to a Bedrock Converse deployment.
+Fixtures are skipped when their deployment is absent. Reasoning replay also
+covers Claude Opus 5.5 and Haiku 5.5 at their default effort when exposed.
+The model-switch fixture requires a second model (the smoke model, or Sonnet 4.6
+when they are the same). Inline document support depends on the gateway deployment.
+
+The Bedrock soak is a focused provider-quality probe: ten byte-exact `create_file` calls and ten real
+`execute_script` calls with `language: "python"` using the production schemas. It reports raw JSON/AntML failures separately from calls
+that succeeded through TanStack's provider normalization, making gateway/model quality measurable separately
+from the framework's handling.
+
+```bash
+npm run test:e2e
+npm run test:e2e:challenge
+npm run test:e2e:bedrock-soak
+npm run test:e2e:all
+
+# Optional overrides
+WINGMAN_E2E_GATEWAY=http://localhost:4242 \
+WINGMAN_E2E_MODEL=auto \
+WINGMAN_E2E_ARTIFACT_MODEL=claude-sonnet-4-6 \
+WINGMAN_E2E_COMPATIBILITY_MODEL=gpt-5.4-mini \
+WINGMAN_E2E_DOCUMENT_MODEL=claude-sonnet-4-6 \
+WINGMAN_E2E_CHALLENGE_MODELS=bedrock-sonnet-4-6,gpt-5.4 \
+WINGMAN_E2E_BEDROCK_MODEL=bedrock-sonnet-4-6 \
+WINGMAN_E2E_PYTHON=python3 \
+WINGMAN_E2E_TIMEOUT_MS=90000 \
+WINGMAN_TOKEN=... \
+npm run test:e2e:challenge
+```
+
 To run the Go server against the built frontend:
 
 ```bash
 npm run build
-PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:8080 go run .
+PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
 # or: task serve
 ```
+
+Keep `vite-plus`, its core package and the `vite` alias at the same version, and
+pin Vitest to the version bundled with Vite+. Babel stays on 7 until React Compiler
+supports Babel 8; `npm run check:react-compiler` verifies that compatibility.
+The `vite` and `vitest` overrides keep dependencies on that shared toolchain;
+local and Docker installs use `npm ci` with normal peer-dependency resolution.
+The Chevrotain override updates its pinned `lodash-es` dependency to a patched release.
+The `guarded-fetch` override keeps its pinned Undici dependency on a patched 7.x release.
 
 ### Docker
 
 ```bash
 docker build -t wingman-chat .
 docker run -it --rm -p 8000:8000 \
-  -e WINGMAN_URL=http://host.docker.internal:8080 \
+  -e WINGMAN_URL=http://host.docker.internal:4242 \
   wingman-chat
 # or: task run
 ```
 
 ## Configuration
 
-Wingman is configured through environment variables, YAML files, and a runtime `public/config.json`.
+Wingman is configured through environment variables and YAML files. The Go server exposes that
+configuration at `/config.json`; local frontend development uses `public/config.json` instead.
 
 **Connection**
 
 - `WINGMAN_URL` / `OPENAI_BASE_URL` — platform API base URL (required)
 - `WINGMAN_TOKEN` / `OPENAI_API_KEY` — API token
 - `PORT` (default `8000`), `PREFIX` (default `/api`)
-- `SKILLS_PATH` (default `skills`), `NOTEBOOKS_PATH` (default `notebook`)
+- `SKILLS_PATH` (default `skills`)
 
 **Branding**
 
-- `TITLE`, `DISCLAIMER`, `SUPPORT_URL`, `BRIDGE_URL`
+- `TITLE`, `DISCLAIMER`, `BRIDGE_URL`
+
+**Account menu links**
+
+Add any number of links to `links.yaml` in the server's working directory, in display order:
+
+```yaml
+- title: Learning Hub
+  description: Guides to get started
+  url: https://example.com/support
+  icon: learning
+- title: AI Cost Dashboard
+  url: https://example.com/cost
+  icon: cost
+- title: Documentation
+  url: https://example.com/docs
+  icon: docs
+```
+
+For local frontend development, put the same array under `"links"` in `public/config.json`.
+`description` and `icon` are optional; a missing title falls back to the URL. Icon names are
+`support`, `docs`, `learning`, `cost`, `dashboard`, `status`, `community`, `feedback`, `mail`,
+and `link`. Missing or unknown icons use the generic link icon. Entries without a URL are hidden.
+Links open in a new tab. Use an empty array (`[]`) to hide all links.
+
+The old `support`/`cost` mapping in `links.yaml` and those fields in `public/config.json` remain
+supported. In JSON, `links` takes precedence, including an empty array. Changes require a server
+restart and browser refresh in production, or a browser refresh during frontend development.
+
+**MCP servers**
+
+Configure MCP servers in `tools.yaml` (or `tools` in `public/config.json`) or install them through
+catalog plugins. Manually added agent MCP servers are no longer supported; existing custom
+definitions are removed when agents load and are discarded from imports. The companion
+configured through `BRIDGE_URL` remains available (the browser JSON field is still `bridge.url`).
+
+```yaml
+# tools.yaml
+- id: managed-server # Gateway: /api/v1/mcp/managed-server, filtered by backend availability
+- id: reports
+  name: Reports
+  url: https://reports.example.com/mcp
+  headers:
+    X-Tenant: example
+```
+
+An explicit `url` supports HTTP(S) and origin-relative paths, such as
+`/api/v1/mcp/research` to use the gateway proxy. IDs identify the selectable provider
+and can differ from the server endpoint. IDs must be unique and cannot
+collide with built-in providers or the `plugin:` namespace. Invalid definitions are skipped.
+Static configuration and plugin `mcp.json` both support string-valued `headers`. These headers
+are delivered to the browser, so use gateway-side configuration for server-only secrets.
+
+Each plugin owns its bundled servers: disabling the plugin disconnects them all. Opening a
+saved MCP app does not change selection; a disabled plugin requires **Enable and reopen**.
+Connection and authentication failures keep the plugin selected and show a status indicator.
+
+OAuth credentials are shared by normalized endpoint URL, including path and query. For
+example, `https://example.com/mcp` and `https://EXAMPLE.com:443/mcp#section` share a login;
+`https://example.com/other`, `/mcp/`, and `/mcp?tenant=acme` each have separate logins.
+Server IDs and plugin installation do not affect the login. Use distinct endpoint URLs for
+different accounts or tenants; headers are not part of the OAuth storage key. Existing
+credentials bound to an endpoint migrate automatically. Older credentials with only a
+server ID cannot be safely associated with a URL and require signing in once. Uninstalling
+a plugin preserves endpoint logins; clearing browser site data removes them.
+
+**Plugin hub**
+
+- `PLUGINS_URL` — base URL of a [plugin-hub](https://agent-plugins.org) instance. When set, a "Hub" tab
+  appears in the Skill Catalog for browsing and installing plugins. Bundled skills and URL-based
+  MCP servers become available when the plugin is enabled; command-based servers are shown for
+  information only. Supports both Agent Plugin archives (`skills/{name}/SKILL.md`) and standalone
+  skill-folder archives (`SKILL.md` at the archive root).
 
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
-- `INTERNET_ENABLED` (`INTERNET_SEARCHER`, `INTERNET_SCRAPER`, `INTERNET_RESEARCHER`, `INTERNET_ELICITATION`)
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
-- `NOTEBOOK_ENABLED`, `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
+- `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED` (`TELEMETRY_NAME` — the OpenTelemetry `service.name`, default `wingman-chat`)
 - `CHAT_RETENTION_DAYS`, `CHAT_INSTRUCTIONS`, `CHAT_SUMMARIZER`, `CHAT_OPTIMIZER`
+- `CHAT_MODEL` (`CHAT_EFFORT`) — the model every new chat starts on; the reset next to the model picker returns to it. `chat.yaml` also accepts `verbosity`
+- `CHAT_COMPACTION_ENABLED` (`CHAT_COMPACTION_THRESHOLD` — deployment-wide ceiling on the estimated-token budget before older turns are summarized; per-model/family values apply below it)
 
 YAML files loaded from the working directory (when present) configure models, tools, drives,
-backgrounds, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`,
-`backgrounds.yaml`, `chat.yaml`, `notebook.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
-`extractor.yaml`, `internet.yaml`, `renderer.yaml`, `repository.yaml`.
+backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`, `links.yaml`,
+`backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
+`extractor.yaml`, `renderer.yaml`, `repository.yaml`.
+
+Web search, page fetch, and research are gateway MCP tools. Replace `internet.yaml`
+and `INTERNET_*` settings with an entry in `tools.yaml`:
+
+```yaml
+- id: internet
+  name: Web Search
+  description: Access up-to-date information
+  url: /api/v1/mcp/research
+  needsApproval: true
+# Optionally expose the gateway's separate search/fetch server:
+# - id: web
+#   name: Web
+#   needsApproval: true
+```
+
+`needsApproval: true` pauses each tool call in chat before any arguments are sent
+and shows the input for approval. Declining sends no tool request. Server-requested
+MCP elicitation remains supported independently. Calls originating in an MCP app
+are blocked for servers requiring approval; use chat to approve those calls.
+
+The `internet` provider retains the primary Web Search feature: globe icon, readable
+research instructions and results, and an approval request that shows exactly what
+will be sent. Existing saved `internet` selections continue to work.
+
+Every MCP tool call requests progress. Running rows show server messages and a
+percentage when a total is supplied; servers without notifications retain the
+normal activity indicator. Tool calls allow up to 15 minutes and can be stopped.
+Search options, research orchestration, summarization, and content guards now
+belong to the gateway, whose tool schemas and instructions are discovered over MCP.
+See [MCP progress](https://modelcontextprotocol.io/specification/2025-03-26/basic/utilities/progress)
+and [TanStack tool approval](https://tanstack.com/ai/latest/docs/tools/tool-approval).
+
+Model entries can list retired IDs in `replaces` to redirect saved agents and
+chats to a current model. See [model replacements](docs/model-catalog.md#model-replacements).

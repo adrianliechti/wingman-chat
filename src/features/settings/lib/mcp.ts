@@ -1,125 +1,98 @@
-import type {
-  McpUiDisplayMode,
-  McpUiHostCapabilities,
-  McpUiHostContext,
-  McpUiResourceMeta,
-} from "@modelcontextprotocol/ext-apps/app-bridge";
+import { z } from "zod";
+import { Globe } from "lucide-react";
+import { internetToolPresentation } from "@/features/tools/lib/internetPresentation";
 import {
-  AppBridge,
   getToolUiResourceUri,
   isToolVisibilityAppOnly,
-  PostMessageTransport,
+  isToolVisibilityModelOnly,
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
-import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport as ClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { McpUiResourceMeta } from "@modelcontextprotocol/ext-apps/app-bridge";
+import {
+  ProtocolError,
+  ProtocolErrorCode,
+  StreamableHTTPClientTransport as ClientTransport,
+} from "@modelcontextprotocol/client";
 import type {
+  CallToolRequest,
   CallToolResult,
+  ElicitRequest,
   ElicitResult,
+  Transport,
   ContentBlock as MCPContentBlock,
   ResourceContents as MCPResourceContents,
   Tool as MCPTool,
-} from "@modelcontextprotocol/sdk/types.js";
-import {
-  ElicitationCompleteNotificationSchema,
-  ElicitRequestSchema,
-  ErrorCode,
-  McpError,
-  ToolListChangedNotificationSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+} from "@modelcontextprotocol/client";
+import { createBrowserMcpClient, type NativeMCPClient } from "./mcpNativeClient";
+import { browserMcpTransport } from "./mcpTransport";
 import { trace } from "@opentelemetry/api";
+import { withAbort, followAbortSignal } from "@/shared/lib/abortSignals";
+import { getToolDisplayName } from "@/shared/lib/utils";
+import { primaryInputKeys } from "@/shared/lib/toolInput";
 import { textToDataUrl } from "@/shared/lib/fileContent";
-import {
-  type AudioContent,
-  type FileContent,
-  type ImageContent,
-  type Message,
-  Role,
-  type TextContent,
-  type Tool,
-  type ToolContext,
-  type ToolIcon,
-  type ToolProvider,
-} from "@/shared/types/chat";
+import type { ContentPart, ToolResultPart, UIResourcePart } from "@tanstack/ai";
+import { mediaDataUrl, mediaFromDataUrl, toolResultContent } from "@/shared/lib/messages";
+import { type Tool, type ToolContext, type ToolIcon, type ToolProvider } from "@/shared/types/chat";
 import type { ElicitationSchema } from "@/shared/types/elicitation";
-import { BrowserOAuthClientProvider } from "./mcpAuth";
+import { BrowserOAuthClientProvider, McpAuthRequiredError } from "./mcpAuth";
+import { McpAuthorizationPending, mcpAuthFetch } from "./mcpAuthFetch";
+import { mcpToolName } from "./mcpToolNames";
 
-export type DisplayMode = McpUiDisplayMode;
-
-export type DisplayModeOptions = {
-  displayMode?: DisplayMode;
-  onDisplayModeRequested?: (mode: DisplayMode) => void;
-  /** Report the app's content height to the host. When set, the host owns the
-   *  iframe height (needed for the persistent moved-iframe model); otherwise the
-   *  bridge sets it directly. */
-  onSizeChange?: (height: number) => void;
-};
-
-const HOST_INFO = {
-  name: "Wingman Chat",
-  version: "1.0.0",
-};
+import {
+  buildHostCapabilities,
+  toAppToolResult,
+  type McpAppData,
+  MCP_HOST_INFO as HOST_INFO,
+  type McpAppOptions,
+  getHtmlContent,
+  type AppNotification,
+} from "./mcpAppSession";
 
 const MCP_UI_EXTENSION = "io.modelcontextprotocol/ui";
 
-type UiResourceEntry = {
-  uri: string;
-  content: MCPResourceContents;
-  meta?: McpUiResourceMeta;
-};
-
-/** Find the `ui://` resource block in a readResource response and build its entry. */
-function toUiResourceEntry(uri: string, contents: MCPResourceContents[]): UiResourceEntry | null {
-  const content = contents.find((entry) => entry.mimeType === RESOURCE_MIME_TYPE && entry.uri?.startsWith("ui://"));
-  if (!content) return null;
-  return { uri, content, meta: content._meta?.ui as McpUiResourceMeta | undefined };
+function findUiResource(uri: string, contents: MCPResourceContents[]): MCPResourceContents | undefined {
+  return contents.find(
+    (entry) =>
+      entry.mimeType === RESOURCE_MIME_TYPE &&
+      entry.uri === uri &&
+      (("text" in entry && typeof entry.text === "string") || ("blob" in entry && typeof entry.blob === "string")),
+  );
 }
 
-type McpServerCapabilities = NonNullable<ReturnType<Client["getServerCapabilities"]>>;
-
-type McpIcon = { src: string; mimeType?: string; sizes?: string[]; theme?: "light" | "dark" };
-
-function pickIcon(icons: McpIcon[] | undefined): string | undefined {
-  if (!icons || icons.length === 0) return undefined;
-  return (icons.find((i) => i.theme === "light") ?? icons.find((i) => !i.theme) ?? icons[0]).src;
+type McpIcon = { src: string; theme?: "light" | "dark" };
+type ActiveToolCall = { context?: ToolContext };
+function pickIcon(icons?: McpIcon[]): string | undefined {
+  return (icons?.find((icon) => icon.theme === "light") ?? icons?.find((icon) => !icon.theme) ?? icons?.[0])?.src;
 }
 
+/** Browser authentication and Wingman's MCP tool/storage boundary. */
 export class MCPClient implements ToolProvider {
+  icon?: ToolIcon;
+  instructions?: string;
+  tools: Tool[] = [];
+  toolDefinitions = new Map<string, MCPTool>();
+  onAuthenticating: (() => void) | null = null;
+  onAuthComplete: (() => void) | null = null;
+  onToolsChanged: (() => void) | null = null;
+  onDisconnected: (() => void) | null = null;
+  private client: NativeMCPClient | null = null;
+  private pendingTransport?: Transport;
+  private connectionVersion = 0;
+  private connectionAbort?: AbortController;
+  private connecting?: Promise<void>;
+  private readonly authProvider: BrowserOAuthClientProvider;
+  private readonly activeToolCalls = new Set<ActiveToolCall>();
+  private readonly elicitations = new Map<string, ActiveToolCall>();
+  private readonly appListeners = new Set<(kind: AppNotification) => void>();
+  private discovery?: { client: NativeMCPClient; dirty: boolean; promise: Promise<void> };
+
   readonly id: string;
   readonly url: string;
-
   readonly name: string;
-  readonly description?: string;
-
-  icon?: ToolIcon;
-
+  readonly description: string;
   readonly headers?: Record<string, string>;
-
-  private readonly _configIcon?: ToolIcon;
-  private client: Client | null = null;
-  private activeBridge: AppBridge | null = null;
-  /** Push a host-initiated display-mode change to the active app (setHostContext). */
-  private applyActiveDisplayMode: ((mode: DisplayMode) => void) | null = null;
-  private authProvider: BrowserOAuthClientProvider;
-  private activeToolContext: ToolContext | null = null;
-
-  private pingInterval: ReturnType<typeof setInterval> | undefined;
-
-  instructions?: string;
-
-  tools: Tool[] = [];
-  uiResources: Map<string, UiResourceEntry> = new Map();
-  toolDefinitions: Map<string, MCPTool> = new Map();
-
-  /** Called when the OAuth flow starts (popup opened) */
-  onAuthenticating: (() => void) | null = null;
-  /** Called when the OAuth flow completes (success or failure) */
-  onAuthComplete: (() => void) | null = null;
-  /** Called when the server notifies that its tool list has changed and tools have been reloaded */
-  onToolsChanged: (() => void) | null = null;
-  /** Called when the server notifies that an out-of-band URL elicitation has completed */
-  onElicitationComplete: ((elicitationId: string) => void) | null = null;
+  readonly needsApproval: boolean;
+  private readonly configIcon?: ToolIcon;
 
   constructor(
     id: string,
@@ -127,669 +100,473 @@ export class MCPClient implements ToolProvider {
     name: string,
     description: string,
     headers?: Record<string, string>,
-    icon?: ToolIcon,
+    configIcon?: ToolIcon,
+    needsApproval = false,
   ) {
     this.id = id;
     this.url = url;
     this.name = name;
     this.description = description;
     this.headers = headers;
-    this._configIcon = icon;
-    this.icon = icon ?? this.iconUrl();
-    this.authProvider = new BrowserOAuthClientProvider(id);
+    this.configIcon = id === "internet" ? Globe : configIcon;
+    this.needsApproval = needsApproval;
+    this.icon = this.configIcon ?? new URL("icon", url.endsWith("/") ? url : `${url}/`).href;
+    this.authProvider = new BrowserOAuthClientProvider(id, url);
   }
 
-  /** Resolve the server's default icon, ensuring a trailing slash so the path isn't dropped. */
-  private iconUrl(): string {
-    const base = this.url.endsWith("/") ? this.url : `${this.url}/`;
-    return new URL("icon", base).href;
+  armInteractiveAuth(): void {
+    this.authProvider.armInteractiveAuth();
   }
 
-  async connect(): Promise<void> {
-    if (this.client) {
-      await this.disconnect();
-    }
+  connect(): Promise<void> {
+    if (this.connecting) return this.connecting;
+    if (this.client) return Promise.resolve();
+    const version = ++this.connectionVersion;
+    const promise = this.connectInternal(version).finally(() => {
+      if (this.connecting === promise) this.connecting = undefined;
+    });
+    this.connecting = promise;
+    return promise;
+  }
 
-    const opts = {
-      reconnectionOptions: {
-        maxReconnectionDelay: 30000,
-        initialReconnectionDelay: 1000,
-        reconnectionDelayGrowFactor: 1.5,
-        maxRetries: -1,
-      },
-      requestInit: this.headers ? { headers: this.headers } : undefined,
-      authProvider: this.authProvider,
+  private async connectInternal(version: number, allowAuth = true): Promise<void> {
+    const assertCurrent = () => {
+      if (this.connectionVersion !== version) throw new DOMException("MCP connection cancelled", "AbortError");
     };
-
-    const url = new URL(this.url);
-    const transport = new ClientTransport(url, opts);
-
-    const client = new Client(HOST_INFO, {
-      capabilities: {
-        elicitation: {
-          form: {},
-          url: {},
+    const controller = new AbortController();
+    this.connectionAbort = controller;
+    const transport = new ClientTransport(new URL(this.url), {
+      authProvider: { token: async () => this.authProvider.tokens()?.access_token },
+      fetch: mcpAuthFetch(this.authProvider, this.url, {
+        mode: () => (this.client ? "inline" : allowAuth ? "defer" : "disabled"),
+        signal: controller.signal,
+        headers: this.headers,
+        authenticating: () => {
+          if (this.connectionVersion === version) this.onAuthenticating?.();
         },
-        extensions: {
-          [MCP_UI_EXTENSION]: {
-            mimeTypes: [RESOURCE_MIME_TYPE],
+        complete: () => {
+          if (this.connectionVersion === version) this.onAuthComplete?.();
+        },
+      }),
+      requestInit: this.headers ? { headers: this.headers } : undefined,
+    });
+    this.pendingTransport = transport;
+    const definitions = new Map<string, MCPTool>();
+    let client: NativeMCPClient;
+    try {
+      client = await createBrowserMcpClient({
+        name: HOST_INFO.name,
+        version: HOST_INFO.version,
+        transport: browserMcpTransport(transport, {
+          elicit: (params) => {
+            assertCurrent();
+            return this.elicit(params);
+          },
+          initialized: ({ instructions, serverInfo }) => {
+            if (this.connectionVersion !== version) return;
+            this.instructions = instructions;
+            if (!this.configIcon) this.icon = pickIcon(serverInfo?.icons) ?? this.icon;
+          },
+          notification: (method, params) => {
+            if (this.connectionVersion !== version) return;
+            if (method === "notifications/tools/list_changed") {
+              void this.loadTools(client, definitions)
+                .then(() => this.notifyApps("tools"))
+                .catch(console.error);
+            } else if (method === "notifications/resources/list_changed") this.notifyApps("resources");
+            else if (method === "notifications/prompts/list_changed") this.notifyApps("prompts");
+            else if (method === "notifications/elicitation/complete" && typeof params?.elicitationId === "string") {
+              const call = this.elicitations.get(params.elicitationId);
+              this.elicitations.delete(params.elicitationId);
+              if (!call?.context?.signal?.aborted) call?.context?.onElicitationComplete?.(params.elicitationId);
+            }
+          },
+          closed: () => {
+            if (this.connectionVersion === version && this.client) {
+              void this.disconnect();
+              this.onDisconnected?.();
+            }
+          },
+        }),
+        clientOptions: {
+          capabilities: {
+            elicitation: { form: {}, url: {} },
+            // Wingman cannot answer server sampling requests.
+            sampling: undefined,
+            extensions: { [MCP_UI_EXTENSION]: { mimeTypes: [RESOURCE_MIME_TYPE] } },
           },
         },
-      } as never,
-    });
-
-    client.setRequestHandler(ElicitRequestSchema, async (request): Promise<ElicitResult> => {
-      if (!this.activeToolContext?.elicit) {
-        throw new McpError(ErrorCode.InvalidRequest, "No active tool context available for elicitation");
-      }
-
-      if (request.params.mode === "url") {
-        const result = await this.activeToolContext.elicit({
-          mode: "url",
-          message: request.params.message,
-          url: request.params.url,
-          elicitationId: request.params.elicitationId,
-        });
-
-        return { action: result.action };
-      }
-
-      const requestedSchema = normalizeRequestedSchema(request.params.requestedSchema);
-
-      const result = await this.activeToolContext.elicit({
-        message: request.params.message,
-        requestedSchema,
       });
-
-      if (result.action !== "accept") {
-        return { action: result.action };
+      if (this.connectionVersion !== version) {
+        await client.close();
+        assertCurrent();
       }
-
-      return {
-        action: "accept",
-        ...(result.content ? { content: result.content } : {}),
-      };
-    });
-
-    // Log only — the transport auto-reconnects (reconnectionOptions) and the ping
-    // loop calls handleDisconnect() on a genuine failure.
-    client.onclose = () => {
-      console.warn("MCP client connection closed");
-    };
-
-    client.onerror = (error) => {
-      console.error("MCP client connection error:", error);
-    };
-
-    try {
-      await client.connect(transport);
     } catch (error) {
-      if (error instanceof UnauthorizedError) {
-        // The transport has already called authProvider.redirectToAuthorization(),
-        // opening the OAuth popup. Notify listeners and wait for the auth code.
-        console.log(`[MCP OAuth] Authorization required for "${this.name}". Waiting for OAuth flow...`);
-        this.onAuthenticating?.();
-
-        let authCode: string;
+      await transport.close().catch(() => {});
+      if (this.pendingTransport === transport) this.pendingTransport = undefined;
+      assertCurrent();
+      const cause = error instanceof Error && error.cause ? error.cause : error;
+      if (cause instanceof McpAuthorizationPending) {
         try {
-          authCode = await this.authProvider.waitForAuthCode();
-        } catch (authError) {
-          this.onAuthComplete?.();
-          throw authError;
+          await cause.authorization;
+          assertCurrent();
+        } finally {
+          controller.abort();
         }
-
-        // Exchange the auth code for tokens via the transport, then reconnect.
-        await transport.finishAuth(authCode);
-        this.onAuthComplete?.();
-
-        console.log(`[MCP OAuth] Authorization complete for "${this.name}". Reconnecting...`);
-        // Reconnect with the freshly obtained tokens.
-        await this.connect();
+        await this.connectInternal(version, false);
         return;
       }
+      controller.abort();
+      if (this.connectionVersion === version) this.authProvider.cancelAuthorization();
+      if (cause instanceof McpAuthRequiredError) throw cause;
       throw error;
     }
-
-    console.log("MCP client connected");
-
     this.client = client;
-
-    // Pick up the server-published icon when no config/agent icon was provided.
-    if (!this._configIcon) {
-      const serverIcons = client.getServerVersion()?.icons as McpIcon[] | undefined;
-      this.icon = pickIcon(serverIcons) ?? this.iconUrl();
-    }
-
-    // Load and store tools and instructions after connection
-    await this.loadToolsAndInstructions();
-
-    // Register list-changed notification handler if the server supports it
-    if (this.client.getServerCapabilities()?.tools?.listChanged) {
-      this.client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
-        await this.loadToolsAndInstructions();
-      });
-    }
-
-    // Register elicitation complete notification handler
-    this.client.setNotificationHandler(ElicitationCompleteNotificationSchema, (notification) => {
-      const { elicitationId } = notification.params;
-      this.onElicitationComplete?.(elicitationId);
-      this.activeToolContext?.onElicitationComplete?.(elicitationId);
-    });
-
-    this.startPing();
-  }
-
-  async disconnect(): Promise<void> {
-    this.stopPing();
-    await this.cleanupActiveBridge();
-
-    if (this.client) {
-      try {
-        await this.client.close();
-      } catch (error) {
-        console.error("Error disconnecting MCP client:", error);
-      }
-      this.client = null;
-      this.tools = [];
-      this.uiResources.clear();
-      this.instructions = undefined;
-    }
-  }
-
-  onDisconnected: (() => void) | null = null;
-
-  private handleDisconnect(): void {
-    this.stopPing();
-    this.client = null;
-    this.tools = [];
-    this.uiResources.clear();
-    this.toolDefinitions.clear();
-    this.instructions = undefined;
-    this.onDisconnected?.();
-  }
-
-  private async cleanupActiveBridge(): Promise<void> {
-    if (!this.activeBridge) {
-      return;
-    }
-
-    const bridge = this.activeBridge;
-    this.activeBridge = null;
-
+    this.pendingTransport = undefined;
     try {
-      await bridge.teardownResource({});
-    } catch {
-      // Ignore teardown failures for sessions that never fully initialized.
-    }
-
-    try {
-      await bridge.close();
+      await this.loadTools(client, definitions);
+      assertCurrent();
     } catch (error) {
-      console.error("Error closing MCP app bridge:", error);
+      if (this.client === client) await this.disconnect();
+      throw error;
     }
   }
 
-  private async loadToolsAndInstructions(): Promise<void> {
-    if (!this.client) {
-      return;
+  private async elicit(params: ElicitRequest["params"]): Promise<ElicitResult> {
+    const [call] = this.activeToolCalls;
+    const context = call?.context;
+    if (this.activeToolCalls.size !== 1 || !context?.elicit || context.signal?.aborted) {
+      throw new Error("Elicitation requires a single active tool context");
     }
-
-    try {
-      const client = this.client;
-
-      // Load instructions
-      this.instructions = client.getInstructions();
-
-      // Load tools
-      const toolsResponse = await client.listTools();
-      const tools = toolsResponse.tools || [];
-      this.toolDefinitions = new Map(tools.map((tool) => [tool.name, tool]));
-
-      this.tools = tools
-        .filter((tool) => !isToolVisibilityAppOnly(tool))
-        .map((tool) => {
-          const icon =
-            pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined);
-          return {
-            name: tool.name,
-            title: tool.title ?? (tool.annotations as { title?: string } | undefined)?.title,
-            icon,
-
-            description: tool.description || "",
-            parameters: tool.inputSchema || {},
-
-            function: async (args: Record<string, unknown>, context?: ToolContext) => {
-              const activeClient = this.client;
-
-              if (!activeClient) {
-                throw new Error("MCP client not connected");
-              }
-
-              this.activeToolContext = context ?? null;
-
-              try {
-                annotateMcpSpan(this.url, context);
-
-                const result = await activeClient.callTool({
-                  name: tool.name,
-                  arguments: args,
-                });
-
-                // Handle both current and compatibility result formats
-                // Compatibility format has toolResult field, current has content field
-                const normalizedResult: CallToolResult =
-                  "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
-
-                const resource = this.uiResources.get(tool.name);
-
-                if (resource && context?.setMeta) {
-                  // Don't render the UI here — McpApp handles rendering via
-                  // restoreToolUI with the correct display mode and target iframe.
-                  // We only persist the metadata so McpApp knows what to render.
-                  const toolUiMeta = tool._meta?.ui as
-                    | { defaultDisplayMode?: string; availableDisplayModes?: string[] }
-                    | undefined;
-                  context.setMeta?.({
-                    toolProvider: this.id,
-                    toolResource: resource.uri,
-                    ...(toolUiMeta?.defaultDisplayMode ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode } : {}),
-                    ...(toolUiMeta?.availableDisplayModes ? { appDisplayModes: toolUiMeta.availableDisplayModes } : {}),
-                  });
-
-                  if (normalizedResult.structuredContent) {
-                    context.setContent?.(normalizedResult.structuredContent);
-                  }
-                }
-
-                return await processContent(normalizedResult.content as MCPContentBlock[], activeClient);
-              } finally {
-                this.activeToolContext = null;
-              }
-            },
-          };
+    if (params.mode === "url") {
+      const url = new URL(params.url);
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
+        throw new Error("MCP elicitation URLs must use HTTP(S) without embedded credentials");
+      this.elicitations.set(params.elicitationId, call);
+      try {
+        const result = await context.elicit({
+          mode: "url",
+          message: params.message,
+          source: this.name,
+          url: params.url,
+          elicitationId: params.elicitationId,
         });
-
-      // Load resources for tools that have ui/resourceUri meta field
-      await this.loadUIResources(tools);
-
-      // Notify listeners that the tool list has been (re)loaded
-      this.onToolsChanged?.();
-    } catch (error) {
-      console.error("Error loading tools and instructions:", error);
-    }
-  }
-
-  private async renderToolUI(
-    toolName: string,
-    resource: UiResourceEntry,
-    result: CallToolResult,
-    args: Record<string, unknown>,
-    context: ToolContext,
-    displayModeOptions?: DisplayModeOptions,
-  ): Promise<void> {
-    const render = context.render?.bind(context);
-    const client = this.client;
-
-    if (!render) {
-      throw new Error("MCP host does not support rendering app UIs");
-    }
-
-    if (!client) {
-      throw new Error("MCP client not connected");
-    }
-
-    const renderTarget = await render();
-    const { iframe } = renderTarget;
-    const toolDefinition = this.toolDefinitions.get(toolName);
-
-    if (!toolDefinition) {
-      throw new Error(`MCP tool definition not found for ${toolName}`);
-    }
-
-    const iframeWindow = iframe.contentWindow;
-    if (!iframeWindow) {
-      throw new Error(`MCP iframe content window unavailable for ${toolName}`);
-    }
-
-    // Tear down any bridge still active for this provider before creating a new
-    // one. Two live bridges would both answer the app's requests, so the guest
-    // sees duplicate JSON-RPC responses ("unknown message ID") and fails.
-    if (this.activeBridge) {
-      const stale = this.activeBridge;
-      this.activeBridge = null;
-      try {
-        await stale.teardownResource({});
-      } catch {
-        // ignore — the stale session may still be booting
-      }
-      try {
-        await stale.close();
+        context.signal?.throwIfAborted();
+        if (result.action !== "accept") this.elicitations.delete(params.elicitationId);
+        return { action: result.action };
       } catch (error) {
-        console.error("Error closing stale MCP app bridge:", error);
-      }
-    }
-
-    const bridge = new AppBridge(
-      client,
-      HOST_INFO,
-      buildHostCapabilities(resource.meta, client.getServerCapabilities(), !!context.sendMessage, !!context.setContext),
-      { hostContext: buildHostContext(toolDefinition, iframe, displayModeOptions?.displayMode) },
-    );
-
-    this.activeBridge = bridge;
-    // Host-initiated mode changes (our expand button) update the live bridge in
-    // place — no teardown/recreate. Reads the iframe's current rect for dimensions.
-    this.applyActiveDisplayMode = (mode) => bridge.setHostContext(buildHostContext(toolDefinition, iframe, mode));
-
-    renderTarget.registerCleanup(async () => {
-      if (this.activeBridge === bridge) {
-        this.activeBridge = null;
-        this.applyActiveDisplayMode = null;
-      }
-
-      try {
-        await bridge.teardownResource({});
-      } catch {
-        // Ignore teardown failures for sessions that are still booting.
-      }
-
-      try {
-        await bridge.close();
-      } catch (error) {
-        console.error("Error closing MCP app bridge:", error);
-      }
-    });
-
-    const transport = new PostMessageTransport(iframeWindow, iframeWindow);
-
-    bridge.onsandboxready = () => {
-      bridge
-        .sendSandboxResourceReady({
-          html: getHtmlContent(resource.content),
-          sandbox: "allow-scripts",
-          csp: resource.meta?.csp,
-          permissions: resource.meta?.permissions,
-        })
-        .catch((error) => {
-          console.error(`Failed to load sandbox resource for ${toolName}:`, error);
-        });
-    };
-
-    bridge.oninitialized = () => {
-      console.log("Guest UI initialized for tool:", toolName);
-
-      // Check guest app's declared capabilities and persist if available
-      const appCaps = bridge.getAppCapabilities();
-      const appModes = appCaps?.availableDisplayModes;
-      if (appModes && appModes.length > 0) {
-        // Guest-declared modes override server-declared modes
-        context.updateMeta?.({ appDisplayModes: appModes });
-      }
-
-      // Check if the app is fullscreen-only based on its declared capabilities
-      if (
-        appModes &&
-        appModes.length === 1 &&
-        appModes[0] === "fullscreen" &&
-        displayModeOptions?.displayMode !== "fullscreen"
-      ) {
-        displayModeOptions?.onDisplayModeRequested?.("fullscreen");
-      }
-
-      bridge
-        .sendToolInput({ arguments: args })
-        .then(() => bridge.sendToolResult(result))
-        .catch((error) => {
-          console.error(`Failed to send MCP app data for ${toolName}:`, error);
-        });
-    };
-
-    bridge.onsizechange = ({ height }) => {
-      // Per spec §Container Dimensions, width is fixed (host-controlled) so the host
-      // does not need to respond to width from ui/notifications/size-changed.
-      // Only height uses flexible (maxHeight) or unbounded mode, so we apply it here.
-
-      if (typeof height === "number" && height > 0) {
-        if (displayModeOptions?.onSizeChange) {
-          // Host owns the iframe height (moved-iframe model).
-          displayModeOptions.onSizeChange(height);
-        } else {
-          // Cap inline apps at INLINE_MAX_HEIGHT to prevent dominating the chat scroll
-          const cappedHeight =
-            displayModeOptions?.displayMode !== "fullscreen" ? Math.min(height, INLINE_MAX_HEIGHT) : height;
-          iframe.style.height = `${cappedHeight}px`;
-        }
-      }
-    };
-
-    bridge.onopenlink = async ({ url }) => {
-      if (!isSafeExternalUrl(url)) {
-        return { isError: true };
-      }
-
-      const opened = window.open(url, "_blank", "noopener,noreferrer");
-      return opened ? {} : { isError: true };
-    };
-
-    bridge.onrequestdisplaymode = async ({ mode }) => {
-      // The owning component (McpApp) holds the authoritative display-mode state,
-      // dedupes redundant changes, and pushes the host-context update only once the
-      // iframe is positioned over the drawer (so fullscreen reads the real size, not
-      // the stale inline rect). We must NOT read displayModeOptions.displayMode here —
-      // it's the static snapshot from restore time ("inline") and would wrongly drop
-      // an app's request to return inline. Just forward; McpApp drives the rest.
-      displayModeOptions?.onDisplayModeRequested?.(mode);
-      return { mode };
-    };
-
-    bridge.onupdatemodelcontext = async ({ content, structuredContent }) => {
-      // Best-effort. In the moved-iframe (historical render) path the host context
-      // doesn't wire setContext, and we don't advertise the capability — so an app
-      // that calls this anyway gets a silent no-op rather than an unhandled rejection.
-      if (!context.setContext) {
-        return {};
-      }
-      try {
-        await context.setContext(serializeModelContext(content, structuredContent));
-        return {};
-      } catch (error) {
-        console.error(`Failed to update model context for ${toolName}:`, error);
-        throw error instanceof Error ? error : new Error("Failed to update model context");
-      }
-    };
-
-    bridge.onmessage = async ({ role, content }) => {
-      if (!context.sendMessage || role !== "user") {
-        return { isError: true };
-      }
-
-      const textBlocks = content.filter(
-        (block): block is Extract<MCPContentBlock, { type: "text" }> => block.type === "text",
-      );
-
-      if (textBlocks.length !== content.length || textBlocks.length === 0) {
-        return { isError: true };
-      }
-
-      const message: Message = {
-        role: Role.User,
-        content: textBlocks.map((block) => ({
-          type: "text",
-          text: block.text ?? "",
-        })),
-      };
-
-      try {
-        await context.sendMessage(message);
-        return {};
-      } catch (error) {
-        console.error(`Failed to process MCP app message for ${toolName}:`, error);
-        return { isError: true };
-      }
-    };
-
-    bridge.onloggingmessage = ({ level, logger, data }) => {
-      const prefix = logger ? `[${logger}]` : "[MCP App]";
-      const line = `${prefix} ${level}`;
-
-      if (level === "error" || level === "critical" || level === "alert" || level === "emergency") {
-        console.error(line, data);
-        return;
-      }
-
-      if (level === "warning") {
-        console.warn(line, data);
-        return;
-      }
-
-      console.log(line, data);
-    };
-
-    await bridge.connect(transport);
-  }
-
-  /** Push a host-initiated display-mode change to the active app (no recreate). */
-  applyAppDisplayMode(mode: DisplayMode): void {
-    this.applyActiveDisplayMode?.(mode);
-  }
-
-  /**
-   * Restore an MCP App UI from persisted chat data.
-   * Re-fetches the UI resource if not cached, renders the iframe, and replays stored tool input + result.
-   */
-  async restoreToolUI(
-    toolName: string,
-    uiResourceUri: string,
-    args: Record<string, unknown>,
-    storedResult: (TextContent | ImageContent | AudioContent | FileContent)[],
-    content: Record<string, unknown> | undefined,
-    context: ToolContext,
-    displayModeOptions?: DisplayModeOptions,
-  ): Promise<void> {
-    if (!this.client) {
-      throw new Error("MCP client not connected");
-    }
-
-    // Convert stored content back to MCP CallToolResult format
-    const result: CallToolResult = {
-      content: storedResult.map((c) => {
-        if (c.type === "text") return { type: "text" as const, text: c.text };
-        if (c.type === "image") {
-          const match = c.data?.match(/^data:([^;]+);base64,(.+)$/);
-          if (match)
-            return {
-              type: "image" as const,
-              mimeType: match[1],
-              data: match[2],
-            };
-        }
-        return { type: "text" as const, text: JSON.stringify(c) };
-      }),
-      ...(content ? { structuredContent: content } : {}),
-    };
-
-    // Try to use cached resource, otherwise re-fetch
-    let resource = this.uiResources.get(toolName);
-    if (!resource) {
-      try {
-        const readResult = await this.client.readResource({ uri: uiResourceUri });
-        const entry = toUiResourceEntry(uiResourceUri, readResult.contents);
-        if (!entry) {
-          throw new Error(`Invalid UI resource for ${toolName}`);
-        }
-        resource = entry;
-        this.uiResources.set(toolName, resource);
-      } catch (error) {
-        console.error(`Failed to fetch UI resource for ${toolName}:`, error);
+        this.elicitations.delete(params.elicitationId);
         throw error;
       }
     }
-
-    await this.renderToolUI(toolName, resource, result, args, context, displayModeOptions);
+    const result = await context.elicit({
+      message: params.message,
+      source: this.name,
+      requestedSchema: normalizeRequestedSchema(params.requestedSchema),
+    });
+    context.signal?.throwIfAborted();
+    return result;
   }
 
-  private async loadUIResources(tools: MCPTool[]): Promise<void> {
+  async disconnect(): Promise<void> {
+    ++this.connectionVersion;
+    this.connectionAbort?.abort();
+    this.authProvider.cancelAuthorization();
+    this.connecting = undefined;
     const client = this.client;
-
-    if (!client) {
-      return;
-    }
-
-    // Collect unique resource URIs and their associated tool names
-    const uriToTools = new Map<string, string[]>();
-
-    for (const tool of tools) {
-      let resourceUri: string | undefined;
-
-      try {
-        resourceUri = getToolUiResourceUri(tool);
-      } catch (error) {
-        console.warn(`Skipping invalid MCP UI resource URI for ${tool.name}:`, error);
-        continue;
-      }
-
-      if (resourceUri) {
-        const toolNames = uriToTools.get(resourceUri) || [];
-        toolNames.push(tool.name);
-        uriToTools.set(resourceUri, toolNames);
-      }
-    }
-
-    // Load resources in parallel
-    await Promise.all(
-      Array.from(uriToTools.entries()).map(async ([uri, toolNames]) => {
-        try {
-          const result = await client.readResource({ uri });
-          const entry = toUiResourceEntry(uri, result.contents);
-          if (!entry) {
-            return;
-          }
-
-          for (const toolName of toolNames) {
-            this.uiResources.set(toolName, entry);
-          }
-        } catch (error) {
-          console.error(`Error loading resource ${uri}:`, error);
-        }
-      }),
-    );
+    const transport = this.pendingTransport;
+    this.client = null;
+    this.pendingTransport = undefined;
+    this.tools = [];
+    this.instructions = undefined;
+    this.discovery = undefined;
+    this.toolDefinitions.clear();
+    this.activeToolCalls.clear();
+    this.elicitations.clear();
+    this.notifyApps("disconnect");
+    this.appListeners.clear();
+    await Promise.allSettled([client?.close(), transport?.close()]);
   }
 
-  private startPing(): void {
-    // Clear any existing interval
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-    }
-
-    // Ping every 20 seconds
-    this.pingInterval = setInterval(async () => {
-      if (this.client) {
-        try {
-          await this.client.ping();
-        } catch (error) {
-          console.error("MCP client ping failed:", error);
-          this.handleDisconnect();
-        }
-      } else {
-        this.stopPing();
-      }
-    }, 20000);
+  private notifyApps(kind: AppNotification): void {
+    for (const listener of this.appListeners) listener(kind);
   }
 
-  private stopPing(): void {
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = undefined;
+  private loadTools(client: NativeMCPClient | undefined, definitions: Map<string, MCPTool>): Promise<void> {
+    if (!client || this.client !== client) return Promise.resolve();
+    if (this.discovery?.client === client) {
+      this.discovery.dirty = true;
+      return this.discovery.promise;
     }
+    const discovery = { client, dirty: true, promise: Promise.resolve() };
+    this.discovery = discovery;
+    discovery.promise = Promise.resolve()
+      .then(async () => {
+        while (discovery.dirty && this.client === client) {
+          discovery.dirty = false;
+          const nativeTools = client.capabilities.tools ? await client.tools() : [];
+          definitions.clear();
+          for (const tool of nativeTools) definitions.set(tool.name, tool);
+          if (this.client !== client) return;
+          if (discovery.dirty) continue;
+          this.toolDefinitions = new Map(
+            [...definitions.values()].flatMap((tool) => [
+              [tool.name, tool],
+              [mcpToolName(this.id, tool.name), tool],
+            ]),
+          );
+          this.tools = nativeTools.flatMap((tool) =>
+            !isToolVisibilityAppOnly(tool) ? [this.toTool(tool, client)] : [],
+          );
+          this.onToolsChanged?.();
+        }
+      })
+      .finally(() => {
+        if (this.discovery === discovery) this.discovery = undefined;
+      });
+    return discovery.promise;
+  }
+  private toTool(tool: MCPTool, client: NativeMCPClient): Tool {
+    let resourceUri: string | undefined;
+    try {
+      resourceUri = getToolUiResourceUri(tool);
+    } catch (error) {
+      console.warn(`Skipping invalid MCP UI resource URI for ${tool.name}:`, error);
+    }
+    const presentation = this.id === "internet" ? internetToolPresentation(tool.name) : {};
+    const title =
+      presentation.title ??
+      tool.title ??
+      (tool.annotations as { title?: string } | undefined)?.title ??
+      getToolDisplayName(tool.name);
+    return {
+      name: mcpToolName(this.id, tool.name),
+      needsApproval: this.needsApproval,
+      icon: pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined),
+      description: tool.description || "",
+      inputSchema: z.fromJSONSchema(flattenToolSchema(tool.inputSchema as Record<string, unknown>)),
+      ...presentation,
+      title,
+      execute: async (args, execution) => {
+        const context = execution?.context;
+        if (this.needsApproval && !context?.interruptible) await this.approve(tool, title, args, context);
+        annotateMcpSpan(this.url, this.id, tool.name, context);
+        const result = await this.callTool(client, { name: tool.name, arguments: args }, context);
+        context?.signal?.throwIfAborted();
+        if (result.isError) {
+          context?.setError?.({
+            code: "MCP_TOOL_ERROR",
+            message:
+              result.content?.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n") ||
+              `MCP tool "${tool.name}" returned an error`,
+          });
+        }
+        if (resourceUri) {
+          const ui = tool._meta?.ui as { defaultDisplayMode?: string } | undefined;
+          if (execution?.emitCustomEvent) {
+            try {
+              const read = await readResource(client, resourceUri, context?.signal);
+              context?.signal?.throwIfAborted();
+              if (this.client !== client) throw new Error("MCP connection changed while reading app");
+              const resource = findUiResource(resourceUri, read.contents);
+              if (!resource) throw new Error(`Invalid UI resource for ${tool.name}`);
+              execution.emitCustomEvent("ui-resource", {
+                resource: {
+                  uri: resourceUri,
+                  mimeType: RESOURCE_MIME_TYPE,
+                  ...("text" in resource ? { text: resource.text } : "blob" in resource ? { blob: resource.blob } : {}),
+                },
+                toolCallId: execution.toolCallId,
+                serverId: this.id,
+                toolName: tool.name,
+                meta: {
+                  ...resource._meta,
+                  mcpResult: result,
+                  ...(ui?.defaultDisplayMode ? { appDisplayMode: ui.defaultDisplayMode } : {}),
+                },
+              });
+            } catch (error) {
+              context?.signal?.throwIfAborted();
+              console.warn(`Failed to read MCP app resource ${resourceUri}:`, error);
+            }
+          }
+        }
+        return processContent(result.content, client, context?.signal);
+      },
+    };
+  }
+
+  private async approve(
+    tool: MCPTool,
+    title: string,
+    args: Record<string, unknown>,
+    context?: ToolContext,
+  ): Promise<void> {
+    context?.signal?.throwIfAborted();
+    if (!context?.elicit) throw new Error(`${this.name} requires approval before sending tool input`);
+    const result = await context.elicit({
+      approval: {
+        tool: title,
+        source: this.name !== title ? this.name : undefined,
+        input: args,
+        primary: primaryInputKeys(args, tool.inputSchema),
+      },
+      message: `Send this input to ${this.name} (${tool.name})?\n\n${JSON.stringify(args, null, 2)}`,
+    });
+    context.signal?.throwIfAborted();
+    if (result.action !== "accept") throw new Error("MCP tool request was declined");
+  }
+
+  private async callTool(
+    client: NativeMCPClient,
+    params: CallToolRequest["params"],
+    context?: ToolContext,
+  ): Promise<CallToolResult> {
+    if (this.client !== client) throw new Error("MCP connection changed; reload tools before calling");
+    const { controller, cleanup } = followAbortSignal(context?.signal, this.connectionAbort?.signal);
+    const call: ActiveToolCall = {
+      context: {
+        ...context,
+        signal: controller.signal,
+        elicit: context?.elicit
+          ? (request) =>
+              context.elicit!(request, {
+                signal: controller.signal,
+                onCancel: () => controller.abort(new DOMException("MCP elicitation cancelled", "AbortError")),
+              })
+          : undefined,
+      },
+    };
+    this.activeToolCalls.add(call);
+    try {
+      let progress = -Infinity;
+      const result = await client.callTool(params.name, params.arguments, {
+        signal: controller.signal,
+        timeout: 15 * 60_000,
+        onprogress: (update) => {
+          if (controller.signal.aborted || this.client !== client || !this.activeToolCalls.has(call)) return;
+          if (!Number.isFinite(update.progress) || update.progress <= progress) return;
+          progress = update.progress;
+          context?.setMeta?.({
+            mcpProgress: {
+              progress,
+              ...(typeof update.total === "number" && Number.isFinite(update.total) && update.total > 0
+                ? { total: update.total }
+                : {}),
+              ...(typeof update.message === "string" ? { message: update.message } : {}),
+            },
+          });
+        },
+      });
+      controller.signal.throwIfAborted();
+      if (this.client !== client) throw new Error("MCP connection changed during tool call");
+      return result as CallToolResult;
+    } catch (error) {
+      controller.signal.throwIfAborted();
+      throw error;
+    } finally {
+      cleanup();
+      this.activeToolCalls.delete(call);
+      for (const [id, owner] of this.elicitations) {
+        if (owner === call) this.elicitations.delete(id);
+      }
+    }
+  }
+
+  async restoreToolUI(
+    app: UIResourcePart,
+    args: Record<string, unknown>,
+    storedResult: ToolResultPart,
+    options: McpAppOptions,
+  ): Promise<McpAppData> {
+    options.signal?.throwIfAborted();
+    const client = this.client;
+    if (!client) throw new Error("MCP client not connected");
+
+    // App-only structuredContent, _meta and original resource blocks are not
+    // represented by native content. Older chats may only have native parts.
+    const original = app.meta?.mcpResult as CallToolResult | undefined;
+    const result: CallToolResult = {
+      ...original,
+      content:
+        original?.content ??
+        toolResultContent(storedResult).map((c) => {
+          if (c.type === "text") return { type: "text" as const, text: c.content };
+          if (c.type === "image" || c.type === "audio") {
+            const match = mediaDataUrl(c)?.match(/^data:([^;]+);base64,(.+)$/);
+            if (match)
+              return {
+                type: c.type,
+                mimeType: match[1],
+                data: match[2],
+              };
+          }
+          return { type: "text" as const, text: JSON.stringify(c) };
+        }),
+      ...(storedResult.state === "error" ? { isError: true } : {}),
+    };
+
+    const { toolName, resource: savedResource } = app;
+    const uiResourceUri = savedResource.uri;
+    if (app.serverId !== this.id) throw new Error("MCP app belongs to a different server");
+    const tool = this.toolDefinitions.get(toolName);
+    if (!tool) throw new Error(`MCP tool definition not found for ${toolName}`);
+    if (!uiResourceUri.startsWith("ui://")) throw new Error(`Invalid MCP UI resource URI: ${uiResourceUri}`);
+    // Native parts retain the HTML from the originating call. Migrated chats
+    // only have the URI, so read those resources when the app is opened.
+    const contents: MCPResourceContents[] =
+      typeof savedResource.text === "string" || typeof savedResource.blob === "string"
+        ? [{ ...savedResource, _meta: app.meta } as MCPResourceContents]
+        : (await readResource(client, uiResourceUri, options.signal)).contents;
+    options.signal?.throwIfAborted();
+    if (this.client !== client) throw new Error("MCP connection changed while opening app");
+    const resource = findUiResource(uiResourceUri, contents);
+    if (!resource) throw new Error(`Invalid UI resource for ${toolName}`);
+    const capabilities = client.capabilities;
+    const resourceMeta = resource._meta?.ui as McpUiResourceMeta | undefined;
+    return {
+      tool,
+      input: args,
+      result: toAppToolResult(result),
+      html: getHtmlContent(resource),
+      resourceMeta,
+      capabilities: buildHostCapabilities(resourceMeta, capabilities),
+      handlers: {
+        oncalltool: async (params, extra) => {
+          const definition = this.toolDefinitions.get(params.name);
+          if (!definition || definition.name !== params.name || isToolVisibilityModelOnly(definition))
+            throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "Tool is not available to this app");
+          if (this.needsApproval)
+            throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "This server requires tool approval in chat");
+          return toAppToolResult(await this.callTool(client, params, { signal: extra.signal }));
+        },
+        onlistresources: async () => ({ resources: await client.resources() }),
+        onreadresource: async ({ uri }, extra) => readResource(client, uri, extra.signal),
+        onlistresourcetemplates: async () => ({ resourceTemplates: await client.resourceTemplates() }),
+        onlistprompts: async () => ({ prompts: await client.prompts() }),
+      },
+      subscribe: (listener) => {
+        this.appListeners.add(listener);
+        return () => {
+          this.appListeners.delete(listener);
+        };
+      },
+    };
   }
 
   isConnected(): boolean {
     return this.client !== null;
   }
+  isAuthBlocked(): boolean {
+    return this.authProvider.isAuthBlocked();
+  }
 }
 
-type ToolResultContent = TextContent | ImageContent | AudioContent | FileContent;
+// TanStack's readResource currently has no signal parameter. Stop waiting and
+// prevent stale results from reaching the UI when the owning run is cancelled.
+function readResource(client: NativeMCPClient, uri: string, signal?: AbortSignal) {
+  return signal ? withAbort(signal, () => client.readResource(uri)) : client.readResource(uri);
+}
 
 /** Derive a download filename from a resource URI (e.g. "runs://id/chart.png" -> "chart.png"). */
 function filenameFromUri(uri: string | undefined, fallback = "resource"): string {
@@ -807,7 +584,7 @@ function filenameFromUri(uri: string | undefined, fallback = "resource"): string
  * displayable block. Images/audio are surfaced as such (inline preview); everything
  * else becomes a file (type-specific preview + download button).
  */
-function resourceToContent(res: MCPResourceContents, fallbackName?: string): ToolResultContent | null {
+function resourceToContent(res: MCPResourceContents, fallbackName?: string): ContentPart | null {
   const mimeType = (res.mimeType as string | undefined) || "application/octet-stream";
   const name = fallbackName ?? filenameFromUri(res.uri as string | undefined);
 
@@ -820,9 +597,11 @@ function resourceToContent(res: MCPResourceContents, fallbackName?: string): Too
     return null;
   }
 
-  if (mimeType.startsWith("image/")) return { type: "image", name, data };
-  if (mimeType.startsWith("audio/")) return { type: "audio", name, data };
-  return { type: "file", name, data };
+  return mediaFromDataUrl(
+    data,
+    name,
+    mimeType.startsWith("image/") ? "image" : mimeType.startsWith("audio/") ? "audio" : "document",
+  );
 }
 
 /**
@@ -832,160 +611,75 @@ function resourceToContent(res: MCPResourceContents, fallbackName?: string): Too
  */
 async function resolveResourceLink(
   block: Extract<MCPContentBlock, { type: "resource_link" }>,
-  client?: Client | null,
-): Promise<ToolResultContent[]> {
+  client?: NativeMCPClient | null,
+  signal?: AbortSignal,
+): Promise<ContentPart[]> {
   const label = block.name || block.uri;
   if (!client) {
-    return [{ type: "text", text: `[Resource: ${label}]` }];
+    return [{ type: "text", content: `[Resource: ${label}]` }];
   }
   try {
-    const read = await client.readResource({ uri: block.uri });
+    const read = await readResource(client, block.uri, signal);
+    signal?.throwIfAborted();
     const mapped = ((read.contents ?? []) as MCPResourceContents[])
       .map((c) => resourceToContent(c, block.name))
-      .filter((c): c is ToolResultContent => c !== null);
-    return mapped.length ? mapped : [{ type: "text", text: `[Resource: ${label}]` }];
+      .filter((c): c is ContentPart => c !== null);
+    return mapped.length ? mapped : [{ type: "text", content: `[Resource: ${label}]` }];
   } catch (error) {
+    signal?.throwIfAborted();
     console.error("Failed to read MCP resource link", block.uri, error);
-    return [{ type: "text", text: `Could not load resource: ${label}` }];
+    return [{ type: "text", content: `Could not load resource: ${label}` }];
   }
 }
 
 /** Map a single MCP content block to zero or more displayable blocks. */
-async function processBlock(block: MCPContentBlock, client?: Client | null): Promise<ToolResultContent[]> {
+async function processBlock(
+  block: MCPContentBlock,
+  client?: NativeMCPClient | null,
+  signal?: AbortSignal,
+): Promise<ContentPart[]> {
   switch (block.type) {
     case "text":
-      return [{ type: "text", text: block.text || "" }];
+      return [{ type: "text", content: block.text || "" }];
     case "image":
-      return [{ type: "image", data: `data:${block.mimeType || "image/png"};base64,${block.data || ""}` }];
+      return [mediaFromDataUrl(`data:${block.mimeType || "image/png"};base64,${block.data || ""}`, undefined, "image")];
     case "audio":
-      return [{ type: "audio", data: `data:${block.mimeType || "audio/mpeg"};base64,${block.data || ""}` }];
+      return [
+        mediaFromDataUrl(`data:${block.mimeType || "audio/mpeg"};base64,${block.data || ""}`, undefined, "audio"),
+      ];
     case "resource": {
       const mapped = resourceToContent(block.resource);
       return mapped ? [mapped] : [];
     }
     case "resource_link":
-      return resolveResourceLink(block, client);
+      return resolveResourceLink(block, client, signal);
     default:
       return [];
   }
 }
 
-async function processContent(input: MCPContentBlock[], client?: Client | null): Promise<ToolResultContent[]> {
+async function processContent(
+  input: MCPContentBlock[],
+  client?: NativeMCPClient | null,
+  signal?: AbortSignal,
+): Promise<ContentPart[]> {
   if (!input?.length) {
-    return [{ type: "text", text: "no content" }];
+    return [{ type: "text", content: "no content" }];
   }
 
   // Resource links resolve in parallel; original order is preserved.
-  const result = (await Promise.all(input.map((block) => processBlock(block, client)))).flat();
+  const result = (await Promise.all(input.map((block) => processBlock(block, client, signal)))).flat();
 
-  return result.length ? result : [{ type: "text", text: JSON.stringify(input.length === 1 ? input[0] : input) }];
+  return result.length ? result : [{ type: "text", content: JSON.stringify(input.length === 1 ? input[0] : input) }];
 }
 
-function getHtmlContent(resource: MCPResourceContents): string {
-  if ("text" in resource && typeof resource.text === "string") {
-    return resource.text;
-  }
-
-  if ("blob" in resource && typeof resource.blob === "string") {
-    return atob(resource.blob);
-  }
-
-  return "<!doctype html><html><body>No content available.</body></html>";
-}
-
-function buildHostCapabilities(
-  resourceMeta?: McpUiResourceMeta,
-  serverCapabilities?: McpServerCapabilities | null,
-  supportsMessages = false,
-  supportsModelContext = false,
-): McpUiHostCapabilities {
-  const capabilities: McpUiHostCapabilities = {
-    openLinks: {},
-    logging: {},
-    sandbox: {
-      permissions: resourceMeta?.permissions,
-      csp: resourceMeta?.csp,
-    },
-  };
-
-  if (serverCapabilities?.tools) {
-    capabilities.serverTools = serverCapabilities.tools.listChanged ? { listChanged: true } : {};
-  }
-
-  if (serverCapabilities?.resources) {
-    capabilities.serverResources = serverCapabilities.resources.listChanged ? { listChanged: true } : {};
-  }
-
-  if (supportsMessages) {
-    capabilities.message = { text: {} };
-  }
-
-  if (supportsModelContext) {
-    capabilities.updateModelContext = {
-      text: {},
-      structuredContent: {},
-    };
-  }
-
-  return capabilities;
-}
-
-/** Max height (px) for inline apps to prevent them from dominating the chat scroll. */
-const INLINE_MAX_HEIGHT = 600;
-
-function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?: DisplayMode): McpUiHostContext {
-  const isDark = document.documentElement.classList.contains("dark");
-  const currentMode = displayMode ?? "inline";
-
-  // Per spec, containerDimensions signals how the host sizes the container:
-  //   - Fixed (width/height): host controls size, view fills it
-  //   - Flexible (maxWidth/maxHeight): view controls size up to a max
-  //   - Unbounded (field omitted): view controls size with no limit
-  // Width is always fixed: the host controls it (CSS w-full for inline, ResizeObserver
-  // for fullscreen). The view should fill the available width per the spec.
-  // Height: inline uses maxHeight (flexible, capped); fullscreen is unbounded (omitted).
-  const containerWidth =
-    iframe.clientWidth ||
-    iframe.parentElement?.getBoundingClientRect().width ||
-    iframe.closest(".min-h-\\[60px\\]")?.getBoundingClientRect().width ||
-    // Final fallback: use viewport-derived width when the element hasn't laid out yet
-    Math.min(window.innerWidth - 48, 800);
-  const containerDimensions: McpUiHostContext["containerDimensions"] = {
-    ...(typeof containerWidth === "number" && containerWidth > 0 ? { width: containerWidth } : {}),
-    ...(currentMode === "inline" ? { maxHeight: INLINE_MAX_HEIGHT } : {}),
-  };
-
-  return {
-    toolInfo: { tool },
-    theme: isDark ? "dark" : "light",
-    styles: {
-      variables: {
-        "--color-background-primary": isDark ? "#0a0a0a" : "#ffffff",
-        "--color-text-primary": isDark ? "#fafafa" : "#171717",
-        "--color-border-primary": isDark ? "#404040" : "#d4d4d4",
-        "--font-sans": "ui-sans-serif, system-ui, sans-serif",
-        "--font-mono": "ui-monospace, SFMono-Regular, monospace",
-      } as NonNullable<NonNullable<McpUiHostContext["styles"]>["variables"]>,
-    },
-    displayMode: currentMode,
-    availableDisplayModes: ["inline", "fullscreen"],
-    containerDimensions,
-    locale: navigator.language,
-    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    userAgent: navigator.userAgent,
-    platform: window.innerWidth < 768 ? "mobile" : "web",
-    deviceCapabilities: {
-      touch: window.matchMedia("(pointer: coarse)").matches,
-      hover: window.matchMedia("(hover: hover)").matches,
-    },
-  };
-}
-
-function annotateMcpSpan(serverUrl: string, toolContext?: ToolContext): void {
+function annotateMcpSpan(serverUrl: string, serverId: string, toolName: string, toolContext?: ToolContext): void {
   const span = toolContext?.agentContext ? trace.getSpan(toolContext.agentContext) : trace.getActiveSpan();
   if (!span) return;
 
   span.setAttribute("mcp.method.name", "tools/call");
+  span.setAttribute("wingman.mcp.server.id", serverId);
+  span.setAttribute("mcp.tool.name", toolName);
   span.setAttribute("url.full", serverUrl);
 
   try {
@@ -998,55 +692,29 @@ function annotateMcpSpan(serverUrl: string, toolContext?: ToolContext): void {
   }
 }
 
-function isSafeExternalUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
+/**
+ * Some model providers (Anthropic) reject `anyOf`, `oneOf` or `allOf` at the top
+ * of a tool schema, e.g. "send query or queries". Offer every property on one
+ * object instead; the server still enforces the alternatives it declared.
+ */
+export function flattenToolSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const { anyOf, oneOf, allOf, ...root } = schema;
+  if (anyOf === undefined && oneOf === undefined && allOf === undefined) return schema;
+  const branches = (value: unknown) =>
+    (Array.isArray(value) ? value : []).filter(
+      (branch): branch is Record<string, unknown> => !!branch && typeof branch === "object" && !Array.isArray(branch),
+    );
+  const properties: Record<string, unknown> = {};
+  const required = new Set(Array.isArray(root.required) ? root.required : []);
+  for (const branch of [...branches(allOf), ...branches(anyOf), ...branches(oneOf)]) {
+    const flat = flattenToolSchema(branch);
+    Object.assign(properties, flat.properties);
+    // Only `allOf` requirements hold for every call.
+    if (branches(allOf).includes(branch) && Array.isArray(flat.required))
+      for (const name of flat.required) required.add(name);
   }
-}
-
-function serializeModelContext(
-  content?: MCPContentBlock[],
-  structuredContent?: Record<string, unknown>,
-): string | null {
-  const textParts = (content ?? []).map(serializeModelContextBlock).filter((part): part is string => !!part);
-
-  if (structuredContent && Object.keys(structuredContent).length > 0) {
-    textParts.push(`Structured context:\n${JSON.stringify(structuredContent, null, 2)}`);
-  }
-
-  if (textParts.length === 0) {
-    return null;
-  }
-
-  return textParts.join("\n\n");
-}
-
-function serializeModelContextBlock(block: MCPContentBlock): string | null {
-  if (block.type === "text") {
-    const text = block.text?.trim();
-    return text ? text : null;
-  }
-
-  if (block.type === "image") {
-    return `[Image context: ${block.mimeType ?? "image"}]`;
-  }
-
-  if (block.type === "audio") {
-    return `[Audio context: ${block.mimeType ?? "audio"}]`;
-  }
-
-  if (block.type === "resource_link") {
-    return `[Resource link context: ${block.uri}]`;
-  }
-
-  if (block.type === "resource") {
-    return `[Embedded resource context: ${block.resource?.uri ?? "resource"}]`;
-  }
-
-  return JSON.stringify(block);
+  Object.assign(properties, root.properties);
+  return { ...root, type: "object", properties, ...(required.size ? { required: [...required] } : {}) };
 }
 
 function normalizeRequestedSchema(

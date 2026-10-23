@@ -14,7 +14,7 @@
 const SCOPE_PREFIX = "/__preview__/";
 
 /**
- * sessions: Map<token, Map<normalizedPath, FileEntry>>
+ * sessions: Map<token, { files, libraries, revision, owner }>
  *
  * FileEntry = {
  *   body: string | ArrayBuffer,
@@ -23,6 +23,53 @@ const SCOPE_PREFIX = "/__preview__/";
  * }
  */
 const sessions = new Map();
+const pendingRecoveries = new Map();
+const RECOVERY_TIMEOUT_MS = 1000;
+
+/**
+ * Bundled libraries every session can reference as `.lib/<name>` at any depth.
+ * The page tells us where the app serves each one; bytes are fetched once and
+ * kept in CacheStorage so previews keep working offline and after a restart.
+ */
+const LIBRARY_CACHE = "wingman-artifact-libraries";
+const LIBRARY_PATTERN = /(?:^|\/)\.lib\/([^/]+)$/;
+
+function sessionLibraries(libraries) {
+  return new Map(Object.entries(libraries || {}).filter(([name, url]) => name && typeof url === "string" && url));
+}
+
+async function serveLibrary(token, name) {
+  // Two tabs can run different deployed builds. Each session keeps its own URLs.
+  const url = sessions.get(token)?.libraries.get(name);
+  if (!url) return null;
+  const cache = await caches.open(LIBRARY_CACHE);
+  let response = await cache.match(url);
+  if (!response) {
+    response = await fetch(url);
+    if (!response.ok) return null;
+    await cache.put(url, response.clone());
+  }
+  const contentType = /\.css$/i.test(name) ? "text/css;charset=utf-8" : "text/javascript;charset=utf-8";
+  return new Response(response.body, {
+    status: 200,
+    headers: { "Content-Type": contentType, "Cache-Control": "no-store" },
+  });
+}
+
+// A crashed/closed page cannot send unregister. Sweep its sessions on later
+// activity; do not keep a timer alive in a browser-managed service worker.
+let lastSweep = 0;
+async function pruneClosedOwners() {
+  if (Date.now() - lastSweep < 30_000) return;
+  lastSweep = Date.now();
+  const candidates = [...sessions];
+  const clients = new Set(
+    (await self.clients.matchAll({ type: "window", includeUncontrolled: true })).map((client) => client.id),
+  );
+  for (const [token, session] of candidates) {
+    if (session.owner && !clients.has(session.owner) && sessions.get(token) === session) unregisterSession(token);
+  }
+}
 
 function normalizePath(path) {
   if (!path) return "";
@@ -33,7 +80,15 @@ function normalizePath(path) {
   p = p.replace(/^\.\//, "").replace(/^\/+/, "");
   // Resolve any ".." segments (defensive — browser usually resolves first)
   const parts = [];
-  for (const seg of p.split("/")) {
+  for (const encodedSegment of p.split("/")) {
+    let seg = encodedSegment;
+    try {
+      // URL.pathname keeps percent escapes, while artifact paths are stored
+      // decoded (for example, "my photo.png" rather than "my%20photo.png").
+      seg = decodeURIComponent(encodedSegment);
+    } catch {
+      // Leave malformed escapes untouched so they produce a normal 404.
+    }
     if (seg === "" || seg === ".") continue;
     if (seg === "..") {
       parts.pop();
@@ -59,7 +114,8 @@ function buildFileEntry({ content, contentType, bytes }) {
   };
 }
 
-function registerSession(token, files) {
+function registerSession(token, files, libraries, revision = 0, owner) {
+  if ((sessions.get(token)?.revision ?? -1) > revision) return;
   const store = new Map();
   if (files && typeof files === "object") {
     for (const [rawPath, file] of Object.entries(files)) {
@@ -68,11 +124,11 @@ function registerSession(token, files) {
       store.set(key, buildFileEntry(file || {}));
     }
   }
-  sessions.set(token, store);
+  sessions.set(token, { files: store, libraries: sessionLibraries(libraries), revision, owner });
 }
 
 function updateFile(token, rawPath, file) {
-  const store = sessions.get(token);
+  const store = sessions.get(token)?.files;
   if (!store) return;
   const key = normalizePath(rawPath);
   if (!key) return;
@@ -80,15 +136,17 @@ function updateFile(token, rawPath, file) {
 }
 
 function deleteFileFromSession(token, rawPath) {
-  const store = sessions.get(token);
+  const store = sessions.get(token)?.files;
   if (!store) return;
   const key = normalizePath(rawPath);
   if (!key) return;
-  store.delete(key);
+  for (const entry of store.keys()) {
+    if (entry === key || entry.startsWith(`${key}/`)) store.delete(entry);
+  }
 }
 
 function renameFileInSession(token, fromPath, toPath) {
-  const store = sessions.get(token);
+  const store = sessions.get(token)?.files;
   if (!store) return;
   const fromKey = normalizePath(fromPath);
   const toKey = normalizePath(toPath);
@@ -111,12 +169,97 @@ function renameFileInSession(token, fromPath, toPath) {
   }
 }
 
+function cancelRecovery(token) {
+  const pending = pendingRecoveries.get(token);
+  pendingRecoveries.delete(token);
+  pending?.controller.abort();
+}
+
 function unregisterSession(token) {
+  cancelRecovery(token);
   sessions.delete(token);
 }
 
+function requestSessionSnapshot(client, token, signal) {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      channel.port1.close();
+      channel.port2.close();
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(null), RECOVERY_TIMEOUT_MS);
+    const abort = () => finish(null);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+
+    channel.port1.onmessage = (event) =>
+      finish(
+        event.data?.ok
+          ? {
+              files: event.data.files,
+              libraries: event.data.libraries,
+              revision: event.data.revision ?? 0,
+              owner: client.id,
+            }
+          : null,
+      );
+    channel.port1.onmessageerror = () => finish(null);
+    try {
+      client.postMessage({ type: "html-preview/recover-request", token }, [channel.port2]);
+    } catch {
+      finish(null);
+    }
+  });
+}
+
+async function recoverSession(token) {
+  if (!token || sessions.has(token)) return sessions.has(token);
+  const pending = pendingRecoveries.get(token);
+  if (pending) return pending.promise;
+  const controller = new AbortController();
+
+  const recovery = (async () => {
+    // The app itself is outside this worker's narrow preview scope, so include
+    // uncontrolled same-origin windows when asking for the live page snapshot.
+    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    let snapshot;
+    try {
+      snapshot = await Promise.any(
+        clients.map(async (client) => {
+          const reply = await requestSessionSnapshot(client, token, controller.signal);
+          if (!reply || typeof reply.files !== "object" || Array.isArray(reply.files))
+            throw new Error("Session not owned");
+          return reply;
+        }),
+      );
+    } catch {
+      return false;
+    }
+    if (controller.signal.aborted) return sessions.has(token);
+    registerSession(token, snapshot.files, snapshot.libraries, snapshot.revision, snapshot.owner);
+    return true;
+  })();
+
+  pendingRecoveries.set(token, { promise: recovery, controller });
+  try {
+    return await recovery;
+  } finally {
+    if (pendingRecoveries.get(token)?.promise === recovery) pendingRecoveries.delete(token);
+    controller.abort();
+  }
+}
+
 function lookupFile(token, path) {
-  const store = sessions.get(token);
+  const store = sessions.get(token)?.files;
   if (!store) return null;
   const key = normalizePath(path);
   const entry = store.get(key);
@@ -199,39 +342,54 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   const data = event.data;
-  if (!data || typeof data !== "object") return;
-  const { type } = data;
-  try {
-    switch (type) {
-      case "html-preview/register":
-        registerSession(data.token, data.files);
-        break;
-      case "html-preview/update":
-        updateFile(data.token, data.path, data.file);
-        break;
-      case "html-preview/delete":
-        deleteFileFromSession(data.token, data.path);
-        break;
-      case "html-preview/rename":
-        renameFileInSession(data.token, data.fromPath, data.toPath);
-        break;
-      case "html-preview/unregister":
-        unregisterSession(data.token);
-        break;
-      case "html-preview/ping":
-        // No-op; used to confirm the SW is reachable.
-        break;
-      default:
-        return;
-    }
-    if (event.ports?.[0]) {
-      event.ports[0].postMessage({ ok: true });
-    }
-  } catch (error) {
-    if (event.ports?.[0]) {
-      event.ports[0].postMessage({ ok: false, error: String(error) });
-    }
-  }
+  if (!data || typeof data !== "object" || !String(data.type).startsWith("html-preview/")) return;
+  event.waitUntil(
+    (async () => {
+      const port = event.ports?.[0];
+      try {
+        const { type, token } = data;
+        const owner = event.source?.id;
+        if (sessions.has(token) && sessions.get(token).owner !== owner)
+          throw new Error("Preview session belongs to another page.");
+        switch (type) {
+          case "html-preview/register":
+            cancelRecovery(token);
+            registerSession(token, data.files, data.libraries, data.revision, owner);
+            break;
+          case "html-preview/update":
+          case "html-preview/delete":
+          case "html-preview/rename": {
+            if (!sessions.has(token)) await recoverSession(token);
+            const session = sessions.get(token);
+            if (!session || session.owner !== owner) throw new Error("Preview session is no longer available.");
+            if ((data.revision ?? 0) < session.revision) break;
+            if (type === "html-preview/update") updateFile(token, data.path, data.file);
+            else if (type === "html-preview/delete") deleteFileFromSession(token, data.path);
+            else renameFileInSession(token, data.fromPath, data.toPath);
+            session.revision = data.revision ?? session.revision;
+            break;
+          }
+          case "html-preview/unregister":
+            unregisterSession(token);
+            break;
+          case "html-preview/ping":
+            break;
+          default:
+            throw new Error("Unknown preview worker message.");
+        }
+        port?.postMessage({ ok: true });
+      } catch (error) {
+        try {
+          port?.postMessage({ ok: false, error: String(error) });
+        } catch {
+          /* Owner closed. */
+        }
+      } finally {
+        port?.close();
+      }
+    })(),
+  );
+  event.waitUntil(pruneClosedOwners().catch(() => {}));
 });
 
 self.addEventListener("fetch", (event) => {
@@ -243,6 +401,7 @@ self.addEventListener("fetch", (event) => {
   if (!parsed) return; // Not our scope; let the network handle it.
 
   event.respondWith(handleFetch(request, parsed));
+  event.waitUntil(pruneClosedOwners().catch(() => {}));
 });
 
 async function handleFetch(request, { token, path }) {
@@ -253,9 +412,22 @@ async function handleFetch(request, { token, path }) {
     return new Response("Method Not Allowed", { status: 405 });
   }
 
+  // A service worker's global memory is not durable. If the browser restarted
+  // it while the app stayed open, rehydrate this token from the owning page.
+  if (!sessions.has(token)) await recoverSession(token);
+
   const hit = lookupFile(token, path);
-  if (!hit) {
-    return notFoundResponse(token, path);
+  if (hit) return buildResponse(hit.entry);
+
+  // Not a session file: a `.lib/<name>` reference resolves to a bundled library.
+  const library = LIBRARY_PATTERN.exec(normalizePath(path));
+  if (library && sessions.has(token)) {
+    try {
+      const response = await serveLibrary(token, library[1]);
+      if (response) return response;
+    } catch {
+      // Fall through to the 404 below.
+    }
   }
-  return buildResponse(hit.entry);
+  return notFoundResponse(token, path);
 }

@@ -1,21 +1,27 @@
 import { getConfig } from "@/shared/config";
+import { mediaFromDataUrl } from "@/shared/lib/messages";
 import { bytesToDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
-import { getTextFromContent, Role } from "@/shared/types/chat";
-import { getModel } from "./llmCommand";
+import { completeIsolated, getModel } from "./llmCommand";
+import type { BridgeRequestOptions } from "./workerHost";
 
 const DEFAULT_PROMPT =
   "Transcribe all text in this image verbatim, preserving the layout where possible. " +
   "If the image contains no text, describe its content in detail instead.";
 
-export async function runVision(bytes: Uint8Array, path: string, prompt?: string): Promise<string> {
+export async function runVision(
+  bytes: Uint8Array,
+  path: string,
+  prompt?: string,
+  requestOptions: BridgeRequestOptions = {},
+): Promise<string> {
   const config = getConfig();
   if (!config.vision) {
     throw new Error("vision: no vision service configured");
   }
   // Configured vision model, or whatever model the chat currently uses.
-  const model = config.vision.model || getModel();
+  const model = config.vision.model || requestOptions.context?.model || getModel();
   if (!model) {
     throw new Error("vision: no model");
   }
@@ -32,21 +38,15 @@ export async function runVision(bytes: Uint8Array, path: string, prompt?: string
     throw new Error(`vision: unsupported image type ${type} — supported: ${config.vision.files.join(", ")}`);
   }
 
-  const result = await config.client.complete(
+  const text = await completeIsolated(
     model,
-    "",
     [
-      {
-        role: Role.User,
-        content: [
-          { type: "image", name, data: bytesToDataUrl(bytes, type) },
-          { type: "text", text: prompt?.trim() || DEFAULT_PROMPT },
-        ],
-      },
+      mediaFromDataUrl(bytesToDataUrl(bytes, type), name, "image"),
+      { type: "text", content: prompt?.trim() || DEFAULT_PROMPT },
     ],
-    [],
+    {},
+    requestOptions,
   );
-  const text = getTextFromContent(result.content);
   console.debug(`vision: ${path} (${type}, ${bytes.length} bytes) → ${text.length} chars`);
   return text;
 }

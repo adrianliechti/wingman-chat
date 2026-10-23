@@ -1,17 +1,18 @@
 import { Check, ShieldAlert, ShieldQuestion } from "lucide-react";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatActions, useChatRunState } from "@/features/chat/hooks/useChat";
 import { cn } from "@/shared/lib/cn";
 import type { RiskSeverity } from "@/shared/types/elicitation";
 import { useLayout } from "@/shell/hooks/useLayout";
 
 export function ChatConsentBackdrop() {
-  const { pendingConsent } = useChat();
+  const { pendingConsent } = useChatRunState();
   if (!pendingConsent) return null;
   return <div className="fixed inset-0 z-[60] bg-white/60 dark:bg-black/60 backdrop-blur-[2px] pointer-events-auto" />;
 }
 
 export function ChatConsentBanner() {
-  const { pendingConsent, resolveConsent } = useChat();
+  const { pendingConsent } = useChatRunState();
+  const { resolveConsent } = useChatActions();
   const { layoutMode } = useLayout();
   if (!pendingConsent) return null;
 

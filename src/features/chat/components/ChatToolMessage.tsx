@@ -1,33 +1,47 @@
-import { AlertCircle, ChevronRight, Wrench } from "lucide-react";
+import type { ToolCallPart, ToolResultPart, UIMessage } from "@tanstack/ai";
 import { memo, useMemo, useState } from "react";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatActions, useChatConversation } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import { cn } from "@/shared/lib/cn";
-import type { Message, ToolResultContent } from "@/shared/types/chat";
+import { isMediaPart, toolResultContent, uiResourceFor, userMessage } from "@/shared/lib/messages";
 import { CodeRenderer } from "@/shared/ui/CodeRenderer";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
-import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
+import { Markdown } from "@/shared/ui/Markdown";
+import { ActivityRow } from "./ActivityRow";
 import { McpApp } from "./McpApp";
 import { findTool, resolveToolHeader, resolveToolInput, resolveToolOutput } from "./toolDisplay";
 
 type ChatToolMessageProps = {
-  message: Message;
+  /** The assistant message that holds the round. */
+  message: UIMessage;
+  call: ToolCallPart;
+  result?: ToolResultPart;
   index: number;
+  messages?: UIMessage[];
+  /** Inside a group or subagent: no icon, the parent row already names the activity. */
+  nested?: boolean;
 };
 
-export const ChatToolMessage = memo(function ChatToolMessage({ message, index }: ChatToolMessageProps) {
+/** One completed tool round: a collapsible row with its input, output, media, and MCP app. */
+export const ChatToolMessage = memo(function ChatToolMessage({
+  message,
+  call,
+  result,
+  index,
+  messages: scope,
+  nested,
+}: ChatToolMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
-  const { chat, messages } = useChat();
+  const { chat, messages: chatMessages } = useChatConversation();
+  const { sendMessage } = useChatActions();
+  const messages = scope ?? chatMessages;
   const { providers } = useToolsContext();
-  const toolResultParts = message.content.filter((p) => p.type === "tool_result") as ToolResultContent[];
-  const isLastFullscreenApp = useLastFullscreenApp(messages, index, toolResultParts);
+  const app = uiResourceFor(message, call.id);
+  const isLastFullscreenApp = useLastFullscreenApp(messages, index, app);
 
-  const toolResult = toolResultParts[0]; // Usually just one
-
-  const toolDef = useMemo(() => findTool(providers, toolResult?.name), [providers, toolResult?.name]);
-  const toolIcon = toolDef?.icon;
-  const isToolError = !!message.error;
+  const toolDef = useMemo(() => findTool(providers, call.name), [providers, call.name]);
+  const error = result?.state === "error" ? { code: "TOOL_ERROR", message: result.error ?? "" } : undefined;
+  const isToolError = !!error && !result?.outcome;
   // When a result carries an MCP UI app, the app is the primary renderer; per the
   // MCP Apps spec the `content` blocks are for model context / text-only fallback,
   // so we don't also render the (redundant) media inline.
@@ -36,99 +50,102 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
   // belongs to an inactive agent (or an MCP filtered out by RBAC) means the client
   // isn't available, so we fall back to the raw result instead of a broken app. Once
   // the provider appears (e.g. the agent is activated) this flips true and McpApp mounts.
-  const appProviderId = toolResult?.meta?.toolProvider;
+  const appProviderId = app?.serverId;
   const hasMcpApp =
     typeof appProviderId === "string" &&
-    typeof toolResult?.meta?.toolResource === "string" &&
+    app?.resource.uri.startsWith("ui://") &&
     providers.some((p) => p.id === appProviderId);
-  const header = resolveToolHeader(toolDef, toolResult?.name ?? "", toolResult?.arguments, { error: isToolError });
-  const inputBlocks = useMemo(() => resolveToolInput(toolDef, toolResult?.arguments), [toolDef, toolResult?.arguments]);
+  const inputBlocks = useMemo(() => resolveToolInput(toolDef, call.arguments), [toolDef, call.arguments]);
+  const toolOutput = useMemo(() => (result ? toolResultContent(result) : undefined), [result]);
+  const header = resolveToolHeader(toolDef, call.name, call.arguments, {
+    error: isToolError,
+    result: toolOutput,
+    outcome: result?.outcome,
+  });
   const outputBlock = useMemo(
-    () => (message.error || !toolResult?.result ? null : resolveToolOutput(toolDef, toolResult.result)),
-    [toolDef, message.error, toolResult?.result],
+    () => (error || !toolOutput ? null : resolveToolOutput(toolDef, toolOutput, call.arguments)),
+    [toolDef, error, toolOutput, call.arguments],
   );
 
   return (
-    <div className="pb-2 max-w-full">
-      <div className={cn("rounded-lg overflow-hidden max-w-full", isToolError && "bg-red-50/30 dark:bg-red-950/5")}>
-        <button
-          onClick={() => setToolResultExpanded(!toolResultExpanded)}
-          className="w-full text-left transition-colors"
-          type="button"
-        >
-          <div className="grid grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 min-w-0">
-            <ChevronRight
-              className={cn(
-                "w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 transition-transform",
-                toolResultExpanded && "rotate-90",
-              )}
-            />
-            <div className="flex items-center gap-2 min-w-0">
-              {isToolError ? (
-                <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 shrink-0" />
-              ) : header.Icon ? (
-                <header.Icon className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
-              ) : toolIcon ? (
-                <McpProviderIcon
-                  src={toolIcon}
-                  size={12}
-                  className="shrink-0 w-3 h-3 object-contain text-neutral-400 dark:text-neutral-500"
-                />
-              ) : (
-                <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
-              )}
-              <span
-                className={cn(
-                  "text-xs whitespace-nowrap truncate",
-                  header.mono ? "font-mono" : "font-medium",
-                  isToolError ? "text-red-500 dark:text-red-400" : "text-neutral-500 dark:text-neutral-400",
-                )}
-              >
-                {isToolError && !header.Icon ? "Tool Error" : header.label}
-              </span>
-              {header.preview && (
-                <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
-                  {header.preview}
-                </span>
-              )}
-            </div>
-          </div>
-        </button>
+    <div className="max-w-full">
+      <div className="max-w-full">
+        <ActivityRow
+          label={header.label}
+          detail={header.preview}
+          mono={header.mono}
+          error={isToolError}
+          icon={nested ? undefined : (header.Icon ?? toolDef?.icon)}
+          expanded={toolResultExpanded}
+          onToggle={() => setToolResultExpanded(!toolResultExpanded)}
+        />
 
         {toolResultExpanded && (
-          <div className="mt-1">
+          <div className="space-y-1 pb-1">
             {/* Input — the tool's blocks, or a best-effort arguments block */}
-            {inputBlocks.map((block) => (
-              <CodeRenderer
-                key={block.name ?? block.language}
-                code={block.code}
-                language={block.language}
-                name={block.name}
-                subtle
-              />
-            ))}
+            {inputBlocks.map((block) =>
+              block.language === "markdown" || block.language === "text" ? (
+                <div
+                  key={block.name ?? block.language}
+                  className="ml-4.5 text-sm text-neutral-600 dark:text-neutral-400"
+                >
+                  {block.name && (
+                    <p className="mb-1 text-xs font-medium text-neutral-400 dark:text-neutral-500">{block.name}</p>
+                  )}
+                  {block.language === "text" ? (
+                    <p className="whitespace-pre-wrap break-words">{block.code}</p>
+                  ) : (
+                    <Markdown compact>{block.code}</Markdown>
+                  )}
+                </div>
+              ) : (
+                <div key={block.name ?? block.language} className="ml-4.5">
+                  <CodeRenderer code={block.code} language={block.language} name={block.name} subtle />
+                </div>
+              ),
+            )}
             {/* Output — the error, or the tool's / best-effort result block */}
-            {message.error ? (
-              <CodeRenderer code={message.error.message} language="text" name="Error" subtle />
+            {error ? (
+              <div className="ml-4.5">
+                <CodeRenderer code={error.message} language="text" name="Error" subtle />
+              </div>
             ) : (
-              outputBlock && (
-                <CodeRenderer code={outputBlock.code} language={outputBlock.language} name={outputBlock.name} subtle />
-              )
+              outputBlock &&
+              (outputBlock.language === "markdown" ? (
+                <div className="ml-4.5 text-sm text-neutral-600 dark:text-neutral-400">
+                  <Markdown compact>{outputBlock.code}</Markdown>
+                </div>
+              ) : (
+                <div className="ml-4.5">
+                  <CodeRenderer
+                    code={outputBlock.code}
+                    language={outputBlock.language}
+                    name={outputBlock.name}
+                    subtle
+                  />
+                </div>
+              ))
             )}
           </div>
         )}
 
         {/* Render media content (images, audio, files) — unless an MCP app owns the display */}
-        {!hasMcpApp &&
-          toolResult?.result?.some((c) => c.type === "image" || c.type === "audio" || c.type === "file") && (
-            <div className="mt-2">
-              <RenderContents contents={toolResult.result} />
-            </div>
-          )}
+        {!hasMcpApp && toolOutput?.some(isMediaPart) && (
+          <div className="mt-2">
+            <RenderContents contents={toolOutput} />
+          </div>
+        )}
 
-        {/* Render the MCP UI app (inline or fullscreen) for tool results with UI metadata */}
-        {hasMcpApp && (
-          <McpApp key={`${chat?.id}-${index}`} toolResult={toolResult} isLastFullscreenApp={isLastFullscreenApp} />
+        {/* Render the native UI resource alongside its originating tool result. */}
+        {hasMcpApp && app && result && (
+          <McpApp
+            key={`${chat?.id}-${message.id}-${call.id}`}
+            call={call}
+            app={app}
+            result={result}
+            isLastFullscreenApp={isLastFullscreenApp}
+            onPrompt={(text) => sendMessage(userMessage(text))}
+          />
         )}
       </div>
     </div>

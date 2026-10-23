@@ -1,31 +1,23 @@
 import { Transition } from "@headlessui/react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import {
-  ChevronDown,
-  Coffee,
-  GraduationCap,
-  Image,
-  Languages,
-  MessageCircle,
-  NotebookPen,
-  PanelLeftOpen,
-  Settings,
-} from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDown, Coffee, Image, Languages, MessageCircle, PanelLeftOpen } from "lucide-react";
+import { ViewTransition, useCallback, useEffect, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { SettingsButton } from "@/features/settings/components/SettingsButton";
+import { AccountMenu } from "@/features/settings/components/AccountMenu";
 import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
 import { SyncIndicator } from "@/features/settings/components/SyncIndicator";
 import { useToolsContext } from "@/features/tools";
+import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
-import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
+import { useBreakpoint, useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
+import { ProviderState } from "@/shared/types/chat";
 import { useApp } from "@/shell/hooks/useApp";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 
-type Page = "chat" | "translate" | "notebook" | "canvas";
+type Page = "chat" | "translate" | "canvas";
 
 function getPageFromPath(pathname: string): Page {
   const segment = pathname.split("/")[1] || "chat";
@@ -34,8 +26,6 @@ function getPageFromPath(pathname: string): Page {
       return "chat";
     case "translate":
       return "translate";
-    case "notebook":
-      return "notebook";
     case "canvas":
       return "canvas";
     default:
@@ -58,9 +48,13 @@ export function AppLayout() {
   } = useSidebar();
   const { leftActions, rightActions } = useNavigation();
   const { showArtifactsDrawer } = useArtifacts();
-  const { showAgentDrawer } = useAgents();
+  const { showAgentDrawer, currentAgent } = useAgents();
   const { showAppDrawer } = useApp();
-  const { companionAvailable, companionEnabled } = useToolsContext();
+  const { companionAvailable, companionEnabled, getProviderState } = useToolsContext();
+  // Header indicator reflects the companion's actual availability: the live
+  // connection state under an agent (its config decides), the persisted global
+  // flag otherwise.
+  const companionActive = currentAgent ? getProviderState(COMPANION_ID) === ProviderState.Connected : companionEnabled;
 
   // Detect if any panel is open - sidebar becomes overlay when panels are open
   const hasPanelOpen = showArtifactsDrawer || showAgentDrawer || showAppDrawer;
@@ -77,7 +71,8 @@ export function AppLayout() {
 
   // Track desktop breakpoint so the sidebar width is only applied on md+
   // (mobile keeps its full-width overlay).
-  const isDesktop = useMediaQuery("(min-width: 768px)");
+  const isDesktop = useBreakpoint("md");
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -85,63 +80,18 @@ export function AppLayout() {
   const [settingsAdvanced, setSettingsAdvanced] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
 
-  // Refs and state for animated slider (tablet and desktop only)
-  const tabletRef = useRef<HTMLDivElement>(null);
-  const desktopRef = useRef<HTMLDivElement>(null);
-  const [sliderStyles, setSliderStyles] = useState({
-    tablet: { left: 0, width: 0 },
-    desktop: { left: 0, width: 0 },
-  });
+  const openSettings = useCallback(({ advanced, section }: { advanced: boolean; section?: string }) => {
+    setSettingsInitialSection(section);
+    setSettingsAdvanced(advanced);
+    setSettingsOpen(true);
+  }, []);
 
-  // Shared function to update slider positions
-  const updateSlider = useCallback(
-    (containerRef: React.RefObject<HTMLDivElement | null>, key: "tablet" | "desktop") => {
-      if (containerRef.current) {
-        const activeButton = containerRef.current.querySelector(`[data-page="${currentPage}"]`) as HTMLElement;
-        if (activeButton) {
-          const containerRect = containerRef.current.getBoundingClientRect();
-          const buttonRect = activeButton.getBoundingClientRect();
-
-          setSliderStyles((prev) => ({
-            ...prev,
-            [key]: {
-              left: buttonRect.left - containerRect.left,
-              width: buttonRect.width,
-            },
-          }));
-        }
-      }
-    },
-    [currentPage],
-  );
-
-  // Update slider positions for all breakpoints
+  // React to breakpoint changes; the active tab's highlight follows its own
+  // layout and React coordinates the shared-element navigation animation.
   useEffect(() => {
-    setTimeout(() => {
-      updateSlider(tabletRef, "tablet");
-      updateSlider(desktopRef, "desktop");
-    }, 0);
-  }, [updateSlider]);
-
-  // Auto-close sidebar on mobile screens and update sliders on resize
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 768) {
-        setShowSidebar(false);
-      }
-      if (window.innerWidth >= 768) {
-        setMobileMenuOpen(false);
-      }
-      setTimeout(() => {
-        updateSlider(tabletRef, "tablet");
-        updateSlider(desktopRef, "desktop");
-      }, 100);
-    };
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [setShowSidebar, updateSlider]);
+    if (isDesktop) setMobileMenuOpen(false);
+    else setShowSidebar(false);
+  }, [isDesktop, setShowSidebar]);
 
   // Prevent default file-drop behavior on the rest of the page (avoid navigation)
   useEffect(() => {
@@ -160,13 +110,16 @@ export function AppLayout() {
   // Navigation pages
   const pages = [
     { key: "chat" as const, label: "Chat", icon: <MessageCircle size={20} />, to: "/chat" },
-    { key: "notebook" as const, label: "Notebook", icon: <NotebookPen size={20} />, to: "/notebook" },
-    { key: "translate" as const, label: "Translate", icon: <Languages size={20} />, to: "/translate" },
+    {
+      key: "translate" as const,
+      label: "Translate",
+      icon: <Languages size={20} />,
+      to: "/translate",
+    },
     { key: "canvas" as const, label: "Canvas", icon: <Image size={20} />, to: "/canvas" },
   ].filter((page) => {
     if (page.key === "chat") return true;
     if (page.key === "translate") return !!config.translator;
-    if (page.key === "notebook") return !!config.notebook;
     if (page.key === "canvas") return !!config.renderer;
     return true;
   });
@@ -211,18 +164,16 @@ export function AppLayout() {
         />
       </Transition>
 
-      {/* Generic sidebar - pushes content normally, becomes overlay when panels are open */}
+      {/* Generic sidebar - pushes content normally, becomes overlay when panels are open.
+          A tinted, translucent surface sets it apart from the content instead of a border,
+          so it reads as one column from the top bar to the bottom edge. */}
       {sidebarContent && (
         <aside
-          className={`
-            fixed z-50
-            transition-transform duration-500 ease-in-out
-            ${showSidebar ? "translate-x-0" : "-translate-x-[calc(100%+0.5rem)]"}
-            left-0 top-0 bottom-0 right-0 w-full h-full
-            md:left-2 md:top-2 md:bottom-2 md:right-auto md:h-auto
-            md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm
-            overflow-hidden
-          `}
+          className={cn(
+            "fixed inset-y-0 left-0 z-50 w-full overflow-hidden bg-neutral-100/85 backdrop-blur-xl transition-transform duration-500 ease-in-out md:right-auto dark:bg-neutral-900/85",
+            showSidebar ? "translate-x-0" : "-translate-x-full",
+            hasPanelOpen && "md:shadow-2xl md:shadow-black/15 dark:md:shadow-black/50",
+          )}
           style={isDesktop ? { width: sidebarWidth } : undefined}
           onTouchStart={(e) => {
             (e.currentTarget as HTMLElement).dataset.swipeStartX = String(e.touches[0].clientX);
@@ -271,15 +222,15 @@ export function AppLayout() {
           "flex-1 flex flex-col overflow-hidden relative z-10 ease-in-out",
           !isSidebarResizing && "transition-all duration-500",
         )}
-        style={{ marginLeft: sidebarPushesContent ? sidebarWidth + 12 : 0 }}
+        style={{ marginLeft: sidebarPushesContent ? sidebarWidth : 0 }}
       >
         {/* Fixed navigation bar with glass effect */}
         <nav
           className={cn(
-            "fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 shadow-sm ease-in-out",
+            "fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-800 shadow-sm ease-in-out",
             !isSidebarResizing && "transition-[padding] duration-500",
           )}
-          style={sidebarPushesContent ? { paddingLeft: sidebarWidth + 24 } : undefined}
+          style={sidebarPushesContent ? { paddingLeft: sidebarWidth + 12 } : undefined}
         >
           <div className="flex items-center justify-between">
             {/* Left section */}
@@ -327,23 +278,7 @@ export function AppLayout() {
             {/* Center section - Modern pill navigation for desktop */}
             {showNavigation && (
               <div className="hidden md:flex items-center justify-center">
-                <div
-                  ref={desktopRef}
-                  className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
-                >
-                  {/* Animated slider background */}
-                  {pages.some((p) => p.key === currentPage) && (
-                    <div
-                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
-                      style={{
-                        left: `${sliderStyles.desktop.left}px`,
-                        width: `${sliderStyles.desktop.width}px`,
-                        height: "calc(100% - 8px)",
-                        top: "4px",
-                      }}
-                    />
-                  )}
-
+                <div className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20">
                   {/* Navigation items */}
                   {pages.map(({ key, label, icon, to }) => (
                     <Link
@@ -351,13 +286,24 @@ export function AppLayout() {
                       to={to}
                       data-page={key}
                       className={cn(
-                        "relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out",
+                        "relative isolate z-10 px-3 py-1.5 rounded-full font-medium transition-colors duration-200 ease-out",
                         "flex items-center gap-2 text-sm cursor-pointer",
                         currentPage === key
                           ? "text-neutral-900 dark:text-neutral-100"
                           : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                       )}
                     >
+                      {currentPage === key && (
+                        <ViewTransition
+                          name="navigation-highlight"
+                          default={reducedMotion ? "none" : "navigation-highlight"}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 -z-10 rounded-full bg-white shadow-sm dark:bg-neutral-950"
+                          />
+                        </ViewTransition>
+                      )}
                       {icon}
                       <span className="hidden sm:inline">{label}</span>
                     </Link>
@@ -371,48 +317,19 @@ export function AppLayout() {
               {companionAvailable && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSettingsInitialSection("companion");
-                    setSettingsAdvanced(false);
-                    setSettingsOpen(true);
-                  }}
+                  onClick={() => openSettings({ advanced: false, section: "companion" })}
                   className={cn(
                     "p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                    !companionEnabled && "opacity-40",
+                    !companionActive && "opacity-40",
                   )}
                   title="Companion"
                 >
                   <Coffee size={20} />
                 </button>
               )}
-              {config.support?.url && (
-                <a
-                  href={config.support.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                  title="Support"
-                >
-                  <GraduationCap size={24} />
-                </a>
-              )}
-              <SyncIndicator
-                onClick={() => {
-                  setSettingsInitialSection("sync");
-                  setSettingsAdvanced(false);
-                  setSettingsOpen(true);
-                }}
-              />
-              <div className="hidden md:block">
-                <SettingsButton
-                  onClick={(e) => {
-                    setSettingsInitialSection(undefined);
-                    setSettingsAdvanced(e.altKey);
-                    setSettingsOpen(true);
-                  }}
-                />
-              </div>
+              <SyncIndicator onClick={() => openSettings({ advanced: false, section: "sync" })} />
               {rightActions}
+              <AccountMenu onOpenSettings={openSettings} />
             </div>
           </div>
         </nav>
@@ -436,22 +353,6 @@ export function AppLayout() {
                   <span className="font-medium text-sm">{label}</span>
                 </Link>
               ))}
-
-              <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  setSettingsInitialSection(undefined);
-                  setSettingsAdvanced(e.altKey);
-                  setSettingsOpen(true);
-                  setMobileMenuOpen(false);
-                }}
-                className="w-full px-4 py-2.5 flex items-center gap-3 text-left text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <Settings size={20} />
-                <span className="font-medium text-sm">Settings</span>
-              </button>
             </div>
           </div>
         )}

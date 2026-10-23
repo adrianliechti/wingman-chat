@@ -37,6 +37,15 @@ export function resolveAssetPath(url: string, basePath: string | undefined): str
   return `/${segments.join("/")}`;
 }
 
+async function loadBlobUrl(fs: FileSystem, absPath: string): Promise<string | null> {
+  try {
+    const file = await fs.getFile(absPath);
+    return file ? URL.createObjectURL(contentToBlob(file.content, file.contentType)) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Lazy blob-URL resolver for artifact files. Intended for rendering contexts
  * (e.g. markdown `<img>`) that want to display sibling files by relative path.
@@ -55,6 +64,9 @@ export function useAssetUrlResolver(
   fs: FileSystem | undefined,
   basePath: string | undefined,
 ): (url: string) => string | undefined {
+  "use no memo";
+  // The resolver reads a mutable cache. Its version must change the callback's
+  // identity so memoized Markdown consumers see newly loaded image URLs.
   // Map value states:
   //   missing    → not yet requested
   //   "pending"  → in-flight fetch
@@ -62,19 +74,14 @@ export function useAssetUrlResolver(
   //   null       → known not-found (avoid retry loops)
   const cacheRef = useRef<Map<string, string | null>>(new Map());
   // Bump on each change so <img> tags re-render with the resolved URL.
-  const [, setTick] = useState(0);
+  const [version, setTick] = useState(0);
   const bump = useCallback(() => setTick((t) => t + 1), []);
 
   const load = useCallback(
     async (absPath: string) => {
       if (!fs || cacheRef.current.has(absPath)) return;
       cacheRef.current.set(absPath, "pending");
-      try {
-        const file = await fs.getFile(absPath);
-        cacheRef.current.set(absPath, file ? URL.createObjectURL(contentToBlob(file.content, file.contentType)) : null);
-      } catch {
-        cacheRef.current.set(absPath, null);
-      }
+      cacheRef.current.set(absPath, await loadBlobUrl(fs, absPath));
       bump();
     },
     [fs, bump],
@@ -129,8 +136,8 @@ export function useAssetUrlResolver(
         void load(absPath);
         return undefined;
       }
-      return typeof entry === "string" ? entry : undefined;
+      return typeof entry === "string" && entry !== "pending" ? entry : undefined;
     },
-    [fs, basePath, load],
+    [fs, basePath, load, version],
   );
 }

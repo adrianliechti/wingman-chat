@@ -1,6 +1,7 @@
-import { File, PanelRightOpen } from "lucide-react";
+import { Download, File, PanelRightOpen } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { cn } from "@/shared/lib/cn";
+import { fileExtension } from "@/shared/lib/utils";
 import { useArtifacts } from "../hooks/useArtifacts";
 
 /**
@@ -38,25 +39,42 @@ export const ArtifactChip = memo(function ArtifactChip({ path, className }: { pa
   }, [fs, path]);
 
   const name = path.split("/").pop() || path;
-  const ext = (name.includes(".") ? name.split(".").pop() : "")?.toUpperCase() ?? "";
+  const ext = fileExtension(name).toUpperCase();
 
   const handleOpen = () => {
     openFile(path);
     setShowArtifactsDrawer(true);
   };
 
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!fs) return;
+    fs.downloadFile(path).catch(() => {});
+  };
+
   return (
-    <button
-      type="button"
-      onClick={handleOpen}
-      disabled={!exists}
+    <div
+      role="button"
+      tabIndex={exists ? 0 : -1}
+      onClick={exists ? handleOpen : undefined}
+      onKeyDown={
+        exists
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                handleOpen();
+              }
+            }
+          : undefined
+      }
+      aria-disabled={!exists}
       title={exists ? `Open ${path}` : `${path} (no longer available)`}
       aria-label={exists ? `Open ${path}` : `${path} (no longer available)`}
       className={cn(
         "group/artifact inline-flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left align-top transition-colors",
         "max-w-xs",
         exists
-          ? "bg-neutral-100 hover:bg-neutral-200/70 dark:bg-neutral-900/40 dark:hover:bg-neutral-800/50"
+          ? "cursor-pointer bg-neutral-100 hover:bg-neutral-200/70 dark:bg-neutral-900/40 dark:hover:bg-neutral-800/50"
           : "cursor-not-allowed bg-neutral-100/50 opacity-50 dark:bg-neutral-900/20",
         className,
       )}
@@ -92,6 +110,18 @@ export const ArtifactChip = memo(function ArtifactChip({ path, className }: { pa
       >
         {name}
       </span>
-    </button>
+
+      {exists && (
+        <button
+          type="button"
+          onClick={handleDownload}
+          title={`Download ${name}`}
+          aria-label={`Download ${name}`}
+          className="ml-1 -mr-1 shrink-0 rounded p-1 text-neutral-500 opacity-0 transition-opacity hover:bg-neutral-300/60 hover:text-neutral-700 focus-visible:opacity-100 group-hover/artifact:opacity-100 dark:text-neutral-400 dark:hover:bg-neutral-700/60 dark:hover:text-neutral-100"
+        >
+          <Download className="h-4 w-4" strokeWidth={1.75} />
+        </button>
+      )}
+    </div>
   );
 });

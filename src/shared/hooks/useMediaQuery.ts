@@ -22,3 +22,14 @@ export function useMediaQuery(query: string): boolean {
     () => false, // no SSR in this client-only app; default to "not matched"
   );
 }
+
+// Tailwind's default breakpoints, so a JS layout check matches the `sm:` / `md:`
+// classes used beside it instead of repeating the pixel value in every component.
+const BREAKPOINTS = { sm: 640, md: 768, lg: 1024, xl: 1280 } as const;
+
+export type Breakpoint = keyof typeof BREAKPOINTS;
+
+/** True when the viewport is at least `breakpoint` wide (same threshold as Tailwind's `${breakpoint}:` variant). */
+export function useBreakpoint(breakpoint: Breakpoint): boolean {
+  return useMediaQuery(`(min-width: ${BREAKPOINTS[breakpoint]}px)`);
+}

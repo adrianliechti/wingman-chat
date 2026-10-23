@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { withPersistenceLock } from "@/shared/lib/persistence";
+import { reportPersistenceError, usePersistenceQueue } from "./usePersistenceQueue";
 import * as opfs from "@/shared/lib/opfs";
 
 /**
@@ -35,126 +37,75 @@ export interface UsePersistedStateReturn<T> {
   flush: () => Promise<void>;
 }
 
-/**
- * Hook for persisting simple key-value state to OPFS.
- * Handles loading, saving, and debouncing automatically.
- */
-export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UsePersistedStateReturn<T> {
-  const { key, defaultValue, debounceMs = 0, onLoad, onSave } = options;
+/** Loading and saving share one session per key and the ordinary persistence queue. */
+export function usePersistedState<T>({
+  key,
+  defaultValue,
+  debounceMs = 0,
+  onLoad,
+  onSave,
+}: UsePersistedStateOptions<T>): UsePersistedStateReturn<T> {
+  const [, render] = useState(0);
+  const callbacks = useRef({ defaultValue, onLoad, onSave });
+  callbacks.current = { defaultValue, onLoad, onSave };
+  const queue = usePersistenceQueue(debounceMs);
+  const session = useMemo(
+    () => ({
+      key,
+      value: callbacks.current.defaultValue,
+      loaded: false,
+      edits: [] as React.SetStateAction<T>[],
+      loading: undefined as Promise<void> | undefined,
+    }),
+    [key],
+  );
 
-  const [value, setValueInternal] = useState<T>(defaultValue);
-  const [saveSequence, setSaveSequence] = useState(0);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  // Refs to avoid stale closures in async callbacks
-  const valueRef = useRef<T>(value);
-  valueRef.current = value;
-
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSaveRef = useRef(false);
-  const isLoadedRef = useRef(false);
-
-  // Store callbacks in refs to avoid re-triggering effects
-  const onLoadRef = useRef(onLoad);
-  const onSaveRef = useRef(onSave);
-  onLoadRef.current = onLoad;
-  onSaveRef.current = onSave;
-
-  // Save function using refs
-  const save = useCallback(async () => {
-    if (!isLoadedRef.current) return;
-
-    try {
-      const dataToSave = onSaveRef.current ? onSaveRef.current(valueRef.current) : valueRef.current;
-
-      if (dataToSave === undefined) {
-        await opfs.deleteFile(key);
-      } else {
-        await opfs.writeJson(key, dataToSave);
-      }
-      pendingSaveRef.current = false;
-    } catch (error) {
-      console.warn(`Failed to save ${key}:`, error);
-    }
-  }, [key]);
-
-  const setValue = useCallback<React.Dispatch<React.SetStateAction<T>>>((nextValue) => {
-    pendingSaveRef.current = true;
-    setSaveSequence((currentSequence) => currentSequence + 1);
-    setValueInternal(nextValue);
-  }, []);
-
-  // Load from OPFS on mount
   useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        const data = await opfs.readJson<T>(key);
-
-        if (!cancelled && data !== undefined) {
-          const processed = onLoadRef.current ? onLoadRef.current(data) : data;
-          setValueInternal(processed);
-        }
-      } catch (error) {
-        console.warn(`Failed to load ${key}:`, error);
-      } finally {
-        if (!cancelled) {
-          isLoadedRef.current = true;
-          setIsLoaded(true);
-        }
-      }
-    };
-
-    void load();
-
+    let active = true;
+    const { defaultValue: initialValue, onLoad: transform } = callbacks.current;
+    session.loading ??= opfs.readJson<T>(session.key).then((data) => {
+      let value = data === undefined ? initialValue : transform ? transform(data) : data;
+      // Rebase edits made during loading onto the saved value. An explicit
+      // replacement remains a replacement; functional updates keep other fields.
+      for (const edit of session.edits) value = typeof edit === "function" ? (edit as (value: T) => T)(value) : edit;
+      session.value = value;
+      session.edits = [];
+      session.loaded = true;
+    });
+    void session.loading
+      .then(() => {
+        if (active) render((n) => n + 1);
+      })
+      .catch(reportPersistenceError);
     return () => {
-      cancelled = true;
+      active = false;
     };
-  }, [key]);
+  }, [session]);
 
-  // Debounced save effect
-  useEffect(() => {
-    if (!isLoaded || saveSequence === 0 || !pendingSaveRef.current) return;
-
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = null;
-    }
-
-    if (debounceMs > 0) {
-      saveTimeoutRef.current = setTimeout(() => {
-        saveTimeoutRef.current = null;
-        void save();
-      }, debounceMs);
-      return;
-    }
-
-    void save();
-  }, [debounceMs, isLoaded, save, saveSequence]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      if (pendingSaveRef.current && isLoadedRef.current) {
-        const dataToSave = onSaveRef.current ? onSaveRef.current(valueRef.current) : valueRef.current;
-        if (dataToSave !== undefined) {
-          opfs.writeJson(key, dataToSave).catch(console.warn);
-        }
-      }
-    };
-  }, [key]);
+  const setValue = useCallback<React.Dispatch<React.SetStateAction<T>>>(
+    (edit) => {
+      session.value = typeof edit === "function" ? (edit as (value: T) => T)(session.value) : edit;
+      if (!session.loaded) session.edits.push(edit);
+      const deferSnapshot = !session.loaded;
+      const snapshot = session.value;
+      const transform = callbacks.current.onSave;
+      queue.schedule(session.key, async () => {
+        await session.loading;
+        const value = deferSnapshot ? session.value : snapshot;
+        const stored = transform ? transform(value) : value;
+        await withPersistenceLock("collection:profile", () =>
+          stored === undefined ? opfs.deleteFile(session.key) : opfs.writeJson(session.key, stored),
+        );
+      });
+      render((n) => n + 1);
+    },
+    [queue, session],
+  );
 
   const flush = useCallback(async () => {
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = null;
-    }
-    await save();
-  }, [save]);
+    await session.loading;
+    await queue.flushRecord(session.key);
+  }, [queue, session]);
 
-  return { value, setValue, isLoaded, flush };
+  return { value: session.value, setValue, isLoaded: session.loaded, flush };
 }

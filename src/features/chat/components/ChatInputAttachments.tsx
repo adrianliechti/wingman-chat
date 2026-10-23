@@ -1,10 +1,10 @@
 import { File, FileText, Image, Loader2, X } from "lucide-react";
 import { memo } from "react";
-
-import type { Content } from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import { mediaDataUrl, mediaName } from "@/shared/lib/messages";
 
 interface ChatInputAttachmentsProps {
-  attachments: Content[];
+  attachments: ContentPart[];
   /** Display names of document attachments queued for the artifacts workspace. */
   artifactAttachments?: string[];
   extractingAttachments: Set<string>;
@@ -12,28 +12,21 @@ interface ChatInputAttachmentsProps {
   onRemoveArtifact?: (index: number) => void;
 }
 
-const getContentIcon = (content: Content) => {
+const getContentIcon = (content: ContentPart) => {
   switch (content.type) {
     case "image":
       return <Image size={24} />;
     case "text":
       return <FileText size={24} />;
-    case "file":
-      return <File size={24} />;
-    case "audio":
-      return <File size={24} />;
     default:
       return <File size={24} />;
   }
 };
 
 // Helper to get display name from content
-const getContentName = (content: Content): string => {
-  if (content.type === "file") return content.name;
-  if (content.type === "image" && content.name) return content.name;
-  if (content.type === "audio" && content.name) return content.name;
+const getContentName = (content: ContentPart): string => {
   if (content.type === "text") return "Text content";
-  return content.type;
+  return mediaName(content) ?? content.type;
 };
 
 export const ChatInputAttachments = memo(
@@ -51,9 +44,9 @@ export const ChatInputAttachments = memo(
     const attachmentCounts = new Map<string, number>();
     const keyedAttachments = attachments.map((content, index) => {
       const baseKey =
-        content.type === "image" || content.type === "file" || content.type === "audio"
-          ? `${content.type}:${content.name ?? "unnamed"}`
-          : `${content.type}:${content.type === "text" ? content.text.slice(0, 64) : "content"}`;
+        content.type === "text"
+          ? `text:${content.content.slice(0, 64)}`
+          : `${content.type}:${getContentName(content) ?? "unnamed"}`;
       const occurrence = (attachmentCounts.get(baseKey) ?? 0) + 1;
       attachmentCounts.set(baseKey, occurrence);
       return { content, index, key: `${baseKey}:${occurrence}` };
@@ -80,7 +73,11 @@ export const ChatInputAttachments = memo(
             title={getContentName(content)}
           >
             {content.type === "image" ? (
-              <img src={content.data} alt={content.name || "image"} className="size-full object-cover rounded-xl" />
+              <img
+                src={mediaDataUrl(content)}
+                alt={mediaName(content) || "image"}
+                className="size-full object-cover rounded-xl"
+              />
             ) : (
               <div className="text-neutral-600 dark:text-neutral-300">{getContentIcon(content)}</div>
             )}

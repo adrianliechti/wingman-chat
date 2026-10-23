@@ -1,0 +1,210 @@
+import type { CodeExecutionRequest, CodeExecutionResult } from "@/features/tools/lib/interpreterProtocol";
+import type { ExecuteCodeOptions } from "@/features/tools/lib/workerHost";
+import { mountSkillFiles } from "@/features/tools/lib/skillResourceMount";
+import { formatArtifactValidationIssue } from "@/shared/lib/artifact-validation";
+import { normalizeArtifactPath } from "@/shared/lib/sandbox";
+import { artifactDelta, type ArtifactMutation } from "@/shared/types/artifact";
+import type { ToolContext } from "@/shared/types/chat";
+import type { ArtifactWorkspaceAccess, FileSystemManager } from "./fs";
+import { validateArtifactFile } from "./artifactValidators";
+
+function failure(error: string, output = ""): CodeExecutionResult {
+  return { success: false, output, error };
+}
+
+/** One text block for a failed run: what it printed first, then why it stopped. */
+export function formatExecutionFailure(result: CodeExecutionResult): string {
+  const error = result.error || "Unknown execution error";
+  const output = result.output.trim();
+  return output ? `Output before the failure:\n${output}\n\n${error}` : error;
+}
+
+type SandboxFiles = Record<string, { content: string; contentType?: string }>;
+
+/**
+ * Accept the shapes models actually send for `args`: a JSON-encoded array,
+ * scalars inside the array, or nothing. Returns undefined when the value
+ * cannot mean a list of string arguments.
+ */
+export function coerceScriptArgs(value: unknown): string[] | null | undefined {
+  if (value === undefined || value === null) return null;
+  let list = value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (!trimmed.startsWith("[")) return undefined;
+    try {
+      list = JSON.parse(trimmed);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!Array.isArray(list)) return undefined;
+  const args: string[] = [];
+  for (const item of list) {
+    if (typeof item === "string") args.push(item);
+    else if (typeof item === "number" || typeof item === "boolean") args.push(String(item));
+    else return undefined;
+  }
+  return args;
+}
+
+/**
+ * Merge a skill's mounted resources into the sandbox file map, returning the
+ * keys actually injected (skipping any that would shadow a real artifact). The
+ * caller strips these from the post-run snapshot so read-only skill resources
+ * never persist as artifacts.
+ */
+function mergeSkillFiles(base: SandboxFiles, skillFiles: SandboxFiles): Set<string> {
+  const injected = new Set<string>();
+  for (const [path, file] of Object.entries(skillFiles)) {
+    if (path in base) continue;
+    base[path] = file;
+    injected.add(path);
+  }
+  return injected;
+}
+
+interface SnapshotValidation {
+  errors: string[];
+  warnings: string[];
+}
+
+/** Validate changed artifacts after an executor snapshot is committed. */
+async function validateChangedArtifactFiles(before: SandboxFiles, after: SandboxFiles): Promise<SnapshotValidation> {
+  const report: SnapshotValidation = { errors: [], warnings: [] };
+  for (const [path, file] of Object.entries(after)) {
+    const previous = before[path];
+    if (previous?.content === file.content && previous.contentType === file.contentType) continue;
+    const validation = await validateArtifactFile({ path, content: file.content, contentType: file.contentType });
+    report.errors.push(...validation.errors.map((issue) => `${path}: ${formatArtifactValidationIssue(issue)}`));
+    report.warnings.push(...validation.warnings.map((issue) => `${path}: ${formatArtifactValidationIssue(issue)}`));
+  }
+  return report;
+}
+
+function formatSnapshotValidation(report: SnapshotValidation): string {
+  const sections: string[] = [];
+  if (report.errors.length) {
+    sections.push(
+      `Validation errors (files were saved; continue editing and fix before finishing):\n${report.errors
+        .map((error) => `- ${error}`)
+        .join("\n")}`,
+    );
+  }
+  if (report.warnings.length) {
+    sections.push(`Validation warnings:\n${report.warnings.map((warning) => `- ${warning}`).join("\n")}`);
+  }
+  return sections.length ? `\n${sections.join("\n")}` : "";
+}
+
+export type SandboxExecutor = (
+  request: CodeExecutionRequest,
+  options?: ExecuteCodeOptions,
+) => Promise<CodeExecutionResult>;
+
+async function executeCancellable(
+  executor: SandboxExecutor,
+  request: CodeExecutionRequest,
+  options: ExecuteCodeOptions,
+) {
+  const signal = options.signal;
+  if (!signal) return executor(request, options);
+  signal.throwIfAborted();
+  let abort!: () => void;
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    // A worker may still be queued behind another chat's run. Cancellation
+    // releases this workspace immediately, even if that queue settles later.
+    return await Promise.race([executor(request, options), cancelled]);
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+}
+
+/** One workspace transaction for interpreter tools and editor Run buttons. */
+export async function executeArtifactCode(options: {
+  args: Record<string, unknown>;
+  context?: ToolContext;
+  executor: SandboxExecutor;
+  extension?: "py" | "js" | "sh";
+  fs: FileSystemManager | null;
+  onCommit?: (access: ArtifactWorkspaceAccess, mutations: ArtifactMutation[]) => Promise<void>;
+  limits?: CodeExecutionRequest["limits"];
+  mountSkills?: boolean;
+}): Promise<CodeExecutionResult> {
+  const { args, context, executor, extension, mountSkills = true } = options;
+  const inlineCode = typeof args.code === "string" ? args.code : "";
+
+  const run = async (fs: ArtifactWorkspaceAccess | null): Promise<CodeExecutionResult> => {
+    context?.signal?.throwIfAborted();
+    const scriptArgs = coerceScriptArgs(args.args);
+    if (scriptArgs === undefined) {
+      return failure(
+        'Script args must be an array of strings, for example ["--input", "data.csv"]. Omit args when unused.',
+      );
+    }
+    const hasCode = inlineCode.trim().length > 0;
+    const path = hasCode ? undefined : normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
+
+    if (!hasCode && !path) {
+      return failure(
+        "No executable input received. Pass nonempty code with language, or path to an existing " +
+          `${extension ? `.${extension} artifact` : "artifact or selected-skill script"}. path selects a script, not a working directory.`,
+      );
+    }
+
+    // Prefer inline code: providers sometimes append `path` as if it were a
+    // working-directory hint even though the schema describes a selector.
+    const artifactFiles: SandboxFiles = fs ? await fs.getOverlaySnapshot() : {};
+    const skillKeys = mountSkills ? mergeSkillFiles(artifactFiles, await mountSkillFiles()) : new Set<string>();
+    let script = inlineCode;
+    if (!hasCode && path) {
+      const file = artifactFiles[path];
+      if (!file) return failure(`Error executing code: file not found: ${path}`);
+      script = file.content;
+    }
+
+    context?.signal?.throwIfAborted();
+    const result = await executeCancellable(
+      executor,
+      { code: script, path, args: scriptArgs ?? undefined, files: artifactFiles, limits: options.limits },
+      { signal: context?.signal, context },
+    );
+    if (!result.success) {
+      // Keep what the script printed before failing; it is usually the clue.
+      return failure(`Error executing code: ${result.error || "Unknown error"}`, result.output);
+    }
+
+    let artifactValidation: SnapshotValidation = { errors: [], warnings: [] };
+    if (fs && result.files) {
+      context?.signal?.throwIfAborted();
+      for (const key of skillKeys) delete result.files[key];
+      const summary = await fs.applyOverlaySnapshot(result.files, {
+        deleteMissing: true,
+        origin: {
+          actor: context?.runId ? "assistant" : "user",
+          runId: context?.runId,
+          reason: "execution",
+        },
+      });
+      await options.onCommit?.(fs, summary.mutations);
+      if (summary.mutations.length > 0) {
+        context?.setMeta?.({
+          artifactDelta: artifactDelta(summary.mutations),
+        });
+      }
+      artifactValidation = await validateChangedArtifactFiles(artifactFiles, result.files);
+    }
+
+    return { ...result, output: result.output + formatSnapshotValidation(artifactValidation) };
+  };
+  try {
+    return options.fs ? await options.fs.withExclusiveAccess(run) : await run(null);
+  } catch (error) {
+    return failure(`Code execution failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+  }
+}

@@ -1,30 +1,35 @@
+import { ConversationUiProvider } from "@/shared/ui/inlineUi/UiRenderer";
+import { submissionText } from "@/shared/lib/inlineUi/diagnostics";
+import type { UiSubmission } from "@/shared/lib/inlineUi/runtime";
+import { userMessage } from "@/shared/lib/messages";
+import { ChatInterrupts } from "../components/ChatInterrupts";
 import { useMatch, useNavigate } from "@tanstack/react-router";
-import { AppWindow, ArrowDown, ChevronLeft, Info, Plus as PlusIcon, Shapes } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AppWindow, ArrowDown, Info, Plus as PlusIcon, Shapes } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
-import { SkillCatalog } from "@/features/agent/components/SkillCatalog";
+import { LibraryDialog } from "@/features/agent/components/LibraryDialog";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { EdgeLatch } from "@/features/chat/components/EdgeLatch";
+import { PanelShell } from "@/features/chat/components/PanelShell";
 import { AgentButton } from "@/features/chat/components/AgentButton";
 import { ChatConsentBackdrop, ChatConsentBanner } from "@/features/chat/components/ChatConsentOverlay";
 import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
 import { ChatToolGroup } from "@/features/chat/components/ChatToolGroup";
-import { groupRenderUnits, isToolResultMessage } from "@/features/chat/components/chatMessageUtils";
+import { groupRenderUnits, isToolOnlyMessage } from "@/features/chat/components/chatMessageUtils";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
-import { useDrawerAnimation } from "@/features/chat/hooks/useDrawerAnimation";
 import { useDrawerExclusivity } from "@/features/chat/hooks/useDrawerExclusivity";
 import { useDrawerResize } from "@/features/chat/hooks/useDrawerResize";
-import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { Skill } from "@/features/skills/lib/skillParser";
 import { useVoice } from "@/features/voice/hooks/useVoice";
-import { useChatScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
-import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
+import { useChatScroll } from "@/shared/hooks/useChatScroll";
+import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { AppDrawer } from "@/shell/components/AppDrawer";
@@ -35,18 +40,18 @@ import { useLayout } from "@/shell/hooks/useLayout";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 
+function loadDisclaimer() {
+  try {
+    const config = getConfig();
+    return config.disclaimer?.trim() ? sanitizeHtmlToReact(config.disclaimer, { keyPrefix: "chat-disclaimer" }) : null;
+  } catch {
+    return null;
+  }
+}
+
 // Memoized disclaimer component to avoid re-computing on every render
 const Disclaimer = () => {
-  const disclaimer = useMemo(() => {
-    try {
-      const config = getConfig();
-      return config.disclaimer?.trim()
-        ? sanitizeHtmlToReact(config.disclaimer, { keyPrefix: "chat-disclaimer" })
-        : null;
-    } catch {
-      return null;
-    }
-  }, []);
+  const disclaimer = useMemo(() => loadDisclaimer(), []);
 
   if (!disclaimer) return null;
 
@@ -61,31 +66,50 @@ const Disclaimer = () => {
 };
 
 export function ChatPage() {
-  const { messages, selectChat, chat, chats, chatsLoaded, isResponding, model, models, setModel } = useChat();
+  const {
+    messages,
+    selectChat,
+    loadChat,
+    chat,
+    chatId: selectedChatId,
+    chatLoading,
+    chatError,
+    chats,
+    chatsLoaded,
+    isResponding,
+    pendingElicitation,
+    interruptState,
+    sendMessage,
+  } = useChat();
+  const handleUiSubmission = useCallback(
+    async (submission: UiSubmission) => {
+      await sendMessage(userMessage(submissionText(submission), { metadata: { a2ui: submission } }));
+    },
+    [sendMessage],
+  );
   const { isListening, stopVoice } = useVoice();
 
   const navigate = useNavigate();
   const { newChat } = useChatNavigate();
 
+  // selectChat(null) already leaves realtime for a new chat without touching
+  // the model stored on the chat being left.
   const handleNewChat = useCallback(() => {
-    if (model?.id === "realtime") {
-      const savedId = getSavedModelId();
-      const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
-      setModel(restored ?? null);
-    }
     if (isListening) {
       void stopVoice();
     }
     newChat();
-  }, [model, models, setModel, isListening, stopVoice, newChat]);
+  }, [isListening, stopVoice, newChat]);
   const chatIdMatch = useMatch({ from: "/app/chat/$chatId", shouldThrow: false });
   const routeChatId = chatIdMatch?.params.chatId;
+
+  const showChatLoading = !chats.some((c) => c.id === selectedChatId);
 
   // Sync URL → state for deep links and browser back/forward navigation.
   // User-initiated actions (plus button, sidebar clicks) go through useChatNavigate
   // which sets both state and URL directly, so this only catches external URL changes.
   useEffect(() => {
-    const activeChatId = chat?.id ?? null;
+    const activeChatId = selectedChatId;
 
     if (routeChatId && routeChatId !== activeChatId) {
       // Only select the chat once chats have loaded from storage — otherwise we might
@@ -108,7 +132,7 @@ export function ChatPage() {
     }
 
     previousRouteChatIdRef.current = routeChatId;
-  }, [routeChatId, chat?.id, selectChat, chats, chatsLoaded, navigate]);
+  }, [routeChatId, selectedChatId, selectChat, chats, chatsLoaded, navigate]);
 
   // Sync state → URL when a chat is implicitly created during message send.
   // The URL is still /chat but chatId just appeared — update to /chat/$chatId.
@@ -131,9 +155,20 @@ export function ChatPage() {
     setShowArtifactsDrawer,
   } = useArtifacts();
   const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer } = useAgents();
-  const { showSkillCatalog, skillCatalogTarget, skillCatalogReadOnly, closeSkillCatalog } = useSkills();
+  const { showSkillCatalog, skillCatalogTarget, skillCatalogSection, closeSkillCatalog } = useSkills();
 
   const agentSkillIds = useMemo(() => new Set(currentAgent?.skills ?? []), [currentAgent]);
+  const agentPluginIds = useMemo(() => new Set(currentAgent?.plugins ?? []), [currentAgent]);
+
+  const handlePluginToggle = useCallback(
+    (pluginId: string) => {
+      if (!currentAgent) return;
+      const current = currentAgent.plugins ?? [];
+      const next = current.includes(pluginId) ? current.filter((id) => id !== pluginId) : [...current, pluginId];
+      updateAgent(currentAgent.id, { plugins: next });
+    },
+    [currentAgent, updateAgent],
+  );
 
   const handleSkillToggle = useCallback(
     (skillName: string) => {
@@ -167,30 +202,13 @@ export function ChatPage() {
     },
     [currentAgent, updateAgent],
   );
-  const { showAppDrawer, hasAppContent, toggleAppDrawer, setShowAppDrawer } = useApp();
-
-  // Mutual exclusivity: closing one drawer when another opens
-  useDrawerExclusivity({
-    showApp: showAppDrawer,
-    setShowApp: setShowAppDrawer,
-    showArtifacts: showArtifactsDrawer,
-    setShowArtifacts: setShowArtifactsDrawer,
-    showAgent: showAgentDrawer,
-    setShowAgent: setShowAgentDrawer,
-  });
+  const { showAppDrawer, hasAppContent, activeApp, toggleAppDrawer, setShowAppDrawer } = useApp();
 
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
 
-  // Drawer animation states using custom hook
-  const { isAnimating: isAgentDrawerAnimating, shouldRender: shouldRenderAgentDrawer } =
-    useDrawerAnimation(showAgentDrawer);
-  const { isAnimating: isArtifactsDrawerAnimating, shouldRender: shouldRenderArtifactsDrawer } =
-    useDrawerAnimation(showArtifactsDrawer);
-  const { isAnimating: isAppDrawerAnimating, shouldRender: shouldRenderAppDrawer } = useDrawerAnimation(showAppDrawer);
-
   // Track if we're on mobile for drawer positioning
-  const isMobile = !useMediaQuery("(min-width: 768px)");
+  const isMobile = !useBreakpoint("md");
 
   const APP_MIN_PX = 360;
   const ARTIFACTS_MIN_PX = 360;
@@ -216,6 +234,7 @@ export function ChatPage() {
     setSiblingWidthVw: (widthVw) =>
       showArtifactsDrawer ? setArtifactsWidthVw(widthVw) : showAppDrawer ? setAppWidthVw(widthVw) : undefined,
     siblingMinPx: showArtifactsDrawer ? ARTIFACTS_MIN_PX : showAppDrawer ? APP_MIN_PX : 0,
+    show: showAgentDrawer,
     setShow: setShowAgentDrawer,
   });
 
@@ -231,6 +250,7 @@ export function ChatPage() {
     getSiblingOffsetPx: () => (showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth : 0),
     setSiblingWidthVw: (widthVw) => (showAgentDrawer ? setAgentWidthVw(widthVw) : undefined),
     siblingMinPx: 280,
+    show: showAppDrawer,
     setShow: setShowAppDrawer,
   });
 
@@ -246,7 +266,22 @@ export function ChatPage() {
     getSiblingOffsetPx: () => (showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth : 0),
     setSiblingWidthVw: (widthVw) => (showAgentDrawer ? setAgentWidthVw(widthVw) : undefined),
     siblingMinPx: 280,
+    show: showArtifactsDrawer,
     setShow: setShowArtifactsDrawer,
+  });
+
+  // Mutual exclusivity: closing one drawer when another opens
+  const isSwapping = useDrawerExclusivity({
+    showApp: showAppDrawer,
+    setShowApp: setShowAppDrawer,
+    appWidthVw,
+    setAppWidthVw,
+    showArtifacts: showArtifactsDrawer,
+    setShowArtifacts: setShowArtifactsDrawer,
+    artifactsWidthVw,
+    setArtifactsWidthVw,
+    showAgent: showAgentDrawer,
+    setShowAgent: setShowAgentDrawer,
   });
 
   // When the agent drawer and a sibling drawer (artifacts or app) are both open on
@@ -308,6 +343,8 @@ export function ChatPage() {
       : showAgentDrawer
         ? `calc(${agentWidthVw}vw + 0.75rem)`
         : undefined;
+  // Right-side panel shells make room for the open agent drawer by this much.
+  const agentOffsetVw = !isMobile && showAgentDrawer ? agentWidthVw : 0;
   // Whether the drawer driving that offset is mid-drag (so the footer tracks instantly).
   const isContentOffsetResizing =
     isAgentResizing || (showAppDrawer && isAppResizing) || (showArtifactsDrawer && isArtifactsResizing);
@@ -318,9 +355,6 @@ export function ChatPage() {
 
   // Ref to track chat input height for dynamic padding
   const [chatInputHeight, setChatInputHeight] = useState(112); // Default to pb-28 (7rem = 112px)
-  const messageKeysRef = useRef<string[]>([]);
-  const messageKeyScopeRef = useRef<string | null>(null);
-  const nextMessageKeyRef = useRef(0);
   const previousChatIdRef = useRef<string | null>(null);
   // Tracks the previous *route* chatId (from the URL). Used to distinguish a
   // genuine user navigation away from a chat from a transient router render
@@ -328,71 +362,30 @@ export function ChatPage() {
   // Previous route chatId — distinguishes real navigation from implicit-creation renders
   const previousRouteChatIdRef = useRef<string | undefined>(undefined);
 
-  const messageRenderKeys = useMemo(() => {
-    const scopeKey = chat?.id ?? routeChatId ?? "__draft__";
-
-    if (messageKeyScopeRef.current !== scopeKey) {
-      messageKeysRef.current = [];
-      nextMessageKeyRef.current = 0;
-      messageKeyScopeRef.current = scopeKey;
-    }
-
-    if (messageKeysRef.current.length > messages.length) {
-      messageKeysRef.current.length = messages.length;
-    }
-
-    while (messageKeysRef.current.length < messages.length) {
-      messageKeysRef.current.push(`${scopeKey}-message-${nextMessageKeyRef.current}`);
-      nextMessageKeyRef.current += 1;
-    }
-
-    return messageKeysRef.current.slice(0, messages.length);
-  }, [chat?.id, messages.length, routeChatId]);
+  // Persisted IDs survive streaming, edits and reloads. Scope legacy fallbacks
+  // to the chat without mutating refs during a potentially interrupted render.
+  const messageScope = chat?.id ?? routeChatId ?? "__draft__";
+  const messageRenderKeys = messages.map((message, index) => `${messageScope}:${message.id ?? index}`);
 
   // Fold runs of consecutive tool results into collapsible groups so tool-heavy
   // turns read as one tidy "Used N tools" row instead of a scattered stack.
-  const renderUnits = useMemo(() => groupRenderUnits(messages, isResponding), [messages, isResponding]);
+  const renderUnits = useMemo(
+    () => groupRenderUnits(messages, isResponding, pendingElicitation?.toolCallId ?? null),
+    [messages, isResponding, pendingElicitation?.toolCallId],
+  );
 
   const { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest } = useChatScroll({
     resetKey: chat?.id ?? routeChatId ?? "__draft__",
     messages,
     isResponding,
+    requestKey:
+      pendingElicitation?.elicitation ?? interruptState?.interrupts.map((interrupt) => interrupt.id).join(","),
   });
 
   // Set up navigation actions
   useEffect(() => {
     setRightActions(
       <div className="flex items-center gap-2">
-        {hasAppContent && (
-          <button
-            type="button"
-            className={cn(
-              "p-2 rounded-full transition-all duration-150 ease-out",
-              showAppDrawer
-                ? "text-neutral-900 dark:text-neutral-100 bg-neutral-200 dark:bg-neutral-700/60"
-                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-            )}
-            onClick={toggleAppDrawer}
-            title={showAppDrawer ? "Close app" : "Open app"}
-          >
-            <AppWindow size={20} />
-          </button>
-        )}
-        {artifactsAvailable && (
-          <button
-            type="button"
-            className={cn(
-              "p-2 rounded-full transition-all duration-150 ease-out",
-              showArtifactsDrawer
-                ? "text-neutral-900 dark:text-neutral-100 bg-neutral-200 dark:bg-neutral-700/60"
-                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-            )}
-            onClick={toggleArtifactsDrawer}
-            title={showArtifactsDrawer ? "Close artifacts" : "Open artifacts"}
-          >
-            <Shapes size={20} />
-          </button>
-        )}
         <AgentButton />
         <button
           type="button"
@@ -407,16 +400,7 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [
-    setRightActions,
-    handleNewChat,
-    artifactsAvailable,
-    showArtifactsDrawer,
-    toggleArtifactsDrawer,
-    showAppDrawer,
-    hasAppContent,
-    toggleAppDrawer,
-  ]);
+  }, [setRightActions, handleNewChat]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {
@@ -433,67 +417,16 @@ export function ChatPage() {
     return () => setSidebarContent(null);
   }, [sidebarContent, setSidebarContent]);
 
-  // Ref to cache the fixed footer element
-  const footerElementRef = useRef<HTMLElement | null>(null);
-
-  // Memoized height observer callback
-  const observeHeight = useCallback(() => {
-    const element = footerElementRef.current ?? document.querySelector("footer");
-    if (element) {
-      footerElementRef.current = element;
-      const height = element.getBoundingClientRect().height;
-      setChatInputHeight(height + 24);
-    }
+  const measureFooter = useCallback((footer: HTMLElement | null) => {
+    if (!footer) return;
+    // Measure during attachment, before the initial scroll-to-bottom. The
+    // observer also catches font loading, attachments and viewport changes.
+    const measure = () => setChatInputHeight(footer.getBoundingClientRect().height + 24);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(footer);
+    return () => observer.disconnect();
   }, []);
-
-  // Measure footer height synchronously on mount so that the initial
-  // scroll-to-bottom on direct URL loads uses the correct paddingBottom.
-  // The async 100ms measurement below fires too late when messages are cached.
-  useLayoutEffect(() => {
-    observeHeight();
-  }, [observeHeight]);
-
-  // Observer for chat input height changes to adjust message container padding
-  useEffect(() => {
-    // Fallback measurement after a short delay in case the layout effect fired
-    // before fonts/styles were fully applied (rare, but keeps the observer setup).
-    const timer = setTimeout(observeHeight, 100);
-
-    // Create a MutationObserver to watch for changes in the footer area
-    const mutationObserver = new MutationObserver(observeHeight);
-
-    // Use ResizeObserver to watch for height changes
-    const resizeObserver = new ResizeObserver(observeHeight);
-
-    // Start observing once the fixed footer element exists
-    const startObserving = () => {
-      const footerElement = document.querySelector("footer");
-      if (footerElement) {
-        footerElementRef.current = footerElement as HTMLElement;
-        resizeObserver.observe(footerElement);
-        mutationObserver.observe(footerElement, {
-          childList: true,
-          subtree: true,
-          characterData: true,
-        });
-      } else {
-        // If footer doesn't exist yet, try again after a short delay
-        setTimeout(startObserving, 50);
-      }
-    };
-
-    startObserving();
-
-    // Also listen for window resize as a fallback
-    window.addEventListener("resize", observeHeight);
-
-    return () => {
-      clearTimeout(timer);
-      resizeObserver.disconnect();
-      mutationObserver.disconnect();
-      window.removeEventListener("resize", observeHeight);
-    };
-  }, [observeHeight]);
 
   return (
     <div className="h-full w-full flex overflow-hidden relative">
@@ -504,7 +437,22 @@ export function ChatPage() {
         style={contentRightOffset ? { marginRight: contentRightOffset } : undefined}
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
-          {messages.length === 0 ? (
+          {(chatLoading && (showChatLoading || messages.length === 0)) || chatError ? (
+            <div className="m-auto p-6 text-sm text-neutral-500" role={chatError ? "alert" : "status"}>
+              {chatError ?? "Loading conversation…"}
+              {chatError && selectedChatId && (
+                <button
+                  type="button"
+                  className="ml-3 underline"
+                  onClick={() => {
+                    void loadChat(selectedChatId).catch(console.error);
+                  }}
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          ) : messages.length === 0 ? (
             <div className="flex-1 flex items-center justify-center pt-16 relative">
               <div className="flex flex-col items-center text-center relative z-10 w-full max-w-4xl px-4 mb-16 md:mb-32">
                 {/* Logo - only show if no background image is available */}
@@ -518,7 +466,7 @@ export function ChatPage() {
             </div>
           ) : (
             <div
-              className="flex-1 overflow-auto transition-opacity duration-300 relative"
+              className="flex-1 overflow-auto [overflow-anchor:none] transition-opacity duration-300 relative"
               ref={handleScrollContainerRef}
               onTouchStart={() => {
                 if (document.activeElement instanceof HTMLElement) {
@@ -535,23 +483,27 @@ export function ChatPage() {
               >
                 <Disclaimer />
 
-                <div>
+                <ConversationUiProvider
+                  owner={chat?.id ?? selectedChatId ?? "new-chat"}
+                  messages={messages}
+                  streaming={isResponding}
+                  onSubmit={handleUiSubmission}
+                >
                   {renderUnits.map((unit) => {
                     if (unit.kind === "toolGroup") {
                       // Key off the first tool-call id — stable as the group grows and across restarts.
-                      const first = messages[unit.indices[0]].content.find((p) => p.type === "tool_result");
-                      const groupKey =
-                        first && "id" in first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
+                      const first = messages[unit.indices[0]].parts.find((part) => part.type === "tool-call");
+                      const groupKey = first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
                       return (
                         <div key={groupKey} className="flow-root" data-role="tool-group">
-                          <ChatToolGroup messages={messages} indices={unit.indices} />
+                          <ChatToolGroup messages={messages} indices={unit.indices} reply={unit.reply} />
                         </div>
                       );
                     }
                     const index = unit.index;
                     const message = messages[index];
-                    // Tool results are role "user" too; tag them so the scroll pin anchors to prompts.
-                    const dataRole = isToolResultMessage(message) ? "tool" : message.role;
+                    // Tool-only turns are tagged so the scroll pin anchors to prompts and replies.
+                    const dataRole = isToolOnlyMessage(message) ? "tool" : message.role;
                     return (
                       <div key={messageRenderKeys[index]} className="flow-root" data-role={dataRole}>
                         <ChatMessage
@@ -559,11 +511,13 @@ export function ChatPage() {
                           message={message}
                           isLast={index === messages.length - 1}
                           isResponding={isResponding}
+                          foldedReasoning={unit.foldedReasoning}
                         />
                       </div>
                     );
                   })}
-                </div>
+                  <ChatInterrupts />
+                </ConversationUiProvider>
                 {/* Spacer — allows the last user message to scroll to the top */}
                 <div ref={handleSpacerRef} aria-hidden="true" />
               </div>
@@ -576,7 +530,7 @@ export function ChatPage() {
               onClick={goToLatest}
               className="absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-neutral-200/80 bg-white/95 px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm backdrop-blur transition-colors hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700/80 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:border-neutral-600 dark:hover:text-neutral-50"
               style={{ bottom: chatInputHeight + 16 }}
-              title="Jump to latest"
+              title="Follow latest response"
             >
               <ArrowDown size={16} />
               <span>Latest</span>
@@ -587,6 +541,7 @@ export function ChatPage() {
       </div>
 
       <footer
+        ref={measureFooter}
         className={cn(
           "fixed bottom-0 left-0 px-2 md:px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
           "right-0",
@@ -625,151 +580,89 @@ export function ChatPage() {
 
       <ChatConsentBanner />
 
-      {/* Artifacts drawer - right side */}
-      {shouldRenderArtifactsDrawer && (
-        <div
-          className={cn(
-            "transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-20",
-            !isArtifactsResizing && "transition-all duration-300 ease-out",
-            isMobile ? "w-full" : "",
-            isArtifactsDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
-          )}
-          style={{
-            width: isMobile ? undefined : `${artifactsWidthVw}vw`,
-            right: !isMobile && showAgentDrawer ? `${agentWidthVw}vw` : undefined,
-            top: isMobile ? "48px" : undefined,
-            bottom: isMobile ? 0 : undefined,
-          }}
-        >
-          {/* Resize handle on the left edge */}
-          {!isMobile && (
-            <button
-              type="button"
-              aria-label="Resize artifacts panel"
-              className="absolute -left-2 top-0 bottom-0 w-4 z-10 group flex items-center justify-center cursor-ew-resize"
-              onMouseDown={handleArtifactsResizeMouseDown}
-            >
-              <div className="z-10 bg-neutral-300 rounded-sm dark:bg-neutral-700 shadow-sm opacity-60">
-                <div className="grid grid-cols-1 justify-items-center gap-0.5 px-0.5 py-1.5">
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                </div>
-              </div>
-            </button>
-          )}
-          <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden">
-            <ArtifactsDrawer />
-          </div>
-        </div>
-      )}
-
-      {/* Agent drawer - right side - renders over artifacts when both are visible */}
-      {shouldRenderAgentDrawer && (
-        <div
-          className={cn(
-            "transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-25",
-            !isAgentResizing && "transition-all duration-300 ease-out",
-            isMobile ? "w-full" : "",
-            isAgentDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
-          )}
-          style={{
-            width: isMobile ? undefined : `${agentWidthVw}vw`,
-            top: isMobile ? "48px" : undefined,
-            bottom: isMobile ? 0 : undefined,
-          }}
-        >
-          {/* Resize handle on the left edge */}
-          {!isMobile && (
-            <button
-              type="button"
-              aria-label="Resize agent panel"
-              className="absolute -left-2 top-0 bottom-0 w-4 z-10 group flex items-center justify-center cursor-ew-resize"
-              onMouseDown={handleAgentResizeMouseDown}
-            >
-              <div className="z-10 bg-neutral-300 rounded-sm dark:bg-neutral-700 shadow-sm opacity-60">
-                <div className="grid grid-cols-1 justify-items-center gap-0.5 px-0.5 py-1.5">
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                </div>
-              </div>
-            </button>
-          )}
-          <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden">
-            <AgentDrawer />
-          </div>
-        </div>
-      )}
-
-      {/* App drawer - right side - for MCP tool UIs */}
-      {/* Always render so iframe is available, but hide when not active */}
-      <div
-        className={cn(
-          "w-full transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-20",
-          !isAppResizing && "transition-all duration-300 ease-out",
-          shouldRenderAppDrawer && isAppDrawerAnimating
-            ? "translate-x-0 opacity-100"
-            : "translate-x-full opacity-0 pointer-events-none",
-        )}
-        style={{
-          width: isMobile ? undefined : `${appWidthVw}vw`,
-          right: !isMobile && showAgentDrawer && showAppDrawer ? `${agentWidthVw}vw` : undefined,
-          top: isMobile ? "48px" : undefined,
-          bottom: isMobile ? 0 : undefined,
-        }}
+      {/* Right-side panels. Each shell is always mounted and slides with `translate`
+          (see PanelShell); the artifact and app shells also carry their edge latch. */}
+      <PanelShell
+        open={showArtifactsDrawer}
+        widthVw={artifactsWidthVw}
+        offsetVw={agentOffsetVw}
+        resizing={isArtifactsResizing || isAgentResizing || isSwapping}
+        compact={isMobile}
+        className="z-20"
+        resizeLabel="Resize artifacts panel"
+        onResizeStart={handleArtifactsResizeMouseDown}
+        onClose={toggleArtifactsDrawer}
+        latch={
+          artifactsAvailable && (
+            <EdgeLatch
+              label="Artifacts"
+              icon={<Shapes size={16} className="-rotate-90" />}
+              open={showArtifactsDrawer}
+              hidden={isMobile && showAppDrawer}
+              shiftVw={showAppDrawer ? appWidthVw : 0}
+              resizing={isAppResizing || isSwapping}
+              compact={isMobile}
+              onClick={toggleArtifactsDrawer}
+            />
+          )
+        }
       >
-        {/* Resize handle on the left edge */}
-        {!isMobile && (
-          <button
-            type="button"
-            aria-label="Resize app panel"
-            className="absolute -left-2 top-0 bottom-0 w-4 z-10 group flex items-center justify-center cursor-ew-resize"
-            onMouseDown={handleAppResizeMouseDown}
-          >
-            <div className="z-10 bg-neutral-300 rounded-sm dark:bg-neutral-700 shadow-sm opacity-60">
-              <div className="grid grid-cols-1 justify-items-center gap-0.5 px-0.5 py-1.5">
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-              </div>
-            </div>
-          </button>
-        )}
-        <div className="h-full overflow-hidden flex flex-col">
-          {/* Mobile close bar */}
-          <div className="flex md:hidden items-center h-10 px-2 mt-4 border-b border-neutral-200/60 dark:border-neutral-700/60 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm">
-            <button
-              type="button"
+        <ArtifactsDrawer />
+      </PanelShell>
+      <PanelShell
+        open={showAgentDrawer}
+        preserveState
+        widthVw={agentWidthVw}
+        resizing={isAgentResizing}
+        compact={isMobile}
+        className="z-25"
+        resizeLabel="Resize agent panel"
+        onResizeStart={handleAgentResizeMouseDown}
+      >
+        <AgentDrawer key={selectedChatId ?? "__draft__"} />
+      </PanelShell>
+      {/* App drawer for MCP tool UIs stays mounted so its iframe survives closing. */}
+      <PanelShell
+        open={showAppDrawer}
+        widthVw={appWidthVw}
+        offsetVw={agentOffsetVw}
+        resizing={isAppResizing || isAgentResizing || isSwapping}
+        compact={isMobile}
+        keepMounted
+        className="z-20"
+        resizeLabel="Resize app panel"
+        onResizeStart={handleAppResizeMouseDown}
+        onClose={toggleAppDrawer}
+        latch={
+          hasAppContent && (
+            <EdgeLatch
+              label={activeApp?.title ?? "App"}
+              name={activeApp?.title ?? "app"}
+              icon={<AppWindow size={16} className="-rotate-90" />}
+              open={showAppDrawer}
+              hidden={isMobile && showArtifactsDrawer}
+              shiftVw={showArtifactsDrawer ? artifactsWidthVw : 0}
+              resizing={isArtifactsResizing || isSwapping}
+              compact={isMobile}
+              slot={artifactsAvailable ? 1 : 0}
               onClick={toggleAppDrawer}
-              className="flex items-center gap-1 text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors p-1.5 rounded"
-            >
-              <ChevronLeft size={16} />
-              <span>Back</span>
-            </button>
-          </div>
-          <div className={cn("flex-1 overflow-hidden", isAppResizing && "pointer-events-none")}>
-            <AppDrawer />
-          </div>
-        </div>
-      </div>
-      <SkillCatalog
+            />
+          )
+        }
+      >
+        <AppDrawer />
+      </PanelShell>
+      <LibraryDialog
         isOpen={showSkillCatalog}
         onClose={closeSkillCatalog}
         enabledSkillNames={agentSkillIds}
-        onToggle={currentAgent && !skillCatalogReadOnly ? handleSkillToggle : undefined}
+        onToggle={currentAgent ? handleSkillToggle : undefined}
+        enabledPluginIds={agentPluginIds}
+        onTogglePlugin={currentAgent ? handlePluginToggle : undefined}
         onSkillSaved={handleSkillSaved}
         onImported={handleSkillImported}
         initialSkillName={skillCatalogTarget ?? undefined}
+        initialSection={skillCatalogSection}
       />
     </div>
   );

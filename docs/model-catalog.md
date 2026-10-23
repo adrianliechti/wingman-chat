@@ -1,0 +1,260 @@
+# Model catalogue and detection
+
+`/api/v1/models` is the inventory of models this backend exposes to the current
+client. It is not a worldwide list of vendor releases. `created` and `owned_by`
+are not used to infer capabilities or freshness.
+
+The catalogue resolves each available ID once, in this order:
+
+1. Deployment entries in `config.models`, including an explicit `type`.
+2. Optional backend `type`, `name`, and `description` fields.
+3. ID cues for endpoint type and known profiles for missing capabilities.
+
+Types are `completer`, `embedder`, `renderer`, `reranker`, `realtime`,
+`synthesizer`, and `transcriber`. Realtime transcription is separate from file
+transcription. Generic audio chat models remain completers. Unknown IDs remain
+usable as chat models; unknown effort capabilities use the backend default.
+
+For example, an opaque image deployment can be configured without adding a
+name-matching rule:
+
+```json
+{
+  "models": [
+    {
+      "id": "studio",
+      "name": "Studio",
+      "type": "renderer",
+      "supportedQualities": []
+    },
+    {
+      "id": "team-chat",
+      "name": "Team chat",
+      "type": "completer",
+      "supportedEfforts": ["low", "medium", "xhigh"],
+      "effort": "medium",
+      "maxOutputTokens": 128000,
+      "outputTokenBudget": 96000,
+      "compactThreshold": 100000
+    }
+  ]
+}
+```
+
+Configuration does not add unavailable IDs to the inventory. Empty capability
+arrays hide their picker; an explicit zero compaction threshold disables
+compaction. Configured chat models determine ordering and visibility in the chat
+picker. Configuring only images does not hide chat models.
+
+Chat, Canvas, and image helper selection share a catalogue keyed by client and
+configuration. Concurrent reads share one request. Successful results, including
+an empty inventory, are cached for one minute. Mounted consumers refresh while
+visible and on focus, visibility, or reconnection when stale. Unmount removes
+their timers/listeners. Requests time out after 15 seconds without SDK retries;
+failed refreshes keep the last successful snapshot and can be retried.
+
+Refreshing the inventory preserves an active selection and its effort, even if
+that ID disappears. It does not silently switch the model used by an active
+conversation. Initial restoration checks a saved effort against the resolved
+supported levels. Choosing realtime or clearing the selection during initial
+loading also wins over the late response.
+
+Speech calls use their configured model or backend default. They do not choose
+the first model in the catalogue. See [voice lifecycle](voice-lifecycle.md).
+
+## Model replacements
+
+Add `replaces` to the target entry in `models.yaml` (or `config.models`) to move
+saved selections to a newer model:
+
+```yaml
+- id: gpt-6-sol
+  name: GPT-6 Sol
+  replaces:
+    - gpt-4o
+    - gpt-4-turbo
+```
+
+Saved agents, chats, the app default, and slider presets resolve these old IDs
+to the replacement, even if the old model is still available. The target must
+be in the backend inventory. Its current capabilities, instructions, tool
+policy, and defaults apply. Compatible saved effort and verbosity choices are
+kept; unsupported effort falls back to the target's default.
+
+Resolution does not rewrite saved agents, chats, or local storage on load.
+Selecting a model explicitly saves the current selection as usual. Without an
+available replacement, existing selection and fallback behavior is unchanged.
+Replacement chains follow available targets; list all retired IDs on the final
+target when removing intermediate models. Conflicting targets and cycles are
+ignored, retaining the original ID when available.
+
+## Capability sources and limits
+
+Reviewed September 23, 2026. Profiles are fallbacks, not an API guarantee, and do
+not extrapolate new major versions. Custom or hosted models can specify their
+own supported efforts instead of inheriting a vendor profile.
+
+- [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra): low,
+  medium, high, xhigh, max; no none/minimal.
+- [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol): low,
+  medium (default), high, xhigh, max; no none/minimal. Uses the Responses API
+  for tool calling, with a 128,000-token output capacity (reviewed September 30,
+  2026). The existing 272,000-token compaction budget stays below its higher
+  long-input pricing tier.
+- [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) and
+  [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna): none, low,
+  medium, high, xhigh, max; medium default. Both use the Responses API for tool
+  calling and structured outputs in Wingman.
+- [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol),
+  [Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra), and
+  [Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna): none through
+  max, excluding minimal; medium default. The unsuffixed ID aliases Sol.
+- [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort):
+  Fable/Mythos 5.1 include xhigh and max. [Opus 5.5](https://www.anthropic.com/claude-opus-5-5)
+  has low through max with a medium default (Opus 5 defaults to high); its
+  thinking cannot be disabled, so low is its minimal effort. [Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview)
+  has low through max with a high default, plus none, which the gateway sends as
+  `between_tools` to turn off up-front thinking. Mythos Preview and Opus/Sonnet 4.6 have
+  max but no xhigh. Haiku 4.5 and older Sonnet models do not inherit Opus's efforts.
+- [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview)
+  (reviewed October 8, 2026): low, medium (default), high, xhigh, max, plus
+  gateway `none` to disable thinking. Adaptive thinking is on by default;
+  disabled thinking is accepted only at high effort or below. It has a 1M-token
+  context window and 128,000-token output capacity. The bundled Haiku slider
+  preset selects 5.5 at medium effort when the backend exposes that ID.
+- [Gemini thinking](https://ai.google.dev/gemini-api/docs/thinking): Gemini
+  3.7/3.8 Flash have low/medium/high, while 3.6 also has minimal. Gemini 3 Pro has
+  low/high; 3.1 Pro also has medium. Image and live models are not chat profiles.
+- [Gemini 4 Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)
+  (reviewed October 13, 2026): low, medium (default), high. Input, thinking, and
+  output share a 1,048,576-token window; synchronous output stops at 65,536
+  tokens, and longer output needs background execution, which the gateway does
+  not use. Sampling parameters are ignored and only implicit caching applies.
+- [Qwen Responses API](https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-responses):
+  Qwen 3.8 has none/low/medium/xhigh; high and max alias xhigh. Other Qwen versions
+  do not inherit these choices.
+- [DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/): V4's
+  distinct levels are low/high/max, plus none to disable thinking in Responses.
+  Hosted providers can differ; use config overrides for their supported levels.
+
+Image profiles reflect the gateway's `/render` implementation as well as vendor
+capabilities. [GPT Image 2.5 Sunburst and Flare](https://developers.openai.com/api/docs/guides/image-generation#size-and-quality-options)
+support low, medium, high, xhigh, and max image quality (reviewed September 8,
+2026). These are `quality` values, separate from chat reasoning effort. Their
+gateway profile also exposes common aspect ratios, 1K/2K/4K resolution controls,
+and opaque/transparent backgrounds. The gateway must include Image 2.5 support
+and expose the model IDs in its inventory; the frontend does not add models.
+
+GPT Image 2 supports 16:9 and 9:16 through this gateway. Upstream
+[transparent output is now in preview](https://developers.openai.com/api/docs/guides/image-generation#customize-image-output),
+but the current gateway does not forward it for Image 2, so it is not advertised
+by default. A deployment that adds support can override `supportedBackgrounds`.
+[Gemini image settings](https://ai.google.dev/gemini-api/docs/image-generation)
+distinguish 2.5/Flash Lite's 1K output from 3 Pro's 1K–4K and 3.1 Flash's
+additional 512px output.
+
+Compaction thresholds are operational budgets that leave room for output and
+recovery. They are not advertised context-window sizes. Small/local deployments
+should configure their budget explicitly.
+
+Haiku 5.5 compacts at 90,000 tokens to leave headroom below its 100,000-input-token
+pricing boundary; older Haiku models keep their 176,000-token budget. This is an
+operational target, not a billing guarantee: system prompts, tools, and token
+estimation affect actual input usage. Haiku 5.5's newer tokenizer counts the same
+text as approximately 30% more tokens than Haiku 4.5.
+
+### Haiku 5.5 gateway compatibility
+
+The [migration guide](https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide)
+requires adaptive thinking instead of manual `budget_tokens`, omission of
+sampling parameters, user-ended requests instead of assistant prefill, and
+type-based response parsing. Wingman sends provider-neutral `/v1/responses`
+requests without sampling or manual thinking parameters. Chat requests ask for
+`reasoning.summary: "auto"`; the gateway must map this to summarized adaptive
+thinking, because Haiku 5.5 otherwise returns signature-only thinking blocks.
+The gateway also maps `reasoning.effort: "none"` to disabled thinking.
+
+Wingman's Anthropic and Bedrock adapters include Haiku 5.5 support as of
+October 8, 2026. Deployed gateways must include those changes
+and expose the model in `/v1/models`. The frontend cannot add a missing provider
+deployment or translate native Claude parameters itself.
+
+The Responses adapter selects text by type, preserves reasoning signatures even
+without visible thinking text, and filters reasoning when switching models.
+It retries rejected reasoning once without the rejected signatures, covering
+prefix-binding failures after history changes or compaction. Structured helpers
+and the compaction summarizer end their requests with user turns. Native Claude
+computer/browser toolsets are not used by this frontend.
+
+## Chat output allowance
+
+The existing `MODEL_PROFILES` in `models.ts` hold both reasoning capabilities and
+numeric `maxOutputTokens` capacity. Deployment configuration takes precedence
+over optional `/models` `max_output_tokens` metadata, then the internal profile.
+The current Wingman backend returns only model IDs and inventory metadata, so
+the internal profiles supply known capacities without another model mapping.
+
+Chat requests default to an output budget of `min(64,000, maxOutputTokens)`,
+applied by `Client.chatModelOptions` for chat, subagents, and interpreter `llm`
+calls. Titles use 8,000 and other structured extraction 16,000. The budget
+includes reasoning, text, and generated tool arguments. Explicit request budgets
+are clamped to the known capacity, and `0` omits the budget from the request.
+Unknown capacities keep the provider default unless an explicit budget is
+configured; such an override cannot be clamped until the deployment supplies a
+capacity.
+
+Examples of documented capacities (reviewed September 23, 2026; Haiku 5.5 added
+October 8, 2026):
+
+| Model                                                                                                                            | Capacity | Default chat budget |
+| -------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
+| [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)                                                         | 128,000  | 64,000              |
+| [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)                                                         | 128,000  | 64,000              |
+| [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol)                                                             | 128,000  | 64,000              |
+| [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)                                                           | 128,000  | 64,000              |
+| [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5)                                                                     | 128,000  | 64,000              |
+| [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview)                                                | 128,000  | 64,000              |
+| [Claude Sonnet 4.6 on Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html) | 64,000   | 64,000              |
+| [Gemini 4 Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)                                                    | 65,536   | 64,000              |
+| [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)                                                | 65,536   | 64,000              |
+| [GPT-4.1](https://developers.openai.com/api/docs/models/gpt-4.1)                                                                 | 32,768   | 32,768              |
+| [GPT-4o](https://developers.openai.com/api/docs/models/gpt-4o)                                                                   | 16,384   | 16,384              |
+| [Gemini 2.0 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-2.0-flash)                                                | 8,192    | 8,192               |
+
+Set `config.models[].maxOutputTokens` (or the same field in `models.yaml`) to
+describe an alias's capacity or a hosted-model difference. Set
+`outputTokenBudget` to override the chat default, for example 96,000 on a model
+with 128,000 capacity. Per-call `maxOutputTokens` options take precedence over
+that preferred budget; both are capped by the capacity. A zero budget omits the
+request field and lets the provider decide. A zero configured capacity disables
+the internal capacity fallback.
+
+Title generation defaults to 8,000 tokens. Other structured helpers, including
+summarization, rewriting, and conversion, default to 16,000. They are capped by
+the model maximum and do not inherit the larger chat budget; `ParseOptions`
+supports an explicit override. Models with unknown capacity still use provider
+defaults. A budget cannot prevent exhaustion of the remaining context window.
+
+When telemetry is enabled, spans record `gen_ai.request.max_tokens` and
+`gen_ai.response.finish_reasons` alongside existing output/reasoning usage.
+`wingman.gen_ai.responses` counts responses by model, operation, and
+`wingman.response.finish_reason`, including `max_output_tokens` cutoffs. Usage
+is recorded before response validation so truncated text and JSON contribute.
+Compare output-usage percentiles and cutoff frequency per operation/model when
+tuning these starting defaults; no automatic budget increases are applied.
+
+## Regression coverage
+
+- `models.test.ts`: endpoint collisions, output capacities and budgets, known effort profiles, configuration
+  precedence, disabled controls, and image settings.
+- `client.test.ts`: output allowances in real SDK requests, deployment and
+  per-call overrides, provider defaults, invalid configuration, and retries.
+- `responses.test.ts` and `otel.test.ts`: utility budgets and usage/cutoff
+  telemetry for successful and truncated responses.
+- `client.models.test.ts`: real SDK parsing/filtering of HTTP model records and
+  malformed optional metadata.
+- `modelCatalog.test.ts` and `commandUtils.test.ts`: shared requests, expiry,
+  empty results, retry, client/config isolation, and helper consistency.
+- `useImageTool.test.tsx`: configured controls and supported default quality.
+- `tests/browser/models.spec.ts`: actual React hooks and HTTP client in StrictMode,
+  delayed selection, refresh failure/recovery, saved effort validation, and cleanup.

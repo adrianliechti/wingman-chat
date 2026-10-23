@@ -1,10 +1,15 @@
 import { getConfig } from "@/shared/config";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
-import { resolveModel } from "./commandUtils";
 import { extractAudioForTranscription } from "./extractAudio";
+import { resolveModel } from "@/shared/lib/modelSelection";
 
-export async function runTranscribe(bytes: Uint8Array, path: string): Promise<string> {
+export async function runTranscribe(
+  bytes: Uint8Array,
+  path: string,
+  requestOptions: { signal?: AbortSignal } = {},
+): Promise<string> {
+  requestOptions.signal?.throwIfAborted();
   const config = getConfig();
   if (!config.stt) {
     throw new Error("transcribe: no transcription service configured");
@@ -23,14 +28,17 @@ export async function runTranscribe(bytes: Uint8Array, path: string): Promise<st
 
   const model = await resolveModel(config.stt.model, "transcriber");
 
+  requestOptions.signal?.throwIfAborted();
+
   // Video containers carry a large video track around a small audio one. Strip
   // the video and re-encode the audio to a compact file in the browser so long
   // recordings stay under the endpoint's upload limit; audio files upload as-is.
   let audio: Blob;
   if (type.startsWith("video/")) {
     try {
-      audio = await extractAudioForTranscription(bytes, type, config.stt.format);
+      audio = await extractAudioForTranscription(bytes, type, config.stt.format, requestOptions.signal);
     } catch (error) {
+      requestOptions.signal?.throwIfAborted();
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`transcribe: ${message}: ${name}`);
     }
@@ -38,7 +46,9 @@ export async function runTranscribe(bytes: Uint8Array, path: string): Promise<st
     audio = new Blob([bytes as BlobPart], { type });
   }
 
-  const text = await config.client.transcribe(model, audio);
+  requestOptions.signal?.throwIfAborted();
+  const text = await config.client.transcribe(model, audio, requestOptions);
+  requestOptions.signal?.throwIfAborted();
   console.debug(
     `transcribe: ${path} (${type}, ${bytes.length} bytes → ${audio.type}, ${audio.size} bytes) → ${text.length} chars`,
   );

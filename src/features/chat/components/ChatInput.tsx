@@ -3,8 +3,10 @@ import {
   Bot,
   Loader2,
   LoaderCircle,
+  Lock,
   Mic,
   Rocket,
+  RotateCcw,
   ScreenShare,
   Send,
   Sparkles,
@@ -16,9 +18,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { processUploadedFile } from "@/features/artifacts/lib/artifacts";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatActions, useChatList, useChatModel, useChatRunState } from "@/features/chat/hooks/useChat";
 import { chatAcceptString, useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
-import { getSavedModelId } from "@/features/chat/hooks/useModels";
+import { getConfiguredModel, getSavedModel } from "@/features/chat/hooks/useModels";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
@@ -27,37 +29,59 @@ import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
+import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
+import { sameModelSettings } from "@/shared/lib/models";
+import { modelPresetIndex, resolveModelPresets } from "@/shared/lib/modelPresets";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
-import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
-import { ProviderState, Role } from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import { mediaFromDataUrl, text, userMessage, type MediaPart } from "@/shared/lib/messages";
+import type { ToolProvider } from "@/shared/types/chat";
+import { ProviderState } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
-import { ModelDropdown } from "@/shared/ui/ModelDropdown";
+import { EFFORT_LABEL, ModelDropdown } from "@/shared/ui/ModelDropdown";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { ChatInputAddMenu } from "./ChatInputAddMenu";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { formatArtifactReference } from "./chatMessageUtils";
 
+async function captureScreenAttachment(
+  captureFrame: () => Promise<Blob | null>,
+): Promise<{ content: MediaPart; file: File } | null> {
+  try {
+    const blob = await captureFrame();
+    if (!blob) return null;
+    const dataUrl = await readAsDataURL(blob);
+    const name = `screen-capture-${Date.now()}.png`;
+    return {
+      content: mediaFromDataUrl(dataUrl, name, "image"),
+      file: new File([blob], name, { type: blob.type || "image/png" }),
+    };
+  } catch (error) {
+    console.error("Error capturing screen during message send:", error);
+    return null;
+  }
+}
+
 export function ChatInput() {
   const config = getConfig();
 
-  const {
-    sendMessage,
-    models,
-    model,
-    setModel: onModelChange,
-    effort,
-    setEffort,
-    messages,
-    isResponding,
-    stopStreaming,
-    chat,
-  } = useChat();
-  const { currentAgent, setCurrentAgent, setShowAgentDrawer } = useAgents();
-  const { isAvailable: artifactsAvailable } = useArtifacts();
+  const { sendMessage, stopStreaming, removeQueuedMessage } = useChatActions();
+  const { models, model, setModel: onModelChange, effort, setEffort, verbosity, setVerbosity } = useChatModel();
+  const presets = useMemo(() => resolveModelPresets(config.chat?.presets, models), [config.chat?.presets, models]);
+  // The configured default for new chats; the reset next to the model returns to it.
+  const configuredModel = useMemo(() => getConfiguredModel(models), [models]);
+  const { isResponding, queuedSends, interruptState } = useChatRunState();
+  const { chatId, hasMessages, chatLoading, chatError } = useChatList();
+  const { agents, currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
+  const deactivateAgent = useCallback(() => {
+    setCurrentAgent(null);
+    setShowAgentDrawer(false);
+  }, [setCurrentAgent, setShowAgentDrawer]);
+  const { isAvailable: artifactsAvailable, fs: artifactsFs } = useArtifacts();
   const { profile } = useSettings();
   const {
     isAvailable: isScreenCaptureAvailable,
@@ -69,6 +93,7 @@ export function ChatInput() {
   const {
     providers,
     getProviderState,
+    isProviderEnabled,
     getProviderPolicy,
     setProviderEnabled,
     setModelOverrides,
@@ -87,19 +112,6 @@ export function ChatInput() {
   const { inputDeviceId, inputDevices, setInputDevice, requestPermission: requestAudioPermission } = useAudioDevices();
 
   const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
-
-  // Request mic permission once per voice-mode entry so the device selector shows real names.
-  const permissionRequestedRef = useRef(false);
-  useEffect(() => {
-    if (!isRealtimeSelected || !voiceAvailable) {
-      permissionRequestedRef.current = false;
-      return;
-    }
-    if (inputDevices.length === 0 && !permissionRequestedRef.current) {
-      permissionRequestedRef.current = true;
-      void requestAudioPermission();
-    }
-  }, [isRealtimeSelected, voiceAvailable, inputDevices.length, requestAudioPermission]);
 
   // Auto-start voice when entering via the mode toggle (not via a realtime agent).
   // Attempt once per entry to avoid a retry loop if startVoice() fails.
@@ -120,6 +132,15 @@ export function ChatInput() {
   const [transcribingContent, setTranscribingContent] = useState(false);
   const [voiceTextInput, setVoiceTextInput] = useState("");
 
+  // Attachments are written to the workspace root by name at send, so new
+  // uploads must not reuse a name a previous message already persisted.
+  const getTakenFileNames = useCallback(async () => {
+    if (!artifactsFs) return new Set<string>();
+    const entries = await artifactsFs.listEntries();
+    // Root-level entries only — uploads land at `/${name}`, so nested files can't collide.
+    return new Set(entries.filter((e) => !e.path.slice(1).includes("/")).map((e) => e.path.slice(1)));
+  }, [artifactsFs]);
+
   const {
     attachments,
     pendingFiles,
@@ -135,6 +156,7 @@ export function ChatInput() {
     artifactsAvailable,
     visionMaxFileSize: config.vision?.maxFileSize,
     artifactsMaxFileSize: config.artifacts?.maxFileSize,
+    getTakenFileNames,
   });
 
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
@@ -167,7 +189,7 @@ export function ChatInput() {
     return profileName ? variations[randomIndex].replace("[Name]", profileName) : variations[randomIndex];
   }, [profileName]);
 
-  const placeholderText = messages.length === 0 ? randomPlaceholder : "Ask anything";
+  const placeholderText = !hasMessages ? randomPlaceholder : "Ask anything";
 
   // Accept-attribute kept in sync with the intake rule in `useFileAttachments`.
   const acceptString = useMemo(
@@ -177,7 +199,10 @@ export function ChatInput() {
 
   const shouldShowPlaceholder = !content.trim();
 
-  const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
+  const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription(
+    chatId ?? undefined,
+    !isRealtimeSelected,
+  );
 
   const modelTools = useMemo(() => {
     const ids = new Set<string>();
@@ -215,6 +240,23 @@ export function ChatInput() {
     }
   }, [visibleProviders, getProviderState]);
 
+  // Providers whose OAuth flow needs an explicit user gesture to retry.
+  const unauthorizedProviders = useMemo(
+    () =>
+      visibleProviders.filter((provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Unauthorized),
+    [visibleProviders, getProviderState],
+  );
+
+  // Shows a spinner on the agent badge while a retried sign-in is in flight.
+  const authenticatingProviders = useMemo(
+    () =>
+      visibleProviders.filter((provider: ToolProvider) => {
+        const state = getProviderState(provider.id);
+        return state === ProviderState.Initializing || state === ProviderState.Authenticating;
+      }),
+    [visibleProviders, getProviderState],
+  );
+
   // Apply model-level forced tool overrides (delta over user + agent tools)
   useEffect(() => {
     setModelOverrides(model?.tools?.enabled || [], model?.tools?.disabled || []);
@@ -240,37 +282,26 @@ export function ChatInput() {
     if (window.matchMedia("(pointer: coarse)").matches) return;
     const raf = requestAnimationFrame(() => contentInputRef.current?.focus());
     return () => cancelAnimationFrame(raf);
-  }, [chat?.id]);
+  }, [chatId]);
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-
-      if (isResponding) {
-        return;
-      }
+      if (chatLoading || chatError || interruptState?.interrupts.length) return;
 
       if (content.trim()) {
-        let finalAttachments: Content[] = [...attachments];
+        let finalAttachments: ContentPart[] = [...attachments];
+        let screenCaptureFile: File | null = null;
 
         if (isContinuousCaptureActive) {
-          try {
-            const blob = await captureFrame();
-            if (blob) {
-              const dataUrl = await readAsDataURL(blob);
-              const screenContent: ImageContent = {
-                type: "image",
-                name: `screen-capture-${Date.now()}.png`,
-                data: dataUrl,
-              };
-              finalAttachments = [screenContent, ...finalAttachments];
-            }
-          } catch (error) {
-            console.error("Error capturing screen during message send:", error);
+          const capture = await captureScreenAttachment(captureFrame);
+          if (capture) {
+            finalAttachments = [capture.content, ...finalAttachments];
+            if (artifactsAvailable) screenCaptureFile = capture.file;
           }
         }
 
-        const messageContent: Content[] = [{ type: "text", text: content }, ...finalAttachments];
+        const messageParts: ContentPart[] = [text(content), ...finalAttachments];
 
         // Persist pending files (and original images) to the workspace at send.
         const toArtifacts = (list: File[]) =>
@@ -287,41 +318,40 @@ export function ChatInput() {
 
         const fileArtifacts = await toArtifacts(pendingFiles);
         const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
-        const artifacts = [...fileArtifacts, ...imageArtifacts];
+        const screenCaptureArtifacts = screenCaptureFile ? await toArtifacts([screenCaptureFile]) : [];
+        const artifacts = [...fileArtifacts, ...imageArtifacts, ...screenCaptureArtifacts];
 
         // Reference every persisted attachment by its workspace path so the
         // model can read/edit it by name. Images are also shown inline (vision),
         // but the inline copy carries no filename — without this the model can't
         // name the file it's looking at. The redundant chip is suppressed in the
         // UI (see ChatUserMessage) since the image already renders inline.
-        const referencedPaths = [...fileArtifacts, ...imageArtifacts].map((f) => f.path);
+        const referencedPaths = artifacts.map((f) => f.path);
         if (referencedPaths.length > 0) {
-          const reference: TextContent = {
-            type: "text",
-            text: formatArtifactReference(referencedPaths),
-          };
-          messageContent.push(reference);
+          messageParts.push(text(formatArtifactReference(referencedPaths)));
         }
 
-        const message: Message = {
-          role: Role.User,
-          content: messageContent,
-        };
+        const message = userMessage(messageParts);
 
-        void sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined);
+        void sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined).catch((error) =>
+          notify.error("Message failed", error),
+        );
         setContent("");
         clearAttachments();
       }
     },
     [
-      isResponding,
       content,
       attachments,
       pendingFiles,
       pendingImages,
       isContinuousCaptureActive,
       captureFrame,
+      artifactsAvailable,
       sendMessage,
+      chatLoading,
+      chatError,
+      interruptState,
       clearAttachments,
     ],
   );
@@ -337,26 +367,37 @@ export function ChatInput() {
       const names = files.map((f) => f.name);
       setExtractingAttachments((prev) => new Set([...prev, ...names]));
 
-      try {
-        const fetched = await Promise.all(
-          files.map(async (f) => {
-            const url = getDriveContentUrl(f.driveId, f.id);
-            const resp = await fetch(url);
-            const blob = await resp.blob();
-            return new File([blob], f.name, { type: f.mime || blob.type });
+      await Promise.all(
+        files.map(async (f) => {
+          const effectiveType =
+            f.mime && f.mime !== "application/octet-stream"
+              ? f.mime
+              : (inferContentTypeFromPath(f.name) ?? f.mime ?? "");
+          const maxBytes = (config.vision?.files ?? []).includes(effectiveType)
+            ? config.vision?.maxFileSize
+            : artifactsAvailable
+              ? config.artifacts?.maxFileSize
+              : undefined;
+          return downloadDriveFile(f, maxBytes ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES);
+        }),
+      )
+        .then((fetched) => void handleFiles(fetched))
+        .finally(() =>
+          setExtractingAttachments((prev) => {
+            const next = new Set(prev);
+            for (const n of names) next.delete(n);
+            return next;
           }),
         );
-
-        void handleFiles(fetched);
-      } finally {
-        setExtractingAttachments((prev) => {
-          const next = new Set(prev);
-          for (const n of names) next.delete(n);
-          return next;
-        });
-      }
     },
-    [handleFiles, setExtractingAttachments],
+    [
+      artifactsAvailable,
+      config.artifacts?.maxFileSize,
+      config.vision?.files,
+      config.vision?.maxFileSize,
+      handleFiles,
+      setExtractingAttachments,
+    ],
   );
 
   const handleContinuousCaptureToggle = useCallback(async () => {
@@ -419,17 +460,16 @@ export function ChatInput() {
   const handleTranscriptionClick = useCallback(async () => {
     if (isTranscribing) {
       setTranscribingContent(true);
-      try {
-        const text = await stopTranscription();
-        if (text.trim()) {
-          setContent(text);
-        }
-      } catch (error) {
+      const text = await stopTranscription().catch((error: unknown) => {
         console.error("Transcription failed:", error);
         notify.error("Transcription failed", "The recording couldn't be transcribed. Please try again.");
-      } finally {
-        setTranscribingContent(false);
+        return "";
+      });
+      if (text.trim()) {
+        setContent((previous) => (previous.trim() ? `${previous.trimEnd()} ${text.trim()}` : text));
+        contentInputRef.current?.focus();
       }
+      setTranscribingContent(false);
     } else {
       try {
         await startTranscription();
@@ -442,6 +482,32 @@ export function ChatInput() {
 
   return (
     <>
+      {queuedSends.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2" aria-label="Queued messages">
+          {queuedSends.map((item) => {
+            const content = typeof item.content === "string" ? item.content : item.content.content;
+            const label =
+              (typeof content === "string" ? content : content.find((part) => part.type === "text")?.content)?.trim() ||
+              "Attachment";
+            return (
+              <div
+                key={item.id}
+                className="flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs border-neutral-200 bg-white/70 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/70 dark:text-neutral-300"
+              >
+                <span className="max-w-56 truncate">{label}</span>
+                <button
+                  type="button"
+                  aria-label="Remove queued message"
+                  className="rounded-full p-0.5 hover:bg-black/5 dark:hover:bg-white/10"
+                  onClick={() => removeQueuedMessage(item.id)}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
       <form onSubmit={handleSubmit}>
         <div
           ref={containerRef}
@@ -526,9 +592,11 @@ export function ChatInput() {
                       .map((item) => item.getAsFile())
                       .filter(Boolean) as File[];
 
-                    // A pasted file may also expose a text/plain representation (e.g.
-                    // an OS file copy yields the filename) — don't pollute the textarea.
-                    if (fileItems.length > 0) {
+                    // Apps like PowerPoint/Excel put a rendered image of the selection
+                    // on the clipboard alongside the actual text. When real text is
+                    // present, prefer it and ignore the image thumbnail; only route to
+                    // handleFiles when there's no usable text (a genuine file/image paste).
+                    if (fileItems.length > 0 && !text.trim()) {
                       await handleFiles(fileItems);
                       return;
                     }
@@ -553,14 +621,17 @@ export function ChatInput() {
                   <div
                     className={cn(
                       "absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200",
-                      messages.length === 0 && "typewriter-text",
+                      !hasMessages && "typewriter-text",
                     )}
                     style={
-                      messages.length === 0
+                      !hasMessages
                         ? ({
                             "--text-length": placeholderText.length,
                             "--animation-duration": `${Math.max(1.5, placeholderText.length * 0.1)}s`,
-                          } as React.CSSProperties & { "--text-length": number; "--animation-duration": string })
+                          } as React.CSSProperties & {
+                            "--text-length": number;
+                            "--animation-duration": string;
+                          })
                         : {}
                     }
                   >
@@ -639,6 +710,7 @@ export function ChatInput() {
                   isResponding={isResponding}
                   visibleProviders={visibleProviders}
                   getProviderState={getProviderState}
+                  isProviderEnabled={isProviderEnabled}
                   getProviderPolicy={getProviderPolicy}
                   setProviderEnabled={setProviderEnabled}
                   skillSources={skillSources}
@@ -650,55 +722,132 @@ export function ChatInput() {
                 />
               )}
               {models.length > 0 && !isRealtimeSelected && !currentAgent && (
-                <ModelDropdown
-                  models={models}
-                  value={model?.id ?? ""}
-                  onChange={(modelId) => {
-                    const m = models.find((m) => m.id === modelId);
-                    if (m) onModelChange(m);
-                  }}
-                  effort={
-                    model?.supportedEfforts?.length
-                      ? { options: model.supportedEfforts, value: effort ?? null, onChange: setEffort }
-                      : undefined
-                  }
-                  dropdownClassName="w-auto min-w-48 whitespace-nowrap"
-                  trigger={({ getProps }) => (
+                <div className="flex items-center gap-0.5 min-w-0">
+                  <ModelDropdown
+                    models={models}
+                    value={model?.id ?? ""}
+                    onChange={(modelId) => {
+                      const m = models.find((m) => m.id === modelId);
+                      if (m) onModelChange(m);
+                    }}
+                    agents={
+                      agents.length > 0
+                        ? {
+                            items: agents.map((a) => ({ id: a.id, name: a.name })),
+                            value: null,
+                            onChange: (id) => setCurrentAgent(agents.find((a) => a.id === id) ?? null),
+                            // The drawer shows the active agent, so opening one selects it.
+                            onOpen: (id) => {
+                              setCurrentAgent(agents.find((a) => a.id === id) ?? null);
+                              setAgentDrawerView("details");
+                              setShowAgentDrawer(true);
+                            },
+                          }
+                        : undefined
+                    }
+                    effort={
+                      model?.supportedEfforts?.length
+                        ? {
+                            options: model.supportedEfforts,
+                            value: effort ?? null,
+                            defaultValue: model.defaultEffort,
+                            onChange: setEffort,
+                          }
+                        : undefined
+                    }
+                    verbosity={{
+                      value: verbosity ?? null,
+                      defaultValue: models.find((m) => m.id === model?.id)?.verbosity,
+                      onChange: setVerbosity,
+                    }}
+                    presets={
+                      presets.length > 1
+                        ? {
+                            steps: presets,
+                            value: modelPresetIndex(presets, model),
+                            onChange: (index) => {
+                              const { model: next, effort, verbosity } = presets[index];
+                              onModelChange({ ...next, effort, verbosity });
+                            },
+                          }
+                        : undefined
+                    }
+                    dropdownClassName="w-auto min-w-48 whitespace-nowrap"
+                    trigger={({ getProps }) => (
+                      <button
+                        type="button"
+                        {...getProps()}
+                        className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium transition-colors max-w-56 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      >
+                        <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
+                          <span className="shrink-0 flex justify-center">{toolIndicator}</span>
+                          <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
+                        </Tooltip>
+                      </button>
+                    )}
+                  />
+                  {configuredModel && model && !sameModelSettings(model, configuredModel) && (
+                    <Tooltip
+                      content={`Reset to ${[configuredModel.name ?? configuredModel.id, configuredModel.effort && EFFORT_LABEL[configuredModel.effort]].filter(Boolean).join(" ")}`}
+                      side="bottom"
+                      className="flex shrink-0"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onModelChange(configuredModel)}
+                        aria-label="Reset to the default model"
+                        className="shrink-0 p-0.5 rounded-md text-neutral-400 transition-colors hover:text-neutral-700 hover:bg-neutral-200/70 dark:text-neutral-500 dark:hover:text-neutral-200 dark:hover:bg-white/10"
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                    </Tooltip>
+                  )}
+                </div>
+              )}
+              {/* Active agent: a plain label whose only action is turning the agent off.
+                  When a sign-in is pending, the label itself retries it. */}
+              {currentAgent && !(isRealtimeSelected && isListening) && (
+                <div className="flex items-center gap-0.5 min-w-0">
+                  {unauthorizedProviders.length > 0 ? (
+                    <Tooltip
+                      content={`${currentAgent.name} needs sign-in for ${unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")}`}
+                      side="bottom"
+                      className="min-w-0"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          for (const provider of unauthorizedProviders) {
+                            void setProviderEnabled(provider.id, true);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 pl-1 min-w-0 max-w-56 rounded-lg text-xs font-medium transition-colors text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+                      >
+                        {authenticatingProviders.length > 0 ? (
+                          <LoaderCircle size={14} className="shrink-0 animate-spin" />
+                        ) : (
+                          <Lock size={14} className="shrink-0" />
+                        )}
+                        <span className="truncate min-w-0">{currentAgent.name}</span>
+                      </button>
+                    </Tooltip>
+                  ) : (
+                    <span className="flex items-center gap-1.5 pl-1 min-w-0 max-w-56 text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                      <Bot size={14} className="shrink-0" />
+                      <span className="truncate min-w-0">{currentAgent.name}</span>
+                    </span>
+                  )}
+                  <Tooltip content={`Turn off ${currentAgent.name}`} side="bottom" className="flex shrink-0">
                     <button
                       type="button"
-                      {...getProps()}
-                      className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
+                      onClick={deactivateAgent}
+                      aria-label={`Turn off ${currentAgent.name}`}
+                      className="shrink-0 p-0.5 rounded-md text-neutral-400 transition-colors hover:text-neutral-700 hover:bg-neutral-200/70 dark:text-neutral-500 dark:hover:text-neutral-200 dark:hover:bg-white/10"
                     >
-                      <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
-                        <span className="shrink-0 flex justify-center">{toolIndicator}</span>
-                        <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
-                      </Tooltip>
+                      <X size={14} />
                     </button>
-                  )}
-                />
-              )}
-
-              {/* Agent picker — combined trigger + active-agent badge (hidden when listening, agent name shown in hint) */}
-              {currentAgent && !(isRealtimeSelected && isListening) && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setCurrentAgent(null);
-                    setShowAgentDrawer(false);
-                  }}
-                  className="group flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-xs font-medium transition-colors text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-                  title="Deselect agent"
-                >
-                  <span className="shrink-0 w-3.5 flex justify-center relative">
-                    <Bot size={14} className="transition-opacity group-hover:opacity-0" />
-                    <X
-                      size={14}
-                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
-                    />
-                  </span>
-                  <span className="truncate max-w-28">{currentAgent.name}</span>
-                </button>
+                  </Tooltip>
+                </div>
               )}
               {!isRealtimeSelected && isContinuousCaptureActive && (
                 <button
@@ -791,9 +940,7 @@ export function ChatInput() {
                       title="Cancel connecting"
                       onClick={async () => {
                         await stopVoice();
-                        const savedId = getSavedModelId();
-                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
-                        onModelChange(restored ?? null);
+                        onModelChange(getSavedModel(models) ?? models[0] ?? null);
                       }}
                     >
                       <LoaderCircle size={12} className="animate-spin" />
@@ -809,9 +956,7 @@ export function ChatInput() {
                           return;
                         }
                         await stopVoice();
-                        const savedId = getSavedModelId();
-                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
-                        onModelChange(restored ?? null);
+                        onModelChange(getSavedModel(models) ?? models[0] ?? null);
                       }}
                     >
                       {isListening ? (
@@ -828,107 +973,110 @@ export function ChatInput() {
                     </button>
                   )}
                 </>
-              ) : isResponding ? (
-                <button
-                  type="button"
-                  className="group/stop p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  onClick={stopStreaming}
-                  title="Stop generating (Esc)"
-                >
-                  <LoaderCircle size={16} className="animate-spin group-hover/stop:hidden" />
-                  <Square size={16} className="hidden group-hover/stop:block" />
-                </button>
-              ) : content.trim() ? (
-                <button
-                  className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  type="submit"
-                >
-                  <Send size={16} />
-                </button>
-              ) : canTranscribe && !isListening ? (
-                transcribingContent ? (
+              ) : isResponding || interruptState?.interrupts.length ? (
+                <div className="flex items-center">
+                  {content.trim() && (
+                    <button
+                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      type="submit"
+                      disabled={chatLoading || !!chatError || !!interruptState?.interrupts.length}
+                      aria-label={
+                        interruptState?.interrupts.length ? "Answer the pending request to continue" : "Send message"
+                      }
+                      title="Queue message"
+                    >
+                      <Send size={16} />
+                    </button>
+                  )}
                   <button
                     type="button"
-                    className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
-                    disabled
-                    title="Processing audio..."
+                    className="group/stop p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    onClick={stopStreaming}
+                    title="Stop generating (Esc)"
                   >
-                    <Loader2 size={16} className="animate-spin" />
+                    <LoaderCircle size={16} className="animate-spin group-hover/stop:hidden" />
+                    <Square size={16} className="hidden group-hover/stop:block" />
                   </button>
-                ) : isTranscribing ? (
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
-                    onClick={handleTranscriptionClick}
-                    title="Stop recording"
-                    disabled={isResponding}
-                  >
-                    <Square size={16} />
-                  </button>
-                ) : (
-                  // Not yet recording — desktop shows dictate mic + voice-mode wave; mobile uses the + menu and wave
-                  <>
-                    <Tooltip content="Start dictate" side="bottom" className="hidden md:block">
+                </div>
+              ) : (
+                // The dictate mic keeps its own slot so a transcript can be extended;
+                // only the trailing voice-mode slot turns into Send once there's text.
+                <>
+                  {canTranscribe &&
+                    !isListening &&
+                    (transcribingContent ? (
                       <button
                         type="button"
-                        className="p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        onClick={handleTranscriptionClick}
-                        disabled={isResponding}
+                        className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
+                        disabled
+                        title="Processing audio..."
                       >
-                        <Mic size={16} />
+                        <Loader2 size={16} className="animate-spin" />
                       </button>
-                    </Tooltip>
-                    {voiceAvailable && !currentAgent?.model ? (
-                      <Tooltip content="Voice mode" side="bottom">
+                    ) : isTranscribing ? (
+                      <button
+                        type="button"
+                        className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                        onClick={handleTranscriptionClick}
+                        title="Stop recording"
+                      >
+                        <Square size={16} />
+                      </button>
+                    ) : (
+                      <Tooltip
+                        content={content.trim() ? "Add dictation" : "Start dictate"}
+                        side="bottom"
+                        className="hidden md:block"
+                      >
                         <button
                           type="button"
-                          className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                          onClick={() =>
-                            onModelChange({
-                              id: "realtime",
-                              name: "Voice Mode",
-                              description: "Real-time voice conversation",
-                            })
-                          }
-                          title="Voice mode"
-                          aria-label="Start voice mode"
+                          className="p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                          onClick={handleTranscriptionClick}
                         >
-                          <AudioLines size={16} />
+                          <Mic size={16} />
                         </button>
                       </Tooltip>
-                    ) : (
+                    ))}
+                  {isTranscribing || transcribingContent ? null : content.trim() ? (
+                    <button
+                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      type="submit"
+                      disabled={chatLoading || !!chatError}
+                      aria-label="Send message"
+                    >
+                      <Send size={16} />
+                    </button>
+                  ) : voiceAvailable && !currentAgent?.model ? (
+                    <Tooltip content="Voice mode" side="bottom">
                       <button
-                        className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                        type="submit"
-                        disabled={isResponding}
+                        type="button"
+                        className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        onClick={() =>
+                          onModelChange({
+                            id: "realtime",
+                            name: "Voice Mode",
+                            description: "Real-time voice conversation",
+                          })
+                        }
+                        title="Voice mode"
+                        aria-label="Start voice mode"
                       >
-                        <Send size={16} />
+                        <AudioLines size={16} />
                       </button>
-                    )}
-                  </>
-                )
-              ) : voiceAvailable && !currentAgent?.model ? (
-                <Tooltip content="Voice mode" side="bottom">
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                    onClick={() =>
-                      onModelChange({
-                        id: "realtime",
-                        name: "Voice Mode",
-                        description: "Real-time voice conversation",
-                      })
-                    }
-                    title="Voice mode"
-                    aria-label="Start voice mode"
-                  >
-                    <AudioLines size={16} />
-                  </button>
-                </Tooltip>
-              ) : (
-                <span className="p-2.5 md:p-1.5 text-neutral-400 dark:text-neutral-500">
-                  <AudioLines size={16} />
-                </span>
+                    </Tooltip>
+                  ) : canTranscribe && !isListening ? (
+                    <button
+                      className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      type="submit"
+                    >
+                      <Send size={16} />
+                    </button>
+                  ) : (
+                    <span className="p-2.5 md:p-1.5 text-neutral-400 dark:text-neutral-500">
+                      <AudioLines size={16} />
+                    </span>
+                  )}
+                </>
               )}
             </div>
           </div>

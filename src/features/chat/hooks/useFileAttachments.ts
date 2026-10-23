@@ -2,13 +2,15 @@ import { useCallback, useRef, useState } from "react";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { notify } from "@/shared/lib/notify";
 import { formatBytes, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
-import type { Content, ImageContent } from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import { mediaFromDataUrl, type MediaPart } from "@/shared/lib/messages";
 
 interface UseFileAttachmentsOptions {
   visionFiles: string[];
   artifactsAvailable: boolean;
   visionMaxFileSize?: number;
   artifactsMaxFileSize?: number;
+  getTakenFileNames?: () => Promise<Set<string>>;
 }
 
 // Browsers give pasted clipboard images a generic name (e.g. "image.png") with
@@ -41,7 +43,7 @@ export function chatAcceptString(visionFiles: string[], artifactsAvailable: bool
 }
 
 export interface UseFileAttachmentsReturn {
-  attachments: Content[];
+  attachments: ContentPart[];
   pendingFiles: File[];
   /** Original image files aligned 1:1 with `attachments`, persisted at send. */
   pendingImages: (File | null)[];
@@ -58,8 +60,9 @@ export function useFileAttachments({
   artifactsAvailable,
   visionMaxFileSize,
   artifactsMaxFileSize,
+  getTakenFileNames,
 }: UseFileAttachmentsOptions): UseFileAttachmentsReturn {
-  const [attachments, setAttachments] = useState<Content[]>([]);
+  const [attachments, setAttachments] = useState<ContentPart[]>([]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   // Original image files aligned 1:1 with `attachments`, persisted at send.
   const [pendingImages, setPendingImages] = useState<(File | null)[]>([]);
@@ -71,7 +74,14 @@ export function useFileAttachments({
     async (files: File[]) => {
       // Normalize MIME types up front (browsers sometimes omit/guess them),
       // and dedupe names so same-named files (e.g. pasted clipboard images)
-      // don't collide once they're written to the workspace by name.
+      // don't collide once they're written to the workspace by name. Names
+      // must be unique against pending attachments AND files already in the
+      // workspace root — listed fresh per call, so deletions free names up.
+      const taken = new Set(usedFileNamesRef.current);
+      if (getTakenFileNames) {
+        for (const name of await getTakenFileNames()) taken.add(name);
+      }
+
       const images: { file: File; keepOriginal: boolean }[] = [];
       const artifacts: File[] = [];
       for (const file of files) {
@@ -79,7 +89,8 @@ export function useFileAttachments({
           file.type && file.type !== "application/octet-stream"
             ? file.type
             : (inferContentTypeFromPath(file.name) ?? file.type);
-        const uniqueName = dedupeFileName(file.name, usedFileNamesRef.current);
+        const uniqueName = dedupeFileName(file.name, taken);
+        usedFileNamesRef.current.add(uniqueName);
         const effectiveFile =
           effectiveType !== file.type || uniqueName !== file.name
             ? new File([file], uniqueName, { type: effectiveType })
@@ -119,15 +130,14 @@ export function useFileAttachments({
           images.map(async ({ file, keepOriginal }) => {
             const blob = await resizeImageBlob(file, 1920, 1920);
             const dataUrl = await readAsDataURL(blob);
-            const content = { type: "image", name: file.name, data: dataUrl } as ImageContent;
+            const content = mediaFromDataUrl(dataUrl, file.name, "image");
             return { content, original: keepOriginal ? file : null };
           }),
         );
 
         const valid = settled
           .filter(
-            (r): r is PromiseFulfilledResult<{ content: ImageContent; original: File | null }> =>
-              r.status === "fulfilled",
+            (r): r is PromiseFulfilledResult<{ content: MediaPart; original: File | null }> => r.status === "fulfilled",
           )
           .map((r) => r.value);
 
@@ -140,7 +150,7 @@ export function useFileAttachments({
         });
       }
     },
-    [visionFiles, artifactsAvailable, visionMaxFileSize, artifactsMaxFileSize],
+    [visionFiles, artifactsAvailable, visionMaxFileSize, artifactsMaxFileSize, getTakenFileNames],
   );
 
   const clearAttachments = useCallback(() => {

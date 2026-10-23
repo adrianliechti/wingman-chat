@@ -1,5 +1,4 @@
 import mime from "mime";
-import type { AudioContent, FileContent, ImageContent, TextContent } from "@/shared/types/chat";
 
 // Parse a data URL to extract mimeType and base64 data
 export function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | null {
@@ -15,34 +14,6 @@ export function parseDataUrl(dataUrl: string): { mimeType: string; data: string 
  * Strips binary data (images, audio, files) and replaces with text descriptions
  * to avoid sending large base64 data URLs to the model which it cannot process.
  */
-export function serializeToolResultForApi(result: (TextContent | ImageContent | AudioContent | FileContent)[]): string {
-  const serialized = result.map((item) => {
-    if (item.type === "text") {
-      return item;
-    }
-    if (item.type === "image") {
-      return {
-        type: "text",
-        text: `[Image${item.name ? `: ${item.name}` : ""} - displayed to user]`,
-      };
-    }
-    if (item.type === "audio") {
-      return {
-        type: "text",
-        text: `[Audio${item.name ? `: ${item.name}` : ""} - displayed to user]`,
-      };
-    }
-    if (item.type === "file") {
-      return {
-        type: "text",
-        text: `[File: ${item.name} - displayed to user]`,
-      };
-    }
-    return item;
-  });
-  return JSON.stringify(serialized);
-}
-
 export function lookupContentType(ext: string): string | undefined {
   const normalizedExt = ext.startsWith(".") ? ext : `.${ext}`;
   return mime.getType(normalizedExt) ?? undefined;
@@ -181,10 +152,53 @@ export function downloadFromUrl(url: string, filename: string = ""): void {
   document.body.removeChild(link);
 }
 
-export function downloadBlob(blob: Blob, filename: string): void {
+interface SaveFilePickerWindow {
+  showSaveFilePicker?: (options?: {
+    suggestedName?: string;
+    types?: { description?: string; accept: Record<string, string[]> }[];
+  }) => Promise<FileSystemFileHandle>;
+}
+
+// Stream a blob to disk via the File System Access API. Returns false when the
+// API is unavailable so callers can fall back to the anchor-download path.
+async function saveBlobWithPicker(blob: Blob, filename: string): Promise<boolean> {
+  const showSaveFilePicker = (window as SaveFilePickerWindow).showSaveFilePicker;
+  if (typeof showSaveFilePicker !== "function") return false;
+
+  const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
+  const mimeType = blob.type || (ext ? mime.getType(ext) : null) || "application/octet-stream";
+  const types = ext ? [{ accept: { [mimeType]: [ext] } }] : undefined;
+
+  try {
+    const handle = await showSaveFilePicker({ suggestedName: filename, types });
+    const writable = await handle.createWritable();
+    await blob.stream().pipeTo(writable);
+    return true;
+  } catch (error) {
+    // A user cancelling the picker is expected; swallow it rather than falling
+    // back to a second (anchor) download the user did not ask for.
+    if (error instanceof DOMException && error.name === "AbortError") return true;
+    return false;
+  }
+}
+
+export async function downloadBlob(
+  blob: Blob,
+  filename: string,
+  { usePicker = true }: { usePicker?: boolean } = {},
+): Promise<void> {
+  if (usePicker && (await saveBlobWithPicker(blob, filename))) return;
+
   const url = URL.createObjectURL(blob);
   downloadFromUrl(url, filename);
-  URL.revokeObjectURL(url);
+  // Revoking synchronously can truncate large downloads (corrupt ZIPs) because
+  // the browser may still be reading the blob when click() returns.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export async function downloadMarkdownAsDocx(markdown: string, filename: string): Promise<void> {
+  const { markdownToDocx } = await import("@/shared/lib/markdownToDocx");
+  await downloadBlob(await markdownToDocx(markdown), filename);
 }
 
 // Internal to downloadFromUrl — derives a filename for data URLs. Not exported.

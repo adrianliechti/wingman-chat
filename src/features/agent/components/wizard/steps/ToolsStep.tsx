@@ -1,22 +1,18 @@
-import { Plus, Server, ToggleLeft, ToggleRight, Wrench, X } from "lucide-react";
-import { type Dispatch, useMemo, useState } from "react";
-import { BridgeEditor } from "@/features/agent/components/BridgeEditor";
-import type { BridgeServer } from "@/features/agent/types/agent";
+import { ToggleLeft, ToggleRight, Wrench } from "lucide-react";
+import { type Dispatch, useMemo } from "react";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
 
 interface ToolsStepProps {
   selectedTools: string[];
-  servers: Omit<BridgeServer, "id">[];
   dispatch: Dispatch<WizardAction>;
 }
 
 const AGENT_INTERNAL_IDS = new Set(["artifacts", "repository", "skills", "memory"]);
 
-export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) {
+export function ToolsStep({ selectedTools, dispatch }: ToolsStepProps) {
   const { providers } = useToolsContext();
-  const [bridgeEditorOpen, setBridgeEditorOpen] = useState(false);
 
   const selectedSet = useMemo(() => new Set(selectedTools), [selectedTools]);
 
@@ -32,19 +28,8 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
     <div className="space-y-3">
       <StepHeader
         title="Enable tools"
-        description="Tools power up your agent with real capabilities — searching the web, generating images, creating skills, or connecting to external services via MCP servers. Toggle on what you need, or skip this and enable tools later."
+        description="Enable optional tools such as web search and connected services. Document, data and design skills are available by default. You can change these choices later."
       />
-
-      {/* Actions */}
-      <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => setBridgeEditorOpen(true)}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
-        >
-          <Plus size={11} /> Add MCP Server
-        </button>
-      </div>
 
       <div className="space-y-0.5">
         {availableTools.map((tool) => {
@@ -77,35 +62,6 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
           );
         })}
       </div>
-
-      {/* Pending MCP servers */}
-      {servers.length > 0 && (
-        <div className="space-y-0.5 pt-1 border-t border-neutral-200/40 dark:border-neutral-700/40">
-          {servers.map((server, i) => (
-            <div key={`${server.name}-${server.url}`} className="flex items-center gap-2 py-1.5">
-              <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{server.name}</div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{server.url}</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => dispatch({ type: "REMOVE_SERVER", index: i })}
-                className="shrink-0 p-1 rounded text-neutral-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <BridgeEditor
-        isOpen={bridgeEditorOpen}
-        onClose={() => setBridgeEditorOpen(false)}
-        onSave={(data) => dispatch({ type: "ADD_SERVER", server: data })}
-        bridge={null}
-      />
     </div>
   );
 }

@@ -1,34 +1,5 @@
-## Skills
+Use explicitly requested skills or those clearly matching the task and output. Choose the smallest useful set; keywords alone are insufficient. Read instructions before applying them and reuse content already in context.
 
-Skills are specialized prompts that provide detailed instructions for specific tasks. They expand your capabilities with domain expertise.
+Use full listed plugin-qualified names. Read needed references and reuse bundled scripts/assets. If resources are unavailable, explain the limitation and use an available fallback; do not invent their contents.
 
-### How It Works
-
-1. **Check available skills**: Review the skills listed below when users request a task
-2. **Read skill instructions**: Use the `read_skill` tool to get detailed guidance
-3. **Follow the instructions**: The skill provides step-by-step directions for the task
-4. **Execute in conversation**: Complete the task directly in the main conversation
-
-### When to Use Skills
-
-- When a user's request matches an available skill's description
-- When you need specialized guidance for a particular task
-- When detailed, domain-specific instructions would improve your response
-
-### Capability vs Generator Routing
-
-- **Capability skills** guide reasoning, analysis, search, review, planning, writing, and domain workflows.
-- **Generator skills** produce concrete artifacts: charts, dashboards, diagrams, slide decks, documents, spreadsheets, PDFs, UI prototypes, posters, or HTML files.
-- Do not substitute a generator skill when the user only wants advice or analysis. Do not use a capability skill as a file generator when a matching generator skill is listed.
-- Avoid duplicate routes: if two skills sound related, choose the one whose description matches the user's requested output.
-
-### Core Rules
-
-1. **Only use listed skills**: Only use skills from `<available_skills>` below
-2. **Read before executing**: Always use `read_skill` to get full instructions first
-3. **Match by description**: Use skill descriptions to determine relevance
-4. **Seamless execution**: Apply skill instructions naturally in your response
-{resourcesGuidance}
-<available_skills>
-{skillsXml}
-</available_skills>
+load_skill returns instructions and resource paths. read_skill_resource takes the exact skill name and a path relative to that skill, including scripts or references. Its encoding says whether content is text or base64. Interpreter script paths use the absolute /skills/<name>/ mount instead. Personal library editing uses list_skills({name, path}) so you read the entry that will actually be changed.

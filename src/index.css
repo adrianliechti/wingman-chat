@@ -1,12 +1,96 @@
 @import "tailwindcss";
 
-/* While dragging a resizable panel, cover the page with a transparent overlay
-   so iframes don't swallow the drag. We intentionally do NOT set
-   `pointer-events: none` on the iframes themselves: toggling that on a
-   sandboxed iframe leaves its compositor scroll/hit-test region stale, so the
-   iframe can't be scrolled afterwards until it reloads (e.g. switching files).
-   The overlay sits above everything; mouse events still bubble to the window
-   listeners that drive the resize. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Global defaults belong in the base layer so component utilities can override them. */
+@layer base {
+  html,
+  body {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  html {
+    color-scheme: light;
+    @apply bg-neutral-50 dark:bg-neutral-950;
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
+
+  body {
+    min-height: 100dvh;
+    background-color: inherit;
+    @apply text-black dark:text-white;
+  }
+
+  #root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* Thin scrollbars appear on interaction; chat manages its own scroll anchoring. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    overflow-anchor: none;
+  }
+
+  :hover,
+  :focus-visible,
+  :active {
+    scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
+  }
+
+  .dark :hover,
+  .dark :focus-visible,
+  .dark :active {
+    scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+  }
+
+  /* Contain horizontal swipes in code/tables while vertical scrolling can chain. */
+  .overflow-x-auto {
+    overscroll-behavior-x: contain;
+  }
+
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  /* Drop the browser's default (blue) focus outline. Safari also paints it on
+     elements focused from script: Headless UI focuses menu panels on open and
+     hands focus back to the trigger on close. Components that want a focus
+     indicator set their own outline or ring utilities, which override this. */
+  :focus-visible {
+    outline: none;
+  }
+}
+
+::view-transition-group(.navigation-highlight) {
+  animation-duration: 300ms;
+  animation-timing-function: ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(.navigation-highlight),
+  ::view-transition-old(.navigation-highlight),
+  ::view-transition-new(.navigation-highlight) {
+    animation: none;
+  }
+}
+
+/* Catch resize drags above iframes. Toggling iframe pointer-events instead leaves
+   their scroll/hit-test regions stale; the overlay preserves them. */
 body.resizing::after {
   content: "";
   position: fixed;
@@ -15,33 +99,18 @@ body.resizing::after {
   cursor: ew-resize;
 }
 
-/* Keep the resize cursor visible across the whole page while dragging a panel handle,
-   even when the pointer drifts off the handle element. !important is required to win
-   over per-element cursor styles (buttons, links, iframes, etc.). */
+/* Override component cursors and selection only while dragging. */
 body.resizing,
 body.resizing * {
-  /* required to override per-element cursors during drag */
   cursor: ew-resize !important;
-  /* required to override per-element user-select during drag */
   user-select: none !important;
 }
 
-.noto-emoji {
+/* Native emoji remain visible while the optional monochrome font loads. */
+html.noto-emoji-ready:not(.emoji-native) .noto-emoji {
   font-family: "Noto Emoji", sans-serif;
   font-size: 0.9em;
   vertical-align: -0.05em;
-  visibility: hidden;
-}
-
-.noto-emoji-ready .noto-emoji {
-  visibility: visible;
-}
-
-html.emoji-native .noto-emoji {
-  font-family: inherit;
-  font-size: inherit;
-  vertical-align: initial;
-  visibility: visible;
 }
 
 /* Unordered list with properly sized bullets */
@@ -60,111 +129,98 @@ html.emoji-native .noto-emoji {
   list-style: none;
 }
 
+.task-list > li:not(.task-list-item) {
+  margin-inline-start: 1.25em;
+  list-style-type: disc;
+}
+
+ol.task-list > li:not(.task-list-item) {
+  list-style-type: decimal;
+}
+
 .task-list-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  position: relative;
+  padding-inline-start: 1.65em;
+  list-style: none;
 }
 
+.inline-choice-input,
 .task-checkbox {
-  width: 1em;
-  height: 1em;
+  appearance: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
   flex-shrink: 0;
-  opacity: 0.3;
+  border: 1px solid #a3a3a3;
+  border-radius: 0.3125rem;
+  background-color: #fff;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 0.875rem;
+  vertical-align: -0.15em;
+  box-shadow: 0 1px 2px #00000008;
+  cursor: inherit;
 }
 
-.task-checkbox.checked {
-  opacity: 0.7;
+.inline-choice-input:checked,
+.task-checkbox:checked {
+  border-color: #262626;
+  background-color: #262626;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8 3 3 6-6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
-@custom-variant dark (&:where(.dark, .dark *));
-
-:root {
-  --viewport-height: 100dvh;
-  color-scheme: light;
+.inline-choice-input[type="radio"] {
+  border-radius: 50%;
 }
 
-/* Match native UI (scrollbars, form controls, etc.) to the active theme. */
-.dark {
-  color-scheme: dark;
+.inline-choice-input[type="radio"]:checked {
+  background-image: radial-gradient(circle, white 0 3px, transparent 3.5px);
 }
 
-/* App-wide scrollbars: thin, and transparent until you interact (iOS-like).
-   Standard scrollbar-* properties only — no -webkit-scrollbar hacks (Chrome 121+,
-   Safari 18.2+, Firefox). Living in @layer base lets Tailwind's scrollbar-*
-   utilities (e.g. `scrollbar-none`) override these per element. */
-@layer base {
-  /* universal selector intentionally lower-specificity than the body.resizing rule above; they set different properties */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
-    -webkit-overflow-scrolling: touch;
-    overflow-anchor: none;
+.inline-choice-input:focus-visible {
+  outline: 2px solid #737373;
+  outline-offset: 3px;
+}
+
+.task-list-item > .task-checkbox,
+.task-list-item > p > .task-checkbox {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0.45em;
+}
+
+.dark .inline-choice-input,
+.dark .task-checkbox {
+  border-color: #737373;
+  background-color: #171717;
+}
+
+.dark .inline-choice-input:checked,
+.dark .task-checkbox:checked {
+  border-color: #e5e5e5;
+  background-color: #e5e5e5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8 3 3 6-6' fill='none' stroke='%23171717' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.dark .inline-choice-input[type="radio"]:checked {
+  background-image: radial-gradient(circle, #171717 0 3px, transparent 3.5px);
+}
+
+.inline-choice-input[aria-invalid="true"] {
+  border-color: #dc2626;
+}
+
+.dark .inline-choice-input[aria-invalid="true"] {
+  border-color: #f87171;
+}
+
+@media (forced-colors: active) {
+  .inline-choice-input,
+  .task-checkbox {
+    appearance: auto;
+    background-image: none !important;
+    box-shadow: none;
   }
-
-  *:hover,
-  *:focus-visible,
-  *:active {
-    scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
-  }
-
-  .dark *:hover,
-  .dark *:focus-visible,
-  .dark *:active {
-    scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
-  }
-}
-
-/* Prevent horizontal-only scroll containers from blocking vertical page scroll */
-.overflow-x-auto {
-  overscroll-behavior-x: contain;
-  overscroll-behavior-y: auto;
-  overflow-y: visible;
-}
-
-html,
-body {
-  height: 100%;
-  overflow: hidden;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: none;
-  position: fixed;
-  width: 100%;
-  -webkit-text-size-adjust: 100%;
-}
-
-html {
-  @apply bg-neutral-50 dark:bg-neutral-950;
-}
-
-body {
-  background-color: inherit;
-  min-height: var(--viewport-height);
-  @apply text-black bg-neutral-50 dark:text-white dark:bg-neutral-950;
-}
-
-#root {
-  height: var(--viewport-height);
-  overflow: hidden;
-}
-
-*:focus,
-*:focus-visible {
-  outline: none;
-}
-
-button:not(.cursor-ew-resize),
-[role="button"]:not(.cursor-ew-resize),
-button[data-headlessui-state]:not(.cursor-ew-resize),
-[data-headlessui-state=""]:not(.cursor-ew-resize) {
-  cursor: pointer;
-}
-
-button:disabled,
-[role="button"]:disabled,
-button[data-headlessui-state]:disabled,
-[data-headlessui-state]:disabled {
-  cursor: not-allowed;
 }
 
 .max-content-width {
@@ -176,7 +232,7 @@ button[data-headlessui-state]:disabled,
   overflow: hidden;
   white-space: nowrap;
   margin: 0;
-  animation: typing var(--animation-duration, 2.5s) steps(var(--text-length, 20), end) 0.5s 1 normal both;
+  animation: typing var(--animation-duration, 2.5s) steps(var(--text-length, 20), end) 0.5s both;
 }
 
 @media (max-width: 640px) {
@@ -184,10 +240,6 @@ button[data-headlessui-state]:disabled,
     white-space: normal;
     animation: none;
   }
-}
-
-.typewriter-text::after {
-  content: "";
 }
 
 @keyframes typing {

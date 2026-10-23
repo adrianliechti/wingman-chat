@@ -152,24 +152,13 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
       const nodes = await buildTree(root, "");
       setTree(nodes);
 
-      // Calculate totals
-      let size = 0;
-      let files = 0;
-      const walk = (n: TreeNode) => {
-        if (n.kind === "file") {
-          files++;
-          size += n.size ?? 0;
-        }
-        n.children?.forEach(walk);
-      };
-      nodes.forEach(walk);
-      setTotalSize(size);
-      setTotalFiles(files);
+      const totals = nodes.map(countDescendants);
+      setTotalSize(totals.reduce((sum, t) => sum + t.size, 0));
+      setTotalFiles(totals.reduce((sum, t) => sum + t.files, 0));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to read OPFS");
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -230,7 +219,7 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 shadow-xl transition-all flex flex-col max-h-[80vh]">
+              <Dialog.Panel className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 shadow-xl transition-all flex flex-col max-h-[80vh]">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
                   <div className="flex items-center gap-2.5">

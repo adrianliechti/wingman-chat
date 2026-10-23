@@ -1,0 +1,4 @@
+## Artifact page SDK
+HTML previews receive window.wingman before page scripts run; downloaded HTML does not. It supports workspace files, per-artifact state, AI helpers, enabled tools and SQL. Load the html-artifacts skill's references/sdk.md for APIs.
+
+Feature-detect each capability with window.wingman?.capabilities and provide a fallback. Never fetch the SDK from a URL. Methods are async and reject with Error. Tool calls require user consent once per artifact; handle rejection.

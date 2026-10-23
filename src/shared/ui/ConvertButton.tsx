@@ -1,6 +1,6 @@
 import { FileDown, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { downloadBlob } from "@/shared/lib/utils";
+import { downloadBlob, downloadMarkdownAsDocx } from "@/shared/lib/utils";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "./DropdownMenu";
 
 type ConvertButtonProps = {
@@ -20,20 +20,17 @@ export const ConvertButton = ({ markdown, className }: ConvertButtonProps) => {
 
   const handleDownloadMarkdown = () => {
     const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-    downloadBlob(blob, generateFilename("md"));
+    void downloadBlob(blob, generateFilename("md"));
   };
 
   const handleDownloadWord = async () => {
     setIsConverting(true);
     try {
-      const { markdownToDocx } = await import("@/shared/lib/markdownToDocx");
-      const blob = await markdownToDocx(markdown);
-      downloadBlob(blob, generateFilename("docx"));
+      await downloadMarkdownAsDocx(markdown, generateFilename("docx"));
     } catch (error) {
       console.error("Failed to convert to Word:", error);
-    } finally {
-      setIsConverting(false);
     }
+    setIsConverting(false);
   };
 
   const buttonClasses =

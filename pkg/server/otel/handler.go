@@ -14,8 +14,18 @@ type Handler struct {
 	metrics http.Handler
 }
 
-func New() *Handler {
+const defaultServiceName = "wingman-chat"
+
+func New(serviceName string) *Handler {
+	serviceName = strings.TrimSpace(serviceName)
+
+	if serviceName == "" {
+		serviceName = defaultServiceName
+	}
+
 	base := strings.TrimRight(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "/")
+
+	insights := strings.TrimRight(os.Getenv("INSIGHTS_ENDPOINT"), "/")
 
 	logsURL := os.Getenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT")
 
@@ -35,10 +45,24 @@ func New() *Handler {
 		metricsURL = base + "/v1/metrics"
 	}
 
+	// Insights must acknowledge metric admission itself. A collector response
+	// must not hide a failed or rejected Insights copy. The collector still
+	// receives an independent best-effort mirror; trace delivery is unchanged.
+	metricsTarget, metricsMirror := metricsURL, insightsEndpoint(insights, "/v1/metrics")
+	if metricsMirror != "" {
+		metricsTarget, metricsMirror = metricsMirror, metricsURL
+	}
+	if metricsTarget == metricsMirror {
+		metricsMirror = ""
+	}
+	metricsPrimary := newHandler(metricsTarget)
+	if insights != "" {
+		metricsPrimary = withTransportHeaders(metricsPrimary)
+	}
 	return &Handler{
 		logs:    newHandler(logsURL),
-		traces:  newHandler(tracesURL),
-		metrics: newHandler(metricsURL),
+		traces:  withTraceIdentity(withMirror(newHandler(tracesURL), insightsEndpoint(insights, "/v1/traces")), serviceName),
+		metrics: withMetricIdentity(withMirror(metricsPrimary, metricsMirror), serviceName),
 	}
 }
 

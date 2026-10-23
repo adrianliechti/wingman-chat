@@ -1,44 +1,21 @@
 ---
 name: theme-factory
-description: Apply a consistent, professional theme (color palette + font pairing) to a deck, document, report, or HTML artifact. Use to style a slide deck or doc with a cohesive look — pick one of the preset themes or generate a custom one on the fly.
+description: "Create or apply a reusable visual theme, palette and type system for documents, decks or HTML. Use when theming or re-theming is explicitly requested."
 ---
 
-# Theme Factory
+# Theme factory
 
-A curated set of professional themes — each a cohesive palette + font pairing — to apply consistently
-across an artifact. Pick the one that fits the audience/context, confirm with the user if unsure, then
-apply its colors and fonts throughout (via `RGBColor.from_string` / `font.name` in python-pptx /
-python-docx / reportlab, or CSS for HTML). Keep strong contrast and readability.
+Read the subject, audience, destination medium and source brand. Preserve required assets and existing conventions. For a new direction, connect visual choices to the brief; do not impose a signature color family, font pairing or level of ornament.
 
-## Preset themes
+Define reusable roles:
 
-For complete details on a preset, load its file from `themes/<theme-id>.md` with `read_skill_resource`.
-Use the table below when a quick palette is enough.
+- Field/surface, ink, structural and accent colors; semantic states only where needed.
+- Display, body, label and numeric typography, with available fallbacks.
+- Spacing, layout density, borders, radii and shadows.
+- Image/figure treatment and any recurring annotation or motif.
 
-| Theme                 | Feel                     | Palette (background · primary · accent · light/text) |
-| --------------------- | ------------------------ | ---------------------------------------------------- |
-| **Ocean Depths**      | calm, corporate, trust   | `#1a2332` · `#2d8b8b` · `#a8dadc` · `#f1faee`        |
-| **Tech Innovation**   | bold, high-contrast tech | `#1e1e1e` · `#0066ff` · `#00ffff` · `#ffffff`        |
-| **Sunset Boulevard**  | warm, vibrant            | `#2b1b2f` · `#ff6b6b` · `#ffd166` · `#fff5e1`        |
-| **Forest Canopy**     | natural, grounded        | `#1d2a1f` · `#52796f` · `#a3b18a` · `#f0f4ef`        |
-| **Modern Minimalist** | clean grayscale          | `#ffffff` · `#222222` · `#9aa0a6` · `#111111`        |
-| **Golden Hour**       | rich, autumnal           | `#2a1f14` · `#c97b2c` · `#e9c46a` · `#fdf6ec`        |
-| **Arctic Frost**      | cool, crisp              | `#0f1b2b` · `#3a86ff` · `#bde0fe` · `#f8fbff`        |
-| **Desert Rose**       | soft, sophisticated      | `#2c2024` · `#bc6c7d` · `#e0afa0` · `#f7ede2`        |
-| **Botanical Garden**  | fresh, organic           | `#16271c` · `#2d6a4f` · `#95d5b2` · `#f3fbf5`        |
-| **Midnight Galaxy**   | dramatic, cosmic         | `#0b0c1e` · `#5a4fcf` · `#b388ff` · `#eae6ff`        |
+Check contrast, font availability and reproduction in the target medium. Monochrome, restrained and highly expressive themes are all legitimate. Use enough roles for the task without filling unused categories.
 
-Fonts: pair a clean sans for headings with a readable body face (e.g. headings Poppins/DejaVu Sans
-Bold, body Lora/DejaVu Sans). Substitute a bundled/CSS-available font if a specific family isn't
-present.
+Apply through the destination's native mechanism: CSS variables, named Office styles/theme colors, or shared drawing constants. Keep content hierarchy and chart semantics intact when changing appearance.
 
-## Apply
-
-1. Pick (or confirm) a theme. 2. Use its background/primary/accent/text consistently — background on
-   content surfaces, primary for emphasis, accent sparingly (≤10%), text at high contrast. 3. Keep one
-   type pairing across every slide/section.
-
-## Custom theme
-
-If none fit, generate one: name it for the feel, pick a cohesive 4-colour palette (one dark, one
-primary, one accent, one light/text) + a font pairing, show it for confirmation, then apply as above.
+If the theme itself is the deliverable, save a concise theme file with values, role mapping and application examples. Otherwise apply it directly without adding process documents. Verify consistency on representative headings, body text, figures and states, then identify the changed artifact.

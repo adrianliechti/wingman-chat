@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 export interface DrawerResizeConfig {
   defaultWidthVw: number;
@@ -11,6 +11,8 @@ export interface DrawerResizeConfig {
   setSiblingWidthVw?: (widthVw: number) => void;
   /** Minimum width in px the sibling drawer may be shrunk to during a drag. */
   siblingMinPx?: number;
+  /** Current visibility; a drag that closed the drawer restores the default width on the next open. */
+  show: boolean;
   setShow: (show: boolean) => void;
   /**
    * When true, the panel is anchored at right:0 (e.g. the agent drawer).
@@ -36,12 +38,25 @@ export function useDrawerResize({
   getSiblingOffsetPx,
   setSiblingWidthVw,
   siblingMinPx,
+  show,
   setShow,
   anchoredAtRight = false,
 }: DrawerResizeConfig): DrawerResizeReturn {
   const [widthVw, setWidthVw] = useState(defaultWidthVw);
   const [isResizing, setIsResizing] = useState(false);
   const resizingRef = useRef(false);
+  const resetOnOpenRef = useRef(false);
+
+  // A drag that closed the drawer leaves it at its minimum width. Restoring the
+  // default while it slides out would move the panel mid-animation (its translate
+  // is a percentage of its width), so wait until it is opened again and reset in a
+  // layout effect, before that first frame is painted.
+  useLayoutEffect(() => {
+    if (show && resetOnOpenRef.current) {
+      resetOnOpenRef.current = false;
+      setWidthVw(defaultWidthVw);
+    }
+  }, [show, defaultWidthVw]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -98,8 +113,8 @@ export function useDrawerResize({
         window.removeEventListener("mousemove", onMouseMove);
         window.removeEventListener("mouseup", onMouseUp);
         if (intendedWidthPx < closeThresholdPx) {
+          resetOnOpenRef.current = true;
           setShow(false);
-          setTimeout(() => setWidthVw(defaultWidthVw), 300);
         }
       };
 
@@ -115,7 +130,6 @@ export function useDrawerResize({
       maxPanelPx,
       minPanelPx,
       closeThresholdPx,
-      defaultWidthVw,
       setShow,
       anchoredAtRight,
     ],

@@ -1,0 +1,197 @@
+import { convertSchemaToJsonSchema } from "@tanstack/ai";
+import { renderToString } from "react-dom/server";
+import { beforeEach, expect, it, vi } from "vitest";
+import { useImageTool } from "./useImageTool";
+import type { Model } from "@/shared/types/chat";
+import { testClient } from "@/shared/lib/test-support/ai";
+import { chatSession, boundInterrupt } from "@/shared/lib/test-support/chatSession";
+import { assistantMessage, mediaFromDataUrl } from "@/shared/lib/messages";
+import { resolveToolHeader } from "@/features/chat/components/toolDisplay";
+
+const config = vi.hoisted(() => ({
+  client: { generateImage: vi.fn(async (..._args: unknown[]) => new Blob(["image"], { type: "image/png" })) },
+  renderer: { model: "gpt-image-2" } as { model?: string; elicitation?: boolean },
+  models: [] as Model[],
+}));
+vi.mock("@/shared/config", () => ({ getConfig: () => config }));
+// Stands in for the live catalog, which already applies config.models overrides.
+vi.mock("@/shared/hooks/useModelCatalog", () => ({ useModelCatalog: () => config.models }));
+vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({ useArtifacts: () => ({ fs: null }) }));
+vi.mock("@/shared/lib/utils", async (original) => ({
+  ...(await original<typeof import("@/shared/lib/utils")>()),
+  readAsDataURL: async () => "data:image/png;base64,aW1hZ2U=",
+}));
+
+beforeEach(() => {
+  config.renderer = { model: "gpt-image-2" };
+  config.models = [];
+  config.client.generateImage.mockReset().mockResolvedValue(new Blob(["image"], { type: "image/png" }));
+});
+
+function buildTool() {
+  let tool!: ReturnType<typeof useImageTool>;
+  function Harness() {
+    tool = useImageTool();
+    return null;
+  }
+  renderToString(<Harness />);
+  return tool!;
+}
+
+function parameters() {
+  return convertSchemaToJsonSchema(buildTool().inputSchema)!.properties as Record<
+    string,
+    { enum?: string[]; description?: string }
+  >;
+}
+
+it("advertises the exact configured image-quality default used when quality is omitted", async () => {
+  for (const qualities of [
+    ["low", "medium", "high"],
+    ["high", "medium"],
+  ] as const) {
+    config.models = [{ id: "gpt-image-2", name: "Image", supportedQualities: [...qualities] }];
+    expect(parameters().quality.description).toContain(`defaults to ${qualities[0]}`);
+    await buildTool().execute({ prompt: "An image with default quality" });
+    expect(config.client.generateImage.mock.calls.at(-1)?.[3]).toMatchObject({ quality: qualities[0] });
+  }
+});
+
+it("previews the image prompt and distinguishes generation from edits", () => {
+  const tool = buildTool();
+  const header = (args: object, running = false) =>
+    resolveToolHeader(tool, tool.name, JSON.stringify(args), { running });
+  expect(header({ prompt: "A woodland scene" }, true)).toMatchObject({
+    label: "Generating image…",
+    preview: "A woodland scene",
+  });
+  expect(header({ prompt: "Make it blue", images: ["/original.png"] }, true)).toMatchObject({
+    label: "Editing image…",
+    preview: "Make it blue",
+  });
+  expect(header({ prompt: "Make it blue", images: ["/original.png"] }).label).toBe("Edited image");
+});
+
+it("advertises the gateway image controls with config overrides, including disabled controls", () => {
+  config.models = [];
+  expect(parameters().aspect_ratio.enum).toContain("16:9");
+  expect(parameters().background).toBeUndefined();
+  config.models = [
+    {
+      id: "gpt-image-2",
+      name: "Image",
+      supportedQualities: [],
+      supportedAspectRatios: [],
+      supportedBackgrounds: ["transparent"],
+    },
+  ];
+  const properties = parameters();
+  expect(properties.quality).toBeUndefined();
+  expect(properties.aspect_ratio).toBeUndefined();
+  expect(properties.background.enum).toEqual(["transparent"]);
+});
+
+it("sends a configured supported quality instead of defaulting to unsupported low", async () => {
+  config.models = [{ id: "gpt-image-2", name: "Image", supportedQualities: ["medium", "high"] }];
+  const result = await buildTool().execute({ prompt: "A test image" });
+  expect(result).toMatchObject([{ type: "image" }]);
+  expect(config.client.generateImage.mock.calls.at(-1)?.[3]).toMatchObject({ quality: "medium" });
+});
+
+it("falls back to the first catalog renderer when none is configured", async () => {
+  config.renderer = {};
+  config.models = [
+    { id: "chat", name: "Chat", type: "completer" },
+    { id: "flux", name: "Flux", type: "renderer", supportedQualities: [] },
+  ];
+  expect(parameters().quality).toBeUndefined();
+  await buildTool().execute({ prompt: "A test image" });
+  expect(config.client.generateImage.mock.calls.at(-1)?.[0]).toBe("flux");
+});
+
+it("marks renderer failures as tool errors instead of displaying a successful creation", async () => {
+  config.client.generateImage.mockRejectedValueOnce(new Error("Renderer unavailable"));
+  const setError = vi.fn();
+  const result = await buildTool().execute({ prompt: "A test image" }, { context: { setError }, emitCustomEvent() {} });
+  expect(result).toEqual([{ type: "text", content: expect.stringContaining("Renderer unavailable") }]);
+  expect(setError).toHaveBeenCalledWith(expect.objectContaining({ code: "IMAGE_GENERATION_ERROR" }));
+});
+
+it("honors configured confirmation even in a context without an elicitation handler", async () => {
+  config.renderer.elicitation = true;
+  const result = await buildTool().execute({ prompt: "A test image" });
+  expect(config.client.generateImage).not.toHaveBeenCalled();
+  expect(result).toEqual([{ type: "text", content: expect.stringContaining("confirmation") }]);
+});
+
+it("does not generate an image when the user declines confirmation", async () => {
+  config.renderer.elicitation = true;
+  const elicit = vi.fn().mockResolvedValue({ action: "decline" });
+  await buildTool().execute({ prompt: "A test image" }, { context: { elicit }, emitCustomEvent() {} });
+  expect(elicit).toHaveBeenCalledOnce();
+  expect(config.client.generateImage).not.toHaveBeenCalled();
+});
+
+it("forwards current-message image attachments to the renderer", async () => {
+  await buildTool().execute(
+    { prompt: "Edit this image" },
+    {
+      context: {
+        content: () => [mediaFromDataUrl("data:image/png;base64,cmVmZXJlbmNl")],
+      },
+      emitCustomEvent() {},
+    },
+  );
+  const references = config.client.generateImage.mock.calls[0][2] as Blob[];
+  expect(references).toHaveLength(1);
+  expect(await references[0].text()).toBe("reference");
+});
+
+it("does not publish a late image result after cancellation", async () => {
+  const controller = new AbortController();
+  config.client.generateImage.mockImplementationOnce(async () => {
+    controller.abort();
+    return new Blob(["image"], { type: "image/png" });
+  });
+  await expect(
+    buildTool().execute({ prompt: "A test image" }, { context: { signal: controller.signal }, emitCustomEvent() {} }),
+  ).rejects.toMatchObject({
+    name: "AbortError",
+  });
+});
+
+it.each([true, false])("restores native image approval and does not prompt twice (approved=%s)", async (approved) => {
+  config.renderer.elicitation = true;
+  const tools = [buildTool()];
+  const complete = vi
+    .fn<Parameters<typeof testClient>[0]>()
+    .mockResolvedValueOnce(
+      assistantMessage([
+        {
+          type: "tool-call",
+          id: "image",
+          name: "create_image",
+          arguments: JSON.stringify({ prompt: "A test image" }),
+          state: "input-complete",
+        },
+      ]),
+    )
+    .mockResolvedValueOnce(assistantMessage("Done"));
+  const client = testClient(complete);
+  const original = chatSession(client, tools);
+  await original.ai.sendMessage("Make an image");
+  expect(config.client.generateImage).not.toHaveBeenCalled();
+  await expect.poll(() => original.store.value?.resume?.pendingInterrupts?.length).toBe(1);
+  original.ai.dispose();
+  const elicit = vi.fn().mockRejectedValue(new Error("Must not ask again"));
+  const restored = chatSession(client, tools, original.store, { createToolContext: () => ({ elicit }) });
+  await expect.poll(() => restored.ai.getInterruptState().interrupts.length).toBe(1);
+  const approval = boundInterrupt(restored.ai.getInterruptState().interrupts[0]);
+  expect(approval.kind).toBe("tool-approval");
+  approval.resolveInterrupt(approved);
+  await expect.poll(() => restored.finished.at(-1)?.status).toBe("completed");
+  expect(config.client.generateImage).toHaveBeenCalledTimes(approved ? 1 : 0);
+  expect(elicit).not.toHaveBeenCalled();
+  if (approved) expect(JSON.stringify(restored.store.value)).toContain('"value":"aW1hZ2U="');
+  restored.ai.dispose();
+});

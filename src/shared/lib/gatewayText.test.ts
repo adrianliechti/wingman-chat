@@ -1,0 +1,1134 @@
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { Client } from "@/shared/lib/client";
+import { run, streamRun, RunSidecar } from "@/shared/lib/agent";
+import { ChatClient } from "@tanstack/ai-client";
+import type { ThinkingPart, UIMessage } from "@tanstack/ai";
+import {
+  artifactSelectionPart,
+  assistantMessage,
+  mediaFromDataUrl,
+  messageText,
+  text,
+  textParts,
+  toolResults,
+  userMessage,
+} from "@/shared/lib/messages";
+import { packGatewayReasoning, readGatewayReasoning, type GatewayReasoning } from "@/shared/lib/reasoning";
+import {
+  assistant,
+  calls,
+  output,
+  response,
+  textItem,
+  callItem,
+  finished,
+  sse,
+  toolCall,
+  user,
+} from "@/shared/lib/test-support/ai";
+import { chatSession } from "@/shared/lib/test-support/chatSession";
+import type { Tool } from "@/shared/types/chat";
+import { retryHistory, withRunError } from "@/features/chat/lib/chatRuntime";
+import { chatCompaction } from "@/features/chat/lib/chatCompaction";
+import { streamChatWithUiRepair } from "@/features/chat/lib/inlineUiRepair";
+
+const prompt: UIMessage[] = [user("Go")];
+const chatStreams = [
+  { name: "native run", stream: streamRun },
+  { name: "UI repair", stream: streamChatWithUiRepair },
+];
+const thinking = (state: GatewayReasoning): ThinkingPart => ({
+  type: "thinking",
+  content: state.summary ?? state.text ?? "",
+  stepId: state.id,
+  signature: packGatewayReasoning(state),
+});
+const reasoningOf = (message: UIMessage | undefined) =>
+  message?.parts.flatMap((part) => (part.type === "thinking" ? [readGatewayReasoning(part.signature)] : []));
+let fetchMock: ReturnType<typeof vi.fn>;
+beforeEach(() => {
+  fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("window", { location: new URL("http://localhost") });
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+it("replays native widgets without sending their HTML, metadata or structured app data to the gateway", async () => {
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+  const history = [
+    ...prompt,
+    assistantMessage([
+      toolCall("app-call", "app"),
+      {
+        type: "ui-resource",
+        toolCallId: "app-call",
+        serverId: "server",
+        toolName: "app",
+        resource: { uri: "ui://app", mimeType: "text/html;profile=mcp-app", text: "<p>Private widget HTML</p>" },
+        meta: {
+          ui: { private: "resource secret" },
+          mcpResult: {
+            content: [],
+            structuredContent: { private: "structured secret" },
+            _meta: { private: "tool secret" },
+          },
+        },
+      },
+      {
+        type: "tool-result",
+        toolCallId: "app-call",
+        state: "complete",
+        content: "Visible result",
+      },
+    ]),
+    ...prompt,
+  ];
+  const result = await run(new Client(), "model", "", history, []);
+  expect(result.status).toBe("completed");
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+  expect(JSON.stringify(body)).toContain("Visible result");
+  expect(JSON.stringify(body)).not.toContain("Private widget HTML");
+  expect(JSON.stringify(body)).not.toContain("resource secret");
+  expect(JSON.stringify(body)).not.toContain("structured secret");
+  expect(JSON.stringify(body)).not.toContain("tool secret");
+});
+
+it("parses final-answer JSON when a response also contains commentary", async () => {
+  fetchMock.mockResolvedValueOnce(
+    finished(
+      response([
+        { ...textItem('{"answer":"Working"}'), id: "commentary", phase: "commentary" },
+        { ...textItem('{"answer":"Done"}'), id: "final", phase: "final_answer" },
+      ]),
+    ),
+  );
+  expect(await new Client().parse("model", "", "Go", z.object({ answer: z.string() }), "review")).toEqual({
+    answer: "Done",
+  });
+});
+
+it("uses the authoritative completed text when deltas stop before the final response", async () => {
+  fetchMock.mockResolvedValueOnce(
+    sse([
+      { type: "response.created", response: response([], { status: "in_progress" }) },
+      { type: "response.output_item.added", output_index: 0, item: { ...textItem(""), content: [] } },
+      { type: "response.output_text.delta", item_id: "msg_test", output_index: 0, content_index: 0, delta: "Hello" },
+      { type: "response.completed", response: response([textItem("Hello world")]) },
+    ]),
+  );
+  const result = await run(new Client(), "model", "", prompt, []);
+  expect(result.status).toBe("completed");
+  expect(result.messages.at(-1)?.parts).toEqual([{ type: "text", content: "Hello world" }]);
+});
+
+it("preserves both visible signed reasoning and its separate summary on replay", async () => {
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+  const history: UIMessage[] = [
+    ...prompt,
+    assistantMessage([
+      thinking({
+        id: "rs_review",
+        text: "Signed visible reasoning",
+        summary: "Short summary",
+        encryptedContent: "signature",
+        model: "model",
+      }),
+      text("First answer"),
+    ]),
+    ...prompt,
+  ];
+  const result = await run(new Client(), "model", "", history, []);
+  expect(result.status).toBe("completed");
+  const item = JSON.parse(fetchMock.mock.calls[0][1].body).input.find(
+    (item: { type: string }) => item.type === "reasoning",
+  );
+  expect(item).toMatchObject({
+    encrypted_content: "signature",
+    content: [{ type: "reasoning_text", text: "Signed visible reasoning" }],
+    summary: [{ type: "summary_text", text: "Short summary" }],
+  });
+});
+
+it("replays Haiku 5.5 signature-only reasoning through a tool round trip", async () => {
+  const model = "claude-haiku-5-5";
+  const item = {
+    type: "reasoning",
+    id: "rs_haiku",
+    encrypted_content: "haiku-signature",
+    summary: [],
+    status: "completed",
+  };
+  fetchMock
+    .mockResolvedValueOnce(finished(response([item, callItem("{}", "lookup", "lookup_1")], { model })))
+    .mockResolvedValueOnce(finished(response([textItem("42")], { model })));
+  const tool: Tool = {
+    name: "lookup",
+    description: "Look up the answer",
+    inputSchema: z.strictObject({}),
+    execute: vi.fn(async () => output("42")),
+  };
+  const result = await run(new Client(), model, "", prompt, [tool], {
+    options: { effort: "medium" },
+  });
+  expect(result.status).toBe("completed");
+  expect(messageText(result.messages.at(-1)!)).toBe("42");
+  expect(tool.execute).toHaveBeenCalledOnce();
+  const body = JSON.parse(fetchMock.mock.calls[1][1].body);
+  expect(body.input.find((part: { type: string }) => part.type === "reasoning")).toMatchObject({
+    id: item.id,
+    encrypted_content: item.encrypted_content,
+    summary: [],
+  });
+  expect(result.messages.flatMap(reasoningOf)).toContainEqual(
+    expect.objectContaining({ id: item.id, encryptedContent: item.encrypted_content, model }),
+  );
+});
+
+it("fails a response the output limit cut mid tool call without running the tool", async () => {
+  const cut = response([callItem('{"content":"Long', "write")], {
+    status: "incomplete",
+    incomplete_details: { reason: "max_output_tokens" },
+  });
+  fetchMock.mockImplementation(async () => finished(cut));
+  const tool: Tool = {
+    name: "write",
+    description: "Write a file",
+    inputSchema: z.looseObject({ content: z.string() }),
+    execute: vi.fn(async () => output("Written")),
+  };
+  const result = await run(new Client(), "model", "", prompt, [tool]);
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(tool.execute).not.toHaveBeenCalled();
+  expect(result.error?.code).toBe("OUTPUT_TRUNCATED");
+});
+
+it("extracts Haiku 5.5 structured output after a signature-only reasoning block", async () => {
+  fetchMock.mockResolvedValueOnce(
+    finished(
+      response([
+        { type: "reasoning", id: "rs_haiku", encrypted_content: "haiku-signature", summary: [], status: "completed" },
+        textItem('{"answer":"Done"}'),
+      ]),
+    ),
+  );
+  expect(await new Client().parse("claude-haiku-5-5", "", "Go", z.object({ answer: z.string() }), "review")).toEqual({
+    answer: "Done",
+  });
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body).max_output_tokens).toBe(16_000);
+});
+
+it.each([
+  ["invalid_encrypted_content", "Encrypted content could not be verified"],
+  ["invalid_request_error", "messages.7: The final block in an assistant message cannot be `thinking`."],
+])("retries rejected reasoning (%s) once and clears it from saved history", async (code, message) => {
+  fetchMock
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: { code, message },
+        }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      ),
+    )
+    .mockResolvedValueOnce(finished(response([textItem("Recovered")])));
+  const history: UIMessage[] = [
+    ...prompt,
+    assistantMessage([
+      thinking({ id: "rs_review", text: "Plan", encryptedContent: "old-key", model: "model" }),
+      text("First answer"),
+    ]),
+    ...prompt,
+  ];
+  const result = await run(new Client(), "model", "", history, []);
+  expect(result.status).toBe("completed");
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(
+    JSON.parse(fetchMock.mock.calls[1][1].body).input.some((part: { type: string }) => part.type === "reasoning"),
+  ).toBe(false);
+  expect(result.messages[1].parts[0]).toMatchObject({ type: "thinking", content: "Plan" });
+  expect(reasoningOf(result.messages[1])).toEqual([{ id: "rs_review", text: "Plan", model: "model" }]);
+  expect(JSON.stringify(result.messages)).not.toContain("old-key");
+  expect(JSON.stringify(history)).toContain("old-key");
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Continued")])));
+  const restored = JSON.parse(JSON.stringify(result.messages));
+  expect((await run(new Client(), "model", "", [...restored, user("Go")], [])).status).toBe("completed");
+  expect(JSON.stringify(JSON.parse(fetchMock.mock.calls[2][1].body).input)).not.toContain("old-key");
+});
+
+it.each([false, true])("excludes unfinished reasoning on retry with pending tool call: %s", async (pendingCall) => {
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Recovered")])));
+  const execute = vi.fn<Tool["execute"]>(async () => output("Already read"));
+  const messages: UIMessage[] = [
+    ...prompt,
+    assistantMessage([
+      thinking({ id: "rs_tool", text: "Read the skill", encryptedContent: "tool-key", model: "model" }),
+      { ...toolCall("read-skill", "read"), state: "complete" },
+      { type: "tool-result", toolCallId: "read-skill", content: "Skill instructions", state: "complete" },
+    ]),
+    assistantMessage([
+      thinking({
+        id: "rs_unfinished",
+        text: "Preparing the artifact",
+        encryptedContent: "unfinished-key",
+        model: "model",
+      }),
+      ...(pendingCall ? [{ ...toolCall("unfinished-call", "read"), state: "input-streaming" as const }] : []),
+    ]),
+    assistantMessage([], { metadata: { error: { code: "TIMEOUT", message: "Model response timed out after 60s" } } }),
+  ];
+  const before = JSON.stringify(messages);
+  const retry = retryHistory(messages)!;
+  const result = await run(
+    new Client(),
+    "model",
+    "",
+    [...retry.history, retry.resend],
+    [{ name: "read", description: "Test tool", inputSchema: z.looseObject({}), execute: execute }],
+  );
+  expect(result.status).toBe("completed");
+  const input = JSON.parse(fetchMock.mock.calls[0][1].body).input;
+  expect(input.filter((part: { type: string }) => part.type === "reasoning")).toMatchObject([
+    { id: "rs_tool", encrypted_content: "tool-key" },
+  ]);
+  expect(input).toContainEqual(expect.objectContaining({ type: "function_call", call_id: "read-skill" }));
+  expect(input).toContainEqual({ type: "function_call_output", call_id: "read-skill", output: "Skill instructions" });
+  expect(JSON.stringify(input)).not.toMatch(/unfinished-key|unfinished-call|rs_unfinished/);
+  expect(execute).not.toHaveBeenCalled();
+  expect(JSON.stringify(messages)).toBe(before);
+  // The unfinished attempt is regenerated rather than continued, so its reasoning leaves the transcript.
+  expect(JSON.stringify(result.messages)).not.toContain("Preparing the artifact");
+});
+
+it.each(chatStreams)(
+  "retries every committed tool round after a later model call fails ($name)",
+  async ({ stream }) => {
+    fetchMock
+      .mockResolvedValueOnce(finished(response([callItem("{}", "lookup", "first")], { id: "resp_first" })))
+      .mockResolvedValueOnce(finished(response([callItem("{}", "lookup", "second")], { id: "resp_second" })))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "Bad request", code: "bad_request" } }), { status: 400 }),
+      )
+      .mockResolvedValueOnce(finished(response([textItem("Recovered")])));
+    const execute = vi
+      .fn<Tool["execute"]>()
+      .mockResolvedValueOnce(output("First committed result"))
+      .mockResolvedValueOnce(output("Second committed result"));
+    const session = chatSession(
+      new Client(),
+      [{ name: "lookup", description: "Look up a value", inputSchema: z.object({}), execute }],
+      {},
+      {},
+      stream,
+    );
+    try {
+      await session.ai.sendMessage("Look up two values");
+      expect(session.finished.at(-1)?.status).toBe("failed");
+      const messages = withRunError(session.ai.getMessages(), { code: "API_ERROR", message: "Bad request" });
+      const retry = retryHistory(messages)!;
+      session.ai.setMessagesManually(retry.history);
+      await session.ai.append(retry.resend);
+      expect(session.finished.at(-1)?.status).toBe("completed");
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      const input = JSON.parse(fetchMock.mock.calls[3][1].body).input;
+      expect(input).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "function_call", call_id: "first" }),
+          { type: "function_call_output", call_id: "first", output: "First committed result" },
+          expect.objectContaining({ type: "function_call", call_id: "second" }),
+          { type: "function_call_output", call_id: "second", output: "Second committed result" },
+        ]),
+      );
+    } finally {
+      session.ai.dispose();
+    }
+  },
+);
+
+it.each(chatStreams)(
+  "keeps each model call's response items on live and hydrated replay ($name)",
+  async ({ stream }) => {
+    fetchMock
+      .mockResolvedValueOnce(
+        finished(
+          response(
+            [
+              { ...textItem("Checking"), id: "msg_commentary", phase: "commentary" },
+              callItem("{}", "lookup", "lookup_1"),
+            ],
+            { id: "resp_lookup" },
+          ),
+        ),
+      )
+      .mockResolvedValueOnce(
+        finished(response([{ ...textItem("Answer"), id: "msg_final", phase: "final_answer" }], { id: "resp_final" })),
+      )
+      .mockResolvedValueOnce(finished(response([{ ...textItem("Continued"), id: "msg_next" }])))
+      .mockResolvedValueOnce(finished(response([{ ...textItem("Reopened"), id: "msg_reopened" }])));
+    const execute = vi.fn<Tool["execute"]>(async () => output("Evidence"));
+    const tools = [{ name: "lookup", description: "Look up a value", inputSchema: z.object({}), execute }];
+    const original = chatSession(new Client(), tools, {}, {}, stream);
+    try {
+      await original.ai.sendMessage("Look up a value");
+      const assistants = original.store.value!.messages.filter((message) => message.role === "assistant");
+      expect(assistants.map((message) => message.metadata?.tanstack)).toMatchObject([
+        { responseId: "resp_lookup", responseItems: [{ id: "msg_commentary", phase: "commentary" }] },
+        { responseId: "resp_final", responseItems: [{ id: "msg_final", phase: "final_answer" }] },
+      ]);
+      await original.ai.sendMessage("Continue");
+    } finally {
+      original.ai.dispose();
+    }
+    const restored = chatSession(new Client(), tools, original.store, {}, stream);
+    try {
+      await restored.ai.sendMessage("Continue after reopening");
+      expect(execute).toHaveBeenCalledOnce();
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      for (const index of [2, 3]) {
+        const input = JSON.parse(fetchMock.mock.calls[index][1].body).input;
+        const ids = input.flatMap((item: { id?: string }) => (item.id ? [item.id] : []));
+        expect(ids).toEqual([...new Set(ids)]);
+        expect(input).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: "msg_commentary",
+              phase: "commentary",
+              content: [expect.objectContaining({ type: "output_text", text: "Checking" })],
+            }),
+            expect.objectContaining({
+              id: "msg_final",
+              phase: "final_answer",
+              content: [expect.objectContaining({ type: "output_text", text: "Answer" })],
+            }),
+          ]),
+        );
+      }
+    } finally {
+      restored.ai.dispose();
+    }
+  },
+);
+
+it("retains reasoning model identity at the live chat persistence boundary", async () => {
+  fetchMock.mockResolvedValueOnce(
+    finished(
+      response([
+        { type: "reasoning", id: "rs_review", encrypted_content: "signature", summary: [], status: "completed" },
+        textItem("Done"),
+      ]),
+    ),
+  );
+  const session = chatSession(new Client(), []);
+  try {
+    await session.ai.sendMessage("Go");
+    const stored = session.sidecar.apply(session.ai.getMessages());
+    expect(stored.flatMap(reasoningOf)).toContainEqual(
+      expect.objectContaining({ encryptedContent: "signature", model: "model" }),
+    );
+  } finally {
+    session.ai.dispose();
+  }
+});
+
+it("does not replay model-a ciphertext to model-b after switching a live chat", async () => {
+  fetchMock
+    .mockResolvedValueOnce(
+      finished(
+        response(
+          [
+            {
+              type: "reasoning",
+              id: "rs_review",
+              encrypted_content: "model-a-signature",
+              summary: [],
+              status: "completed",
+            },
+            textItem("First answer"),
+          ],
+          { model: "model-a" },
+        ),
+      ),
+    )
+    .mockResolvedValueOnce(finished(response([textItem("Second answer")], { model: "model-b" })));
+  const sidecar = new RunSidecar();
+  const client = new Client();
+  let model = "model-a";
+  const ai = new ChatClient({
+    threadId: "review-chat",
+    connection: {
+      connect: (messages, _data, signal, ctx) =>
+        streamRun(client, model, "", sidecar.apply(messages as UIMessage[]), [], {
+          sidecar,
+          options: { signal },
+          runId: ctx.runId,
+          threadId: ctx.threadId,
+        }),
+    },
+  });
+  try {
+    await ai.sendMessage("First");
+    model = "model-b";
+    await ai.sendMessage("Second");
+    const input = JSON.parse(fetchMock.mock.calls[1][1].body).input;
+    expect(input.filter((item: { type: string }) => item.type === "reasoning")).toEqual([]);
+  } finally {
+    ai.dispose();
+  }
+});
+
+function mockOpenStream() {
+  let body!: ReadableStreamDefaultController<Uint8Array>;
+  const encoder = new TextEncoder();
+  const emit = (event: object) => body.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+  fetchMock.mockImplementationOnce(
+    (_url, init: RequestInit) =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            body = controller;
+            emit({ type: "response.created", response: response([], { status: "in_progress" }) });
+            init.signal?.addEventListener("abort", () => body.error(init.signal?.reason), { once: true });
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  );
+  return { emit, close: () => body.close() };
+}
+
+function mockPendingResponse() {
+  let respond!: (response: Response) => void;
+  let signal: AbortSignal | undefined;
+  fetchMock.mockImplementation(
+    (_url, init: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        respond = resolve;
+        const requestSignal = init.signal;
+        signal = requestSignal ?? undefined;
+        requestSignal?.addEventListener("abort", () => reject(requestSignal.reason), { once: true });
+      }),
+  );
+  return {
+    respond: (response: Response) => respond(response),
+    get signal() {
+      return signal;
+    },
+  };
+}
+
+it.each(["response.reasoning_text.delta", "response.reasoning_summary_text.delta", "response.output_text.delta"])(
+  "streams %s past an hour with gaps longer than ten minutes",
+  async (type) => {
+    vi.useFakeTimers();
+    const stream = mockOpenStream();
+    let settled = false;
+    const request = run(new Client(), "model", "", prompt, []).finally(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    for (let i = 0; i < 4; i++) {
+      await vi.advanceTimersByTimeAsync(20 * 60 * 1000);
+      expect(settled).toBe(false);
+      stream.emit({
+        type,
+        item_id: "item_test",
+        output_index: 0,
+        content_index: 0,
+        delta: "Still working. ",
+        response: response([], { status: "in_progress" }),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    stream.emit({ type: "response.completed", response: response([textItem("Done")]) });
+    stream.close();
+    const result = await request;
+    expect(result.status).toBe("completed");
+    expect(result.messages.at(-1)?.parts).toContainEqual({ type: "text", content: "Done" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
+it.each(["complete", "stop"])("allows a silent response to %s after an hour", async (end) => {
+  vi.useFakeTimers();
+  const controller = new AbortController();
+  const stream = mockOpenStream();
+  let settled = false;
+  const request = run(new Client(), "model", "", prompt, [], { options: { signal: controller.signal } }).finally(() => {
+    settled = true;
+  });
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+  await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+  expect(settled).toBe(false);
+  if (end === "complete") {
+    stream.emit({ type: "response.completed", response: response([textItem("Done")]) });
+    stream.close();
+  } else controller.abort();
+  const result = await request;
+  expect(result.status).toBe(end === "complete" ? "completed" : "aborted");
+  if (end === "complete") expect(result.messages.at(-1)?.parts).toEqual([{ type: "text", content: "Done" }]);
+  else expect(result.error).toMatchObject({ code: "CANCELLED" });
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("keeps the native timeout and retries while waiting for response headers", async () => {
+  vi.useFakeTimers();
+  mockPendingResponse();
+  const request = run(new Client(), "model", "", prompt, []);
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+  await vi.advanceTimersByTimeAsync(3 * 5 * 60 * 1000 + 5_000);
+  expect(await request).toMatchObject({ status: "failed", error: { code: "TIMEOUT" } });
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(["headers", "retry"])("stops while waiting for %s without issuing another request", async (phase) => {
+  vi.useFakeTimers();
+  const controller = new AbortController();
+  const pending = mockPendingResponse();
+  const request = run(new Client(), "model", "", prompt, [], { options: { signal: controller.signal } });
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+  await vi.advanceTimersByTimeAsync(phase === "headers" ? 4 * 60_000 : 5 * 60_000);
+  expect(fetchMock).toHaveBeenCalledOnce();
+  controller.abort();
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(await request).toMatchObject({ status: "aborted", error: { code: "CANCELLED" } });
+  expect(pending.signal?.aborted).toBe(true);
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(["complete", "stop"])(
+  "lets a tool %s after an hour without a response timer cancelling the run",
+  async (end) => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    fetchMock.mockResolvedValueOnce(finished(response([callItem()])));
+    // Each model iteration gets a fresh header deadline, even after a long tool.
+    const pending = mockPendingResponse();
+    let toolSignal: AbortSignal | undefined;
+    let finishTool!: () => void;
+    const execute = vi.fn<Tool["execute"]>(async (_input, execution) => {
+      toolSignal = execution?.abortSignal;
+      await new Promise<void>((resolve, reject) => {
+        finishTool = resolve;
+        toolSignal?.addEventListener("abort", () => reject(toolSignal?.reason), { once: true });
+      });
+      return output("Written");
+    });
+    let settled = false;
+    const request = run(
+      new Client(),
+      "model",
+      "",
+      prompt,
+      [{ name: "write", description: "Test tool", inputSchema: z.looseObject({}), execute }],
+      { options: { signal: controller.signal } },
+    ).finally(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+    // Advance deadlines without running an hour of TanStack's 10 ms event polling.
+    vi.advanceTimersByTime(60 * 60_000);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    expect(toolSignal?.aborted).toBe(false);
+    expect(controller.signal.aborted).toBe(false);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    if (end === "complete") {
+      finishTool();
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      await vi.advanceTimersByTimeAsync(4 * 60_000);
+      expect(settled).toBe(false);
+      pending.respond(finished(response([textItem("Done")])));
+    } else controller.abort();
+    const result = await request;
+    expect(result.status).toBe(end === "complete" ? "completed" : "aborted");
+    const results = result.messages.flatMap(toolResults);
+    if (end === "complete") {
+      expect(results).toHaveLength(1);
+      expect(result.messages.at(-1)?.parts).toEqual([text("Done")]);
+      expect(controller.signal.aborted).toBe(false);
+    } else {
+      expect(toolSignal?.aborted).toBe(true);
+      expect(results).toHaveLength(0);
+      expect(result.error).toMatchObject({ code: "CANCELLED" });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(end === "complete" ? 2 : 1);
+    expect(execute).toHaveBeenCalledOnce();
+    // Let the last native tool-event polling tick settle after cancellation.
+    await vi.advanceTimersByTimeAsync(10);
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
+it("waits past the gateway's first-token window for response headers", async () => {
+  vi.useFakeTimers();
+  const pending = mockPendingResponse();
+  const request = run(new Client(), "model", "", prompt, []);
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+  await vi.advanceTimersByTimeAsync(4 * 60 * 1000);
+  expect(pending.signal?.aborted).toBe(false);
+  pending.respond(finished(response([textItem("Done")])));
+  expect((await request).status).toBe("completed");
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+it.each(["complete", "stop"])(
+  "lets a compaction summary %s after an hour without cancelling its parent",
+  async (end) => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const stream = mockOpenStream();
+    const client = new Client();
+    let settled = false;
+    const request = run(
+      client,
+      "model",
+      "",
+      [user("Previous request"), assistantMessage([text("Large evidence ".repeat(1000))]), user("Current request")],
+      [],
+      {
+        options: { signal: controller.signal },
+        sharedMiddleware: (signal) => [chatCompaction(client, 1000, "model", signal)],
+      },
+    ).finally(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(settled).toBe(false);
+    expect(controller.signal.aborted).toBe(false);
+    if (end === "complete") {
+      fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+      stream.emit({ type: "response.completed", response: response([textItem("Earlier evidence was verified.")]) });
+      stream.close();
+    } else controller.abort();
+    const result = await request;
+    expect(result.status).toBe(end === "complete" ? "completed" : "aborted");
+    expect(fetchMock).toHaveBeenCalledTimes(end === "complete" ? 2 : 1);
+    if (end === "complete") {
+      expect(result.messages.at(-1)?.parts).toEqual([text("Done")]);
+      expect(controller.signal.aborted).toBe(false);
+    } else expect(result.error).toMatchObject({ code: "CANCELLED" });
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
+it("retains selected artifact line locations in the model request", async () => {
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+  await run(
+    new Client(),
+    "model",
+    "",
+    [
+      userMessage([
+        text("Edit the second occurrence"),
+        artifactSelectionPart({ path: "/notes.md", text: "Repeated phrase", startLine: 100, endLine: 102 }),
+      ]),
+    ],
+    [],
+  );
+  const input = JSON.parse(fetchMock.mock.calls[0][1].body).input;
+  expect(JSON.stringify(input)).toContain("lines 100-102");
+  expect(input[0].content.map((part: { text: string }) => part.text).join("\n")).toBe(
+    "Edit the second occurrence\nSelected text in /notes.md (lines 100-102):\n```\nRepeated phrase\n```",
+  );
+});
+
+it("keeps schema validation and optional/null semantics when selecting final JSON", async () => {
+  const schema = z.object({ optional: z.string().optional(), nullable: z.string().nullable() });
+  fetchMock.mockResolvedValueOnce(
+    finished(
+      response([
+        { ...textItem("Checking the result"), id: "commentary", phase: "commentary" },
+        { ...textItem('{"optional":null,"nullable":null}'), id: "final", phase: "final_answer" },
+      ]),
+    ),
+  );
+  expect(await new Client().parse("model", "", "Go", schema, "fixture")).toEqual({ nullable: null });
+});
+
+it("does not accept valid commentary JSON when the final schema answer is invalid", async () => {
+  fetchMock.mockResolvedValueOnce(
+    finished(
+      response([
+        { ...textItem('{"answer":"Commentary"}'), id: "commentary", phase: "commentary" },
+        { ...textItem("Invalid final JSON"), id: "final", phase: "final_answer" },
+      ]),
+    ),
+  );
+  await expect(new Client().parse("model", "", "Go", z.object({ answer: z.string() }), "fixture")).rejects.toThrow(
+    /structured output/,
+  );
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+it("persists streamed phases on text parts and replays them after hydration", async () => {
+  const commentary = { ...textItem("Working"), id: "commentary", phase: "commentary" };
+  const final = { ...textItem("Done"), id: "final", phase: "final_answer" };
+  let connection!: ReadableStreamDefaultController<Uint8Array>;
+  fetchMock.mockResolvedValueOnce(
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(stream) {
+          connection = stream;
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    ),
+  );
+  const original = chatSession(new Client(), []);
+  const sending = original.ai.sendMessage("Go");
+  try {
+    const partial = await sse([
+      { type: "response.created", response: response([], { status: "in_progress" }) },
+      { type: "response.output_item.added", output_index: 0, item: { ...commentary, content: [] } },
+      {
+        type: "response.output_text.delta",
+        item_id: commentary.id,
+        output_index: 0,
+        content_index: 0,
+        delta: "Working",
+      },
+    ]).text();
+    connection.enqueue(new TextEncoder().encode(partial));
+    await expect
+      .poll(() => original.store.value?.messages.at(-1)?.parts)
+      .toEqual([text("Working", { phase: "commentary" })]);
+    expect(JSON.stringify(original.store.value?.messages)).not.toContain("textSegments");
+    const rest = await sse([
+      { type: "response.output_item.done", output_index: 0, item: commentary },
+      { type: "response.output_item.added", output_index: 1, item: { ...final, content: [] } },
+      { type: "response.output_text.delta", item_id: final.id, output_index: 1, content_index: 0, delta: "Done" },
+      { type: "response.completed", response: response([commentary, final]) },
+    ]).text();
+    connection.enqueue(new TextEncoder().encode(rest));
+    connection.close();
+    await sending;
+    expect(original.store.value?.messages.at(-1)?.parts).toEqual([
+      text("Working", { phase: "commentary" }),
+      text("Done", { phase: "final_answer" }),
+    ]);
+  } finally {
+    original.ai.dispose();
+  }
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Next")])));
+  const restored = chatSession(new Client(), [], original.store);
+  try {
+    await restored.ai.sendMessage("Continue");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).input).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: "assistant", content: "Working", phase: "commentary" }),
+        expect.objectContaining({ role: "assistant", content: "Done", phase: "final_answer" }),
+      ]),
+    );
+  } finally {
+    restored.ai.dispose();
+  }
+});
+
+it("replaces earlier text in the live native client and its persisted history", async () => {
+  fetchMock.mockResolvedValueOnce(
+    sse([
+      { type: "response.created", response: response([], { status: "in_progress" }) },
+      { type: "response.output_item.added", output_index: 0, item: { ...textItem(""), content: [] } },
+      { type: "response.output_text.delta", item_id: "msg_test", output_index: 0, content_index: 0, delta: "Draft" },
+      { type: "response.completed", response: response([{ ...textItem("Final answer"), phase: "final_answer" }]) },
+    ]),
+  );
+  const session = chatSession(new Client(), []);
+  try {
+    await session.ai.sendMessage("Go");
+    expect(session.ai.getMessages().at(-1)?.parts).toMatchObject([{ type: "text", content: "Final answer" }]);
+    const restored = session.store.value!.messages;
+    expect(messageText(restored.at(-1)!)).toBe("Final answer");
+    expect(textParts(restored.at(-1)!)).toEqual([text("Final answer", { phase: "final_answer" })]);
+    expect(restored.at(-1)!.metadata).not.toHaveProperty("textSegments");
+    fetchMock.mockResolvedValueOnce(finished(response([textItem("Next")])));
+    await session.ai.sendMessage("Continue");
+    const input = JSON.parse(fetchMock.mock.calls[1][1].body).input;
+    // A same-model replay keeps the Responses item, including its id and phase.
+    expect(input).toContainEqual(
+      expect.objectContaining({
+        role: "assistant",
+        phase: "final_answer",
+        content: [expect.objectContaining({ type: "output_text", text: "Final answer" })],
+      }),
+    );
+    expect(JSON.stringify(input)).not.toContain("Draft");
+  } finally {
+    session.ai.dispose();
+  }
+});
+
+it("retains rich results and executes a tool once when completed text rewrites a tool turn", async () => {
+  fetchMock
+    .mockResolvedValueOnce(
+      sse([
+        { type: "response.created", response: response([], { status: "in_progress" }) },
+        { type: "response.output_text.delta", item_id: "msg_test", output_index: 0, content_index: 0, delta: "Draft" },
+        { type: "response.completed", response: response([textItem("Checked"), callItem()]) },
+      ]),
+    )
+    .mockResolvedValueOnce(finished(response([textItem("Done")])));
+  const image = mediaFromDataUrl("data:image/png;base64,AQ==");
+  const execute = vi.fn<Tool["execute"]>(async (_input, execution) => {
+    const ctx = execution?.context;
+    ctx?.setMeta?.({ file: "/notes.md" });
+    return [image];
+  });
+  const result = await run(new Client(), "model", "", prompt, [
+    { name: "write", description: "Test tool", inputSchema: z.looseObject({}), execute: execute },
+  ]);
+  expect(result.status).toBe("completed");
+  expect(execute).toHaveBeenCalledOnce();
+  expect(result.messages.flatMap((message) => message.parts)).toMatchObject([
+    { type: "text", content: "Go" },
+    { type: "text", content: "Checked" },
+    { type: "tool-call", id: "call_test" },
+    { type: "tool-result", toolCallId: "call_test", content: [image], metadata: { meta: { file: "/notes.md" } } },
+    { type: "text", content: "Done" },
+  ]);
+});
+
+it("replays live signed text and summary for the same deployment alias after persistence", async () => {
+  const item = {
+    type: "reasoning",
+    id: "rs_review",
+    encrypted_content: "signature",
+    status: "completed",
+    content: [{ type: "reasoning_text", text: "Signed text" }],
+    summary: [{ type: "summary_text", text: "Summary" }],
+  };
+  fetchMock.mockResolvedValueOnce(finished(response([item, textItem("Done")], { model: "resolved-provider-model" })));
+  const session = chatSession(new Client(), []);
+  try {
+    await session.ai.sendMessage("Go");
+    const restored: UIMessage[] = JSON.parse(JSON.stringify(session.sidecar.apply(session.ai.getMessages())));
+    expect(reasoningOf(restored.at(-1))).toEqual([
+      { id: "rs_review", text: "Signed text", summary: "Summary", encryptedContent: "signature", model: "model" },
+    ]);
+    fetchMock.mockResolvedValueOnce(finished(response([textItem("Next")])));
+    await run(new Client(), "model", "", [...restored, user("Go")], [], { prepareMessages: (messages) => messages });
+    const input = JSON.parse(fetchMock.mock.calls[1][1].body).input;
+    expect(input.find((part: { type: string }) => part.type === "reasoning")).toMatchObject({
+      type: item.type,
+      id: item.id,
+      encrypted_content: item.encrypted_content,
+      content: item.content,
+      summary: item.summary,
+    });
+  } finally {
+    session.ai.dispose();
+  }
+});
+
+it("streams requested reasoning summaries and preserves them after chat persistence", async () => {
+  const summary = "Checking the calculation";
+  const item = {
+    type: "reasoning",
+    id: "rs_summary",
+    encrypted_content: "signature",
+    summary: [{ type: "summary_text", text: summary }],
+    status: "completed",
+  };
+  fetchMock.mockResolvedValueOnce(
+    sse([
+      { type: "response.created", response: response([], { status: "in_progress" }) },
+      { type: "response.output_item.added", output_index: 0, item: { ...item, encrypted_content: null, summary: [] } },
+      {
+        type: "response.reasoning_summary_text.delta",
+        item_id: item.id,
+        output_index: 0,
+        summary_index: 0,
+        delta: summary,
+      },
+      { type: "response.output_item.done", output_index: 0, item },
+      { type: "response.output_text.delta", item_id: "msg_test", output_index: 1, content_index: 0, delta: "Done" },
+      { type: "response.completed", response: response([item, textItem("Done")]) },
+    ]),
+  );
+  const session = chatSession(new Client(), []);
+  const streamed: string[] = [];
+  session.ai.updateOptions({
+    onChunk: (chunk) => {
+      if (chunk.type === "REASONING_MESSAGE_CONTENT") streamed.push(chunk.delta);
+    },
+  });
+  try {
+    await session.ai.sendMessage("Go");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning).toEqual({ summary: "auto" });
+    expect(streamed).toContain(summary);
+    expect(session.store.value).toBeDefined();
+    const restored = session.store.value!.messages;
+    expect(restored.flatMap(reasoningOf)).toContainEqual(
+      expect.objectContaining({ summary, encryptedContent: "signature", model: "model" }),
+    );
+  } finally {
+    session.ai.dispose();
+  }
+});
+
+it("keeps visible reasoning deltas separate from summary when completion omits visible content", async () => {
+  const item = {
+    type: "reasoning",
+    id: "rs_review",
+    encrypted_content: "signature",
+    summary: [{ type: "summary_text", text: "Summary" }],
+  };
+  fetchMock.mockResolvedValueOnce(
+    sse([
+      { type: "response.created", response: response([], { status: "in_progress" }) },
+      { type: "response.output_item.added", output_index: 0, item: { ...item, encrypted_content: null, summary: [] } },
+      {
+        type: "response.reasoning_text.delta",
+        item_id: "rs_review",
+        output_index: 0,
+        content_index: 0,
+        delta: "Signed text",
+      },
+      {
+        type: "response.reasoning_summary_text.delta",
+        item_id: "rs_review",
+        output_index: 0,
+        summary_index: 0,
+        delta: "Summary",
+      },
+      { type: "response.output_text.delta", item_id: "msg_test", output_index: 1, content_index: 0, delta: "Done" },
+      { type: "response.completed", response: response([item, textItem("Done")]) },
+    ]),
+  );
+  const result = await run(new Client(), "model", "", prompt, []);
+  expect(result.status).toBe("completed");
+  expect(reasoningOf(result.messages.at(-1))).toEqual([
+    { id: "rs_review", text: "Signed text", summary: "Summary", encryptedContent: "signature", model: "model" },
+  ]);
+});
+
+it.each([
+  ["invalid_encrypted_content", "Bad input", 2],
+  ["invalid_request_error", "Bad input", 1],
+  ["invalid_request_error", "messages.7: The final block in an assistant message cannot be `thinking`.", 2],
+])("bounds retries for a rejected request with code %s", async (code, message, attempts) => {
+  fetchMock.mockImplementation(async () => Response.json({ error: { code, message } }, { status: 400 }));
+  const result = await run(
+    new Client(),
+    "model",
+    "",
+    [
+      ...prompt,
+      assistantMessage([
+        thinking({ id: "rs_old", text: "Plan", encryptedContent: "old-key", model: "model" }),
+        text("First answer"),
+      ]),
+      ...prompt,
+    ],
+    [],
+  );
+  expect(result.status).toBe("failed");
+  expect(fetchMock).toHaveBeenCalledTimes(attempts);
+});
+
+it.each([
+  ["invalid_encrypted_content", "Encrypted content could not be verified"],
+  ["invalid_request_error", "messages.7: The final block in an assistant message cannot be `thinking`."],
+])("does not retry a reasoning error (%s) after response text has arrived", async (code, message) => {
+  fetchMock.mockResolvedValueOnce(
+    sse([
+      { type: "response.created", response: response([], { status: "in_progress" }) },
+      { type: "response.output_text.delta", item_id: "msg_test", output_index: 0, content_index: 0, delta: "Partial" },
+      { type: "error", code, message },
+    ]),
+  );
+  const result = await run(
+    new Client(),
+    "model",
+    "",
+    [
+      ...prompt,
+      assistantMessage([
+        thinking({ id: "rs_old", text: "Plan", encryptedContent: "old-key", model: "model" }),
+        text("First answer"),
+      ]),
+      ...prompt,
+    ],
+    [],
+  );
+  expect(result.status).toBe("failed");
+  expect(result.messages.at(-1)?.parts).toEqual([{ type: "text", content: "Partial" }]);
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+it("pairs deduplicated reasoning with the text and signature from the same original item", async () => {
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+  await run(
+    new Client(),
+    "model",
+    "",
+    [
+      ...prompt,
+      ...["First", "Second"].map((label) =>
+        assistantMessage([
+          thinking({
+            id: "rs_duplicate",
+            text: label,
+            summary: `${label} summary`,
+            encryptedContent: `${label} signature`,
+            model: "model",
+          }),
+          text(`${label} answer`),
+        ]),
+      ),
+      ...prompt,
+    ],
+    [],
+  );
+  const input = JSON.parse(fetchMock.mock.calls[0][1].body).input;
+  expect(input.filter((part: { type: string }) => part.type === "reasoning")).toEqual([
+    {
+      type: "reasoning",
+      id: "rs_duplicate",
+      encrypted_content: "First signature",
+      content: [{ type: "reasoning_text", text: "First" }],
+      summary: [{ type: "summary_text", text: "First summary" }],
+    },
+  ]);
+});
+
+it("replays only ciphertext the requested deployment produced", async () => {
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+  await run(
+    new Client(),
+    "model-b",
+    "",
+    [
+      ...prompt,
+      assistantMessage([
+        thinking({ id: "rs_a", text: "Plan", encryptedContent: "model-a-key", model: "model-a" }),
+        text("First answer"),
+      ]),
+      ...prompt,
+    ],
+    [],
+  );
+  const input = JSON.parse(fetchMock.mock.calls[0][1].body).input;
+  expect(JSON.stringify(input)).not.toContain("model-a-key");
+});
+
+it("releases the model-call deadline after a successful response", async () => {
+  vi.useFakeTimers();
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+  expect((await run(new Client(), "model", "", prompt, [])).status).toBe("completed");
+  expect(vi.getTimerCount()).toBe(0);
+  await vi.advanceTimersByTimeAsync(600_001);
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+void assistant;
+void calls;
+void toolResults;

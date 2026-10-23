@@ -31,13 +31,12 @@ import {
   ChevronRight,
   FolderCog,
   HardDrive,
-  Library,
   LoaderCircle,
   Lock,
   Mic,
   Paperclip,
-  PenTool,
   Plus,
+  Puzzle,
   ScreenShare,
   Settings2,
   Sparkles,
@@ -47,13 +46,11 @@ import {
 } from "lucide-react";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AgentWizard } from "@/features/agent/components/wizard/AgentWizard";
-import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import type { Agent } from "@/features/agent/types/agent";
-import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvider";
+import { usePlugins } from "@/features/plugins/hooks/usePlugins";
+import { pluginProviderId, PLUGIN_PROVIDER_PREFIX } from "@/features/plugins/lib/pluginProvider";
 import { useSkills } from "@/features/skills/hooks/useSkills";
-import { useSkillTemplates } from "@/features/skills/hooks/useSkillTemplates";
-import { isStudioSkillCategory, SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
+import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import type { ToolProvider } from "@/shared/types/chat";
@@ -67,7 +64,7 @@ import { Tooltip } from "@/shared/ui/Tooltip";
 // outside-click guard needed to keep the menu open while toggling submenu items.
 
 const MENU_PANEL_CLASS =
-  "rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1";
+  "rounded-xl border border-neutral-200/80 dark:border-white/10 bg-white/95 dark:bg-neutral-800/95 backdrop-blur-xl shadow-xl shadow-black/15 dark:shadow-black/60 p-1";
 
 const ROW_CLASS =
   "group flex w-full items-center gap-3 px-3 py-2 rounded-lg text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5 focus:bg-neutral-100/60 dark:focus:bg-white/5 focus:outline-none transition-colors";
@@ -111,6 +108,8 @@ function AddMenuRoot({ children }: { children: ReactNode }) {
     middleware: [offset(8), flip({ fallbackPlacements: ["bottom-start"] }), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
   });
+  const setReference = (node: Element | null) => refs.setReference(node);
+  const setFloating = (node: HTMLElement | null) => refs.setFloating(node);
 
   const click = useClick(context);
   const role = useRole(context, { role: "menu" });
@@ -152,7 +151,7 @@ function AddMenuRoot({ children }: { children: ReactNode }) {
     <FloatingNode id={nodeId}>
       <Tooltip content="Add files, tools and more" side="bottom">
         <button
-          ref={refs.setReference}
+          ref={setReference}
           type="button"
           aria-label="Add"
           className="p-2.5 md:pl-1.5 md:pr-0.5 md:py-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
@@ -166,7 +165,7 @@ function AddMenuRoot({ children }: { children: ReactNode }) {
           {isMounted && (
             <FloatingPortal>
               <FloatingFocusManager context={context} modal={false} initialFocus={-1} returnFocus>
-                <div ref={refs.setFloating} style={floatingStyles} className="z-50" {...getFloatingProps()}>
+                <div ref={setFloating} style={floatingStyles} className="z-50" {...getFloatingProps()}>
                   <div
                     style={transitionStyles}
                     className={cn(MENU_PANEL_CLASS, "max-h-[60vh] overflow-y-auto min-w-40")}
@@ -189,22 +188,24 @@ interface MenuRowProps {
   /** Emit a tree close after selecting. Toggles (which keep the menu open) pass false. */
   closeOnClick?: boolean;
   disabled?: boolean;
+  checked?: boolean;
   onSelect?: () => void | Promise<void>;
   className?: string;
   children: ReactNode;
 }
 
 /** A focusable leaf row in the Add menu, wired for keyboard list navigation. */
-function MenuRow({ label, closeOnClick = true, disabled, onSelect, className, children }: MenuRowProps) {
+function MenuRow({ label, closeOnClick = true, disabled, checked, onSelect, className, children }: MenuRowProps) {
   const menu = useContext(MenuContext);
-  const item = useListItem({ label: disabled ? null : label });
-  const isActive = item.index === menu.activeIndex;
+  const { ref: setItemElement, index } = useListItem({ label: disabled ? null : label });
+  const isActive = index === menu.activeIndex;
 
   return (
     <button
-      ref={item.ref}
+      ref={setItemElement}
       type="button"
-      role="menuitem"
+      role={checked === undefined ? "menuitem" : "menuitemcheckbox"}
+      aria-checked={checked}
       tabIndex={isActive ? 0 : -1}
       disabled={disabled}
       className={cn(ROW_CLASS, className)}
@@ -238,8 +239,8 @@ interface SubmenuProps {
  */
 function Submenu({ label, icon, panelClassName, children }: SubmenuProps) {
   const parent = useContext(MenuContext);
-  const item = useListItem({ label });
-  const isActive = item.index === parent.activeIndex;
+  const { ref: setItemElement, index } = useListItem({ label });
+  const isActive = index === parent.activeIndex;
 
   const [isOpen, setIsOpen] = useState(false);
 
@@ -259,6 +260,8 @@ function Submenu({ label, icon, panelClassName, children }: SubmenuProps) {
     ],
     whileElementsMounted: autoUpdate,
   });
+  const setReference = (node: Element | null) => refs.setReference(node);
+  const setFloating = (node: HTMLElement | null) => refs.setFloating(node);
 
   const hover = useHover(context, { handleClose: safePolygon(), delay: { close: 150 } });
   const click = useClick(context, { event: "mousedown", toggle: false, ignoreMouse: true });
@@ -266,7 +269,7 @@ function Submenu({ label, icon, panelClassName, children }: SubmenuProps) {
   const role = useRole(context, { role: "menu" });
   const { getReferenceProps, getFloatingProps } = useInteractions([hover, click, dismiss, role]);
 
-  const triggerRef = useMergeRefs([refs.setReference, item.ref]);
+  const triggerRef = useMergeRefs([setReference, setItemElement]);
 
   // Collapse when a sibling submenu opens.
   useEffect(() => {
@@ -300,7 +303,7 @@ function Submenu({ label, icon, panelClassName, children }: SubmenuProps) {
       </button>
       {isOpen && (
         <FloatingPortal>
-          <div ref={refs.setFloating} style={floatingStyles} className="z-9999" {...getFloatingProps()}>
+          <div ref={setFloating} style={floatingStyles} className="z-9999" {...getFloatingProps()}>
             <div className={cn(MENU_PANEL_CLASS, panelClassName)}>{children(close)}</div>
           </div>
         </FloatingPortal>
@@ -316,6 +319,7 @@ interface ChatInputAddMenuProps {
   isTranscribing: boolean;
   isResponding: boolean;
   visibleProviders: ToolProvider[];
+  isProviderEnabled: (id: string) => boolean;
   getProviderState: (id: string) => ProviderState;
   getProviderPolicy: (id: string) => "required" | "optional";
   setProviderEnabled: (id: string, enabled: boolean) => Promise<void>;
@@ -334,6 +338,7 @@ export function ChatInputAddMenu({
   isTranscribing,
   isResponding,
   visibleProviders,
+  isProviderEnabled,
   getProviderState,
   getProviderPolicy,
   setProviderEnabled,
@@ -345,29 +350,26 @@ export function ChatInputAddMenu({
   onDriveSelect,
 }: ChatInputAddMenuProps) {
   const config = getConfig();
-  const { agents, currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
+  const { currentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
   const { skills, openSkillCatalog } = useSkills();
-  const { templates } = useSkillTemplates();
-  // The Studio skill pack is split out of the general catalog by category.
-  const studioTemplateCount = templates.filter((t) => isStudioSkillCategory(t.category)).length;
-  const catalogTemplateCount = templates.length - studioTemplateCount;
+  const { plugins } = usePlugins();
+  const openPluginsManager = () => openSkillCatalog(undefined, "plugins");
+  // Show the Plugins entry whenever there's something installed or a hub to
+  // browse — otherwise there'd be no way to discover/install the first plugin.
+  const showPluginsMenu = !currentAgent && (plugins.length > 0 || Boolean(config.plugins?.url));
 
-  // The Skills tool / Skill Builder are grouped into their own submenu, and the
-  // agent-internal infra (repository/memory) isn't a user-toggleable tool, so all
-  // are filtered out of the flat tool list below. The unified Studio capability
-  // renders as a normal flat toggle alongside the other tools.
   const otherProviders = visibleProviders.filter(
-    (p) => p.id !== SKILLS_PROVIDER_ID && p.id !== SKILL_BUILDER_ID && p.id !== "repository" && p.id !== "memory",
+    (p) =>
+      p.id !== SKILLS_PROVIDER_ID &&
+      p.id !== "repository" &&
+      p.id !== "memory" &&
+      !p.id.startsWith(PLUGIN_PROVIDER_PREFIX),
   );
-  const skillBuilder = visibleProviders.find((p) => p.id === SKILL_BUILDER_ID);
-  // Skills submenu shows whenever no agent is active — My Skills / Catalog / Manage
-  // are always meaningful; the Skill Builder row is rendered only if available.
   const showSkillsMenu = !currentAgent;
+  const showSkillsPluginsMenu = showSkillsMenu || showPluginsMenu;
 
-  // The Skills sources toggle independently (personal + catalog). The Studio pack
-  // is not a source here — it rides the Studio capability toggle.
   const toggleSkillSource = useCallback(
-    (key: "personal" | "catalog") => {
+    (key: "personal") => {
       setSkillSources({ ...skillSources, [key]: !skillSources[key] });
     },
     [skillSources, setSkillSources],
@@ -377,29 +379,15 @@ export function ChatInputAddMenu({
 
   // Agent wizard
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [pendingWizardFiles, setPendingWizardFiles] = useState<File[] | null>(null);
-  const { addFile } = useAgentFiles(currentAgent?.id ?? "");
-
-  useEffect(() => {
-    if (!currentAgent || !pendingWizardFiles) return;
-    setPendingWizardFiles(null);
-    void (async () => {
-      for (const file of pendingWizardFiles) {
-        await addFile(file);
-      }
-    })();
-  }, [currentAgent, addFile, pendingWizardFiles]);
-
-  const handleWizardCreated = useCallback((_agent: Agent, files: File[]) => {
-    if (files.length > 0) setPendingWizardFiles(files);
-  }, []);
 
   function renderProviderIcon(provider: ToolProvider, state: ProviderState) {
     const icon = provider.icon || Sparkles;
-    const providerInitializing = state === ProviderState.Initializing;
+    const providerConnecting = state === ProviderState.Initializing || state === ProviderState.Authenticating;
+    const providerUnauthorized = state === ProviderState.Unauthorized;
     const providerFailed = state === ProviderState.Failed;
 
-    if (providerInitializing) return <LoaderCircle size={16} className="animate-spin" />;
+    if (providerConnecting) return <LoaderCircle size={16} className="animate-spin" />;
+    if (providerUnauthorized) return <Lock size={16} className="text-amber-500" />;
     if (providerFailed) return <TriangleAlert size={16} />;
     if (typeof icon === "string") return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
     const Icon = icon;
@@ -497,75 +485,106 @@ export function ChatInputAddMenu({
               </MenuRow>
             </Tooltip>
           )}
-          {showSkillsMenu && (
+          {showSkillsPluginsMenu && (
             <Submenu
-              label="Skills"
+              label="Skills / Plugins"
               icon={<Sparkles size={16} className="shrink-0" />}
-              panelClassName="min-w-48 flex flex-col overflow-hidden"
+              panelClassName="min-w-48 flex flex-col overflow-hidden max-h-[min(60vh,400px)]"
             >
               {(close) => (
-                <>
-                  <Tooltip content="Skills you've created — editable in Manage Skills" side="right" className="w-full">
-                    <button type="button" onClick={() => toggleSkillSource("personal")} className={ROW_CLASS}>
-                      <User size={16} className="shrink-0" />
-                      <span className="font-medium text-sm flex-1 text-left">
-                        My Skills <span className="text-neutral-400 dark:text-neutral-500">({skills.length})</span>
-                      </span>
-                      <span className="shrink-0 w-4 flex justify-center">
-                        {skillSources.personal && (
-                          <Check size={13} className="text-neutral-600 dark:text-neutral-400" />
-                        )}
-                      </span>
-                    </button>
-                  </Tooltip>
-                  <Tooltip content="Ready-made skills shipped with the app" side="right" className="w-full">
-                    <button type="button" onClick={() => toggleSkillSource("catalog")} className={ROW_CLASS}>
-                      <Library size={16} className="shrink-0" />
-                      <span className="font-medium text-sm flex-1 text-left">
-                        Catalog <span className="text-neutral-400 dark:text-neutral-500">({catalogTemplateCount})</span>
-                      </span>
-                      <span className="shrink-0 w-4 flex justify-center">
-                        {skillSources.catalog && <Check size={13} className="text-neutral-600 dark:text-neutral-400" />}
-                      </span>
-                    </button>
-                  </Tooltip>
-                  {skillBuilder && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await setProviderEnabled(
-                            SKILL_BUILDER_ID,
-                            getProviderState(SKILL_BUILDER_ID) !== ProviderState.Connected,
-                          );
-                        } catch (error) {
-                          console.error("Failed to toggle Skill Builder:", error);
-                        }
-                      }}
-                      className={ROW_CLASS}
-                    >
-                      <PenTool size={16} className="shrink-0" />
-                      <span className="font-medium text-sm flex-1 text-left">Skill Builder</span>
-                      <span className="shrink-0 w-4 flex justify-center">
-                        {getProviderState(SKILL_BUILDER_ID) === ProviderState.Connected && (
-                          <Check size={13} className="text-neutral-600 dark:text-neutral-400" />
-                        )}
-                      </span>
-                    </button>
+                <div className="overflow-y-auto flex flex-col">
+                  {showSkillsMenu && (
+                    <>
+                      <Tooltip content="Skills you've created — editable in Manage" side="right" className="w-full">
+                        <button type="button" onClick={() => toggleSkillSource("personal")} className={ROW_CLASS}>
+                          <User size={16} className="shrink-0" />
+                          <span className="font-medium text-sm flex-1 text-left">
+                            All my skills{" "}
+                            <span className="text-neutral-400 dark:text-neutral-500">({skills.length})</span>
+                          </span>
+                          <span className="shrink-0 w-4 flex justify-center">
+                            {skillSources.personal && (
+                              <Check size={13} className="text-neutral-600 dark:text-neutral-400" />
+                            )}
+                          </span>
+                        </button>
+                      </Tooltip>
+                    </>
+                  )}
+                  {showPluginsMenu && (
+                    <>
+                      {showSkillsMenu && plugins.length > 0 && (
+                        <div className="border-t border-neutral-200 dark:border-neutral-700 my-1" />
+                      )}
+                      {plugins.length > 0 && (
+                        <>
+                          {plugins.map((plugin) => {
+                            const providerId = pluginProviderId(plugin.id);
+                            const state = getProviderState(providerId);
+                            const enabled = isProviderEnabled(providerId);
+                            const required = getProviderPolicy(providerId) === "required";
+                            return (
+                              <Tooltip
+                                key={plugin.id}
+                                content={
+                                  required
+                                    ? `${plugin.title || plugin.id} is required by this agent`
+                                    : (plugin.description ??
+                                      `Enable "${plugin.title || plugin.id}" for this conversation`)
+                                }
+                                side="right"
+                                className="w-full"
+                              >
+                                <MenuRow
+                                  label={plugin.title || plugin.id}
+                                  checked={enabled}
+                                  closeOnClick={false}
+                                  disabled={required}
+                                  onSelect={async () => {
+                                    try {
+                                      await setProviderEnabled(providerId, !enabled);
+                                    } catch (error) {
+                                      console.error(`Failed to toggle plugin ${plugin.id}:`, error);
+                                    }
+                                  }}
+                                >
+                                  {plugin.icon ? (
+                                    <img src={plugin.icon} alt="" className="h-4 w-4 shrink-0 rounded object-contain" />
+                                  ) : (
+                                    <Puzzle size={16} className="shrink-0" />
+                                  )}
+                                  <span className="font-medium text-sm flex-1 text-left truncate">
+                                    {plugin.title || plugin.id}
+                                  </span>
+                                  {enabled && <PluginConnectionStatus state={state} />}
+                                  <span className="shrink-0 w-4 flex justify-center">
+                                    {required ? (
+                                      <Lock size={12} className="text-neutral-400 dark:text-neutral-500" />
+                                    ) : (
+                                      enabled && <Check size={13} className="text-neutral-600 dark:text-neutral-400" />
+                                    )}
+                                  </span>
+                                </MenuRow>
+                              </Tooltip>
+                            );
+                          })}
+                        </>
+                      )}
+                    </>
                   )}
                   <div className="border-t border-neutral-200 dark:border-neutral-700 mt-1" />
                   <button
                     type="button"
                     onClick={() => {
-                      openSkillCatalog();
+                      openPluginsManager();
                       close();
                     }}
                     className={ROW_CLASS}
                   >
                     <FolderCog size={16} className="shrink-0" />
-                    <span className="font-medium text-sm">Manage Skills</span>
+                    <span className="font-medium text-sm">Manage</span>
                   </button>
-                </>
+                </div>
               )}
             </Submenu>
           )}
@@ -576,31 +595,6 @@ export function ChatInputAddMenu({
           >
             {(close) => (
               <>
-                {agents.length === 0 && (
-                  <p className="px-4 py-2 text-sm text-neutral-500 dark:text-neutral-400">No agents configured</p>
-                )}
-                <div className="overflow-y-auto">
-                  {agents.map((agent) => (
-                    <button
-                      key={agent.id}
-                      type="button"
-                      onClick={() => {
-                        setCurrentAgent(agent);
-                        setAgentDrawerView("details");
-                        setShowAgentDrawer(true);
-                        close();
-                      }}
-                      className={ROW_CLASS}
-                    >
-                      <Bot size={16} className="shrink-0" />
-                      <span className="font-medium text-sm flex-1 text-left truncate">{agent.name}</span>
-                      {currentAgent?.id === agent.id && (
-                        <Check size={13} className="shrink-0 ml-1 text-neutral-600 dark:text-neutral-400" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-                <div className="border-t border-neutral-200 dark:border-neutral-700 mt-1" />
                 <button
                   type="button"
                   onClick={() => {
@@ -631,7 +625,8 @@ export function ChatInputAddMenu({
           {otherProviders.map((provider: ToolProvider) => {
             const state = getProviderState(provider.id);
             const providerEnabled = state === ProviderState.Connected;
-            const providerInitializing = state === ProviderState.Initializing;
+            const providerConnecting = state === ProviderState.Initializing || state === ProviderState.Authenticating;
+            const providerUnauthorized = state === ProviderState.Unauthorized;
             const providerFailed = state === ProviderState.Failed;
             const providerRequired = getProviderPolicy(provider.id) === "required";
 
@@ -641,14 +636,16 @@ export function ChatInputAddMenu({
                 content={
                   providerRequired
                     ? `${provider.name} is required by this agent`
-                    : providerFailed
-                      ? `${provider.name} failed to connect`
-                      : providerInitializing
-                        ? `${provider.name} is connecting…`
-                        : (provider.description ??
-                          (providerEnabled
-                            ? `Disable ${provider.name} tools for this conversation`
-                            : `Enable ${provider.name} tools for this conversation`))
+                    : providerUnauthorized
+                      ? `Sign in required for ${provider.name}`
+                      : providerFailed
+                        ? `${provider.name} failed to connect`
+                        : providerConnecting
+                          ? `${provider.name} is connecting…`
+                          : (provider.description ??
+                            (providerEnabled
+                              ? `Disable ${provider.name} tools for this conversation`
+                              : `Enable ${provider.name} tools for this conversation`))
                 }
                 side="right"
                 className="w-full"
@@ -656,7 +653,7 @@ export function ChatInputAddMenu({
                 <MenuRow
                   label={provider.name}
                   closeOnClick={false}
-                  disabled={providerInitializing || providerRequired}
+                  disabled={providerConnecting || providerRequired}
                   onSelect={async () => {
                     try {
                       await setProviderEnabled(provider.id, !providerEnabled);
@@ -664,7 +661,7 @@ export function ChatInputAddMenu({
                       console.error(`Failed to toggle provider ${provider.name}:`, error);
                     }
                   }}
-                  className={cn(providerInitializing && !providerRequired && "opacity-50")}
+                  className={cn(providerConnecting && !providerRequired && "opacity-50")}
                 >
                   {renderProviderIcon(provider, state)}
                   <span className="font-medium text-sm flex-1 text-left truncate">{provider.name}</span>
@@ -673,7 +670,7 @@ export function ChatInputAddMenu({
                       <Lock size={12} className="text-neutral-400 dark:text-neutral-500" />
                     ) : (
                       providerEnabled &&
-                      !providerInitializing &&
+                      !providerConnecting &&
                       !providerFailed && <Check size={13} className="ml-1 text-neutral-600 dark:text-neutral-400" />
                     )}
                   </span>
@@ -684,7 +681,7 @@ export function ChatInputAddMenu({
         </AddMenu>
       </div>
 
-      <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} onCreated={handleWizardCreated} />
+      <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} />
 
       {/* Mobile bottom sheet — attach, screen capture, recording, and features */}
       <Dialog open={showMobileSheet} onClose={setShowMobileSheet} className="relative z-50 md:hidden">
@@ -809,7 +806,9 @@ export function ChatInputAddMenu({
                     {otherProviders.map((provider: ToolProvider) => {
                       const state = getProviderState(provider.id);
                       const providerEnabled = state === ProviderState.Connected;
-                      const providerInitializing = state === ProviderState.Initializing;
+                      const providerConnecting =
+                        state === ProviderState.Initializing || state === ProviderState.Authenticating;
+                      const providerUnauthorized = state === ProviderState.Unauthorized;
                       const providerFailed = state === ProviderState.Failed;
                       const providerRequired = getProviderPolicy(provider.id) === "required";
 
@@ -820,16 +819,16 @@ export function ChatInputAddMenu({
                           onClick={async (e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            if (providerInitializing || providerRequired) return;
+                            if (providerConnecting || providerRequired) return;
                             try {
                               await setProviderEnabled(provider.id, !providerEnabled);
                             } catch (error) {
                               console.error(`Failed to toggle provider ${provider.name}:`, error);
                             }
                           }}
-                          disabled={providerInitializing || providerRequired}
+                          disabled={providerConnecting || providerRequired}
                           className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
-                            providerInitializing && !providerRequired ? "opacity-50" : ""
+                            providerConnecting && !providerRequired ? "opacity-50" : ""
                           } ${
                             providerEnabled
                               ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
@@ -849,9 +848,10 @@ export function ChatInputAddMenu({
                             <Lock size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
                           ) : (
                             <>
-                              {providerEnabled && !providerInitializing && !providerFailed && (
+                              {providerEnabled && !providerConnecting && !providerFailed && (
                                 <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
                               )}
+                              {providerUnauthorized && <Lock size={16} className="shrink-0 text-amber-500" />}
                               {providerFailed && <TriangleAlert size={16} className="shrink-0 text-neutral-400" />}
                             </>
                           )}
@@ -862,20 +862,20 @@ export function ChatInputAddMenu({
                 </>
               )}
 
-              {/* Skills section */}
-              {showSkillsMenu && (
+              {/* Skills / Plugins section */}
+              {showSkillsPluginsMenu && (
                 <>
                   <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
                   <div className="px-4 pb-1 flex items-center justify-between">
                     <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                      Skills
+                      Skills / Plugins
                     </p>
                     <button
                       type="button"
-                      title="Manage Skills"
+                      title="Manage"
                       onClick={() => {
                         setShowMobileSheet(false);
-                        openSkillCatalog();
+                        openPluginsManager();
                       }}
                       className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
                     >
@@ -883,156 +883,137 @@ export function ChatInputAddMenu({
                     </button>
                   </div>
                   <div className="px-2 pb-2">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleSkillSource("personal");
-                      }}
-                      className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
-                        skillSources.personal
-                          ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
-                          : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
-                      }`}
-                    >
-                      <User size={16} className="shrink-0" />
-                      <span className="font-medium text-sm flex-1 text-left">
-                        My Skills <span className="text-neutral-400 dark:text-neutral-500">({skills.length})</span>
-                      </span>
-                      {skillSources.personal && (
-                        <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleSkillSource("catalog");
-                      }}
-                      className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
-                        skillSources.catalog
-                          ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
-                          : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
-                      }`}
-                    >
-                      <Library size={16} className="shrink-0" />
-                      <span className="font-medium text-sm flex-1 text-left">
-                        Catalog <span className="text-neutral-400 dark:text-neutral-500">({catalogTemplateCount})</span>
-                      </span>
-                      {skillSources.catalog && (
-                        <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
-                      )}
-                    </button>
-                    {skillBuilder && (
-                      <button
-                        type="button"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          try {
-                            await setProviderEnabled(
-                              SKILL_BUILDER_ID,
-                              getProviderState(SKILL_BUILDER_ID) !== ProviderState.Connected,
-                            );
-                          } catch (error) {
-                            console.error("Failed to toggle Skill Builder:", error);
-                          }
-                        }}
-                        className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
-                          getProviderState(SKILL_BUILDER_ID) === ProviderState.Connected
-                            ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
-                            : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
-                        }`}
-                      >
-                        <PenTool size={16} className="shrink-0" />
-                        <span className="font-medium text-sm flex-1 text-left">Skill Builder</span>
-                        {getProviderState(SKILL_BUILDER_ID) === ProviderState.Connected && (
-                          <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                    {showSkillsMenu && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSkillSource("personal");
+                          }}
+                          className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
+                            skillSources.personal
+                              ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
+                              : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
+                          }`}
+                        >
+                          <User size={16} className="shrink-0" />
+                          <span className="font-medium text-sm flex-1 text-left">
+                            All my skills{" "}
+                            <span className="text-neutral-400 dark:text-neutral-500">({skills.length})</span>
+                          </span>
+                          {skillSources.personal && (
+                            <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                          )}
+                        </button>
+                      </>
+                    )}
+                    {showPluginsMenu && plugins.length > 0 && (
+                      <>
+                        {showSkillsMenu && (
+                          <div className="my-1 border-t border-neutral-200/60 dark:border-neutral-800/60" />
                         )}
-                      </button>
+                        {plugins.map((plugin) => {
+                          const providerId = pluginProviderId(plugin.id);
+                          const state = getProviderState(providerId);
+                          const enabled = isProviderEnabled(providerId);
+                          const required = getProviderPolicy(providerId) === "required";
+                          return (
+                            <button
+                              key={plugin.id}
+                              type="button"
+                              aria-pressed={enabled}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (required) return;
+                                void setProviderEnabled(providerId, !enabled).catch((error) =>
+                                  console.error(`Failed to toggle plugin ${plugin.id}:`, error),
+                                );
+                              }}
+                              disabled={required}
+                              className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
+                                enabled
+                                  ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
+                                  : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
+                              }`}
+                            >
+                              {plugin.icon ? (
+                                <img src={plugin.icon} alt="" className="h-4 w-4 shrink-0 rounded object-contain" />
+                              ) : (
+                                <Puzzle size={16} className="shrink-0" />
+                              )}
+                              <span className="font-medium text-sm flex-1 text-left truncate">
+                                {plugin.title || plugin.id}
+                              </span>
+                              {enabled && <PluginConnectionStatus state={state} />}
+                              {required ? (
+                                <Lock size={16} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                              ) : (
+                                enabled && (
+                                  <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                                )
+                              )}
+                            </button>
+                          );
+                        })}
+                      </>
                     )}
                   </div>
                 </>
               )}
 
-              {/* Agents section */}
-              {agents.length > 0 && (
-                <>
-                  <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
-                  <div className="px-4 pb-1 flex items-center justify-between">
-                    <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                      Agents
-                    </p>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        title="Add Agent"
-                        onClick={() => {
-                          setShowMobileSheet(false);
-                          setWizardOpen(true);
-                        }}
-                        className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
-                      >
-                        <Plus size={16} />
-                      </button>
-                      <button
-                        type="button"
-                        title="Manage Agents"
-                        onClick={() => {
-                          setShowMobileSheet(false);
-                          setAgentDrawerView("list");
-                          setShowAgentDrawer(true);
-                        }}
-                        className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
-                      >
-                        <Settings2 size={16} />
-                      </button>
-                    </div>
+              {/* Agents section; selecting one happens in the model chooser. */}
+              <>
+                <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
+                <div className="px-4 pb-1 flex items-center justify-between">
+                  <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                    Agents
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      title="Add Agent"
+                      onClick={() => {
+                        setShowMobileSheet(false);
+                        setWizardOpen(true);
+                      }}
+                      className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
+                    >
+                      <Plus size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Manage Agents"
+                      onClick={() => {
+                        setShowMobileSheet(false);
+                        setAgentDrawerView("list");
+                        setShowAgentDrawer(true);
+                      }}
+                      className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
+                    >
+                      <Settings2 size={16} />
+                    </button>
                   </div>
-                  <div className="px-2 pb-2">
-                    {agents.map((agent) => (
-                      <button
-                        key={agent.id}
-                        type="button"
-                        onClick={() => {
-                          setCurrentAgent(agent);
-                          setShowMobileSheet(false);
-                        }}
-                        className={`group flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
-                          currentAgent?.id === agent.id
-                            ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
-                            : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
-                        }`}
-                      >
-                        <Bot size={16} className="shrink-0" />
-                        <span className="font-medium text-sm flex-1 text-left truncate">{agent.name}</span>
-                        {currentAgent?.id === agent.id && (
-                          <>
-                            <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-neutral-300 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 leading-none">
-                              Active
-                            </span>
-                            <button
-                              type="button"
-                              title="Deselect agent"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCurrentAgent(null);
-                                setShowMobileSheet(false);
-                              }}
-                              className="shrink-0 p-0.5 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-200 dark:hover:bg-neutral-700 dark:hover:text-neutral-200 transition-colors"
-                            >
-                              <X size={13} />
-                            </button>
-                          </>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
+                </div>
+              </>
             </div>
           </DialogPanel>
         </div>
       </Dialog>
     </>
   );
+}
+
+function PluginConnectionStatus({ state }: { state: ProviderState }) {
+  if (state === ProviderState.Initializing || state === ProviderState.Authenticating)
+    return <LoaderCircle size={14} className="shrink-0 animate-spin" aria-label="Connecting" />;
+  if (state === ProviderState.Unauthorized || state === ProviderState.Failed)
+    return (
+      <TriangleAlert
+        size={14}
+        className="shrink-0 text-amber-500"
+        aria-label={state === ProviderState.Unauthorized ? "Sign in required" : "Connection failed"}
+      />
+    );
+  return null;
 }

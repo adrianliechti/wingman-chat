@@ -1,5 +1,11 @@
 import { Client } from "./lib/client";
-import type { MCP, Model } from "./types/chat";
+import type { Model, ReasoningEffort } from "./types/chat";
+import {
+  configuredMcpServers,
+  normalizeMcpUrl,
+  type ConfiguredMcpServer,
+  type McpServerDefinition,
+} from "@/features/settings/lib/mcpConfig";
 
 interface BackgroundConfig {
   url: string;
@@ -9,38 +15,18 @@ interface BackgroundPackConfig {
   [packName: string]: BackgroundConfig[];
 }
 
-interface SupportConfig {
+interface LinkConfig {
+  /** Label shown in the account menu. Defaults to the URL. */
+  title?: string;
+  /** Optional subtitle shown below the link label in the account menu. */
+  description?: string;
   url?: string;
-}
-
-interface ToolConfig {
-  id: string;
-  url?: string;
-  name: string;
-  description: string;
+  /** Common icon name, such as support, docs, learning, or cost. Defaults to link. */
   icon?: string;
 }
 
-interface ModelConfig {
-  id: string;
-  name: string;
-  description?: string;
-  instructions?: string;
-  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
-  supportedEfforts?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh")[];
-  summary?: "auto" | "concise" | "detailed";
-  verbosity?: "low" | "medium" | "high";
-  compactThreshold?: number;
-  // Renderer (image) model capabilities; config overrides the per-family heuristic.
-  supportedQualities?: ("low" | "medium" | "high")[];
-  supportedAspectRatios?: string[];
-  supportedResolutions?: ("512" | "1K" | "2K" | "4K")[];
-  supportedBackgrounds?: ("opaque" | "transparent")[];
-  tools?: {
-    enabled: string[];
-    disabled: string[];
-  };
-}
+/** Deployment overrides share the model shape; defaultEffort is derived from effort. */
+type ModelConfig = Omit<Model, "defaultEffort">;
 
 interface TTSConfig {
   model?: string;
@@ -60,36 +46,6 @@ export type STTFormat = "opus" | "webm" | "wav" | "mp4";
 interface STTConfig {
   model?: string;
   format?: STTFormat;
-}
-
-interface NotebookStyleBase {
-  name: string;
-  /**
-   * Either inline prompt text, or a URL (absolute `https://…` or
-   * page-relative `/notebooks/…`) fetched on demand and cached.
-   * Use a URL for long templates so they don't bloat `config.json`.
-   */
-  prompt: string;
-}
-
-interface NotebookSlide extends NotebookStyleBase {}
-interface NotebookPodcast extends NotebookStyleBase {
-  voices?: string[];
-}
-interface NotebookReport extends NotebookStyleBase {}
-interface NotebookInfographic extends NotebookStyleBase {}
-interface NotebookProcess extends NotebookStyleBase {}
-interface NotebookArchitecture extends NotebookStyleBase {}
-
-interface NotebookConfig {
-  model?: string;
-  renderer?: string;
-  slides?: NotebookSlide[];
-  podcasts?: NotebookPodcast[];
-  reports?: NotebookReport[];
-  infographics?: NotebookInfographic[];
-  processes?: NotebookProcess[];
-  architectures?: NotebookArchitecture[];
 }
 
 interface VoiceConfig {
@@ -114,14 +70,6 @@ interface RendererConfig {
   elicitation?: boolean;
 }
 
-interface InternetConfig {
-  scraper?: string;
-  searcher?: string;
-  researcher?: string;
-  guard?: string;
-  elicitation?: boolean;
-}
-
 interface ExtractorConfig {
   model?: string;
   files: string[];
@@ -132,6 +80,10 @@ interface ExtractorConfig {
 interface ArtifactsConfig {
   /** Max size in bytes for a file uploaded into the artifacts workspace. Optional. */
   maxFileSize?: number;
+  /** Expose `window.wingman` to HTML previews. Defaults to on. */
+  bridge?: boolean;
+  /** Host DuckDB-WASM for SQL over workspace data. Defaults to on. */
+  duckdb?: boolean;
 }
 
 interface RepositoryConfig {
@@ -139,8 +91,22 @@ interface RepositoryConfig {
   extractor?: string;
 }
 
+export interface TranslatorProviderConfig {
+  /** Platform translator id, sent as the translate request's model. */
+  id: string;
+  name?: string;
+  description?: string;
+  /** Overrides translator.files for this provider. */
+  files?: string[];
+  /** Overrides translator.languages for this provider. */
+  languages?: string[];
+}
+
 interface TranslatorConfig {
+  /** Model used to rewrite translations (tone, style, refinements). */
   model?: string;
+  /** Selectable translators; the first is the default. */
+  providers?: TranslatorProviderConfig[];
   files: string[];
   languages: string[];
   /** Max file size in bytes; unlimited if unset. */
@@ -150,6 +116,8 @@ interface TranslatorConfig {
 }
 
 export interface CategoryConfig {
+  /** Permanent classifier and telemetry identity; keep unchanged when renaming. */
+  id: string;
   name: string;
   description: string;
   consent?: boolean | string;
@@ -160,6 +128,8 @@ export interface CategoryConfig {
 export type RiskSeverity = "low" | "medium" | "high";
 
 export interface RiskConfig {
+  /** Permanent classifier and telemetry identity; keep unchanged when renaming. */
+  id: string;
   name: string;
   description: string;
   /** Visual emphasis on the warning banner. Defaults to "medium". */
@@ -173,24 +143,44 @@ export interface RiskConfig {
 export interface ClassificationConfig {
   /** Override the model used for classification (defaults to chat.summarizer or the current chat model). */
   model?: string;
+  /** Optional reasoning effort forwarded to the classification API; support depends on the gateway. */
+  effort?: ReasoningEffort;
   /** Default threshold (0..1) applied when a category or risk does not set its own. */
   threshold?: number;
 }
 
-export function categorySlug(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, "_");
+export interface CompactionConfig {
+  threshold?: number;
 }
 
-export const riskSlug = categorySlug;
+/** One step of the chat model slider; presets are ordered fastest to most capable. */
+export interface ModelPresetConfig {
+  model: string;
+  /** Reasoning effort for this step; unset uses the model's default. */
+  effort?: ReasoningEffort;
+  /** Response verbosity for this step; unset uses the model's default. */
+  verbosity?: Model["verbosity"];
+  /** Display name for this step; defaults to the model name. */
+  label?: string;
+}
 
 interface ChatConfig {
   instructions?: string;
   retentionDays?: number;
   optimizer?: string;
   summarizer?: string;
+  /** Model every new chat starts on; the picker's reset returns to it. */
+  model?: string;
+  /** Reasoning effort for the default model; unset uses the model's default. */
+  effort?: ReasoningEffort;
+  /** Response verbosity for the default model; unset uses the model's default. */
+  verbosity?: Model["verbosity"];
+  compaction?: CompactionConfig;
   classification?: ClassificationConfig;
   categories?: CategoryConfig[];
   risks?: RiskConfig[];
+  /** Replaces the model list with a slider when at least two presets are available. */
+  presets?: ModelPresetConfig[];
 }
 
 export interface DriveConfig {
@@ -199,8 +189,16 @@ export interface DriveConfig {
   icon?: string;
 }
 
-interface BridgeConfig {
+interface CompanionConfig {
   url?: string;
+}
+
+interface PluginsConfig {
+  url?: string;
+}
+
+interface TelemetryConfig {
+  name?: string;
 }
 
 interface ConfigSchema {
@@ -208,10 +206,14 @@ interface ConfigSchema {
   disclaimer: string;
   /** Show the top-level navigation tabs. Set to false to show only Chat. Default true. */
   navigation?: boolean;
-  bridge?: BridgeConfig;
-  support?: SupportConfig;
+  bridge?: CompanionConfig;
+  plugins?: PluginsConfig;
+  links?: LinkConfig[];
+  /** Legacy links, used only when links is absent. */
+  support?: LinkConfig;
+  cost?: LinkConfig;
 
-  tools: ToolConfig[];
+  tools: ConfiguredMcpServer[];
   models: ModelConfig[];
 
   drives?: DriveConfig[];
@@ -221,14 +223,10 @@ interface ConfigSchema {
   tts?: TTSConfig;
   stt?: STTConfig;
 
-  notebook?: NotebookConfig;
-
   voice?: VoiceConfig;
   vision?: VisionConfig;
 
   text?: TextConfig;
-
-  internet?: InternetConfig;
 
   renderer?: RendererConfig;
   extractor?: ExtractorConfig;
@@ -241,7 +239,7 @@ interface ConfigSchema {
 
   chat?: ChatConfig;
   store?: object;
-  telemetry?: object;
+  telemetry?: TelemetryConfig;
 }
 
 const DEFAULT_TTS_VOICES: Record<string, string> = {
@@ -256,17 +254,20 @@ const DEFAULT_VISION_FILES = ["image/jpeg", "image/png", "image/gif", "image/web
 
 const DEFAULT_TRANSLATOR_LANGUAGES = ["en", "de", "fr", "it", "es"];
 
+const DEFAULT_TELEMETRY_NAME = "wingman-chat";
+
 interface Config {
   title: string;
   disclaimer: string;
   /** Whether to show the navigation tabs (false = Chat only, no tab bar). */
   navigation: boolean;
-  bridge: BridgeConfig | null;
-  support: SupportConfig | null;
+  companion: CompanionConfig | null;
+  plugins: PluginsConfig | null;
+  links: LinkConfig[];
 
   client: Client;
 
-  mcps: MCP[];
+  mcps: McpServerDefinition[];
   models: Model[];
 
   drives: DriveConfig[];
@@ -274,15 +275,11 @@ interface Config {
   tts: TTSConfig | null;
   stt: STTConfig | null;
 
-  notebook: NotebookConfig | null;
-
   voice: VoiceConfig | null;
   vision: VisionConfig | null;
 
   text: TextConfig | null;
   extractor: ExtractorConfig | null;
-
-  internet: InternetConfig | null;
 
   renderer: RendererConfig | null;
 
@@ -295,8 +292,7 @@ interface Config {
   chat: ChatConfig | null;
 
   store: boolean;
-
-  telemetry: boolean;
+  telemetry: Required<TelemetryConfig> | null;
 
   backgrounds: BackgroundPackConfig;
 }
@@ -313,23 +309,43 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
     const cfg: ConfigSchema = await resp.json();
 
+    for (const kind of ["categories", "risks"] as const) {
+      const ids = new Set<string>();
+      for (const item of cfg.chat?.[kind] ?? []) {
+        if (typeof item.id !== "string" || !item.id.trim() || item.id !== item.id.trim() || ids.has(item.id)) {
+          throw new Error(`chat.${kind} requires non-empty, unique IDs without surrounding whitespace`);
+        }
+        ids.add(item.id);
+      }
+    }
+
+    const links = cfg.links ?? [
+      { ...cfg.support, title: cfg.support?.title?.trim() || "Support", icon: cfg.support?.icon ?? "learning" },
+      { ...cfg.cost, title: cfg.cost?.title?.trim() || "Cost Dashboard", icon: cfg.cost?.icon ?? "cost" },
+    ];
+
+    let companion: CompanionConfig | null = null;
+    if (cfg.bridge?.url) {
+      try {
+        companion = { url: normalizeMcpUrl(cfg.bridge.url) };
+      } catch {
+        console.warn("Ignoring invalid companion URL");
+      }
+    }
+
     config = {
       title: cfg.title,
       disclaimer: cfg.disclaimer,
       navigation: cfg.navigation !== false,
-      bridge: cfg.bridge ?? null,
-      support: cfg.support ?? null,
+      companion,
+      plugins: cfg.plugins ?? null,
+      links: links
+        .filter((link) => link.url?.trim())
+        .map((link) => ({ ...link, url: link.url!.trim(), title: link.title?.trim() || link.url!.trim() })),
 
-      client: new Client(),
+      client: new Client(undefined, cfg.models),
 
-      // Relative MCPs (no explicit url) are proxied through `/api/v1/mcp/{id}`
-      // and gated by backend RBAC. They are resolved to their proxy url here;
-      // availability filtering against `/v1/mcp` happens at runtime in ToolsProvider.
-      mcps:
-        cfg.tools?.map((mcp) => ({
-          ...mcp,
-          url: mcp.url ?? new URL(`/api/v1/mcp/${mcp.id}`, window.location.origin).toString(),
-        })) ?? [],
+      mcps: configuredMcpServers(cfg.tools ?? [], window.location.origin),
 
       models: cfg.models ?? [],
 
@@ -337,8 +353,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       tts: cfg.tts ? { model: cfg.tts.model, voices: cfg.tts.voices ?? DEFAULT_TTS_VOICES } : null,
       stt: cfg.stt ?? null,
-
-      notebook: cfg.notebook ?? null,
 
       voice: cfg.voice ? { model: cfg.voice.model, transcriber: cfg.voice.transcriber } : null,
       vision: cfg.vision
@@ -359,7 +373,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           }
         : null,
 
-      internet: cfg.internet ?? null,
       renderer: cfg.renderer ?? null,
       memory: cfg.memory ?? null,
       repository: cfg.repository ?? null,
@@ -368,6 +381,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       translator: cfg.translator
         ? {
             model: cfg.translator.model,
+            providers: (cfg.translator.providers ?? []).filter((provider) => provider.id),
             files: cfg.translator.files ?? [],
             languages: cfg.translator.languages ?? DEFAULT_TRANSLATOR_LANGUAGES,
             maxFileSize: cfg.translator.maxFileSize,
@@ -378,8 +392,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       chat: cfg.chat ?? null,
 
       store: cfg.store != null,
-
-      telemetry: cfg.telemetry != null,
+      telemetry: cfg.telemetry != null ? { name: cfg.telemetry.name?.trim() || DEFAULT_TELEMETRY_NAME } : null,
 
       backgrounds: cfg.backgrounds ?? {},
     };

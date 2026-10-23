@@ -2,20 +2,15 @@ import { Dialog, Transition } from "@headlessui/react";
 import { ChevronRight, File, Folder, FolderOpen, Loader2, Square, SquareCheckBig, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/shared/lib/cn";
-import { type DriveEntry, listDriveEntries } from "@/shared/lib/drives";
-import { formatBytes, lookupContentType } from "@/shared/lib/utils";
+import { type DriveEntry, type DriveFileSelection, listDriveEntries } from "@/shared/lib/drives";
+import { fileExtension, formatBytes, lookupContentType } from "@/shared/lib/utils";
 
 interface DriveConfig {
   id: string;
   name: string;
 }
 
-export interface SelectedFile {
-  id: string;
-  name: string;
-  driveId: string;
-  mime?: string;
-}
+export type SelectedFile = DriveFileSelection;
 
 interface DrivePickerProps {
   isOpen: boolean;
@@ -46,8 +41,8 @@ function parseAccept(accept?: string): { extensions: Set<string>; mimePatterns: 
 }
 
 function fileMatchesAccept(entry: DriveEntry, filter: { extensions: Set<string>; mimePatterns: string[] }): boolean {
-  const dotIdx = entry.name.lastIndexOf(".");
-  const ext = dotIdx >= 0 ? entry.name.slice(dotIdx).toLowerCase() : "";
+  const extension = fileExtension(entry.name);
+  const ext = extension ? `.${extension}` : "";
 
   if (ext && filter.extensions.has(ext)) return true;
 
@@ -103,9 +98,8 @@ function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilte
       } catch (err) {
         console.error("Failed to list directory:", err);
         setChildren([]);
-      } finally {
-        setLoading(false);
       }
+      setLoading(false);
     }
 
     setExpanded(true);
@@ -264,6 +258,7 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, m
       name: entry.name,
       driveId: drive.id,
       mime: entry.mime,
+      size: entry.size,
     }));
 
     onFilesSelected(files);
@@ -296,7 +291,7 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, m
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-lg transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl border border-neutral-200/50 dark:border-neutral-700/50 transition-all flex flex-col max-h-[80vh]">
+              <Dialog.Panel className="w-full max-w-lg overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl border border-neutral-200/50 dark:border-neutral-700/50 transition-all flex flex-col max-h-[80vh]">
                 {/* Header */}
                 <div className="border-b border-neutral-200/60 px-4 py-2.5 dark:border-neutral-800/60 shrink-0">
                   <div className="flex items-center gap-3">

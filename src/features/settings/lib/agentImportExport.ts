@@ -1,434 +1,141 @@
 import type JSZip from "jszip";
+import { parseAgentMd, serializeAgentMd } from "@/features/agent/lib/agentMarkdown";
+import { loadAgent } from "@/features/agent/lib/agentStorage";
 import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
-import { getDirectory, readIndex, readText, writeBlob, writeJson, writeText } from "@/shared/lib/opfs-core";
-import {
-  addDirectoryToZip,
-  extractZipEntry,
-  getZipFolder,
-  isJunkZipEntry,
-  rebuildFolderIndex,
-} from "@/shared/lib/opfs-zip";
-import { downloadBlob } from "@/shared/lib/utils";
+import { getDirectory, readText } from "@/shared/lib/opfs-core";
+import { addDirectoryToZip, getZipFolder } from "@/shared/lib/opfs-zip";
+import { addImportedFile } from "@/shared/lib/opfs-import";
+import { readZipFiles, restoreFiles, type RestoreResult } from "@/shared/lib/opfs-restore";
+import { flushForBackup, withPersistenceLock } from "@/shared/lib/persistence";
+import { downloadZip } from "@/shared/lib/zipStreams";
+import { finishRestore } from "./restoreReport";
 
-/** Read an agent's markdown definition (AGENTS.md, falling back to AGENT.md). */
-async function readAgentMd(agentId: string): Promise<string | undefined> {
-  return (await readText(`agents/${agentId}/AGENTS.md`)) || (await readText(`agents/${agentId}/AGENT.md`));
+async function readAgentMd(id: string): Promise<string | undefined> {
+  return (await readText(`agents/${id}/AGENTS.md`)) ?? readText(`agents/${id}/AGENT.md`);
 }
 
-/** Parse the `skills:` frontmatter line (bare or bracketed list) into names. */
-function parseSkillNames(md: string): string[] {
-  const skillsMatch = md.match(/^skills:\s*(.+)$/m);
-  if (!skillsMatch) return [];
-
-  const raw = skillsMatch[1].trim();
-  const bracketMatch = raw.match(/^\[(.*)\]$/);
-  return (bracketMatch ? bracketMatch[1] : raw)
-    .split(",")
-    .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
-    .filter(Boolean);
-}
-
-/** Bundle the named skills from the global store into a `skills/` zip subfolder. */
-async function addSkillsToZip(skillNames: string[], parent: JSZip): Promise<void> {
-  if (skillNames.length === 0) return;
-
-  const skillsFolder = getZipFolder(parent, "skills");
-  for (const skillName of skillNames) {
+async function addSkillsToZip(names: string[], zip: JSZip): Promise<void> {
+  for (const name of names) {
+    let handle: FileSystemDirectoryHandle;
     try {
-      const skillHandle = await getDirectory(`skills/${skillName}`);
-      await addDirectoryToZip(skillHandle, getZipFolder(skillsFolder, skillName));
-    } catch {
-      /* skill folder missing */
-    }
-  }
-}
-
-// ============================================================================
-// Export
-// ============================================================================
-
-/**
- * Export all agents with their referenced skills bundled into a single ZIP.
- * Skills are nested inside each agent folder: agents/{uuid}/skills/{name}/…
- * This makes each agent folder self-contained for sharing.
- */
-export async function exportAgentsAsZip(): Promise<void> {
-  const JSZip = (await import("jszip")).default;
-  const zip = new JSZip();
-
-  try {
-    const agentIndex = await readIndex("agents");
-    const agentsZip = getZipFolder(zip, "agents");
-
-    for (const entry of agentIndex) {
-      const agentFolder = getZipFolder(agentsZip, entry.id);
-
-      // Add agent's own files (AGENTS.md, servers.json, files/, etc.)
-      try {
-        const agentHandle = await getDirectory(`agents/${entry.id}`);
-        await addDirectoryToZip(agentHandle, agentFolder);
-      } catch {
-        continue;
-      }
-
-      // Bundle skills referenced in the agent's frontmatter
-      const md = await readAgentMd(entry.id);
-      if (md) {
-        await addSkillsToZip(parseSkillNames(md), agentFolder);
-      }
-    }
-  } catch {
-    /* no agents */
-  }
-
-  const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
-  downloadBlob(blob, `wingman-agents-${new Date().toISOString().split("T")[0]}.zip`);
-}
-
-/**
- * Export a single agent (with referenced skills) as a ZIP.
- */
-export async function exportSingleAgentAsZip(
-  agentId: string,
-  { includeMemory = false }: { includeMemory?: boolean } = {},
-): Promise<void> {
-  const JSZip = (await import("jszip")).default;
-  const zip = new JSZip();
-
-  // Add agent's own files (AGENTS.md, servers.json, files/, etc.) at the root
-  const agentHandle = await getDirectory(`agents/${agentId}`);
-  await addDirectoryToZip(agentHandle, zip);
-
-  // Strip MEMORY.md unless explicitly requested
-  if (!includeMemory) {
-    zip.remove("MEMORY.md");
-  }
-
-  // Bundle skills referenced in the agent's frontmatter
-  const md = await readAgentMd(agentId);
-  if (md) {
-    await addSkillsToZip(parseSkillNames(md), zip);
-  }
-
-  // Derive a filename-safe agent name from AGENTS.md frontmatter
-  let agentName = "agent";
-  if (md) {
-    const nameMatch = md.match(/^name:\s*(.+)$/m);
-    if (nameMatch) {
-      agentName = nameMatch[1]
-        .trim()
-        .replace(/[^a-zA-Z0-9_-]/g, "-")
-        .toLowerCase();
-    }
-  }
-
-  const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
-  downloadBlob(blob, `wingman-agent-${agentName}-${new Date().toISOString().split("T")[0]}.zip`);
-}
-
-// ============================================================================
-// Import — ZIP
-// ============================================================================
-
-/**
- * Import agents (with bundled skills) from a ZIP file.
- * Supports three formats:
- *  1. New: agents/{uuid}/AGENTS.md with optional agents/{uuid}/skills/{name}/…
- *  2. Flat: AGENTS.md at the root (no uuid folder) — a new UUID is generated.
- *  3. Legacy: {uuid}/repository.json with optional {uuid}/files/…
- *
- * Agent data goes to /agents/{uuid}/, skills are upserted to /skills/{name}/.
- * Merges with existing data and rebuilds indices.
- */
-export async function importAgentsFromZip(file: Blob): Promise<void> {
-  const JSZip = (await import("jszip")).default;
-  const zip = await JSZip.loadAsync(file);
-  const entries = Object.entries(zip.files).filter(([path]) => !isJunkZipEntry(path));
-
-  // Detect format
-  const paths = entries.map(([path]) => path);
-  const isNewFormat = paths.some((p) => p.startsWith("agents/"));
-  const isFlatFormat = !isNewFormat && paths.some((p) => p === "AGENTS.md" || p === "AGENT.md");
-  const isLegacyRepo = !isNewFormat && !isFlatFormat && paths.some((p) => /^[^/]+\/repository\.json$/.test(p));
-
-  if (isFlatFormat) {
-    await importFlatAgentFromZip(entries);
-    return;
-  }
-
-  if (isLegacyRepo) {
-    await importLegacyRepositoriesFromZip(zip);
-    return;
-  }
-
-  if (!isNewFormat) {
-    throw new Error("Unrecognized archive: expected an agents export.");
-  }
-
-  let hasAgents = false;
-  let hasSkills = false;
-
-  for (const [relativePath, zipEntry] of entries) {
-    if (!relativePath.startsWith("agents/")) continue;
-
-    const afterAgents = relativePath.slice("agents/".length);
-
-    // skills entry: {uuid}/skills/{name}/…
-    const skillsMatch = afterAgents.match(/^[^/]+\/skills\/(.+)$/);
-    if (skillsMatch) {
-      hasSkills = true;
-      await extractZipEntry(zipEntry, `skills/${skillsMatch[1]}`);
-    } else {
-      hasAgents = true;
-      await extractZipEntry(zipEntry, `agents/${afterAgents}`);
-    }
-  }
-
-  if (hasAgents) await rebuildFolderIndex("agents");
-  if (hasSkills) await rebuildFolderIndex("skills");
-}
-
-// ============================================================================
-// Import — Legacy JSON ({ repositories: [...] })
-// ============================================================================
-
-/**
- * Import agents from a legacy JSON export (`{ repositories: [...] }`).
- * Each repository is converted into an agent folder with AGENTS.md,
- * files, segments, and embeddings.
- *
- * @returns The number of successfully imported agents and failures.
- */
-export async function importAgentsFromLegacyJson(
-  jsonData: string,
-): Promise<{ total: number; imported: number; failed: number }> {
-  const importData = JSON.parse(jsonData);
-
-  if (!importData.repositories || !Array.isArray(importData.repositories)) {
-    throw new Error("Invalid import file: Expected repositories array not found.");
-  }
-
-  const total = importData.repositories.length;
-  let imported = 0;
-
-  for (const repoData of importData.repositories) {
-    try {
-      const agentId = crypto.randomUUID();
-      const name = repoData.name || "Imported Repository";
-      const instructions = repoData.instructions;
-
-      // Generate AGENTS.md
-      const mdLines: string[] = ["---"];
-      mdLines.push(`name: ${name}`);
-      mdLines.push("---");
-      if (instructions) {
-        mdLines.push("");
-        mdLines.push(instructions);
-      }
-      await writeText(`agents/${agentId}/AGENTS.md`, mdLines.join("\n"));
-
-      // Store files if present (old JSON format embeds text/vectors inline)
-      if (repoData.files && Array.isArray(repoData.files)) {
-        for (const fileData of repoData.files) {
-          const fileId = fileData.id || crypto.randomUUID();
-          const filePath = `agents/${agentId}/files/${fileId}`;
-
-          const meta = {
-            id: fileId,
-            name: fileData.name || "Unknown File",
-            status: fileData.status || "completed",
-            progress: typeof fileData.progress === "number" ? fileData.progress : 100,
-            error: fileData.error,
-            uploadedAt: fileData.uploadedAt || new Date().toISOString(),
-          };
-
-          await writeJson(`${filePath}/metadata.json`, meta);
-
-          if (fileData.text) {
-            await writeText(`${filePath}/content.txt`, fileData.text);
-          }
-
-          if (fileData.segments && fileData.segments.length > 0) {
-            const segmentTexts = fileData.segments.map((s: { text: string }) => s.text);
-            await writeJson(`${filePath}/segments.json`, segmentTexts);
-
-            const vectorDim = fileData.segments[0].vector.length;
-            const totalFloats = 1 + fileData.segments.length * vectorDim;
-            const buffer = new Float32Array(totalFloats);
-            buffer[0] = vectorDim;
-            let offset = 1;
-            for (const segment of fileData.segments) {
-              buffer.set(segment.vector, offset);
-              offset += vectorDim;
-            }
-            const blob = new Blob([buffer.buffer], { type: "application/octet-stream" });
-            await writeBlob(`${filePath}/embeddings.bin`, blob);
-          }
-        }
-      }
-
-      imported++;
+      handle = await getDirectory(`skills/${name}`);
     } catch (error) {
-      console.error("Failed to import repository as agent:", repoData, error);
+      if (error instanceof DOMException && error.name === "NotFoundError") continue;
+      throw error;
     }
+    await addDirectoryToZip(handle, getZipFolder(zip, `skills/${name}`));
   }
-
-  if (imported > 0) {
-    await rebuildFolderIndex("agents");
-  }
-
-  return { total, imported, failed: total - imported };
 }
 
-// ============================================================================
-// Flat Agent ZIP Import (private)
-// ============================================================================
-
-/**
- * Import a single agent from a flat ZIP where AGENTS.md is at the root.
- * A new UUID is generated for the agent.
- * Skills nested under skills/{name}/ are upserted to /skills/{name}/.
- */
-async function importFlatAgentFromZip(entries: [string, JSZip.JSZipObject][]): Promise<void> {
-  const newId = crypto.randomUUID();
-  let hasSkills = false;
-
-  for (const [relativePath, zipEntry] of entries) {
-    // skills/{name}/… → upsert to global skills store
-    if (relativePath.startsWith("skills/")) {
-      hasSkills = true;
-      await extractZipEntry(zipEntry, relativePath);
-      continue;
-    }
-
-    // Everything else (AGENTS.md, servers.json, MEMORY.md, files/…)
-    // goes under agents/{newId}/
-    await extractZipEntry(zipEntry, `agents/${newId}/${relativePath}`);
-  }
-
-  await rebuildFolderIndex("agents");
-  if (hasSkills) await rebuildFolderIndex("skills");
+export async function exportSingleAgentAsZip(
+  id: string,
+  { includeMemory = false, name = "agent" }: { includeMemory?: boolean; name?: string } = {},
+): Promise<void> {
+  const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
+  await downloadZip(`wingman-agent-${safeName}-${new Date().toISOString().split("T")[0]}.zip`, async () => {
+    await flushForBackup();
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+    await withPersistenceLock("collection:agents", () =>
+      withPersistenceLock("collection:skills", async () => {
+        await addDirectoryToZip(await getDirectory(`agents/${id}`), zip);
+        // The runtime queue is never part of a shareable agent.
+        zip.remove("memory-state.json");
+        if (!includeMemory) {
+          zip.remove("MEMORY.md");
+          zip.remove("memory");
+        }
+        let md = await readAgentMd(id);
+        if (!md) {
+          const agent = await loadAgent(id);
+          if (!agent) throw new Error("Agent not found");
+          md = serializeAgentMd(agent);
+        }
+        // Export saved agents in the current format without rewriting local data.
+        zip.remove("AGENT.md");
+        zip.remove("agent.json");
+        zip.remove("servers.json");
+        zip.file("AGENTS.md", md);
+        const parsed = parseAgentMd(md);
+        if (parsed) {
+          await addSkillsToZip(parsed.skills, zip);
+        }
+      }),
+    );
+    return zip;
+  });
 }
 
-// ============================================================================
-// Legacy Repository ZIP Import (private)
-// ============================================================================
+/** Supported agent definition filenames. */
+const AGENT_DEFINITIONS = ["AGENTS.md", "AGENT.md", "agent.json"] as const;
 
-/**
- * Import legacy repository ZIP format and convert to agents.
- * Legacy ZIPs have: {uuid}/repository.json, {uuid}/files/{fileId}/…
- * Each repository is converted to an agent with AGENTS.md.
- */
-async function importLegacyRepositoriesFromZip(zip: JSZip): Promise<void> {
-  const repoIds = new Set<string>();
-  for (const path of Object.keys(zip.files)) {
-    const match = path.match(/^([^/]+)\/repository\.json$/);
-    if (match) repoIds.add(match[1]);
+/** Accept full backups, collection exports, and a single shareable agent. */
+export async function importAgentsFromZip(file: Blob): Promise<RestoreResult> {
+  const files = await readZipFiles(file);
+  const mapped = new Map<string, Blob>();
+  const skipped: RestoreResult["skipped"] = [];
+  const paths = [...files.keys()];
+  const flat = AGENT_DEFINITIONS.some((definition) => files.has(definition));
+  const roots = new Set([
+    ...(flat ? [""] : []),
+    ...paths.flatMap((path) => path.match(/^((?:agents\/)?[^/]+)\/(AGENTS?\.md|agent\.json)$/)?.[1] ?? []),
+  ]);
+  // Agent folders without any definition would otherwise vanish from a mixed
+  // archive without a word, leaving the user with a successful-looking import.
+  const agentFolders = new Set(paths.flatMap((path) => path.match(/^agents\/[^/]+(?=\/)/)?.[0] ?? []));
+  for (const folder of agentFolders) {
+    if (!roots.has(folder))
+      skipped.push({ path: folder, reason: "No AGENTS.md, AGENT.md or agent.json definition; skipped the agent." });
   }
-
-  if (repoIds.size === 0) return;
-
-  const idMap = new Map<string, string>();
-  for (const oldId of repoIds) {
-    idMap.set(oldId, crypto.randomUUID());
-  }
-
-  for (const [oldId, newId] of idMap) {
-    const repoEntry = zip.file(`${oldId}/repository.json`);
-    if (!repoEntry) continue;
-
-    const repoJson = JSON.parse(await repoEntry.async("text")) as {
-      id: string;
-      name: string;
-      embedder?: string;
-      instructions?: string;
-      createdAt?: string;
-      updatedAt?: string;
-    };
-
-    const mdLines: string[] = ["---"];
-    mdLines.push(`name: ${repoJson.name || "Imported Repository"}`);
-    mdLines.push("---");
-    if (repoJson.instructions) {
-      mdLines.push("");
-      mdLines.push(repoJson.instructions);
-    }
-    await writeText(`agents/${newId}/AGENTS.md`, mdLines.join("\n"));
-
-    for (const [path, zipEntry] of Object.entries(zip.files)) {
-      if (!path.startsWith(`${oldId}/files/`)) continue;
-      const relPath = path.slice(`${oldId}/`.length);
-      await extractZipEntry(zipEntry, `agents/${newId}/${relPath}`);
+  if (!roots.size) throw new Error("Unrecognized archive: expected an AGENTS.md, AGENT.md or agent.json definition");
+  for (const root of roots) {
+    const prefix = root ? `${root}/` : "";
+    const isFlat = root === "";
+    const id = isFlat ? crypto.randomUUID() : root.split("/").at(-1)!;
+    for (const [path, blob] of files) {
+      if (!path.startsWith(prefix)) continue;
+      if (
+        isFlat &&
+        (path.startsWith("agents/") ||
+          path.startsWith("skills/") ||
+          [...roots].some((other) => other && path.startsWith(`${other}/`)))
+      )
+        continue;
+      const relative = path.slice(prefix.length);
+      if ((isFlat && relative === "memory-state.json") || relative === "index.json") continue;
+      await addImportedFile(mapped, `agents/${id}/${relative}`, blob);
     }
   }
-
-  await rebuildFolderIndex("agents");
+  // Full backups store skills beside agents; shareable exports bundle them.
+  for (const [path, blob] of files) if (path.startsWith("skills/")) await addImportedFile(mapped, path, blob);
+  if (files.has("agents/index.json")) mapped.set("agents/index.json", files.get("agents/index.json")!);
+  const result = await restoreFiles(mapped);
+  return { ...result, skipped: [...skipped, ...result.skipped] };
 }
 
-// ============================================================================
-// Trigger Import (UI helper)
-// ============================================================================
-
-/**
- * Opens a file picker and imports agents from the selected ZIP or legacy JSON.
- * Handles confirmation dialogs, alerts, and page reload on success.
- */
 export function triggerAgentImport(): void {
   const input = document.createElement("input");
   input.type = "file";
-  input.accept = ".zip,.json";
+  input.accept = ".zip";
   input.multiple = false;
 
   input.onchange = async (event) => {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) return;
 
-    const isZip = file.name.endsWith(".zip");
-
-    if (isZip) {
-      if (
-        !(await confirm({
-          title: "Import agents?",
-          message: "Agents and skills from the ZIP will be merged with your existing ones.",
-        }))
-      )
-        return;
-      try {
-        await importAgentsFromZip(file);
-        notify.success("Agents imported", "Reloading to show them…");
-        setTimeout(() => window.location.reload(), 1200);
-      } catch (error) {
-        console.error("Failed to import agents:", error);
-        notify.error("Couldn't import agents", "Check the file and try again.");
-      }
-    } else {
-      try {
-        const jsonData = await file.text();
-        const parsed = JSON.parse(jsonData);
-        const count = parsed.repositories?.length ?? 0;
-        if (!count) {
-          notify.error("Invalid import file", "No agents were found in this file.");
-          return;
-        }
-        if (
-          !(await confirm({
-            title: "Import agents?",
-            message: `${count} legacy repositor${count === 1 ? "y" : "ies"} will be added as agents alongside your existing ones.`,
-          }))
-        )
-          return;
-
-        const result = await importAgentsFromLegacyJson(jsonData);
-        notify.success(
-          "Agents imported",
-          `${result.imported} repositor${result.imported === 1 ? "y" : "ies"} added as agent${result.imported === 1 ? "" : "s"}. Reloading…`,
-        );
-        setTimeout(() => window.location.reload(), 1200);
-      } catch (error) {
-        console.error("Failed to import agents:", error);
-        notify.error("Couldn't import agents", "Check the file format and try again.");
-      }
+    if (
+      !(await confirm({
+        title: "Import agents?",
+        message: "Agents and skills from the ZIP will be merged with your existing ones.",
+      }))
+    )
+      return;
+    try {
+      await finishRestore(await importAgentsFromZip(file));
+    } catch (error) {
+      console.error("Failed to import agents:", error);
+      notify.error("Couldn't import agents", "Check the file and try again.");
     }
   };
 

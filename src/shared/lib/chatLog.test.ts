@@ -1,13 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { applyEntriesInPlace, chunkEntries, decodeLines, diffChat, encodeLines, replayLog } from "./chatLog";
-import type { StoredChat, StoredMessage } from "./opfs-chat";
+import { STORED_CHAT_VERSION, type StoredChat } from "./opfs-chat";
+
+type StoredMessage = StoredChat["messages"][number];
 
 function msg(text: string, role: StoredMessage["role"] = "user"): StoredMessage {
-  return { role, content: [{ type: "text", text }] };
+  return { id: text, role, parts: [{ type: "text", content: text }] };
 }
 
 function chat(over: Partial<StoredChat> = {}): StoredChat {
-  return { id: "c1", created: "2026-01-01T00:00:00Z", updated: null, model: null, messages: [], ...over };
+  return {
+    version: STORED_CHAT_VERSION,
+    id: "c1",
+    created: "2026-01-01T00:00:00Z",
+    updated: null,
+    model: null,
+    messages: [],
+    ...over,
+  };
 }
 
 /** apply(diff(prev, next), prev) must equal next. */
@@ -34,6 +44,22 @@ describe("codec", () => {
 });
 
 describe("diff + replay round-trips", () => {
+  it("preserves native resume state and chat metadata through snapshots and deltas", () => {
+    const first = chat({
+      resume: { resumeState: { threadId: "thread", runId: "run-one" } },
+      metadata: { classification: { category: "coding" } },
+      messages: [msg("hello")],
+    });
+    roundTrip(null, first);
+    const next = chat({
+      ...first,
+      resume: { resumeState: { threadId: "thread", runId: "run-two" } },
+      metadata: { classification: { category: "research" } },
+    });
+    roundTrip(first, next);
+    roundTrip(next, chat({ messages: [msg("hello")] }));
+  });
+
   it("first sync (init + meta + messages)", () => {
     roundTrip(
       null,
@@ -106,6 +132,19 @@ describe("chunkEntries", () => {
 });
 
 describe("replay edge cases", () => {
+  it("migrates the unversioned transcript written by the original store branch", () => {
+    const history = [
+      { type: "init", id: "c1", created: "2026-01-01T00:00:00Z", model: null },
+      { type: "message", role: "user", content: [{ type: "text", text: "saved before main" }] },
+    ];
+    const result = replayLog("c1", decodeLines(history.map((entry) => JSON.stringify(entry)).join("\n"))).chat;
+    expect(result?.version).toBe(STORED_CHAT_VERSION);
+    expect(result?.messages[0]).toMatchObject({
+      role: "user",
+      parts: [{ type: "text", content: "saved before main" }],
+    });
+  });
+
   it("tombstone yields null", () => {
     const entries = [...diffChat(null, chat({ messages: [msg("a")] })), { type: "tombstone" } as const];
     expect(replayLog("c1", entries).chat).toBeNull();

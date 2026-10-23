@@ -1,7 +1,6 @@
-// Package library serves runtime inventories of the on-disk skill and notebook
-// libraries. Each is a directory of markdown files with YAML frontmatter that
-// the server walks on demand (cached) and exposes as JSON, so items can be added
-// by dropping a folder into the mounted directory — no rebuild required.
+// Package library serves a runtime inventory of the on-disk skill library. The
+// server walks the directory on demand (cached) and exposes it as JSON, so skills
+// can be added by dropping a folder into the mounted directory without rebuilding.
 package library
 
 import (
@@ -22,38 +21,24 @@ import (
 // How long a built inventory is reused before the directory is re-walked.
 const cacheTTL = 30 * time.Second
 
-// splitDocument splits leading YAML frontmatter from the markdown body. When the
-// file has no frontmatter, block is nil and body is the input unchanged.
-func splitDocument(data []byte) (block, body []byte) {
+func parseFrontmatter(data []byte, out any) {
 	s := string(data)
 	if !strings.HasPrefix(s, "---") {
-		return nil, data
+		return
 	}
 
 	nl := strings.IndexByte(s, '\n')
 	if nl < 0 {
-		return nil, data
+		return
 	}
 
 	rest := s[nl+1:]
-
 	end := strings.Index(rest, "\n---")
 	if end < 0 {
-		return nil, data
+		return
 	}
 
-	after := rest[end+len("\n---"):]
-	if i := strings.IndexByte(after, '\n'); i >= 0 {
-		after = after[i+1:]
-	}
-
-	return []byte(rest[:end]), []byte(strings.TrimLeft(after, "\n"))
-}
-
-func parseFrontmatter(data []byte, out any) {
-	if block, _ := splitDocument(data); block != nil {
-		yaml.Unmarshal(block, out)
-	}
+	yaml.Unmarshal([]byte(rest[:end]), out)
 }
 
 // safePath resolves root/<rel>, returning the absolute file path and true only
@@ -74,39 +59,6 @@ func safePath(root, rel string) (string, bool) {
 	return fullAbs, true
 }
 
-// titleize turns a kebab-case id into a display label ("sketch-note" → "Sketch Note").
-func titleize(id string) string {
-	words := strings.Split(id, "-")
-	for i, w := range words {
-		if w != "" {
-			words[i] = strings.ToUpper(w[:1]) + w[1:]
-		}
-	}
-	return strings.Join(words, " ")
-}
-
-// inventory is a TTL-cached JSON list rebuilt from disk by build.
-type inventory[T any] struct {
-	build func() []T
-
-	mu    sync.Mutex
-	cache []T
-	built time.Time
-}
-
-func (inv *inventory[T]) serve(w http.ResponseWriter, _ *http.Request) {
-	inv.mu.Lock()
-	if inv.cache == nil || time.Since(inv.built) > cacheTTL {
-		inv.cache = inv.build()
-		inv.built = time.Now()
-	}
-	out := inv.cache
-	inv.mu.Unlock()
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(out)
-}
-
 // ── Skills ──────────────────────────────────────────────────────────────────
 
 type skillEntry struct {
@@ -119,19 +71,32 @@ type skillEntry struct {
 }
 
 type Skills struct {
-	root string
-	inv  inventory[skillEntry]
+	root  string
+	mu    sync.Mutex
+	cache []skillEntry
+	built time.Time
 }
 
 func NewSkills(root string) *Skills {
-	h := &Skills{root: root}
-	h.inv.build = h.build
-	return h
+	return &Skills{root: root}
 }
 
 func (h *Skills) Attach(mux *http.ServeMux) {
-	mux.HandleFunc("GET /skills", h.inv.serve)
+	mux.HandleFunc("GET /skills", h.serveInventory)
 	mux.HandleFunc("GET /skills/{path...}", h.handleContent)
+}
+
+func (h *Skills) serveInventory(w http.ResponseWriter, _ *http.Request) {
+	h.mu.Lock()
+	if h.cache == nil || time.Since(h.built) > cacheTTL {
+		h.cache = h.build()
+		h.built = time.Now()
+	}
+	out := h.cache
+	h.mu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
 }
 
 func (h *Skills) handleContent(w http.ResponseWriter, r *http.Request) {
@@ -230,113 +195,4 @@ func skillResources(skillDir string) []string {
 
 	sort.Strings(resources)
 	return resources
-}
-
-// ── Notebooks ───────────────────────────────────────────────────────────────
-
-type notebookEntry struct {
-	Type        string   `json:"type"`
-	ID          string   `json:"id"`
-	Label       string   `json:"label"`
-	Description string   `json:"description,omitempty"`
-	Voices      []string `json:"voices,omitempty"`
-	Default     bool     `json:"default,omitempty"`
-	Path        string   `json:"path"`
-}
-
-type Notebooks struct {
-	root string
-	inv  inventory[notebookEntry]
-}
-
-func NewNotebooks(root string) *Notebooks {
-	h := &Notebooks{root: root}
-	h.inv.build = h.build
-	return h
-}
-
-func (h *Notebooks) Attach(mux *http.ServeMux) {
-	mux.HandleFunc("GET /notebooks", h.inv.serve)
-	mux.HandleFunc("GET /notebooks/{path...}", h.handleContent)
-}
-
-func (h *Notebooks) handleContent(w http.ResponseWriter, r *http.Request) {
-	full, ok := safePath(h.root, r.PathValue("path"))
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-
-	data, err := os.ReadFile(full)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-
-	// Notebook prompts are used verbatim, so strip the frontmatter from the body.
-	_, body := splitDocument(data)
-	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-	w.Write(body)
-}
-
-func (h *Notebooks) build() []notebookEntry {
-	entries := []notebookEntry{}
-
-	filepath.WalkDir(h.root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
-			return nil
-		}
-
-		rel, _ := filepath.Rel(h.root, p)
-		rel = filepath.ToSlash(rel)
-
-		parts := strings.Split(rel, "/")
-		if len(parts) < 2 {
-			return nil // style files live under a <type>/ folder
-		}
-
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return nil
-		}
-
-		var meta struct {
-			Label       string   `yaml:"label"`
-			Description string   `yaml:"description"`
-			Voices      []string `yaml:"voices"`
-			Default     bool     `yaml:"default"`
-		}
-		parseFrontmatter(data, &meta)
-
-		id := strings.TrimSuffix(d.Name(), ".md")
-		label := meta.Label
-		if label == "" {
-			label = titleize(id)
-		}
-
-		entries = append(entries, notebookEntry{
-			Type:        parts[0],
-			ID:          id,
-			Label:       label,
-			Description: meta.Description,
-			Voices:      meta.Voices,
-			Default:     meta.Default,
-			Path:        "/notebooks/" + rel,
-		})
-
-		return nil
-	})
-
-	// Group by type; within a type the default style sorts first, then by label.
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].Type != entries[j].Type {
-			return entries[i].Type < entries[j].Type
-		}
-		if entries[i].Default != entries[j].Default {
-			return entries[i].Default
-		}
-		return entries[i].Label < entries[j].Label
-	})
-
-	return entries
 }

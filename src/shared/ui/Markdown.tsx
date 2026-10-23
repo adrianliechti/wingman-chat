@@ -1,31 +1,49 @@
 import { Dialog, Transition } from "@headlessui/react";
-import type { Components } from "hast-util-to-jsx-runtime";
+import { streamingMarkdownExtension } from "@tanstack/markdown/extensions/streaming";
+import { Markdown as TanStackMarkdown, type MarkdownComponents } from "@tanstack/markdown/react";
 import { Copy, CopyCheck, Download, Maximize2, Printer, X } from "lucide-react";
-import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Fragment, jsx, jsxs } from "react/jsx-runtime";
-import rehypeReact from "rehype-react";
-import remarkBreaks from "remark-breaks";
-import remarkGemoji from "remark-gemoji";
-import remarkGfm from "remark-gfm";
-import remarkParse from "remark-parse";
-import remarkRehype from "remark-rehype";
-import { type PluggableList, unified } from "unified";
+import {
+  Children,
+  createContext,
+  Fragment,
+  isValidElement,
+  memo,
+  useCallback,
+  useContext,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "@/shared/lib/cn";
+import { useStreamingText } from "@/shared/hooks/useStreamingText";
 import type { ReactNode } from "react";
 import { copyToClipboard } from "@/shared/lib/copy";
 import { isAudioUrl, isVideoUrl } from "@/shared/lib/mediaTypes";
-import rehypeNotoEmoji from "@/shared/lib/rehype-noto-emoji";
+import {
+  MARKDOWN_PARSE_OPTIONS,
+  markdownExtensions,
+  markdownUrlTransform,
+  MATH_TAG,
+  prepareMarkdownSource,
+} from "@/shared/lib/markdownExtensions";
+import { getArtifactLinkPath } from "@/shared/lib/sandbox";
 import { useAssetUrlResolver } from "@/shared/lib/useAssetUrlResolver";
 import { downloadBlob } from "@/shared/lib/utils";
 import type { FileSystem } from "@/shared/types/file";
 import { ACTION_ICON_SIZE, actionButtonClassName } from "./actionButton";
 import { CodeRenderer } from "./CodeRenderer";
-import { contentHasMath, loadKatex, loadMathPlugins, type MathPlugins } from "./markdownMath";
+import { UiRenderer } from "@/shared/ui/inlineUi/UiRenderer";
+import { UI_TAG, uiFenceExtension } from "./markdownUi";
+import { loadKatex, type Katex } from "./markdownMath";
+import { EmojiContext } from "@/shell/context/EmojiContext";
 import { MediaPlayer } from "./MediaPlayer";
 import { HtmlRenderer } from "./renderers/HtmlRenderer";
 import { LazyCsvRenderer } from "./renderers/LazyCsvRenderer";
 import { MarkdownRenderer } from "./renderers/MarkdownRenderer";
-import { RendererFrame } from "./renderers/RendererFrame";
+import { RendererActionsContext, RendererFrame } from "./renderers/RendererFrame";
 import { SvgRenderer } from "./renderers/SvgRenderer";
 
 const markdownLinkClassName =
@@ -113,6 +131,49 @@ function LatexRenderer({ code, filename }: { code: string; filename?: string }) 
       <div ref={containerRef} className="overflow-x-auto" />
     </div>
   );
+}
+
+/**
+ * A `$$ … $$` or `\( … \)` expression from the math extension. KaTeX loads
+ * on first use; until then, and when it fails, the source shows as text.
+ */
+function MathNode({ source, display }: { source?: string; display?: string }) {
+  const [katex, setKatex] = useState<Katex | null>(null);
+  const expression = source ?? "";
+  const isDisplay = display === "true";
+  useEffect(() => {
+    let cancelled = false;
+    loadKatex()
+      .then((loaded) => {
+        if (!cancelled) setKatex(loaded);
+      })
+      .catch((error) => {
+        if (!cancelled) console.warn("KaTeX rendering failed:", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const html = useMemo(
+    () => katex?.renderToString(expression, { displayMode: isDisplay, throwOnError: false, strict: "ignore" }) ?? null,
+    [katex, expression, isDisplay],
+  );
+  if (html === null) {
+    return <span className={cn("font-mono text-sm", isDisplay && "block my-4 overflow-x-auto")}>{expression}</span>;
+  }
+  // KaTeX output is generated from the expression, not copied from the source.
+  return (
+    <span className={isDisplay ? "block my-4 overflow-x-auto" : undefined} dangerouslySetInnerHTML={{ __html: html }} />
+  );
+}
+
+/** Whether a rendered list item (or a list of them) starts with a task checkbox. */
+function containsCheckbox(children: ReactNode, depth: number): boolean {
+  return Children.toArray(children).some((child) => {
+    if (!isValidElement<{ type?: string; children?: ReactNode }>(child)) return false;
+    if (child.props.type === "checkbox") return true;
+    return depth > 0 && containsCheckbox(child.props.children, depth - 1);
+  });
 }
 
 const MIN_COLUMN_WIDTH = 60;
@@ -210,6 +271,57 @@ type ResizableTableProps = {
   onTableElement?: (table: HTMLTableElement | null) => void;
 } & React.TableHTMLAttributes<HTMLTableElement>;
 
+// Measures the width a column needs on an off-screen, unconstrained clone.
+function measureColumnWidth(table: HTMLTableElement, index: number): number | null {
+  const columnCount =
+    table.querySelectorAll<HTMLTableCellElement>("thead tr:first-child > *").length ||
+    table.querySelectorAll<HTMLTableCellElement>("tr:first-child > *").length;
+  if (columnCount === 0 || index >= columnCount) return null;
+
+  const clone = table.cloneNode(true) as HTMLTableElement;
+  clone.querySelectorAll("colgroup").forEach((colgroup) => {
+    colgroup.remove();
+  });
+  clone.classList.remove("w-full");
+  clone.style.position = "absolute";
+  clone.style.left = "-10000px";
+  clone.style.top = "0";
+  clone.style.visibility = "hidden";
+  clone.style.pointerEvents = "none";
+  clone.style.width = "max-content";
+  clone.style.minWidth = "0";
+  clone.style.tableLayout = "auto";
+
+  clone.querySelectorAll<HTMLElement>("th,td").forEach((cell) => {
+    cell.style.width = "auto";
+    cell.style.minWidth = "0";
+    cell.style.maxWidth = "none";
+    cell.style.whiteSpace = "nowrap";
+  });
+
+  document.body.appendChild(clone);
+  try {
+    let neededWidth = MIN_COLUMN_WIDTH;
+
+    Array.from(clone.rows).forEach((row) => {
+      let columnIndex = 0;
+      Array.from(row.cells).some((cell) => {
+        const colSpan = Math.max(1, cell.colSpan || 1);
+        const containsTarget = index >= columnIndex && index < columnIndex + colSpan;
+        columnIndex += colSpan;
+        if (!containsTarget) return false;
+
+        neededWidth = Math.max(neededWidth, Math.ceil(cell.getBoundingClientRect().width / colSpan));
+        return true;
+      });
+    });
+
+    return neededWidth;
+  } finally {
+    clone.remove();
+  }
+}
+
 function ResizableTable({
   children,
   className,
@@ -226,7 +338,8 @@ function ResizableTable({
     startX: number;
     widthsAtStart: number[];
   } | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
+  const [resizingIndex, setResizingIndex] = useState<number | null>(null);
+  const isResizing = resizingIndex !== null;
 
   const setTableElement = useCallback(
     (table: HTMLTableElement | null) => {
@@ -277,7 +390,7 @@ function ResizableTable({
     };
     const onUp = () => {
       resizingRef.current = null;
-      setIsResizing(false);
+      setResizingIndex(null);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -303,61 +416,8 @@ function ResizableTable({
       widthsAtStart: currentWidths,
     };
     setWidths(currentWidths);
-    setIsResizing(true);
+    setResizingIndex(index);
   };
-
-  const measureNeededColumnWidth = useCallback((index: number): number | null => {
-    const table = tableRef.current;
-    if (!table) return null;
-
-    const columnCount =
-      table.querySelectorAll<HTMLTableCellElement>("thead tr:first-child > *").length ||
-      table.querySelectorAll<HTMLTableCellElement>("tr:first-child > *").length;
-    if (columnCount === 0 || index >= columnCount) return null;
-
-    const clone = table.cloneNode(true) as HTMLTableElement;
-    clone.querySelectorAll("colgroup").forEach((colgroup) => {
-      colgroup.remove();
-    });
-    clone.classList.remove("w-full");
-    clone.style.position = "absolute";
-    clone.style.left = "-10000px";
-    clone.style.top = "0";
-    clone.style.visibility = "hidden";
-    clone.style.pointerEvents = "none";
-    clone.style.width = "max-content";
-    clone.style.minWidth = "0";
-    clone.style.tableLayout = "auto";
-
-    clone.querySelectorAll<HTMLElement>("th,td").forEach((cell) => {
-      cell.style.width = "auto";
-      cell.style.minWidth = "0";
-      cell.style.maxWidth = "none";
-      cell.style.whiteSpace = "nowrap";
-    });
-
-    document.body.appendChild(clone);
-    try {
-      let neededWidth = MIN_COLUMN_WIDTH;
-
-      Array.from(clone.rows).forEach((row) => {
-        let columnIndex = 0;
-        Array.from(row.cells).some((cell) => {
-          const colSpan = Math.max(1, cell.colSpan || 1);
-          const containsTarget = index >= columnIndex && index < columnIndex + colSpan;
-          columnIndex += colSpan;
-          if (!containsTarget) return false;
-
-          neededWidth = Math.max(neededWidth, Math.ceil(cell.getBoundingClientRect().width / colSpan));
-          return true;
-        });
-      });
-
-      return neededWidth;
-    } finally {
-      clone.remove();
-    }
-  }, []);
 
   const fitColumnToContent = (index: number) => (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -366,7 +426,7 @@ function ResizableTable({
     const table = tableRef.current;
     if (!table) return;
 
-    const neededWidth = measureNeededColumnWidth(index);
+    const neededWidth = measureColumnWidth(table, index);
     if (!neededWidth) return;
 
     const headers = table.querySelectorAll<HTMLTableCellElement>("thead tr:first-child > *");
@@ -375,7 +435,7 @@ function ResizableTable({
     next[index] = Math.max(MIN_COLUMN_WIDTH, neededWidth);
 
     resizingRef.current = null;
-    setIsResizing(false);
+    setResizingIndex(null);
     setWidths(next);
   };
 
@@ -412,7 +472,7 @@ function ResizableTable({
             <div
               className={cn(
                 "absolute inset-y-0 left-1/2 -translate-x-1/2 w-px transition-colors",
-                isResizing && resizingRef.current?.index === i
+                resizingIndex === i
                   ? "bg-neutral-950 dark:bg-neutral-100"
                   : "bg-transparent group-hover/handle:bg-neutral-800 dark:group-hover/handle:bg-neutral-300",
               )}
@@ -437,7 +497,7 @@ function MarkdownTable({ children, ...props }: React.TableHTMLAttributes<HTMLTab
     const csv = tableElementToCsv(inlineTableRef.current);
     if (!csv) return;
     const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
-    downloadBlob(blob, TABLE_CSV_FILENAME);
+    void downloadBlob(blob, TABLE_CSV_FILENAME);
   }, []);
 
   const printTable = useCallback(() => {
@@ -571,464 +631,406 @@ function MarkdownTable({ children, ...props }: React.TableHTMLAttributes<HTMLTab
   );
 }
 
-function createComponents(
-  scopeId: string,
-  isStreaming: boolean,
-  resolveAsset: (url: string) => string | undefined,
-  blockCounterRef: { current: number },
-  compact = false,
-): Partial<Components> {
-  return {
-    pre: ({ children }) => {
-      return <>{children}</>;
-    },
-    p: ({ children, ...props }) => {
+const MarkdownRenderContext = createContext<{
+  isStreaming: boolean;
+  compact: boolean;
+  resolveAsset: (url: string) => string | undefined;
+  onOpenArtifact?: (path: string) => void;
+  onSendMessage?: (text: string) => void;
+  uiStateKey?: string;
+}>({ isStreaming: false, compact: false, resolveAsset: () => undefined });
+
+function UiFence({ source, blockIndex }: { source?: string; blockIndex?: string }) {
+  const { isStreaming, onOpenArtifact, onSendMessage, uiStateKey } = useContext(MarkdownRenderContext);
+  return (
+    <UiRenderer
+      source={source ?? ""}
+      stateKey={uiStateKey ? JSON.stringify([uiStateKey, blockIndex]) : undefined}
+      isStreaming={isStreaming}
+      onSendMessage={onSendMessage}
+      renderText={(markdown) => (
+        <Markdown compact onOpenArtifact={onOpenArtifact}>
+          {markdown}
+        </Markdown>
+      )}
+    />
+  );
+}
+
+// Stable component types preserve tables, previews, and code blocks when math
+// loads or streaming ends. Runtime options travel through context, not closures.
+const markdownComponents = {
+  pre: ({ children }) => {
+    return <>{children}</>;
+  },
+  // A titled fence arrives wrapped in a figure with a caption; the code block shows its own name.
+  figure: ({ children, className, ...props }) =>
+    typeof className === "string" && className.includes("tm-code-frame") ? (
+      <>{Children.toArray(children).filter((child) => isValidElement(child) && child.type !== "figcaption")}</>
+    ) : (
+      <figure className={className} {...props}>
+        {children}
+      </figure>
+    ),
+  p: function Paragraph({ children, ...props }) {
+    const { compact } = useContext(MarkdownRenderContext);
+    return (
+      <p className={cn("first:mt-0 last:mb-0", compact ? "my-2 leading-normal" : "my-3.5 leading-7")} {...props}>
+        {children}
+      </p>
+    );
+  },
+  input: ({ type, checked, className, ...props }) => {
+    if (type === "checkbox") {
       return (
-        <p className={cn("first:mt-0 last:mb-0", compact ? "my-2 leading-normal" : "my-3.5 leading-7")} {...props}>
-          {children}
-        </p>
-      );
-    },
-    input: ({ type, checked, className, ...props }) => {
-      if (type === "checkbox") {
-        return (
-          <input
-            type="checkbox"
-            checked={checked}
-            readOnly
-            disabled
-            className={cn(className, "task-checkbox", checked && "checked")}
-            {...props}
-          />
-        );
-      }
-      return <input type={type} checked={checked} className={className} {...props} />;
-    },
-    li: ({ children, className, ...props }) => {
-      const isTask = typeof className === "string" && className.includes("task-list-item");
-      return (
-        <li
-          className={cn("ml-0", compact ? "py-0.5 leading-normal" : "py-0.5 leading-7", isTask && "task-list-item")}
+        <input
+          type="checkbox"
+          checked={checked}
+          readOnly
+          disabled
+          className={cn(className, "task-checkbox", checked && "checked")}
           {...props}
+        />
+      );
+    }
+    return <input type={type} checked={checked} className={className} {...props} />;
+  },
+  li: function ListItem({ children, className, ...props }) {
+    const { compact } = useContext(MarkdownRenderContext);
+    const isTask =
+      (typeof className === "string" && className.includes("task-list-item")) || containsCheckbox(children, 1);
+    return (
+      <li
+        className={cn("ml-0", compact ? "py-0.5 leading-normal" : "py-0.5 leading-7", isTask && "task-list-item")}
+        {...props}
+      >
+        {children}
+      </li>
+    );
+  },
+  ul: ({ children, className, ...props }) => {
+    const isTaskList =
+      (typeof className === "string" && className.includes("contains-task-list")) || containsCheckbox(children, 2);
+    return (
+      <ul className={cn(isTaskList ? "task-list ml-0 pl-0" : "custom-list ml-5 pl-0")} {...props}>
+        {children}
+      </ul>
+    );
+  },
+  ol: ({ children, ...props }) => {
+    return (
+      <ol className="list-decimal list-outside pl-6 ml-0" {...props}>
+        {children}
+      </ol>
+    );
+  },
+  strong: ({ children, ...props }) => {
+    return (
+      <span className="font-semibold" {...props}>
+        {children}
+      </span>
+    );
+  },
+  a: function Link({ children, href, ...props }) {
+    const { onOpenArtifact } = useContext(MarkdownRenderContext);
+    let url = href || "";
+    const internalHash = getInternalHash(url);
+
+    const artifactPath = getArtifactLinkPath(url);
+    if (artifactPath && onOpenArtifact) {
+      return (
+        <button
+          type="button"
+          className={cn(markdownLinkClassName, "cursor-pointer border-0 bg-transparent p-0 font-[inherit]")}
+          onClick={() => onOpenArtifact(artifactPath)}
         >
           {children}
-        </li>
+        </button>
       );
-    },
-    ul: ({ children, className, ...props }) => {
-      const isTaskList = typeof className === "string" && className.includes("contains-task-list");
+    }
+
+    if (url && !/^(?:[a-z][a-z\d+.-]*:|[#/.?])/i.test(url)) {
+      url = `https://${url}`;
+    }
+
+    if (isAudioUrl(url)) {
       return (
-        <ul className={cn(isTaskList ? "task-list ml-0 pl-0" : "custom-list ml-5 pl-0")} {...props}>
+        <MediaPlayer url={url} type="audio">
           {children}
-        </ul>
+        </MediaPlayer>
       );
-    },
-    ol: ({ children, ...props }) => {
+    }
+
+    if (isVideoUrl(url)) {
       return (
-        <ol className="list-decimal list-outside pl-6 ml-0" {...props}>
+        <MediaPlayer url={url} type="video">
           {children}
-        </ol>
+        </MediaPlayer>
       );
-    },
-    strong: ({ children, ...props }) => {
+    }
+
+    if (internalHash) {
       return (
-        <span className="font-semibold" {...props}>
-          {children}
-        </span>
-      );
-    },
-    a: ({ children, href, ...props }) => {
-      let url = href || "";
-      const internalHash = getInternalHash(url);
-
-      if (url && !url.startsWith("http") && !url.startsWith("#")) {
-        url = `https://${url}`;
-      }
-
-      if (isAudioUrl(url)) {
-        return (
-          <MediaPlayer url={url} type="audio">
-            {children}
-          </MediaPlayer>
-        );
-      }
-
-      if (isVideoUrl(url)) {
-        return (
-          <MediaPlayer url={url} type="video">
-            {children}
-          </MediaPlayer>
-        );
-      }
-
-      if (internalHash) {
-        return (
-          <a
-            className={markdownLinkClassName}
-            href={`#${internalHash}`}
-            onClick={(e) => {
-              e.preventDefault();
-              document.getElementById(internalHash)?.scrollIntoView({ behavior: "smooth" });
-            }}
-            {...props}
-          >
-            {children}
-          </a>
-        );
-      }
-
-      return (
-        <a className={markdownLinkClassName} href={url} target="_blank" rel="noreferrer noopener" {...props}>
+        <a
+          className={markdownLinkClassName}
+          href={`#${internalHash}`}
+          onClick={(e) => {
+            e.preventDefault();
+            document.getElementById(internalHash)?.scrollIntoView({ behavior: "smooth" });
+          }}
+          {...props}
+        >
           {children}
         </a>
       );
-    },
-    h1: ({ children, ...props }) => {
+    }
+
+    return (
+      <a className={markdownLinkClassName} href={url} target="_blank" rel="noreferrer noopener" {...props}>
+        {children}
+      </a>
+    );
+  },
+  h1: function Heading1({ children, ...props }) {
+    const { compact } = useContext(MarkdownRenderContext);
+    return (
+      <h1
+        id={slugify(children)}
+        className={
+          compact ? "text-base font-semibold mt-4 mb-1 first:mt-0" : "text-3xl font-semibold mt-8 mb-3 first:mt-0"
+        }
+        {...props}
+      >
+        {children}
+      </h1>
+    );
+  },
+  h2: function Heading2({ children, ...props }) {
+    const { compact } = useContext(MarkdownRenderContext);
+    return (
+      <h2
+        id={slugify(children)}
+        className={
+          compact ? "text-sm font-semibold mt-4 mb-1 first:mt-0" : "text-2xl font-semibold mt-8 mb-3 first:mt-0"
+        }
+        {...props}
+      >
+        {children}
+      </h2>
+    );
+  },
+  h3: function Heading3({ children, ...props }) {
+    const { compact } = useContext(MarkdownRenderContext);
+    return (
+      <h3
+        id={slugify(children)}
+        className={
+          compact ? "text-sm font-semibold mt-3 mb-1 first:mt-0" : "text-xl font-semibold mt-6 mb-2 first:mt-0"
+        }
+        {...props}
+      >
+        {children}
+      </h3>
+    );
+  },
+  h4: function Heading4({ children, ...props }) {
+    const { compact } = useContext(MarkdownRenderContext);
+    return (
+      <h4
+        id={slugify(children)}
+        className={
+          compact ? "text-sm font-semibold mt-2 mb-1 first:mt-0" : "text-lg font-semibold mt-6 mb-2 first:mt-0"
+        }
+        {...props}
+      >
+        {children}
+      </h4>
+    );
+  },
+  h5: function Heading5({ children, ...props }) {
+    const { compact } = useContext(MarkdownRenderContext);
+    return (
+      <h5
+        id={slugify(children)}
+        className={
+          compact ? "text-sm font-semibold mt-2 mb-1 first:mt-0" : "text-base font-semibold mt-5 mb-1 first:mt-0"
+        }
+        {...props}
+      >
+        {children}
+      </h5>
+    );
+  },
+  h6: function Heading6({ children, ...props }) {
+    const { compact } = useContext(MarkdownRenderContext);
+    return (
+      <h6
+        id={slugify(children)}
+        className={
+          compact ? "text-xs font-semibold mt-2 mb-1 first:mt-0" : "text-sm font-semibold mt-5 mb-1 first:mt-0"
+        }
+        {...props}
+      >
+        {children}
+      </h6>
+    );
+  },
+  table: ({ children, ...props }) => {
+    return <MarkdownTable {...props}>{children}</MarkdownTable>;
+  },
+  thead: ({ children, ...props }) => {
+    return (
+      <thead className="bg-neutral-100 dark:bg-neutral-900" {...props}>
+        {children}
+      </thead>
+    );
+  },
+  tbody: ({ children, ...props }) => {
+    return <tbody {...props}>{children}</tbody>;
+  },
+  tr: ({ children, ...props }) => {
+    return <tr {...props}>{children}</tr>;
+  },
+  th: ({ children, ...props }) => {
+    return (
+      <th
+        className="px-3 py-2 text-left text-sm font-semibold border-r last:border-r-0 border-neutral-200 dark:border-neutral-600"
+        {...props}
+      >
+        {children}
+      </th>
+    );
+  },
+  td: ({ children, ...props }) => {
+    return (
+      <td className="px-3 py-2 text-sm border-r last:border-r-0 border-neutral-200 dark:border-neutral-600" {...props}>
+        {children}
+      </td>
+    );
+  },
+  blockquote: ({ children, ...props }) => {
+    return (
+      <blockquote
+        className="border-l-[3px] border-neutral-300 dark:border-neutral-700 pl-4 my-4 leading-7 text-neutral-600 dark:text-neutral-400 [&>:first-child]:mt-0 [&>:last-child]:mb-0"
+        {...props}
+      >
+        {children}
+      </blockquote>
+    );
+  },
+  details: ({ children, ...props }) => (
+    <details
+      className="my-3 rounded-md border border-neutral-200 px-3 py-2 open:pb-3 dark:border-neutral-700"
+      {...props}
+    >
+      {children}
+    </details>
+  ),
+  summary: ({ children, ...props }) => (
+    <summary className="cursor-pointer select-none font-medium [&>p]:inline [&>p]:my-0" {...props}>
+      {children}
+    </summary>
+  ),
+  dl: ({ children, ...props }) => (
+    <dl className="my-3 grid gap-x-4 gap-y-1 sm:grid-cols-[max-content_1fr]" {...props}>
+      {children}
+    </dl>
+  ),
+  dt: ({ children, ...props }) => (
+    <dt className="font-semibold [&>p]:my-0" {...props}>
+      {children}
+    </dt>
+  ),
+  dd: ({ children, ...props }) => (
+    <dd className="ml-0 mb-1 text-neutral-700 dark:text-neutral-300 [&>p]:my-0" {...props}>
+      {children}
+    </dd>
+  ),
+  kbd: ({ children, ...props }) => (
+    <kbd
+      className="rounded border border-neutral-300 bg-neutral-100 px-1.5 py-0.5 font-mono text-[0.8em] dark:border-neutral-600 dark:bg-neutral-800"
+      {...props}
+    >
+      {children}
+    </kbd>
+  ),
+  mark: ({ children, ...props }) => (
+    <mark className="rounded bg-amber-200/70 px-0.5 text-inherit dark:bg-amber-500/40" {...props}>
+      {children}
+    </mark>
+  ),
+  hr: ({ ...props }) => {
+    return <hr className="my-4 border-neutral-300 dark:border-neutral-700" {...props} />;
+  },
+  img: function Image({ src, alt, ...props }) {
+    const { resolveAsset } = useContext(MarkdownRenderContext);
+    const rawSrc = typeof src === "string" ? src : "";
+    const resolved = rawSrc ? resolveAsset(rawSrc) : undefined;
+    return (
+      <img
+        src={resolved ?? rawSrc}
+        alt={alt || "Image"}
+        className="max-h-60 my-2 rounded-md"
+        loading="lazy"
+        {...props}
+      />
+    );
+  },
+  code: function Code({ children, className, ...rest }) {
+    const { isStreaming } = useContext(MarkdownRenderContext);
+    const match = /language-([\w-]+)/.exec(className || "");
+    const text = extractText(children);
+    const isMultiLine = text.includes("\n");
+
+    if (!match && !isMultiLine) {
       return (
-        <h1
-          id={slugify(children)}
-          className={
-            compact ? "text-base font-semibold mt-4 mb-1 first:mt-0" : "text-3xl font-semibold mt-8 mb-3 first:mt-0"
-          }
-          {...props}
+        <code
+          {...rest}
+          className={`${className || ""} bg-neutral-200 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-sm font-mono`}
         >
           {children}
-        </h1>
+        </code>
       );
-    },
-    h2: ({ children, ...props }) => {
-      return (
-        <h2
-          id={slugify(children)}
-          className={
-            compact ? "text-sm font-semibold mt-4 mb-1 first:mt-0" : "text-2xl font-semibold mt-8 mb-3 first:mt-0"
-          }
-          {...props}
-        >
-          {children}
-        </h2>
-      );
-    },
-    h3: ({ children, ...props }) => {
-      return (
-        <h3
-          id={slugify(children)}
-          className={
-            compact ? "text-sm font-semibold mt-3 mb-1 first:mt-0" : "text-xl font-semibold mt-6 mb-2 first:mt-0"
-          }
-          {...props}
-        >
-          {children}
-        </h3>
-      );
-    },
-    h4: ({ children, ...props }) => {
-      return (
-        <h4
-          id={slugify(children)}
-          className={
-            compact ? "text-sm font-semibold mt-2 mb-1 first:mt-0" : "text-lg font-semibold mt-6 mb-2 first:mt-0"
-          }
-          {...props}
-        >
-          {children}
-        </h4>
-      );
-    },
-    h5: ({ children, ...props }) => {
-      return (
-        <h5
-          id={slugify(children)}
-          className={
-            compact ? "text-sm font-semibold mt-2 mb-1 first:mt-0" : "text-base font-semibold mt-5 mb-1 first:mt-0"
-          }
-          {...props}
-        >
-          {children}
-        </h5>
-      );
-    },
-    h6: ({ children, ...props }) => {
-      return (
-        <h6
-          id={slugify(children)}
-          className={
-            compact ? "text-xs font-semibold mt-2 mb-1 first:mt-0" : "text-sm font-semibold mt-5 mb-1 first:mt-0"
-          }
-          {...props}
-        >
-          {children}
-        </h6>
-      );
-    },
-    table: ({ children, ...props }) => {
-      return <MarkdownTable {...props}>{children}</MarkdownTable>;
-    },
-    thead: ({ children, ...props }) => {
-      return (
-        <thead className="bg-neutral-100 dark:bg-neutral-900" {...props}>
-          {children}
-        </thead>
-      );
-    },
-    tbody: ({ children, ...props }) => {
-      return <tbody {...props}>{children}</tbody>;
-    },
-    tr: ({ children, ...props }) => {
-      return <tr {...props}>{children}</tr>;
-    },
-    th: ({ children, ...props }) => {
-      return (
-        <th
-          className="px-3 py-2 text-left text-sm font-semibold border-r last:border-r-0 border-neutral-200 dark:border-neutral-600"
-          {...props}
-        >
-          {children}
-        </th>
-      );
-    },
-    td: ({ children, ...props }) => {
-      return (
-        <td
-          className="px-3 py-2 text-sm border-r last:border-r-0 border-neutral-200 dark:border-neutral-600"
-          {...props}
-        >
-          {children}
-        </td>
-      );
-    },
-    blockquote: ({ children, ...props }) => {
-      return (
-        <blockquote
-          className="border-l-[3px] border-neutral-300 dark:border-neutral-700 pl-4 my-4 leading-7 text-neutral-600 dark:text-neutral-400 [&>:first-child]:mt-0 [&>:last-child]:mb-0"
-          {...props}
-        >
-          {children}
-        </blockquote>
-      );
-    },
-    hr: ({ ...props }) => {
-      return <hr className="my-4 border-neutral-300 dark:border-neutral-700" {...props} />;
-    },
-    img: ({ src, alt, ...props }) => {
-      const rawSrc = typeof src === "string" ? src : "";
-      const resolved = rawSrc ? resolveAsset(rawSrc) : undefined;
-      return (
-        <img
-          src={resolved ?? rawSrc}
-          alt={alt || "Image"}
-          className="max-h-60 my-2 rounded-md"
-          loading="lazy"
-          {...props}
-        />
-      );
-    },
-    code({ children, className, ...rest }) {
-      const match = /language-(\w+)/.exec(className || "");
-      const text = extractText(children).replace(/\n$/, "");
-      const isMultiLine = text.includes("\n");
+    }
 
-      if (!match && !isMultiLine) {
-        return (
-          <code
-            {...rest}
-            className={`${className || ""} bg-neutral-200 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-sm font-mono`}
-          >
-            {children}
-          </code>
-        );
-      }
+    if (!match) {
+      return <CodeRenderer code={text} language="text" isStreaming={isStreaming} />;
+    }
 
-      const blockId = `${scopeId}:code:${blockCounterRef.current++}`;
+    const language = match[1].toLowerCase();
 
-      if (!match) {
-        return <CodeRenderer key={blockId} code={text} language="text" blockId={blockId} isStreaming={isStreaming} />;
-      }
-
-      const language = match[1].toLowerCase();
-
-      if (language === "latex" || language === "tex" || language === "math" || language === "katex") {
-        const filename = extractFilename(text);
-        return <LatexRenderer code={text} filename={filename} />;
-      }
-
-      if (language === "svg") {
-        return <SvgRenderer svg={text} language={language} />;
-      }
-
-      if (language === "html" || language === "htm") {
-        return <HtmlRenderer html={text} language={language} />;
-      }
-
-      if (language === "csv" || language === "tsv") {
-        return <LazyCsvRenderer csv={text} language={language} />;
-      }
-
-      if (language === "undefined" || language === "text" || language === "plain") {
-        return <CodeRenderer key={blockId} code={text} language="text" blockId={blockId} isStreaming={isStreaming} />;
-      }
-
-      if (language === "markdown" || language === "md") {
-        return <MarkdownRenderer content={text} language={language} />;
-      }
-
+    if (language === "latex" || language === "tex" || language === "math" || language === "katex") {
       const filename = extractFilename(text);
-      return (
-        <CodeRenderer
-          key={blockId}
-          code={text}
-          language={language}
-          name={filename}
-          blockId={blockId}
-          isStreaming={isStreaming}
-        />
-      );
-    },
-  };
-}
-
-const baseRehypeReactOptions: Parameters<typeof rehypeReact>[0] = {
-  Fragment,
-  jsx,
-  jsxs,
-  ignoreInvalidStyle: true,
-  passKeys: true,
-  passNode: true,
-};
-
-const STREAM_RENDER_THROTTLE_MS = 120;
-
-const findMatchingLinkDestinationEnd = (content: string, start: number): number => {
-  let depth = 1;
-
-  for (let index = start; index < content.length; index += 1) {
-    const char = content[index];
-
-    if (char === "\\") {
-      index += 1;
-      continue;
+      return <LatexRenderer code={text} filename={filename} />;
     }
 
-    if (char === "(") {
-      depth += 1;
-      continue;
+    if (language === "svg") {
+      return <SvgRenderer svg={text} language={language} />;
     }
 
-    if (char === ")") {
-      depth -= 1;
-      if (depth === 0) {
-        return index;
-      }
-    }
-  }
-
-  return -1;
-};
-
-const stabilizeStreamingLinks = (content: string): string => {
-  const bracketStack: number[] = [];
-  let inInlineCode = false;
-  let inFence = false;
-
-  for (let index = 0; index < content.length; index += 1) {
-    const char = content[index];
-    const nextThree = content.slice(index, index + 3);
-    const lineStart = index === 0 || content[index - 1] === "\n";
-
-    if (!inInlineCode && lineStart && nextThree === "```") {
-      inFence = !inFence;
-      index += 2;
-      continue;
+    if (language === "html" || language === "htm") {
+      return <HtmlRenderer html={text} language={language} />;
     }
 
-    if (inFence) {
-      continue;
+    if (language === "csv" || language === "tsv") {
+      return <LazyCsvRenderer csv={text} language={language} />;
     }
 
-    if (char === "`" && content[index - 1] !== "\\") {
-      inInlineCode = !inInlineCode;
-      continue;
+    if (language === "undefined" || language === "text" || language === "plain") {
+      return <CodeRenderer code={text} language="text" isStreaming={isStreaming} />;
     }
 
-    if (inInlineCode) {
-      continue;
+    if (language === "markdown" || language === "md") {
+      return <MarkdownRenderer content={text} language={language} />;
     }
 
-    if (char === "[") {
-      bracketStack.push(index);
-      continue;
-    }
+    const filename = extractFilename(text);
+    return <CodeRenderer code={text} language={language} name={filename} isStreaming={isStreaming} />;
+  },
+} satisfies MarkdownComponents;
 
-    if (char === "]" && content[index + 1] === "(" && bracketStack.length > 0) {
-      const labelStart = bracketStack.pop();
-      if (labelStart === undefined) {
-        continue;
-      }
-      const label = content.slice(labelStart + 1, index);
-      const destinationEnd = findMatchingLinkDestinationEnd(content, index + 2);
-
-      if (destinationEnd === -1) {
-        const imageStart = labelStart > 0 && content[labelStart - 1] === "!" ? labelStart - 1 : labelStart;
-        return `${content.slice(0, imageStart)}${label}`;
-      }
-    }
-  }
-
-  return content;
-};
-
-const preprocessMarkdown = (content: string, isStreaming = false): string => {
-  let processedContent = content;
-
-  if (isStreaming) {
-    processedContent = stabilizeStreamingLinks(processedContent);
-  }
-
-  // Convert LaTeX-style display math \[...\] to $$...$$
-  processedContent = processedContent.replace(/\\\[([\s\S]+?)\\\]/g, (_match, mathContent) => {
-    return `$$${mathContent}$$`;
-  });
-
-  // Convert LaTeX-style inline math \(...\) to $$...$$ (since single $ is disabled)
-  processedContent = processedContent.replace(/\\\(([\s\S]+?)\\\)/g, (_match, mathContent) => {
-    return `$$${mathContent}$$`;
-  });
-
-  // Ensure blank line before code blocks that come after headings
-  processedContent = processedContent.replace(/^(#{1,6}\s+.+)\n```/gm, "$1\n\n```");
-
-  // Ensure blank line after code blocks before headings
-  processedContent = processedContent.replace(/```\n(#{1,6}\s+)/gm, "```\n\n$1");
-
-  return processedContent;
-};
-
-function createMarkdownProcessor(
-  scopeId: string,
-  isStreaming: boolean,
-  resolveAsset: (url: string) => string | undefined,
-  blockCounterRef: { current: number },
-  compact = false,
-  math: MathPlugins | null = null,
-) {
-  // remark-math + rehype-katex are wired in only once the content is known to
-  // contain `$$…$$` math, keeping KaTeX out of first paint.
-  const remarkPlugins: PluggableList = [remarkParse, remarkGfm, remarkBreaks, remarkGemoji];
-  if (math) remarkPlugins.push([math.remarkMath, { singleDollarTextMath: false }]);
-
-  const rehypePlugins: PluggableList = [];
-  if (math) rehypePlugins.push([math.rehypeKatex, { strict: "ignore", errorColor: "transparent" }]);
-  rehypePlugins.push(rehypeNotoEmoji);
-  rehypePlugins.push([
-    rehypeReact,
-    {
-      ...baseRehypeReactOptions,
-      components: createComponents(scopeId, isStreaming, resolveAsset, blockCounterRef, compact),
-    },
-  ]);
-
-  return unified().use(remarkPlugins).use(remarkRehype, { allowDangerousHtml: true }).use(rehypePlugins);
-}
+// Custom nodes from the extensions render through the same map.
+const components = { ...markdownComponents, [MATH_TAG]: MathNode, [UI_TAG]: UiFence };
 
 type MarkdownProps = {
   children: string;
@@ -1048,85 +1050,58 @@ type MarkdownProps = {
    * resolving relative asset URLs. Only meaningful when `fs` is provided.
    */
   basePath?: string;
+  /** Opens a link the model emitted to a generated artifact (e.g. `sandbox:`) in the artifact panel. */
+  onOpenArtifact?: (path: string) => void;
+  /** Posts text to the chat as the user; lets a ```ui block's buttons continue the conversation. */
+  onSendMessage?: (text: string) => void;
+  /** Stable chat/message/text-part identity for independent UI fence state. */
+  uiStateKey?: string;
 };
 
-let markdownInstanceCounter = 0;
-
-const NonMemoizedMarkdown = ({ children, isStreaming = false, compact = false, fs, basePath }: MarkdownProps) => {
-  const [throttled, setThrottled] = useState(children);
-  const [mathPlugins, setMathPlugins] = useState<MathPlugins | null>(null);
-  const lastFlushRef = useRef(0);
-  const timerRef = useRef<number>(undefined);
-  const scopeIdRef = useRef<string | null>(null);
-  const blockCounterRef = useRef(0);
-
-  if (!scopeIdRef.current) {
-    scopeIdRef.current = `markdown-${markdownInstanceCounter++}`;
-  }
-
+const NonMemoizedMarkdown = ({
+  children,
+  isStreaming = false,
+  compact = false,
+  fs,
+  basePath,
+  onOpenArtifact,
+  onSendMessage,
+  uiStateKey,
+}: MarkdownProps) => {
+  const actionsEnabled = useContext(RendererActionsContext) && !isStreaming;
+  const emojiMode = useContext(EmojiContext)?.emojiMode ?? "monochrome";
   const resolveAsset = useAssetUrlResolver(fs, basePath);
-
-  const processor = useMemo(
-    () =>
-      createMarkdownProcessor(
-        scopeIdRef.current ?? "markdown",
-        isStreaming,
-        resolveAsset,
-        blockCounterRef,
-        compact,
-        mathPlugins,
-      ),
-    [isStreaming, resolveAsset, compact, mathPlugins],
+  const renderOptions = useMemo(
+    () => ({ isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage, uiStateKey }),
+    [isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage, uiStateKey],
+  );
+  // The streaming profile keeps unfinished constructs predictable while text arrives.
+  const extensions = useMemo(
+    () => [...markdownExtensions(emojiMode), ...(isStreaming ? [streamingMarkdownExtension()] : []), uiFenceExtension],
+    [emojiMode, isStreaming],
   );
 
-  useEffect(() => {
-    if (!isStreaming) {
-      window.clearTimeout(timerRef.current);
-      return;
-    }
+  // Native chunks may contain whole sentences. Reveal them over a few frames;
+  // defer Markdown work so typing and Stop stay responsive during parsing.
+  const input = useDeferredValue(useStreamingText(children, isStreaming));
+  const source = prepareMarkdownSource(input, isStreaming);
 
-    const delay = Math.max(0, STREAM_RENDER_THROTTLE_MS - (Date.now() - lastFlushRef.current));
-
-    window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => {
-      lastFlushRef.current = Date.now();
-      setThrottled(children);
-    }, delay);
-
-    return () => window.clearTimeout(timerRef.current);
-  }, [children, isStreaming]);
-
-  // Throttle limits parse frequency during streaming; useDeferredValue
-  // lets React interrupt long renders to keep the UI responsive.
-  const input = useDeferredValue(isStreaming ? throttled : children);
-  const processed = input ? preprocessMarkdown(input, isStreaming) : "";
-
-  // Load the KaTeX pipeline the first time content actually contains `$$…$$`
-  // math, then re-render with math support. Until then the raw `$$` shows.
-  useEffect(() => {
-    if (mathPlugins || !contentHasMath(processed)) return;
-    let cancelled = false;
-    loadMathPlugins()
-      .then((plugins) => {
-        if (!cancelled) setMathPlugins(plugins);
-      })
-      .catch((error) => {
-        // Leave math unrendered (raw `$$`) on a failed chunk load; the registry
-        // evicts the failure so a later render can retry.
-        console.warn("Failed to load math plugins:", error);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [processed, mathPlugins]);
-
-  if (!input) return null;
-
-  // Reset block counter before each processSync so code block keys are
-  // stable across re-renders (code:0, code:1, …), preventing CodeRenderer
-  // from unmounting/remounting on every streaming update.
-  blockCounterRef.current = 0;
-  return processor.processSync(processed).result;
+  return (
+    <RendererActionsContext value={actionsEnabled}>
+      <MarkdownRenderContext value={renderOptions}>
+        {source ? (
+          <TanStackMarkdown
+            {...MARKDOWN_PARSE_OPTIONS}
+            components={components}
+            extensions={extensions}
+            urlTransform={markdownUrlTransform}
+          >
+            {source}
+          </TanStackMarkdown>
+        ) : null}
+      </MarkdownRenderContext>
+    </RendererActionsContext>
+  );
 };
 
 export const Markdown = memo(
@@ -1136,7 +1111,10 @@ export const Markdown = memo(
     prev.isStreaming === next.isStreaming &&
     prev.compact === next.compact &&
     prev.fs === next.fs &&
-    prev.basePath === next.basePath,
+    prev.basePath === next.basePath &&
+    prev.onOpenArtifact === next.onOpenArtifact &&
+    prev.onSendMessage === next.onSendMessage &&
+    prev.uiStateKey === next.uiStateKey,
 );
 
 const extractFilename = (code: string): string | undefined => {

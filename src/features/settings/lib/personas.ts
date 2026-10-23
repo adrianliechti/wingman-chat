@@ -32,18 +32,18 @@ export const personas: Record<PersonaKey, string> = {
 };
 
 export const personaOptions: { value: PersonaKey; label: string; description?: string }[] = [
-  { value: "default", label: "Default" },
+  { value: "default", label: "Default", description: "Warm, clear and direct, with detail matched to your needs" },
   {
     value: "candid",
     label: "Candid",
-    description: "Eloquent and analytical, challenges assumptions with intellectual grace",
+    description: "Direct and thoughtful, challenges assumptions with clear reasoning",
   },
   {
     value: "cynical",
     label: "Cynical",
-    description: "Sarcastic wit with hidden warmth, treats requests as personal inconvenience",
+    description: "Dry humor and mild sarcasm, with warmth when it matters",
   },
-  { value: "efficient", label: "Efficient", description: "Direct and concise, no conversational fluff or opinions" },
+  { value: "efficient", label: "Efficient", description: "Direct and concise, with the detail needed to act" },
   { value: "friendly", label: "Friendly", description: "Warm, curious and witty, like talking to a good friend" },
   {
     value: "nerdy",
@@ -68,6 +68,5 @@ export const personaOptions: { value: PersonaKey; label: string; description?: s
 ];
 
 export function getPersonaContent(key: PersonaKey | undefined): string {
-  if (!key || key === "default") return "";
-  return personas[key] || "";
+  return personas[key ?? "default"] || personaDefault;
 }

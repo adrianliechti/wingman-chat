@@ -1,8 +1,10 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { AgentProvider } from "./features/agent/context/AgentProvider";
 import { ArtifactsProvider } from "./features/artifacts/context/ArtifactsProvider";
 import { ChatProvider } from "./features/chat/context/ChatProvider";
 import { ScreenCaptureProvider } from "./features/chat/context/ScreenCaptureProvider";
+import { PluginsProvider } from "./features/plugins/context/PluginsProvider";
 import { ProfileProvider } from "./features/settings/context/ProfileProvider";
 import { SkillsProvider } from "./features/skills/context/SkillsProvider";
 import { ToolsProvider } from "./features/tools/context/ToolsProvider";
@@ -19,9 +21,15 @@ import { LayoutProvider } from "./shell/context/LayoutProvider";
 import { NavigationProvider } from "./shell/context/NavigationProvider";
 import { SidebarProvider } from "./shell/context/SidebarProvider";
 import { ThemeProvider } from "./shell/context/ThemeProvider";
+import { queryClient } from "./shared/lib/queryClient";
+
+function QueryProvider({ children }: { children: React.ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
 
 // Compose providers to avoid deep nesting
 const providers = [
+  { key: "QueryProvider", Provider: QueryProvider },
   { key: "ThemeProvider", Provider: ThemeProvider },
   { key: "LayoutProvider", Provider: LayoutProvider },
   { key: "EmojiProvider", Provider: EmojiProvider },
@@ -29,6 +37,7 @@ const providers = [
   { key: "BackgroundProvider", Provider: BackgroundProvider },
   { key: "ProfileProvider", Provider: ProfileProvider },
   { key: "SkillsProvider", Provider: SkillsProvider },
+  { key: "PluginsProvider", Provider: PluginsProvider },
   { key: "SidebarProvider", Provider: SidebarProvider },
   { key: "NavigationProvider", Provider: NavigationProvider },
   { key: "ArtifactsProvider", Provider: ArtifactsProvider },

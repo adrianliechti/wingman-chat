@@ -1,0 +1,10 @@
+### SQL over workspace data
+Choose between two engines with separate state:
+- Python `import duckdb`: sees same-run files and writes artifacts. Prefer it for Python analysis; no excel/fts extensions.
+- Workspace DuckDB: `await sql(query, params?)` in Python/JavaScript; `wingman.duckdb` in HTML previews. Reads committed files: interpreters see the pre-run workspace; subsequent page queries see new file commits. COPY does not save artifacts. Use it for JavaScript/HTML, read_xlsx or full-text search.
+
+Workspace SQL queries CSV, TSV, JSON, JSONL/NDJSON, Parquet, XLSX and .gz text by artifact name, e.g. `SELECT * FROM 'data/sales.csv'`. Bare names work when unique; duckdb_files lists mounted names. excel, fts and icu load on demand; Excel uses `read_xlsx('report.xlsx', sheet = 'Sheet1')`.
+
+Results are `{ columns: [{ name, type }], rows: [{ … }], rowCount }` (Python: dict). Limits: 100,000 rows / 16 MiB, 256 MB memory, two-minute timeout. Aggregate, LIMIT or paginate. Sessions last one interpreter run or one HTML document until navigation/close.
+
+For dashboards, prepare heavy transformations in Python and save Parquet for runtime SQL queries. Load html-artifacts references/duckdb.md for the page API. Standalone exports must embed their data; workspace SQL requires the preview.

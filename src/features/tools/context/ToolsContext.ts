@@ -1,18 +1,15 @@
 import { createContext } from "react";
-import type { DisplayMode, DisplayModeOptions } from "@/features/settings/lib/mcp";
+import type { McpAppOptions, McpAppData } from "@/features/settings/lib/mcpAppSession";
 import type { SkillSources } from "@/features/skills/lib/skillsProvider";
-import type {
-  AudioContent,
-  FileContent,
-  ImageContent,
-  ProviderState,
-  TextContent,
-  ToolContext,
-  ToolProvider,
-} from "@/shared/types/chat";
+import type { ToolResultPart, UIResourcePart } from "@tanstack/ai";
+import type { ProviderState, ToolProvider } from "@/shared/types/chat";
 
 export interface ToolsContextValue {
   providers: ToolProvider[];
+  /** Always-on providers that are never user-toggleable and bypass model tool filters (e.g. Skill Builder). */
+  coreProviders: ToolProvider[];
+  /** Selected independently of connection or authentication status. */
+  isProviderEnabled: (id: string) => boolean;
   getProviderState: (id: string) => ProviderState;
   /** Whether the active agent locks this tool on ("required") or leaves it user-toggleable ("optional"). */
   getProviderPolicy: (id: string) => "required" | "optional";
@@ -25,17 +22,11 @@ export interface ToolsContextValue {
   companionEnabled: boolean;
   toggleCompanion: () => void;
   restoreToolUI: (
-    providerId: string,
-    toolName: string,
-    resourceUri: string,
+    app: UIResourcePart,
     args: Record<string, unknown>,
-    result: (TextContent | ImageContent | AudioContent | FileContent)[],
-    content: Record<string, unknown> | undefined,
-    context: ToolContext,
-    displayModeOptions?: DisplayModeOptions,
-  ) => Promise<void>;
-  /** Push a host-initiated display-mode change to a provider's active app. */
-  setDisplayMode: (providerId: string, mode: DisplayMode) => void;
+    result: ToolResultPart,
+    options: McpAppOptions,
+  ) => Promise<McpAppData>;
 }
 
 export const ToolsContext = createContext<ToolsContextValue | undefined>(undefined);

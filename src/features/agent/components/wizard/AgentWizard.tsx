@@ -1,12 +1,14 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { Bot, ClipboardCheck, Folder, LayoutGrid, Wrench, X, Zap } from "lucide-react";
-import { Fragment, useCallback, useMemo, useReducer, useRef, useState } from "react";
+import { Bot, ClipboardCheck, Folder, LayoutGrid, Puzzle, Wrench, X, Zap } from "lucide-react";
+import { Fragment, useCallback, useMemo, useReducer, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import type { Agent, BridgeServer } from "@/features/agent/types/agent";
+import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
+import { notify } from "@/shared/lib/notify";
 import { IdentityStep } from "./steps/IdentityStep";
 import { KnowledgeStep } from "./steps/KnowledgeStep";
+import { PluginsStep } from "./steps/PluginsStep";
 import { ReviewStep } from "./steps/ReviewStep";
 import { SkillsStep } from "./steps/SkillsStep";
 import { ToolsStep } from "./steps/ToolsStep";
@@ -27,8 +29,8 @@ interface WizardState {
   instructions: string;
 
   selectedSkills: string[];
+  selectedPlugins: string[];
   selectedTools: string[];
-  servers: Omit<BridgeServer, "id">[];
 
   pendingFiles: File[];
 
@@ -43,9 +45,8 @@ export type WizardAction =
   | { type: "SET_NAME"; value: string }
   | { type: "SET_INSTRUCTIONS"; value: string }
   | { type: "TOGGLE_SKILL"; name: string }
+  | { type: "TOGGLE_PLUGIN"; id: string }
   | { type: "TOGGLE_TOOL"; id: string }
-  | { type: "ADD_SERVER"; server: Omit<BridgeServer, "id"> }
-  | { type: "REMOVE_SERVER"; index: number }
   | { type: "ADD_FILES"; files: File[] }
   | { type: "REMOVE_FILE"; index: number }
   | { type: "SET_MODEL"; id: string }
@@ -61,8 +62,8 @@ function initialState(): WizardState {
     name: "",
     instructions: "",
     selectedSkills: [],
+    selectedPlugins: [],
     selectedTools: [],
-    servers: [],
     pendingFiles: [],
     model: "",
     memory: false,
@@ -97,16 +98,18 @@ function reducer(state: WizardState, action: WizardAction): WizardState {
         : [...state.selectedSkills, action.name];
       return { ...state, selectedSkills: skills };
     }
+    case "TOGGLE_PLUGIN": {
+      const plugins = state.selectedPlugins.includes(action.id)
+        ? state.selectedPlugins.filter((p) => p !== action.id)
+        : [...state.selectedPlugins, action.id];
+      return { ...state, selectedPlugins: plugins };
+    }
     case "TOGGLE_TOOL": {
       const tools = state.selectedTools.includes(action.id)
         ? state.selectedTools.filter((t) => t !== action.id)
         : [...state.selectedTools, action.id];
       return { ...state, selectedTools: tools };
     }
-    case "ADD_SERVER":
-      return { ...state, servers: [...state.servers, action.server] };
-    case "REMOVE_SERVER":
-      return { ...state, servers: state.servers.filter((_, i) => i !== action.index) };
     case "ADD_FILES":
       return { ...state, pendingFiles: [...state.pendingFiles, ...action.files] };
     case "REMOVE_FILE":
@@ -124,7 +127,7 @@ function reducer(state: WizardState, action: WizardAction): WizardState {
 
 // ── Steps config ──
 
-function getSteps(): StepDef[] {
+function getSteps(hasPlugins: boolean): StepDef[] {
   const config = getConfig();
   const steps: StepDef[] = [];
 
@@ -133,6 +136,9 @@ function getSteps(): StepDef[] {
   }
 
   steps.push({ id: "identity", label: "Identity", icon: Bot });
+  if (hasPlugins) {
+    steps.push({ id: "plugins", label: "Plugins", icon: Puzzle });
+  }
   steps.push({ id: "skills", label: "Skills", icon: Zap });
   steps.push({ id: "tools", label: "Tools", icon: Wrench });
   if (config.repository) {
@@ -147,25 +153,23 @@ function getSteps(): StepDef[] {
 interface AgentWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreated: (agent: Agent, pendingFiles: File[]) => void;
 }
 
-export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
-  const { createAgent, addServer } = useAgents();
+export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
+  const { createAgent, addFile } = useAgents();
+  const { plugins } = usePlugins();
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const [isCreating, setIsCreating] = useState(false);
-  const stateRef = useRef(state);
-  stateRef.current = state;
 
-  const steps = useMemo(() => getSteps(), []);
+  // Keep the step reachable when a hub is configured so the first plugin can be installed here
+  const hasPlugins = plugins.length > 0 || Boolean(getConfig().plugins?.url);
+  const steps = useMemo(() => getSteps(hasPlugins), [hasPlugins]);
   const isLastStep = state.currentStep === steps.length - 1;
   const currentStepId = steps[state.currentStep]?.id;
 
   // Type step (or identity step when no voice config) requires a name
   const canAdvanceFromNameStep = !!state.name.trim();
   const nameStepId = steps.find((s) => s.id === "type") ? "type" : "identity";
-
-  const canNext = currentStepId === nameStepId ? canAdvanceFromNameStep : true;
 
   const handleNext = useCallback(() => {
     if (currentStepId === nameStepId && !canAdvanceFromNameStep) {
@@ -188,31 +192,30 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
   }, []);
 
   const handleCreate = useCallback(async () => {
-    const s = stateRef.current;
+    const s = state;
     setIsCreating(true);
+    const options = {
+      instructions: s.instructions.trim() || undefined,
+      skills: s.selectedSkills,
+      plugins: s.selectedPlugins,
+      tools: s.selectedTools,
+      model: s.model || undefined,
+      memory: s.memory || undefined,
+    };
     try {
-      const agent = await createAgent(s.name.trim(), {
-        instructions: s.instructions.trim() || undefined,
-        skills: s.selectedSkills,
-        tools: s.selectedTools,
-        model: s.model || undefined,
-        memory: s.memory || undefined,
-      });
+      const agent = await createAgent(s.name.trim(), options);
 
-      // Add MCP servers
-      for (const server of s.servers) {
-        addServer(agent.id, server);
-      }
-
-      onCreated(agent, s.pendingFiles);
+      // Bind the entire batch to the created agent before closing the wizard.
+      void (async () => {
+        for (const file of s.pendingFiles) await addFile(agent.id, file);
+      })().catch((error) => notify.error("Couldn't add files", error));
       dispatch({ type: "RESET" });
       onClose();
     } catch (error) {
       console.error("Failed to create agent:", error);
-    } finally {
-      setIsCreating(false);
     }
-  }, [createAgent, addServer, onCreated, onClose]);
+    setIsCreating(false);
+  }, [state, createAgent, addFile, onClose]);
 
   const handleClose = useCallback(() => {
     dispatch({ type: "RESET" });
@@ -245,7 +248,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-xl transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all border border-neutral-200/50 dark:border-neutral-700/50 flex flex-col h-[min(580px,85vh)]">
+              <Dialog.Panel className="w-full max-w-xl overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all border border-neutral-200/50 dark:border-neutral-700/50 flex flex-col h-[min(580px,85vh)]">
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
                   <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
@@ -281,12 +284,13 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
                   {currentStepId === "identity" && (
                     <IdentityStep instructions={state.instructions} dispatch={dispatch} />
                   )}
+                  {currentStepId === "plugins" && (
+                    <PluginsStep selectedPlugins={state.selectedPlugins} dispatch={dispatch} />
+                  )}
                   {currentStepId === "skills" && (
                     <SkillsStep selectedSkills={state.selectedSkills} dispatch={dispatch} />
                   )}
-                  {currentStepId === "tools" && (
-                    <ToolsStep selectedTools={state.selectedTools} servers={state.servers} dispatch={dispatch} />
-                  )}
+                  {currentStepId === "tools" && <ToolsStep selectedTools={state.selectedTools} dispatch={dispatch} />}
                   {currentStepId === "knowledge" && (
                     <KnowledgeStep pendingFiles={state.pendingFiles} dispatch={dispatch} />
                   )}
@@ -295,8 +299,8 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
                       name={state.name}
                       instructions={state.instructions}
                       selectedSkills={state.selectedSkills}
+                      selectedPlugins={state.selectedPlugins}
                       selectedTools={state.selectedTools}
-                      servers={state.servers}
                       pendingFiles={state.pendingFiles}
                       model={state.model}
                       memory={state.memory}
@@ -309,7 +313,6 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
                 <WizardNavFooter
                   currentStep={state.currentStep}
                   totalSteps={steps.length}
-                  canNext={canNext}
                   isLastStep={isLastStep}
                   onBack={handleBack}
                   onNext={handleNext}

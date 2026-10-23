@@ -1,12 +1,17 @@
+import type { ChatMiddleware, ContentPart, SchemaInput, Tool as NativeTool, UIMessage } from "@tanstack/ai";
+import type { z } from "zod";
+import type { ChatPersistedState } from "@tanstack/ai-client";
 import type { Elicitation, ElicitationResult } from "./elicitation.ts";
 import type { AgentContext } from "./telemetry";
 
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
-export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "synthesizer" | "transcriber";
+export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "realtime" | "synthesizer" | "transcriber";
+
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /** Image-generation quality tier (renderer models). */
-export type ImageQuality = "low" | "medium" | "high";
+export type ImageQuality = "low" | "medium" | "high" | "xhigh" | "max";
 /** Image-generation output resolution (e.g. Gemini's 1K/2K/4K lever). */
 export type ImageResolution = "512" | "1K" | "2K" | "4K";
 /** Image-generation background mode beyond the default "auto" (which is omitted). */
@@ -15,6 +20,12 @@ export type ImageBackground = "opaque" | "transparent";
 export type Model = {
   id: string;
   name: string;
+
+  /** Older model IDs whose saved selections should use this model instead. */
+  replaces?: string[];
+
+  /** Short subdued text shown inline after `name`, e.g. the underlying model. */
+  caption?: string;
 
   type?: ModelType;
   description?: string;
@@ -28,11 +39,18 @@ export type Model = {
    * model it doubles as the per-chat override (the config default is recovered
    * from the fresh model list by id). Unset means the backend/model default.
    */
-  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  effort?: ReasoningEffort;
   /** Reasoning-effort levels offered in the picker; empty/unset hides the effort selector. */
-  supportedEfforts?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh")[];
+  supportedEfforts?: ReasoningEffort[];
+  /**
+   * The level the picker badges as "Default" — what a fresh chat gets. Config's
+   * `effort` when set, else the provider's own default. Never a per-chat override.
+   */
+  defaultEffort?: ReasoningEffort;
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
+  maxOutputTokens?: number;
+  outputTokenBudget?: number;
   compactThreshold?: number;
 
   /**
@@ -53,24 +71,13 @@ export type Model = {
   };
 };
 
-export type MCP = {
-  id: string;
-
-  name: string;
-  description: string;
-
-  url: string;
-
-  icon?: string;
-  headers?: Record<string, string>;
-};
-
 export const ProviderState = {
   Disconnected: "disconnected",
   Initializing: "initializing",
   Authenticating: "authenticating",
   Connected: "connected",
   Failed: "failed",
+  Unauthorized: "unauthorized",
 } as const;
 export type ProviderState = (typeof ProviderState)[keyof typeof ProviderState];
 
@@ -82,24 +89,51 @@ export interface ToolProvider {
   readonly description?: string;
 
   readonly instructions?: string;
+  /** Request-only metadata appended to the latest human message, outside static instructions. */
+  readonly runtimeContext?: string;
 
   readonly tools: Tool[];
+
+  /** Native chat setup when a provider uses middleware; tools above also serve realtime and display. */
+  readonly chat?: {
+    tools: Tool[];
+    instructions?: string;
+    middleware: ChatMiddleware[];
+  };
 }
 
-export type Tool = {
-  name: string;
+type WorkspaceTool = NativeTool<
+  z.ZodType<Record<string, unknown>, Record<string, unknown>>,
+  z.ZodType<ContentPart[], ContentPart[]>,
+  string,
+  ToolContext | undefined
+>;
+
+/** Native tools with rich workspace results and app-owned presentation. */
+export type Tool = Omit<WorkspaceTool, "inputSchema"> & {
+  // Providers include native skill schemas and dynamically discovered MCP schemas.
+  inputSchema: SchemaInput;
+  execute: NonNullable<WorkspaceTool["execute"]>;
   title?: string;
-  description?: string;
   icon?: string;
-
-  parameters: Record<string, unknown>;
-
-  strict?: boolean;
-
-  function: (
-    args: Record<string, unknown>,
-    context?: ToolContext,
-  ) => Promise<(TextContent | ImageContent | AudioContent | FileContent)[]>;
+  /** Chat uses a native defineAgent; execute remains the realtime tool boundary. */
+  subagent?: {
+    /** Defaults to the caller's model. */
+    model?: string;
+    instructions: string;
+    tools: Tool[];
+    runtimeContext?: string;
+    middleware?: ChatMiddleware[];
+    /** Research receives its explicit brief instead of the parent conversation. */
+    inheritHistory?: boolean;
+    /** Optional bounds for a delegated run, including its tools and middleware. */
+    maxIterations?: number;
+    timeoutMs?: number;
+    /** Builds the child brief (and approval text) from the call arguments; defaults to `prompt`. */
+    brief?: (args: Record<string, unknown>) => string;
+    /** Optional retrieval-only path. Undefined continues with the model loop. */
+    direct?: (args: Record<string, unknown>, context: ToolContext) => Promise<string | undefined>;
+  };
 
   /**
    * Optional, tool-owned presentation for how a call renders in chat. Colocating
@@ -112,7 +146,16 @@ export type Tool = {
 /** A type icon for a tool's chat presentation (e.g. a lucide icon component). */
 export type ToolDisplayIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
-export type ToolDisplayState = { running?: boolean; error?: boolean };
+export type ToolDisplayState = {
+  outcome?: "denied" | "cancelled";
+  running?: boolean;
+  progress?: { progress: number; total?: number; message?: string };
+  error?: boolean;
+  /** Stable identity while arguments stream and the tool runs. */
+  toolCallId?: string;
+  /** Completed output, when available, for a concise result preview. */
+  result?: ContentPart[];
+};
 
 /** A code/text block rendered in a tool call's expanded view. */
 export type ToolDisplayBlock = {
@@ -136,114 +179,53 @@ export type ToolDisplay = {
     icon?: ToolDisplayIcon;
     label?: string;
     mono?: boolean;
-    /** Short text shown beside the label; overrides the generic argument preview. */
-    preview?: string;
+    /** Short text beside the label; null hides it, undefined uses the generic argument preview. */
+    preview?: string | null;
     /** Hide the preview entirely (the label already carries the detail). */
     suppressPreview?: boolean;
   };
   /** Expanded input blocks; return `[]` to hide input, omit to fall back to generic arguments. */
   input?: (args: Record<string, unknown> | null) => ToolDisplayBlock[];
   /** Expanded success output; return `null` to fall back to generic result rendering. */
-  output?: (result: Content[]) => ToolDisplayBlock | null;
+  output?: (result: ContentPart[], args?: Record<string, unknown> | null) => ToolDisplayBlock | null;
 };
 
-export interface RenderedAppHandle {
-  iframe: HTMLIFrameElement;
-  registerCleanup(cleanup: () => Promise<void> | void): void;
+/** Application context passed through native chat middleware and tool execution. */
+export interface AgentRunContext {
+  signal?: AbortSignal;
+  /** A child keeps separate workspace observations and read-only memory access. */
+  subagentRunId?: string;
 }
 
 export interface ToolContext {
   model?: string;
+  chatId?: string;
+  runId?: string;
+  invocationContext?: AgentRunContext;
   signal?: AbortSignal;
-  content?(): Content[];
-  elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
+  /** Native chat tools can pause and receive an answer on their resumed execution. */
+  interruptible?: boolean;
+  inputResponse?: { status: "resolved"; payload: unknown } | { status: "cancelled" };
+  /** The content parts of the user turn that triggered this run (text and attachments). */
+  content?(): ContentPart[];
+  elicit?(
+    elicitation: Elicitation,
+    options?: { signal?: AbortSignal; onCancel?: () => void },
+  ): Promise<ElicitationResult>;
   onElicitationComplete?(elicitationId: string): void;
-  render?(): Promise<RenderedAppHandle>;
-  sendMessage?(message: Message): Promise<void>;
   setMeta?(meta: Record<string, unknown>): void;
-  updateMeta?(meta: Record<string, unknown>): void;
   setError?(error: MessageError): void;
-  setContent?(content: Record<string, unknown>): void;
-  setContext?(text: string | null): Promise<void>;
   /** Trace context for nested agents spawned from this tool. */
   agentContext?: AgentContext;
 }
 
-// Content parts for messages - order matters
-export type ReasoningContent = {
-  type: "reasoning";
-  id: string;
-  text: string;
-  summary?: string;
-};
-
-export type ToolCallContent = {
-  type: "tool_call";
-  id: string;
-  name: string;
-  arguments: string;
-};
-
-export type ToolResultContent = {
-  type: "tool_result";
-  id: string;
-  name: string;
-  arguments: string;
-  meta?: Record<string, unknown>;
-  result: (TextContent | ImageContent | AudioContent | FileContent)[];
-  content?: Record<string, unknown>;
-};
-
-export type SummaryContent = {
-  type: "summary";
-  text: string;
-};
-
-// Content is the union of all content types used in messages
-export type Content =
-  | TextContent
-  | ImageContent
-  | AudioContent
-  | FileContent
-  | ReasoningContent
-  | ToolCallContent
-  | ToolResultContent
-  | SummaryContent;
-
-export type TextContent = {
-  type: "text";
-
-  text: string;
-};
-
-export type ImageContent = {
-  type: "image";
-
-  name?: string;
-  data: string; // Full data URL (data:mime;base64,...)
-};
-
-export type AudioContent = {
-  type: "audio";
-
-  name?: string;
-  data: string; // Full data URL (data:mime;base64,...)
-};
-
-export type FileContent = {
-  type: "file";
-
-  name: string;
-  data: string; // Full data URL (data:mime;base64,...)
-};
-
-export type Message = {
-  role: "user" | "assistant";
-
-  /** Ordered content parts (text, reasoning, tool_call, tool_result, images, files) */
-  content: Content[];
-
-  error?: MessageError | null;
+export type MessageUsage = {
+  model?: string;
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  reasoningContext?: "current_turn" | "all_turns";
 };
 
 export type MessageError = {
@@ -251,13 +233,11 @@ export type MessageError = {
   message: string;
 };
 
-export const Role = {
-  User: "user",
-  Assistant: "assistant",
-} as const;
-export type Role = (typeof Role)[keyof typeof Role];
+/** Namespaced app and middleware state scoped to one chat (e.g. compaction checkpoints). */
+export type ChatMetadata = Record<string, Record<string, unknown>>;
 
-export type Chat = {
+/** Native transcript and resume state, plus the application's chat settings. */
+export interface Chat extends ChatPersistedState {
   id: string;
   title?: string;
   customTitle?: string;
@@ -267,13 +247,9 @@ export type Chat = {
   updated: Date | null;
 
   model: Model | null;
-  messages: Array<Message>;
-};
-
-// Helper function to extract text from content parts
-export function getTextFromContent(content: Content[]): string {
-  return content
-    .filter((p): p is TextContent => p.type === "text")
-    .map((p) => p.text)
-    .join("");
+  messages: UIMessage[];
+  metadata?: ChatMetadata;
 }
+
+/** Sidebar metadata; conversation bodies and attachments are loaded separately. */
+export type ChatEntry = Pick<Chat, "id" | "title" | "customTitle" | "customIndex" | "created" | "updated">;
