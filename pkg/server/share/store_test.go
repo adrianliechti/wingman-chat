@@ -149,6 +149,9 @@ func TestCreateRejectsNonZip(t *testing.T) {
 
 func TestCreateEnforcesSizeLimit(t *testing.T) {
 	store := NewStore(t.TempDir(), time.Hour, 1024)
+	if _, err := store.Create(buildZip(t, zipEntry{name: "index.html", body: strings.Repeat("a", 1024)}), "index.html", ""); err != nil {
+		t.Fatalf("content at limit: %v", err)
+	}
 
 	// Declared content over the limit, even though the archive itself is small.
 	archive := buildZip(t, zipEntry{name: "index.html", body: strings.Repeat("a", 2048)})
@@ -160,6 +163,41 @@ func TestCreateEnforcesSizeLimit(t *testing.T) {
 	body := bytes.NewReader(make([]byte, 1024+archiveSlack+1))
 	if _, err := store.Create(body, "index.html", ""); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("body over limit: err = %v", err)
+	}
+}
+
+func TestExtractRejectsOverflowingZip64SizesBeforeWriting(t *testing.T) {
+	var data bytes.Buffer
+	w := zip.NewWriter(&data)
+	page, err := w.Create("index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := page.Write(bytes.Repeat([]byte("a"), 2048)); err != nil {
+		t.Fatal(err)
+	}
+	// These declared sizes would wrap the accumulated uint64 total to zero.
+	if _, err := w.CreateRaw(&zip.FileHeader{
+		Name: "overflow.bin", Method: zip.Store, UncompressedSize64: ^uint64(2048) + 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	root := t.TempDir()
+	archive := filepath.Join(root, "upload.zip")
+	if err := os.WriteFile(archive, data.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(root, "extracted")
+	store := NewStore(root, time.Hour, 1024)
+	if _, _, err := store.extract(archive, dest, "index.html"); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("overflowing sizes: err = %v, want ErrTooLarge", err)
+	}
+	if _, err := os.Stat(dest); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("extraction started before rejecting oversized content: %v", err)
 	}
 }
 

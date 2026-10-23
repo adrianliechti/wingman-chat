@@ -205,7 +205,9 @@ describe("ShareBridge DuckDB", () => {
 
     // The mount registers every queryable file once, under its path and its unique bare name.
     const registerFileURL = vi.fn(async () => {});
-    const db = { registerFileURL } as unknown as AsyncDuckDB;
+    const configure = vi.fn(async () => {});
+    const close = vi.fn(async () => {});
+    const db = { registerFileURL, connect: async () => ({ query: configure, close }) } as unknown as AsyncDuckDB;
     const registered = new Set<string>();
     await hosts[0].mount(db, registered, new AbortController().signal);
     await hosts[0].mount(db, registered, new AbortController().signal);
@@ -217,6 +219,12 @@ describe("ShareBridge DuckDB", () => {
       expect.anything(),
       false,
     );
+    expect(configure).toHaveBeenCalledWith(
+      "SET allowed_paths = ['data/sales.csv', 'sales.csv', 'data/meta.json', 'meta.json']::VARCHAR[]",
+    );
+    expect(configure).toHaveBeenCalledWith("SET enable_external_access = false");
+    expect(configure).toHaveBeenLastCalledWith("SET lock_configuration = true");
+    expect(close).toHaveBeenCalledTimes(1);
 
     // A new document ends the old one's session; the old document can no longer call in.
     await bridge.dispatch("next-doc", "duckdb.files", []);
@@ -276,6 +284,47 @@ describe("ShareBridge.attach", () => {
     expect(
       await Promise.race([afterDetach.reply, new Promise((resolve) => setTimeout(() => resolve("ignored"), 20))]),
     ).toBe("ignored");
+  });
+
+  it("ends SQL and pending AI work on pagehide without waiting for another RPC", async () => {
+    const target = new EventTarget();
+    const page = {} as Window;
+    const hosts: Array<ReturnType<typeof fakeHost>> = [];
+    const bridge = new ShareBridge(manifest({ llm: true, files: true, duckdb: true }), (mount) => {
+      const fake = fakeHost(mount);
+      hosts.push(fake);
+      return fake.host;
+    });
+    const detach = bridge.attach({ contentWindow: page }, target as Window);
+    await bridge.dispatch("doc", "duckdb.connect", []);
+    vi.mocked(runLlm).mockImplementationOnce(
+      (_prompt, _options, request) =>
+        new Promise((_, reject) => request?.signal?.addEventListener("abort", () => reject(request.signal?.reason))),
+    );
+    const pending = bridge.dispatch("doc", "llm", ["long task"]);
+    const lifecycle = (documentId: string, active: boolean, source: unknown = page, token = "abc") =>
+      Object.assign(new Event("message"), {
+        source,
+        data: { type: "wingman:document", token, documentId, active },
+      });
+    target.dispatchEvent(lifecycle("doc", false, {}));
+    target.dispatchEvent(lifecycle("doc", false, page, "wrong"));
+    expect(hosts[0].dispose).not.toHaveBeenCalled();
+
+    target.dispatchEvent(lifecycle("doc", false));
+    await expect(pending).rejects.toThrow("no longer active");
+    expect(hosts[0].dispose).toHaveBeenCalledTimes(1);
+    await expect(bridge.dispatch("doc", "files.list", [])).rejects.toThrow("no longer active");
+
+    target.dispatchEvent(lifecycle("restored-doc", true));
+    await bridge.dispatch("restored-doc", "duckdb.connect", []);
+    // Late lifecycle messages from the old document cannot retire the new one.
+    target.dispatchEvent(lifecycle("doc", false));
+    target.dispatchEvent(lifecycle("doc", true));
+    expect(hosts[1].dispose).not.toHaveBeenCalled();
+    await expect(bridge.dispatch("restored-doc", "files.list", [])).resolves.toContain("/index.html");
+    detach();
+    expect(hosts[1].dispose).toHaveBeenCalledTimes(1);
   });
 });
 

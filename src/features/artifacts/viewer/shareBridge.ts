@@ -15,6 +15,7 @@ import { runVision } from "@/features/tools/lib/visionCommand";
 import { withAbort } from "@/shared/lib/abortSignals";
 import {
   isSdkRpcRequest,
+  isSdkDocumentEvent,
   SDK_PREFIX,
   type SdkCapabilityName,
   type SdkRpcReply,
@@ -66,6 +67,11 @@ export class ShareBridge {
   attach(frame: Frame, target: Window = window): () => void {
     const onMessage = (event: MessageEvent) => {
       if (!event.source || event.source !== frame.contentWindow) return;
+      if (isSdkDocumentEvent(event.data) && event.data.token === this.manifest.id) {
+        if (event.data.active) this.activate(event.data.documentId);
+        else if (event.data.documentId === this.documentId) this.release();
+        return;
+      }
       if (!isSdkRpcRequest(event.data) || event.data.token !== this.manifest.id) return;
       const port = event.ports[0];
       if (!port) return;
@@ -85,7 +91,7 @@ export class ShareBridge {
     target.addEventListener("message", onMessage);
     return () => {
       target.removeEventListener("message", onMessage);
-      this.reset();
+      this.release();
     };
   }
 
@@ -94,14 +100,24 @@ export class ShareBridge {
    * page navigated: the previous document's work ends with it.
    */
   dispatch(documentId: string, method: string, params: unknown[]): Promise<unknown> {
-    if (this.retired.has(documentId)) return Promise.reject(new Error("Artifact document is no longer active"));
-    if (documentId !== this.documentId) {
-      if (this.documentId) this.retired.add(this.documentId);
-      this.reset();
-      this.documentId = documentId;
-    }
+    if (!this.activate(documentId)) return Promise.reject(new Error("Artifact document is no longer active"));
     const signal = this.controller.signal;
     return withAbort(signal, () => this.invoke(method, params, signal));
+  }
+
+  private activate(documentId: string): boolean {
+    if (this.retired.has(documentId)) return false;
+    if (documentId !== this.documentId) {
+      this.release();
+      this.documentId = documentId;
+    }
+    return true;
+  }
+
+  private release(): void {
+    if (this.documentId) this.retired.add(this.documentId);
+    this.documentId = null;
+    this.reset();
   }
 
   private reset(): void {
@@ -156,6 +172,25 @@ export class ShareBridge {
           await db.registerFileURL(name, url, DuckDBDataProtocol.HTTP, false);
           registered.add(name);
         }
+      }
+
+      // Mounted names are an allowlist, not a network boundary: SQL readers
+      // otherwise accept arbitrary URLs and send the viewer's cookies. Apply
+      // DuckDB's file restrictions before running any page-provided SQL and
+      // lock them so SET/RESET cannot grant access again.
+      const connection = await db.connect();
+      try {
+        // XLSX normally autoloads this bundled extension. Load it before
+        // disabling external access; shared pages cannot install extensions.
+        if (paths.some((path) => /\.xlsx$/i.test(path))) await connection.query("LOAD excel");
+        const allowed = [...registered].map((name) => `'${name.replace(/'/g, "''")}'`).join(", ");
+        await connection.query(`SET allowed_paths = [${allowed}]::VARCHAR[]`);
+        await connection.query("SET autoinstall_known_extensions = false");
+        await connection.query("SET autoload_known_extensions = false");
+        await connection.query("SET enable_external_access = false");
+        await connection.query("SET lock_configuration = true");
+      } finally {
+        if (!signal.aborted) await connection.close();
       }
       mounted = true;
     });

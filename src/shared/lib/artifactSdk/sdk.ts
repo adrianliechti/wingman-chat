@@ -16,9 +16,21 @@ type Params = unknown[];
   const script = document.currentScript as HTMLScriptElement | null;
   const token = script?.dataset.token;
   const path = script?.dataset.path ?? "/";
-  if (!token || window.parent === window) return;
-  const documentId = crypto.randomUUID();
-  script.dataset.documentId = documentId;
+  if (!script || !token || window.parent === window) return;
+  let documentId: string;
+  const documentState = (active: boolean) =>
+    window.parent.postMessage({ type: "wingman:document", token, documentId, active }, location.origin);
+  const openDocument = () => {
+    documentId = crypto.randomUUID();
+    script.dataset.documentId = documentId;
+    documentState(true);
+  };
+  openDocument();
+  window.addEventListener("pagehide", () => documentState(false));
+  window.addEventListener("pageshow", (event) => {
+    // Restoring from the history cache starts a fresh SQL/request lifetime.
+    if (event.persisted) openDocument();
+  });
 
   let capabilities: SdkCapabilities;
   try {

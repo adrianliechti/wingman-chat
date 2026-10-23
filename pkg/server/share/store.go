@@ -187,6 +187,12 @@ func (s *Store) extract(archive, dest, entry string) (int, int64, error) {
 			return 0, 0, ArchiveError(fmt.Sprintf("%s is not a regular file", f.Name))
 		}
 
+		// ZIP64 sizes are untrusted uint64s. Check the remaining budget before
+		// adding, so a wrapped total cannot admit oversized files for extraction.
+		if f.UncompressedSize64 > uint64(s.maxSize)-total {
+			return 0, 0, ErrTooLarge
+		}
+
 		files = append(files, f)
 		total += f.UncompressedSize64
 
@@ -197,10 +203,6 @@ func (s *Store) extract(archive, dest, entry string) (int, int64, error) {
 
 	if len(files) > maxFiles {
 		return 0, 0, ArchiveError(fmt.Sprintf("the workspace has more than %d files", maxFiles))
-	}
-
-	if total > uint64(s.maxSize) {
-		return 0, 0, ErrTooLarge
 	}
 
 	if !hasEntry {

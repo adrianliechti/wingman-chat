@@ -9,6 +9,7 @@ export const SDK_PREFIX = "__wingman__/";
 export const SDK_PATH = `${SDK_PREFIX}sdk.js`;
 export const SDK_RPC_TYPE = "wingman:rpc";
 export const SDK_HELLO_TYPE = "wingman:hello";
+export const SDK_DOCUMENT_TYPE = "wingman:document";
 
 export type SdkCapabilityName =
   | "llm"
@@ -39,6 +40,25 @@ export interface SdkHello {
   type: typeof SDK_HELLO_TYPE;
   token: string;
   capabilities: SdkCapabilities;
+}
+
+/** Opaque-origin hosts cannot observe the child Document directly. */
+export interface SdkDocumentEvent {
+  type: typeof SDK_DOCUMENT_TYPE;
+  token: string;
+  documentId: string;
+  active: boolean;
+}
+
+export function isSdkDocumentEvent(data: unknown): data is SdkDocumentEvent {
+  if (!data || typeof data !== "object") return false;
+  const record = data as Record<string, unknown>;
+  return (
+    record.type === SDK_DOCUMENT_TYPE &&
+    typeof record.token === "string" &&
+    typeof record.documentId === "string" &&
+    typeof record.active === "boolean"
+  );
 }
 
 export function emptyCapabilities(): SdkCapabilities {
