@@ -34,6 +34,21 @@ afterEach(async () => {
 });
 
 describe("lazy chat collection", () => {
+  it("adopts remote changes and deletions without overwriting queued local edits", async () => {
+    await store.initialize();
+    await store.loadChat("one");
+    await store.loadChat("two");
+    store.updateChat("one", () => ({ title: "local edit" }));
+    store.applyRemoteChats([{ ...chat("one"), title: "stale server title" }, chat("three")]);
+    expect(store.getChat("one")?.title).toBe("local edit");
+    expect(store.getChat("two")).toBeUndefined();
+    expect(store.getChat("three")).toBeUndefined();
+    expect(store.getSnapshot().chats.map((entry) => entry.id)).toEqual(["one", "three"]);
+    await queue.flush();
+    store.applyRemoteChats([{ ...chat("one"), title: "remote edit" }, chat("three")]);
+    expect(store.getChat("one")?.title).toBe("remote edit");
+  });
+
   it("loads just the index and coalesces selection reads", async () => {
     await Promise.all([store.initialize(), store.initialize()]);
     expect(storage.index).toHaveBeenCalledOnce();

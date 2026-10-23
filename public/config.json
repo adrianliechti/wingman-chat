@@ -23,18 +23,11 @@
   "tts": {},
   "voice": {},
   "artifacts": {},
+  "store": {},
   "repository": {},
   "renderer": {},
   "extractor": {
-    "files": [
-      ".pdf",
-      ".doc",
-      ".docx",
-      ".xls",
-      ".xlsx",
-      ".ppt",
-      ".pptx"
-    ]
+    "files": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
   },
   "tools": [
     {
@@ -245,17 +238,7 @@
         "description": "Google Cloud Translation"
       }
     ],
-    "files": [
-      ".pdf"
-    ],
-    "languages": [
-      "en",
-      "es",
-      "fr",
-      "de",
-      "zh",
-      "ja",
-      "ru"
-    ]
+    "files": [".pdf"],
+    "languages": ["en", "es", "fr", "de", "zh", "ja", "ru"]
   }
 }

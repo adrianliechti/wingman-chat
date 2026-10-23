@@ -175,7 +175,14 @@ function pdfjsAssetsPlugin(): Plugin {
 
 const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:4242";
 const wingmanToken = process.env.WINGMAN_TOKEN || "none";
-const wingmanHeaders = { Authorization: `Bearer ${wingmanToken}` };
+const wingmanUser = process.env.WINGMAN_USER || "default";
+
+// In production a reverse proxy provides the user identity; the dev proxy
+// impersonates one so the chatstore endpoints work out of the box.
+const wingmanHeaders: Record<string, string> = {
+  Authorization: `Bearer ${wingmanToken}`,
+  "X-Forwarded-User": wingmanUser,
+};
 
 // https://vite.dev/config/
 export default defineConfig({

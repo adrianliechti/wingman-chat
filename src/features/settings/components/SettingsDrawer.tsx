@@ -9,6 +9,7 @@ import {
   Mic,
   Palette,
   Settings,
+  ShieldCheck,
   ToggleLeft,
   ToggleRight,
   Trash2,
@@ -29,6 +30,7 @@ import { rebuildAllIndexes } from "@/features/settings/lib/rebuildIndexes";
 import { finishRestore } from "@/features/settings/lib/restoreReport";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
+import { getConfig } from "@/shared/config";
 import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
@@ -43,6 +45,7 @@ import { SelectMenu } from "@/shared/ui/SelectMenu";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { OpfsBrowser } from "./OpfsBrowser";
+import { SyncSection } from "./SyncSection";
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -51,7 +54,7 @@ interface SettingsDrawerProps {
   initialSection?: string;
 }
 
-type SectionId = "general" | "audio" | "profile" | "backup" | "companion" | "advanced";
+type SectionId = "general" | "audio" | "profile" | "backup" | "companion" | "sync" | "advanced";
 
 const SECTION_META: { id: SectionId; label: string; icon: React.ReactNode }[] = [
   { id: "general", label: "Appearance", icon: <Palette size={16} /> },
@@ -59,6 +62,7 @@ const SECTION_META: { id: SectionId; label: string; icon: React.ReactNode }[] = 
   { id: "profile", label: "Profile", icon: <User size={16} /> },
   { id: "backup", label: "Backup & Restore", icon: <HardDrive size={16} /> },
   { id: "companion", label: "Companion", icon: <Coffee size={16} /> },
+  { id: "sync", label: "Sync & Security", icon: <ShieldCheck size={16} /> },
   { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
 ];
 
@@ -392,7 +396,13 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   }, []);
 
   const visibleSections = SECTION_META.filter((s) =>
-    s.id === "companion" ? companionAvailable : s.id === "advanced" ? showAdvanced : true,
+    s.id === "companion"
+      ? companionAvailable
+      : s.id === "sync"
+        ? getConfig().store
+        : s.id === "advanced"
+          ? showAdvanced
+          : true,
   );
   const activeMeta = visibleSections.find((s) => s.id === section) ?? visibleSections[0];
 
@@ -1087,6 +1097,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                           </section>
                         </section>
                       )}
+
+                      {section === "sync" && getConfig().store && <SyncSection />}
 
                       {/* Advanced — only visible via Alt+click */}
                       {section === "advanced" && showAdvanced && (

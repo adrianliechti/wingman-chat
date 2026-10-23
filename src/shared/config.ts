@@ -238,6 +238,7 @@ interface ConfigSchema {
   translator?: TranslatorConfig;
 
   chat?: ChatConfig;
+  store?: object;
   telemetry?: TelemetryConfig;
 }
 
@@ -290,6 +291,7 @@ interface Config {
 
   chat: ChatConfig | null;
 
+  store: boolean;
   telemetry: Required<TelemetryConfig> | null;
 
   backgrounds: BackgroundPackConfig;
@@ -389,6 +391,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       chat: cfg.chat ?? null,
 
+      store: cfg.store != null,
       telemetry: cfg.telemetry != null ? { name: cfg.telemetry.name?.trim() || DEFAULT_TELEMETRY_NAME } : null,
 
       backgrounds: cfg.backgrounds ?? {},
