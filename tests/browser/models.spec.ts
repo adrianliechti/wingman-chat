@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 const inventory = [
   { id: "gpt-6-astra" },
   { id: "gpt-6.1-sol" },
+  { id: "gpt-6.1-terra" },
   { id: "claude-fable-5-1" },
   { id: "claude-mythos-5-1" },
   { id: "qwen3.8-max" },
@@ -53,6 +54,7 @@ test("all consumers share one request and use config type before API type and na
   expect(state.chat.map((model) => model.id)).toEqual([
     "gpt-6-astra",
     "gpt-6.1-sol",
+    "gpt-6.1-terra",
     "claude-fable-5-1",
     "claude-mythos-5-1",
     "qwen3.8-max",
@@ -75,7 +77,7 @@ test("all consumers share one request and use config type before API type and na
 test("a renderer-only config leaves chat models visible", async ({ page }) => {
   await open(page, { models: [{ id: "opaque", name: "Studio", type: "renderer" }] });
   const state = await page.evaluate(() => window.modelsE2E.state());
-  expect(state.chat).toHaveLength(5);
+  expect(state.chat).toHaveLength(6);
   expect(state.chat.every((model) => !model.hidden)).toBe(true);
 });
 
@@ -173,20 +175,26 @@ test("a failed refresh retains the working inventory and a retry recovers", asyn
   expect(errors).toEqual([]);
 });
 
-for (const effort of ["none", "minimal", "max"] as const) {
-  test(`restores GPT-6.1 Sol with saved ${effort} effort using its documented profile`, async ({ page }) => {
-    await page.addInitScript((effort) => localStorage.setItem("app_model", `gpt-6.1-sol@${effort}`), effort);
-    const { errors } = await open(page);
-    await page.waitForFunction(() => window.modelsE2E.state().selected?.id === "gpt-6.1-sol");
-    const selected = await page.evaluate(() => window.modelsE2E.state().selected);
-    expect(selected).toMatchObject({
-      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
-      defaultEffort: "medium",
-      maxOutputTokens: 128_000,
+for (const model of ["gpt-6.1-sol", "gpt-6.1-terra"]) {
+  for (const effort of ["none", "minimal", "max"] as const) {
+    test(`restores ${model} with saved ${effort} effort using its documented profile`, async ({ page }) => {
+      await page.addInitScript((saved) => localStorage.setItem("app_model", saved), `${model}@${effort}`);
+      const { errors } = await open(page);
+      await page.waitForFunction((id) => window.modelsE2E.state().selected?.id === id, model);
+      const selected = await page.evaluate(() => window.modelsE2E.state().selected);
+      const supported =
+        model === "gpt-6.1-terra"
+          ? ["none", "low", "medium", "high", "xhigh", "max"]
+          : ["low", "medium", "high", "xhigh", "max"];
+      expect(selected).toMatchObject({
+        supportedEfforts: supported,
+        defaultEffort: "medium",
+        maxOutputTokens: 128_000,
+      });
+      expect(selected?.effort).toBe(supported.includes(effort) ? effort : undefined);
+      expect(errors).toEqual([]);
     });
-    expect(selected?.effort).toBe(effort === "max" ? "max" : undefined);
-    expect(errors).toEqual([]);
-  });
+  }
 }
 
 test("refreshes a stale catalogue when visible and stops refreshing unmounted consumers", async ({ page }) => {

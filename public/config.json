@@ -185,6 +185,11 @@
         "label": "Gemini 3.8 Flash"
       },
       {
+        "model": "gpt-6.1-terra",
+        "effort": "medium",
+        "label": "GPT-6.1 Terra"
+      },
+      {
         "model": "claude-sonnet-5-5",
         "effort": "medium",
         "label": "Claude Sonnet 5.5"
