@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Globe } from "lucide-react";
 import { internetToolPresentation } from "@/features/tools/lib/internetPresentation";
+import { createMcpAgentChat } from "@/features/tools/lib/mcpAgent";
 import {
   getToolUiResourceUri,
   isToolVisibilityAppOnly,
@@ -37,6 +38,7 @@ import type { ElicitationSchema } from "@/shared/types/elicitation";
 import { BrowserOAuthClientProvider, McpAuthRequiredError } from "./mcpAuth";
 import { McpAuthorizationPending, mcpAuthFetch } from "./mcpAuthFetch";
 import { mcpToolName } from "./mcpToolNames";
+import type { McpApproval } from "./mcpConfig";
 
 import {
   buildHostCapabilities,
@@ -70,6 +72,7 @@ export class MCPClient implements ToolProvider {
   icon?: ToolIcon;
   instructions?: string;
   tools: Tool[] = [];
+  chat?: ToolProvider["chat"];
   toolDefinitions = new Map<string, MCPTool>();
   onAuthenticating: (() => void) | null = null;
   onAuthComplete: (() => void) | null = null;
@@ -91,7 +94,7 @@ export class MCPClient implements ToolProvider {
   readonly name: string;
   readonly description: string;
   readonly headers?: Record<string, string>;
-  readonly needsApproval: boolean;
+  readonly approval: McpApproval;
   private readonly configIcon?: ToolIcon;
 
   constructor(
@@ -101,7 +104,7 @@ export class MCPClient implements ToolProvider {
     description: string,
     headers?: Record<string, string>,
     configIcon?: ToolIcon,
-    needsApproval = false,
+    approval?: McpApproval,
   ) {
     this.id = id;
     this.url = url;
@@ -109,7 +112,7 @@ export class MCPClient implements ToolProvider {
     this.description = description;
     this.headers = headers;
     this.configIcon = id === "internet" ? Globe : configIcon;
-    this.needsApproval = needsApproval;
+    this.approval = approval ?? { mode: "none" };
     this.icon = this.configIcon ?? new URL("icon", url.endsWith("/") ? url : `${url}/`).href;
     this.authProvider = new BrowserOAuthClientProvider(id, url);
   }
@@ -278,6 +281,7 @@ export class MCPClient implements ToolProvider {
     this.client = null;
     this.pendingTransport = undefined;
     this.tools = [];
+    this.chat = undefined;
     this.instructions = undefined;
     this.discovery = undefined;
     this.toolDefinitions.clear();
@@ -315,9 +319,19 @@ export class MCPClient implements ToolProvider {
               [mcpToolName(this.id, tool.name), tool],
             ]),
           );
-          this.tools = nativeTools.flatMap((tool) =>
-            !isToolVisibilityAppOnly(tool) ? [this.toTool(tool, client)] : [],
-          );
+          const modelTools = nativeTools.filter((tool) => !isToolVisibilityAppOnly(tool));
+          this.tools = modelTools.map((tool) => this.toTool(tool, client));
+          // Raw tools keep per-call approval for voice; chat reviews one prompt per isolated agent run.
+          this.chat =
+            this.approval.mode === "combined" && this.tools.length
+              ? createMcpAgentChat({
+                  id: this.id,
+                  name: this.name,
+                  icon: this.icon,
+                  instructions: this.instructions,
+                  tools: modelTools.map((tool) => this.toTool(tool, client, false)),
+                })
+              : undefined;
           this.onToolsChanged?.();
         }
       })
@@ -326,7 +340,7 @@ export class MCPClient implements ToolProvider {
       });
     return discovery.promise;
   }
-  private toTool(tool: MCPTool, client: NativeMCPClient): Tool {
+  private toTool(tool: MCPTool, client: NativeMCPClient, needsApproval = this.approval.mode !== "none"): Tool {
     let resourceUri: string | undefined;
     try {
       resourceUri = getToolUiResourceUri(tool);
@@ -341,7 +355,7 @@ export class MCPClient implements ToolProvider {
       getToolDisplayName(tool.name);
     return {
       name: mcpToolName(this.id, tool.name),
-      needsApproval: this.needsApproval,
+      needsApproval,
       icon: pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined),
       description: tool.description || "",
       inputSchema: z.fromJSONSchema(flattenToolSchema(tool.inputSchema as Record<string, unknown>)),
@@ -349,7 +363,7 @@ export class MCPClient implements ToolProvider {
       title,
       execute: async (args, execution) => {
         const context = execution?.context;
-        if (this.needsApproval && !context?.interruptible) await this.approve(tool, title, args, context);
+        if (needsApproval && !context?.interruptible) await this.approve(tool, title, args, context);
         annotateMcpSpan(this.url, this.id, tool.name, context);
         const result = await this.callTool(client, { name: tool.name, arguments: args }, context);
         context?.signal?.throwIfAborted();
@@ -536,7 +550,7 @@ export class MCPClient implements ToolProvider {
           const definition = this.toolDefinitions.get(params.name);
           if (!definition || definition.name !== params.name || isToolVisibilityModelOnly(definition))
             throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "Tool is not available to this app");
-          if (this.needsApproval)
+          if (this.approval.mode !== "none")
             throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "This server requires tool approval in chat");
           return toAppToolResult(await this.callTool(client, params, { signal: extra.signal }));
         },

@@ -1,5 +1,18 @@
 import type { ToolIcon } from "@/shared/types/chat";
 
+/** Single reviews each call; combined reviews one prompt for an isolated agent. */
+export interface McpApproval {
+  mode: "single" | "combined" | "none";
+}
+
+export function normalizeMcpApproval(value: unknown): McpApproval | undefined {
+  if (value === undefined) return undefined;
+  const mode = value && typeof value === "object" && !Array.isArray(value) && "mode" in value ? value.mode : undefined;
+  if (mode !== "single" && mode !== "combined" && mode !== "none")
+    throw new Error('MCP approval.mode must be "single", "combined" or "none"');
+  return { mode };
+}
+
 export interface ConfiguredMcpServer {
   id: string;
   url?: string;
@@ -7,8 +20,7 @@ export interface ConfiguredMcpServer {
   description?: string;
   icon?: string;
   headers?: Record<string, string>;
-  /** Ask before sending tool arguments to this server. */
-  needsApproval?: boolean;
+  approval?: McpApproval;
 }
 
 /** All sources resolve to this shape before any client is constructed. */
@@ -22,8 +34,7 @@ export interface McpServerDefinition {
   description: string;
   icon?: ToolIcon;
   headers?: Record<string, string>;
-  /** Ask before sending tool arguments to this server. */
-  needsApproval?: boolean;
+  approval?: McpApproval;
 }
 
 const RESERVED_IDS = new Set(["artifacts", "skills", "skill-builder", "repository", "memory", "companion"]);
@@ -63,10 +74,12 @@ export function normalizeMcpServer(server: McpServerDefinition): McpServerDefini
       (RESERVED_IDS.has(server.id) || server.id.startsWith("plugin:"))
     )
       throw new Error("MCP server ID conflicts with a built-in provider");
-    if (server.needsApproval !== undefined && typeof server.needsApproval !== "boolean")
-      throw new Error("MCP needsApproval must be a boolean");
+    // Fail closed: silently ignoring the removed flag would drop a required approval.
+    if ("needsApproval" in server) throw new Error("MCP needsApproval was replaced by approval.mode");
+    const approval = normalizeMcpApproval(server.approval);
     return {
       ...server,
+      ...(approval ? { approval } : {}),
       url: normalizeMcpUrl(server.url),
       name: server.name?.trim() || server.id,
       description: server.description || "",
@@ -114,7 +127,7 @@ export function sameMcpServer(a: McpServerDefinition, b: McpServerDefinition): b
     a.name === b.name &&
     a.description === b.description &&
     a.icon === b.icon &&
-    a.needsApproval === b.needsApproval &&
+    (a.approval?.mode ?? "none") === (b.approval?.mode ?? "none") &&
     JSON.stringify(a.headers) === JSON.stringify(b.headers)
   );
 }

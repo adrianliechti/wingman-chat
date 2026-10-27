@@ -275,7 +275,7 @@ const mcpServers: McpServerDefinition[] = new URLSearchParams(location.search).h
         name: "Web Search",
         description: "Access up-to-date information",
         url: new URL("/fixture-mcp", location.origin).href,
-        needsApproval: true,
+        approval: { mode: "single" },
       },
     ]
   : [];

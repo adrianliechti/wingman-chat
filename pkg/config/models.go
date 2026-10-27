@@ -46,14 +46,27 @@ type Link struct {
 }
 
 type Tool struct {
-	ID            string            `json:"id,omitempty" yaml:"id,omitempty"`
-	URL           string            `json:"url,omitempty" yaml:"url,omitempty"`
-	Name          string            `json:"name,omitempty" yaml:"name,omitempty"`
-	Description   string            `json:"description,omitempty" yaml:"description,omitempty"`
-	Icon          string            `json:"icon,omitempty" yaml:"icon,omitempty"`
-	Headers       map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	NeedsApproval bool              `json:"needsApproval,omitempty" yaml:"needsApproval,omitempty"`
+	ID          string            `json:"id,omitempty" yaml:"id,omitempty"`
+	URL         string            `json:"url,omitempty" yaml:"url,omitempty"`
+	Name        string            `json:"name,omitempty" yaml:"name,omitempty"`
+	Description string            `json:"description,omitempty" yaml:"description,omitempty"`
+	Icon        string            `json:"icon,omitempty" yaml:"icon,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
+	Approval    *Approval         `json:"approval,omitempty" yaml:"approval,omitempty"`
 }
+
+// Approval controls MCP input review. An omitted approval means none.
+type Approval struct {
+	Mode ApprovalMode `json:"mode" yaml:"mode"`
+}
+
+type ApprovalMode string
+
+const (
+	ApprovalSingle   ApprovalMode = "single"
+	ApprovalCombined ApprovalMode = "combined"
+	ApprovalNone     ApprovalMode = "none"
+)
 
 type ModelTools struct {
 	Enabled  []string `json:"enabled,omitempty" yaml:"enabled,omitempty"`

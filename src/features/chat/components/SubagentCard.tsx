@@ -12,6 +12,7 @@ import { subagentToolCallIds, toolRounds } from "./chatMessageUtils";
 export function SubagentCard({ name, status, messages, error }: SubagentPart["subagent"]) {
   const { providers } = useToolsContext();
   const running = status === "running";
+  const stopped = status === "error" && error?.message === "Stopped";
   const header = resolveToolHeader(findTool(providers, name), name, undefined, { running });
   const delegated = subagentToolCallIds(messages);
   const Icon = header.Icon ?? Bot;
@@ -28,7 +29,7 @@ export function SubagentCard({ name, status, messages, error }: SubagentPart["su
           <Icon aria-hidden="true" className="size-3 shrink-0 text-neutral-400 dark:text-neutral-500" />
           <span className="truncate font-medium">{header.label}</span>
           {status === "suspended" && <span>Waiting for input</span>}
-          {status === "error" && <span>Failed</span>}
+          {status === "error" && <span>{stopped ? "Stopped" : "Failed"}</span>}
         </span>
       </summary>
       <div className="ml-4.5 space-y-1 pb-1 text-sm text-neutral-600 dark:text-neutral-400">
@@ -77,7 +78,7 @@ export function SubagentCard({ name, status, messages, error }: SubagentPart["su
             </div>
           );
         })}
-        {error && (
+        {error && !stopped && (
           <p role="alert" className="text-xs text-red-600 dark:text-red-400">
             {error.message}
           </p>

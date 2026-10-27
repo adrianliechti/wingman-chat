@@ -339,10 +339,12 @@ are validated again after resume and retain the typed `{ answered, answers }`
 result contract. Completed tool messages show readable answer summaries using
 the original question and option labels, including after reload. Skip retains
 the existing `{ answered: false, action: "decline" }` contract.
-Configured image and research confirmations use `needsApproval`, including
-approvals on research's synthetic subagent tool. Server and client share the same
-input schema so a saved approval remains bound after reload. Approval happens
-before image generation or starting research; the tool does not prompt again.
+Image confirmations and per-prompt agent tools use native approval. An MCP server
+configured with `approval: { mode: "combined" }` is exposed to chat as one isolated agent
+tool; its card shows the read-only `prompt`, and declining lets the model propose
+another. Approval happens before starting the child; the server tools inside it require no further approval.
+Per-prompt agents use the same persistence as other native approvals. Pending approvals
+are restored on reload, and an approved prompt remains approved when its continuation resumes.
 Legacy MCP transport elicitation and realtime still use the small live-callback
 bridge because those requests cannot be resumed by replaying the tool.
 
@@ -446,9 +448,10 @@ for input. They inherit selected capabilities, attachment preparation, workspace
 access, and cancellation. Their artifact mutations
 reach parent verification. Realtime's `agent` tool uses the same one-shot runner
 and returns the final text because the voice protocol has no nested chat cards.
-Web research uses the same `defineAgent` path with its search/fetch tools and a
-content-guard middleware. It receives the model-written brief and its own resumed
-work, keeping unrelated parent history out of research requests. Search and fetch
+Per-prompt MCP agents, such as web research, use the same `defineAgent` path with
+the server's tools. They receive the human-approved prompt and their own results.
+Prompt-only children do not inherit parent history, tool-context callbacks, shared middleware,
+attachment preparation, memory or profile context. Search and fetch
 progress use native child parts during execution and ordinary child messages in
 storage and the UI, replacing the separate research runner
 and manually maintained parent status. Realtime delivers native assistant messages with tool-call/result parts and UI resources

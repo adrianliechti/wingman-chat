@@ -91,7 +91,7 @@ if (parameters.has("panels")) {
         name: "Web Search",
         description: "Access up-to-date information",
         url: new URL("/fixture-research-mcp", location.origin).href,
-        needsApproval: true,
+        approval: { mode: "combined" },
       },
     ];
     // Keep the actual SDK + HTTP stream parser in the fixture, with a tool result

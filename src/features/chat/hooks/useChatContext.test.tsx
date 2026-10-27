@@ -5,6 +5,7 @@ import type { Model, ToolProvider } from "@/shared/types/chat";
 import { createSkillsProvider } from "@/features/skills/lib/skillsProvider";
 import { useChatContext, type ChatContext } from "./useChatContext";
 import inlineUiInstructions from "../prompts/inline-ui.txt?raw";
+import { createMcpAgentChat } from "@/features/tools/lib/mcpAgent";
 
 const state = vi.hoisted(() => ({
   client: { listModels: vi.fn(async () => []) },
@@ -61,6 +62,24 @@ describe("chat prompt context", () => {
     state.coreProviders = [];
     state.renderer = undefined;
     state.agent = null;
+  });
+
+  it("gives the main chat and generic delegates only the per-prompt agent entry point", () => {
+    const search = {
+      name: "private_search",
+      description: "Search",
+      inputSchema: z.strictObject({}),
+      execute: async () => [],
+    };
+    const chat = createMcpAgentChat({ id: "internet", name: "Web Search", tools: [search] });
+    const research = chat.tools[0];
+    state.providers = [{ id: "internet", name: "Web Search", tools: [search], chat }];
+    const available = context().tools();
+    expect(available).toContain(research);
+    expect(available).not.toContain(search);
+    const delegate = available.find((tool) => tool.name === "agent")!;
+    expect(delegate.subagent?.tools).toContain(research);
+    expect(delegate.subagent?.tools).not.toContain(search);
   });
 
   it("uses a retired agent model's replacement tool policy in voice mode", () => {

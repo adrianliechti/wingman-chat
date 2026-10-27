@@ -6,6 +6,7 @@ import type { InstalledPlugin } from "@/features/plugins/lib/types";
 import type { Agent } from "@/features/agent/types/agent";
 import type { UIResourcePart, ToolResultPart } from "@tanstack/ai";
 import { McpAuthRequiredError } from "@/features/settings/lib/mcpAuth";
+import type { McpApproval } from "@/features/settings/lib/mcpConfig";
 import { ToolsProvider } from "./ToolsProvider";
 import { useToolsContext } from "../hooks/useToolsContext";
 
@@ -48,12 +49,22 @@ vi.mock("@/features/settings/lib/mcp", () => ({
     name: string;
     description: string;
     headers?: Record<string, string>;
-    constructor(id: string, url: string, name: string, description: string, headers?: Record<string, string>) {
+    approval?: McpApproval;
+    constructor(
+      id: string,
+      url: string,
+      name: string,
+      description: string,
+      headers?: Record<string, string>,
+      _icon?: unknown,
+      approval?: McpApproval,
+    ) {
       this.id = id;
       this.url = url;
       this.name = name;
       this.description = description;
       this.headers = headers;
+      this.approval = approval;
     }
     isConnected() {
       return this.connected;
@@ -90,6 +101,7 @@ const client = () =>
   context.providers.find((provider) => provider.id === child) as unknown as {
     url: string;
     headers: Record<string, string>;
+    approval?: McpApproval;
     disconnect: ReturnType<typeof vi.fn>;
     onDisconnected: (() => void) | null;
   };
@@ -130,6 +142,42 @@ it("enables the owner when a child is requested and disconnects every child when
   expect(original.disconnect).toHaveBeenCalledOnce();
   expect(JSON.parse(localStorage.getItem("app_tools")!)).toEqual([]);
 });
+
+it.each([undefined, "none", "single", "combined"] as const)(
+  "applies plugin MCP approval mode %s without reconnecting for an equivalent object",
+  async (mode) => {
+    const approval = mode === undefined ? undefined : { mode };
+    fixture.plugins[0].mcpServers![0].approval = approval;
+    await render();
+    await settle();
+    const original = client();
+    expect(original.approval).toEqual(approval);
+    fixture.plugins = [
+      {
+        ...fixture.plugins[0],
+        mcpServers: [
+          { ...fixture.plugins[0].mcpServers![0], approval: mode === undefined ? { mode: "none" } : { mode } },
+        ],
+      },
+    ];
+    await render();
+    await settle();
+    expect(client()).toBe(original);
+    expect(original.disconnect).not.toHaveBeenCalled();
+    fixture.plugins = [
+      {
+        ...fixture.plugins[0],
+        mcpServers: [
+          { ...fixture.plugins[0].mcpServers![0], approval: { mode: mode === "single" ? "combined" : "single" } },
+        ],
+      },
+    ];
+    await render();
+    await settle();
+    expect(client()).not.toBe(original);
+    expect(original.disconnect).toHaveBeenCalledOnce();
+  },
+);
 
 it("discards legacy child selections and refuses to enable them while restoring a saved widget", async () => {
   localStorage.setItem("app_tools", JSON.stringify([child]));

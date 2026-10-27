@@ -405,17 +405,32 @@ and `INTERNET_*` settings with an entry in `tools.yaml`:
   name: Web Search
   description: Access up-to-date information
   url: /api/v1/mcp/research
-  needsApproval: true
+  approval:
+    mode: combined
 # Optionally expose the gateway's separate search/fetch server:
 # - id: web
 #   name: Web
-#   needsApproval: true
+#   approval:
+#     mode: single
 ```
 
-`needsApproval: true` pauses each tool call in chat before any arguments are sent
-and shows the input for approval. Declining sends no tool request. Server-requested
-MCP elicitation remains supported independently. Calls originating in an MCP app
-are blocked for servers requiring approval; use chat to approve those calls.
+`approval.mode` controls what the user approves for each MCP entry, in `tools.yaml`,
+`tools` in `public/config.json`, or each server in a plugin's `mcp.json`:
+
+- `none` (the default when `approval` is omitted) calls tools without approval.
+- `single` pauses each tool call before its arguments are sent. Declining sends no request.
+- `combined` asks once per task. Chat reaches the server only through an isolated
+  agent; the user reviews its self-contained prompt. The agent receives
+  only the approved prompt and the server's results, and its tool calls need no further
+  approval. More private context requires a new approved prompt. Stop ends the
+  invocation. Prompt approvals use normal chat persistence and remain valid across
+  reloads for the same invocation. Voice mode, which calls tools directly, keeps per-call approval.
+
+Calls originating in an MCP app are blocked for servers requiring approval.
+Server-requested elicitation remains separate; isolated agents do not inherit the
+parent chat's live elicitation callbacks. Use an object such as
+`"approval": { "mode": "combined" }` in JSON. The former `needsApproval` flag and
+string-valued `approval` settings are no longer supported.
 
 The `internet` provider retains the primary Web Search feature: globe icon, readable
 research instructions and results, and an approval request that shows exactly what
@@ -424,8 +439,8 @@ will be sent. Existing saved `internet` selections continue to work.
 Every MCP tool call requests progress. Running rows show server messages and a
 percentage when a total is supplied; servers without notifications retain the
 normal activity indicator. Tool calls allow up to 15 minutes and can be stopped.
-Search options, research orchestration, summarization, and content guards now
-belong to the gateway, whose tool schemas and instructions are discovered over MCP.
+The gateway supplies retrieval tools, summarization and content guards. Chat owns
+the reviewed prompt and isolated agent lifecycle.
 See [MCP progress](https://modelcontextprotocol.io/specification/2025-03-26/basic/utilities/progress)
 and [TanStack tool approval](https://tanstack.com/ai/latest/docs/tools/tool-approval).
 

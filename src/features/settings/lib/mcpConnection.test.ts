@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { ElicitationResult } from "@/shared/types/elicitation";
 import { MCPClient } from "./mcp";
 import { mcpToolName } from "./mcpToolNames";
+import { mcpAgentToolName } from "@/features/tools/lib/mcpAgent";
 
 const transportFactory = vi.hoisted(() => ({ create: undefined as (() => Transport) | undefined }));
 vi.mock("@modelcontextprotocol/client", async (original) => ({
@@ -70,6 +71,7 @@ afterEach(async () => {
 });
 
 describe("MCP discovery and call ownership with the real SDK", () => {
+<<<<<<< Updated upstream
   it("preserves unwrapped app output from a legacy server's named Zod object schema", async () => {
     const fixture = new McpServer(
       { name: "fixture", version: "1" },
@@ -106,6 +108,40 @@ describe("MCP discovery and call ownership with the real SDK", () => {
       }),
     );
   });
+=======
+  it.each([undefined, "none", "single", "combined"] as const)(
+    "wraps tools in an isolated agent only for combined approval (%s)",
+    async (mode) => {
+      const approval = mode === undefined ? undefined : { mode };
+      provider = new MCPClient("any", "https://example.test/mcp", "Any", "Any", undefined, undefined, approval);
+      list.mockResolvedValue({ tools: [tool("search"), tool("write")] });
+      await provider.connect();
+      expect(provider.tools.every((tool) => tool.needsApproval === (mode !== undefined && mode !== "none"))).toBe(true);
+      if (mode !== "combined") {
+        expect(provider.chat).toBeUndefined();
+        if (mode === undefined || mode === "none") {
+          await provider.tools[0].execute({}, undefined);
+          expect(call).toHaveBeenCalledExactlyOnceWith("search");
+        }
+        return;
+      }
+      expect(provider.chat?.tools).toHaveLength(1);
+      const agent = provider.chat!.tools[0];
+      expect(agent.name).toBe(mcpAgentToolName("any"));
+      expect(agent.approval).toBe("prompt");
+      expect(agent.needsApproval).toBe(true);
+      expect(agent.subagent?.inheritHistory).toBe(false);
+      expect(agent.subagent?.tools.map((tool) => tool.name)).toEqual(
+        ["search", "write"].map((name) => mcpToolName("any", name)),
+      );
+      expect(agent.subagent?.tools.every((tool) => !tool.needsApproval)).toBe(true);
+      const elicit = vi.fn();
+      await agent.subagent!.tools[0].execute({}, { context: { elicit }, emitCustomEvent() {} });
+      expect(call).toHaveBeenCalledExactlyOnceWith("search");
+      expect(elicit).not.toHaveBeenCalled();
+    },
+  );
+>>>>>>> Stashed changes
 
   it("preserves task-required calls and reads their completed payload", async () => {
     capabilities = { tools: {}, tasks: { requests: { tools: { call: {} } } } };

@@ -13,7 +13,9 @@ import { resolveToolHeader, resolveToolInput, resolveToolOutput } from "@/featur
 function approvedTool() {
   const callTool = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "Evidence" }] });
   const native = { callTool } as unknown as NativeMCPClient;
-  const provider = new MCPClient("web", "https://mcp.example.test", "Web", "Search", undefined, undefined, true);
+  const provider = new MCPClient("web", "https://mcp.example.test", "Web", "Search", undefined, undefined, {
+    mode: "single",
+  });
   const boundary = provider as unknown as {
     client: NativeMCPClient;
     toTool(tool: McpTool, client: NativeMCPClient): Tool;
@@ -40,7 +42,7 @@ it("presents Internet as a primary feature with readable research input and appr
     "Access up-to-date information",
     undefined,
     "https://example.test/server-icon",
-    true,
+    { mode: "single" },
   );
   expect(provider.icon).toBe(Globe);
   const boundary = provider as unknown as { toTool(tool: McpTool, client: NativeMCPClient): Tool };
