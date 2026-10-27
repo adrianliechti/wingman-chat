@@ -23,6 +23,7 @@ import {
 } from "@/shared/lib/messages";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { CopyButton } from "@/shared/ui/CopyButton";
+import { Markdown } from "@/shared/ui/Markdown";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatMessageEditor } from "./ChatMessageEditor";
 import { formatArtifactReference, parseArtifactReference } from "./chatMessageUtils";
@@ -283,7 +284,9 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
         ) : (
           <>
             <div className="rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 overflow-hidden min-w-0 w-full">
-              <pre className="whitespace-pre-wrap font-sans [overflow-wrap:anywhere] min-w-0">{textContent}</pre>
+              <div className="[overflow-wrap:anywhere] min-w-0">
+                <Markdown compact>{textContent}</Markdown>
+              </div>
               {selectionParts.map((part, i) => (
                 <SelectionQuote key={i} selection={textMetadata(part).artifactSelection!} />
               ))}
