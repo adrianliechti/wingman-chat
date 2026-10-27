@@ -196,7 +196,7 @@ function Fixture() {
     },
     readHeld: () => !!releaseRead,
     releaseRead: () => releaseRead?.(),
-    search: async (query: string) => [...(await chat.searchChats(query, new AbortController().signal))],
+    search: async (query: string) => [...(await chat.searchChats(query, new AbortController().signal)).keys()],
     ask: (id: string) => {
       void chat
         .requestElicitation(id, "fixture", { message: id, requestedSchema: { type: "object", properties: {} } })

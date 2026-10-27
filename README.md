@@ -17,6 +17,9 @@ conversations, retrieval over your own files, and a library of reusable skills.
   [docs/inline-ui.md](docs/inline-ui.md).
 - **Conversation management** with optional retention, automatic summarization, and history
   optimization.
+- **Chat search** shows matching excerpts and opens the first matching message with highlighted text.
+  Message links use `/chat/<chatId>/<messageId>` and retain their target across reloads;
+  title-only matches open the conversation normally.
 - **Projects** group chats with shared instructions and files. Move existing chats between projects,
   choose an agent per conversation, and save an artifact to a project's file library for reuse.
 - **Composer drafts** retain unsent text and attachments across navigation and reloads, including

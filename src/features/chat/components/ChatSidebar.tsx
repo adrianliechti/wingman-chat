@@ -23,6 +23,8 @@ import { cn } from "@/shared/lib/cn";
 import { type ChatEntry } from "@/shared/types/chat";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { useSidebar } from "@/shell/hooks/useSidebar";
+import type { ChatSearchMatch } from "../lib/chatSearch";
+import { SearchHighlight } from "./SearchHighlight";
 
 type SidebarGroup = { category: string; chats: ChatEntry[] };
 type FlatSidebarItem = { type: "header"; group: SidebarGroup; groupIndex: number } | { type: "item"; chat: ChatEntry };
@@ -101,15 +103,18 @@ export function ChatSidebar() {
     [chats, selectedProjectId, projects],
   );
 
-  const [searchResult, setSearchResult] = useState<{ query: string; ids: Set<string> } | null>(null);
+  const query = searchQuery.trim();
+  const [searchResult, setSearchResult] = useState<{ query: string; matches: Map<string, ChatSearchMatch> } | null>(
+    null,
+  );
   // Full-text search waits for typing to pause; title filtering below stays immediate.
-  const [debouncedQuery] = useDebouncedValue(searchQuery, { wait: 250 });
+  const [debouncedQuery] = useDebouncedValue(query, { wait: 250 });
   useEffect(() => {
     if (!debouncedQuery.trim()) return;
     const controller = new AbortController();
     void searchChats(debouncedQuery, controller.signal)
-      .then((ids) => {
-        if (!controller.signal.aborted) setSearchResult({ query: debouncedQuery, ids });
+      .then((matches) => {
+        if (!controller.signal.aborted) setSearchResult({ query: debouncedQuery, matches });
       })
       .catch((error) => {
         if (!controller.signal.aborted) notify.error("Couldn't search saved chats", error);
@@ -118,15 +123,15 @@ export function ChatSidebar() {
   }, [debouncedQuery, chats, searchChats]);
 
   const filteredChats = useMemo(() => {
-    if (!searchQuery.trim()) return sortedChats;
-    const query = searchQuery.toLowerCase();
+    if (!query) return sortedChats;
+    const normalized = query.toLowerCase();
     return sortedChats.filter(
       (entry) =>
-        entry.customTitle?.toLowerCase().includes(query) ||
-        entry.title?.toLowerCase().includes(query) ||
-        (searchResult?.query === searchQuery && searchResult.ids.has(entry.id)),
+        entry.customTitle?.toLowerCase().includes(normalized) ||
+        entry.title?.toLowerCase().includes(normalized) ||
+        (searchResult?.query === query && searchResult.matches.has(entry.id)),
     );
-  }, [sortedChats, searchQuery, searchResult]);
+  }, [sortedChats, query, searchResult]);
 
   // Helper function to get date category
   const getDateCategory = useCallback((date: Date): string => {
@@ -308,6 +313,8 @@ export function ChatSidebar() {
   // Shared chat item row renderer
   const renderChatItem = (chatItem: ChatEntry, options?: { draggable?: boolean }) => {
     const displayTitle = chatItem.customTitle ?? chatItem.title ?? "Untitled";
+    const match = query && searchResult?.query === query ? searchResult.matches.get(chatItem.id) : undefined;
+    const showExcerpt = match && (match.messageId || match.excerpt !== displayTitle);
     const isActive = chatItem.id === chatId;
     const dragBorder =
       dragOver?.id === chatItem.id
@@ -347,15 +354,27 @@ export function ChatSidebar() {
             onDragEnd={options?.draggable ? handleDragEnd : undefined}
             onDrop={options?.draggable ? () => handleDrop(chatItem.id) : undefined}
             onClick={() => {
-              openChat(chatItem.id);
+              openChat(chatItem.id, match?.messageId ? { messageId: match.messageId, query } : undefined);
               if (window.innerWidth < 768) {
                 setShowSidebar(false);
               }
             }}
-            className={`flex-1 overflow-hidden text-ellipsis whitespace-nowrap pr-4 group-hover:pr-8 transition-all duration-200 text-left text-base md:text-sm ${isActive ? "font-medium" : "text-neutral-700 dark:text-neutral-300"}`}
+            className={`flex-1 min-w-0 pr-8 text-left text-base md:text-sm ${isActive ? "font-medium" : "text-neutral-700 dark:text-neutral-300"}`}
             title={displayTitle}
+            aria-label={displayTitle}
+            aria-describedby={showExcerpt ? `search-excerpt-${chatItem.id}` : undefined}
           >
-            {displayTitle}
+            <span className="block truncate">
+              <SearchHighlight text={displayTitle} query={query} />
+            </span>
+            {showExcerpt && (
+              <span
+                id={`search-excerpt-${chatItem.id}`}
+                className="mt-1 line-clamp-3 whitespace-normal break-words text-xs font-normal text-neutral-500 dark:text-neutral-400"
+              >
+                <SearchHighlight text={match.excerpt} query={query} />
+              </span>
+            )}
           </button>
         )}
         {renamingChatId !== chatItem.id && (
@@ -364,7 +383,7 @@ export function ChatSidebar() {
             trigger={
               <MenuButton
                 aria-label={`Chat options for ${displayTitle}`}
-                className="absolute right-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-2 -m-1 rounded hover:bg-neutral-200/60 dark:hover:bg-white/10"
+                className="absolute right-1.5 top-2 md:top-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-2 -m-1 rounded hover:bg-neutral-200/60 dark:hover:bg-white/10"
                 onClick={(e) => e.stopPropagation()}
               >
                 <MoreVertical size={16} />
@@ -424,6 +443,7 @@ export function ChatSidebar() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search…"
+              aria-label="Search chats"
               className="w-full min-w-0 px-3 py-1 text-sm bg-transparent text-neutral-800 dark:text-neutral-200 placeholder-neutral-500 dark:placeholder-neutral-400 focus:outline-none"
             />
             <button

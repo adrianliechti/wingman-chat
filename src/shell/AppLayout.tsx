@@ -228,6 +228,7 @@ export function AppLayout() {
       >
         {/* Fixed navigation bar with glass effect */}
         <nav
+          data-app-topbar
           className={cn(
             "fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-800 shadow-sm ease-in-out",
             !isSidebarResizing && "transition-[padding] duration-500",

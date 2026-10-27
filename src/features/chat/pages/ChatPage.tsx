@@ -3,7 +3,7 @@ import { submissionText } from "@/shared/lib/inlineUi/diagnostics";
 import type { UiSubmission } from "@/shared/lib/inlineUi/runtime";
 import { userMessage } from "@/shared/lib/messages";
 import { ChatInterrupts } from "../components/ChatInterrupts";
-import { useMatch, useNavigate } from "@tanstack/react-router";
+import { useLocation, useMatch, useNavigate } from "@tanstack/react-router";
 import { AppWindow, ArrowDown, Info, Plus as PlusIcon, Shapes } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
@@ -22,6 +22,7 @@ import { ChatToolGroup } from "@/features/chat/components/ChatToolGroup";
 import { groupRenderUnits, isToolOnlyMessage } from "@/features/chat/components/chatMessageUtils";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
+import { useSearchMessage } from "@/features/chat/hooks/useSearchMessage";
 import { useDrawerExclusivity } from "@/features/chat/hooks/useDrawerExclusivity";
 import { useDrawerResize } from "@/features/chat/hooks/useDrawerResize";
 import { useSkills } from "@/features/skills/hooks/useSkills";
@@ -104,7 +105,12 @@ export function ChatPage() {
     newChat();
   }, [isListening, stopVoice, newChat]);
   const chatIdMatch = useMatch({ from: "/app/chat/$chatId", shouldThrow: false });
-  const routeChatId = chatIdMatch?.params.chatId;
+  const messageMatch = useMatch({ from: "/app/chat/$chatId/$messageId", shouldThrow: false });
+  const routeChatId = messageMatch?.params.chatId ?? chatIdMatch?.params.chatId;
+  const searchQuery = useLocation({ select: (location) => location.state.chatSearchQuery });
+  const navigationKey = useLocation({
+    select: (location) => location.state.chatSearchNavigationId ?? location.state.__TSR_key,
+  });
 
   const showChatLoading = !chats.some((c) => c.id === selectedChatId);
 
@@ -377,13 +383,21 @@ export function ChatPage() {
     [messages, isResponding, pendingElicitation?.toolCallId],
   );
 
-  const { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest } = useChatScroll({
-    resetKey: chat?.id ?? routeChatId ?? "__draft__",
-    messages,
-    isResponding,
-    requestKey:
-      pendingElicitation?.elicitation ?? interruptState?.interrupts.map((interrupt) => interrupt.id).join(","),
-  });
+  const { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest, goToTarget, scrollElement } =
+    useChatScroll({
+      resetKey: chat?.id ?? routeChatId ?? "__draft__",
+      messages,
+      isResponding,
+      requestKey:
+        pendingElicitation?.elicitation ?? interruptState?.interrupts.map((interrupt) => interrupt.id).join(","),
+    });
+  useSearchMessage(
+    scrollElement,
+    chat?.id === routeChatId ? messageMatch?.params.messageId : undefined,
+    searchQuery,
+    navigationKey,
+    goToTarget,
+  );
 
   // Set up navigation actions
   useEffect(() => {
@@ -507,7 +521,12 @@ export function ChatPage() {
                     // Tool-only turns are tagged so the scroll pin anchors to prompts and replies.
                     const dataRole = isToolOnlyMessage(message) ? "tool" : message.role;
                     return (
-                      <div key={messageRenderKeys[index]} className="flow-root" data-role={dataRole}>
+                      <div
+                        key={messageRenderKeys[index]}
+                        className="flow-root"
+                        data-role={dataRole}
+                        data-message-id={message.id}
+                      >
                         <ChatMessage
                           index={index}
                           message={message}

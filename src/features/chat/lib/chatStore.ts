@@ -1,5 +1,5 @@
 import type { PersistenceQueue } from "@/shared/lib/persistence";
-import { messageText } from "@/shared/lib/messages";
+import { firstMessageMatch, searchExcerpt, type ChatSearchMatch } from "./chatSearch";
 import type { ChatEntry } from "@/shared/types/chat";
 import type { Chat } from "@/shared/types/chat";
 import { chatEntry, loadChat, loadChatIndex, removeChat, storeChat } from "./chatStorage";
@@ -144,30 +144,27 @@ export class ChatStore {
   };
 
   /** Search manifests only after a query; never read or cache attachment bytes. */
-  searchChats = async (query: string, signal: AbortSignal): Promise<Set<string>> => {
-    const normalized = query.toLowerCase();
-    const matches = new Set<string>();
+  searchChats = async (query: string, signal: AbortSignal): Promise<Map<string, ChatSearchMatch>> => {
+    const trimmed = query.trim();
+    const normalized = trimmed.toLowerCase();
+    const matches = new Map<string, ChatSearchMatch>();
+    signal.throwIfAborted();
+    if (!normalized) return matches;
     for (const summary of this.snapshot.chats) {
       signal.throwIfAborted();
       if (this.deleted.has(summary.id)) continue;
-      if (
-        summary.title?.toLowerCase().includes(normalized) ||
-        summary.customTitle?.toLowerCase().includes(normalized)
-      ) {
-        matches.add(summary.id);
-        continue;
-      }
       let chat = this.records.get(summary.id);
       if (!chat) chat = await this.storage.load(summary.id);
       signal.throwIfAborted();
       // An edit/delete may have landed during the read. Prefer current memory.
       chat = this.records.get(summary.id) ?? chat;
-      if (
-        !this.deleted.has(summary.id) &&
-        chat?.messages.some((message) => messageText(message).toLowerCase().includes(normalized))
-      )
-        matches.add(summary.id);
+      if (this.deleted.has(summary.id) || !chat) continue;
+      // Prefer a passage even when the title also matches.
+      const match = firstMessageMatch(chat.messages, trimmed);
+      const title = [chat.customTitle, chat.title].find((title) => title?.toLowerCase().includes(normalized));
+      if (match) matches.set(summary.id, match);
+      else if (title) matches.set(summary.id, { excerpt: searchExcerpt(title, trimmed) });
     }
-    return new Set([...matches].filter((id) => !this.deleted.has(id)));
+    return new Map([...matches].filter(([id]) => !this.deleted.has(id)));
   };
 }

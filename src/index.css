@@ -2,6 +2,11 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+::highlight(chat-search) {
+  background-color: #fde68a;
+  color: #171717;
+}
+
 /* Global defaults belong in the base layer so component utilities can override them. */
 @layer base {
   html,

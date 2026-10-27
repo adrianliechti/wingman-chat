@@ -18,8 +18,6 @@ Linked features are inspiration for Wingman; provider and gateway support must b
       Reuse the artifact selection popover. Inspiration:
       [Ask Copilot in Teams](https://support.microsoft.com/en-US/teams/copilot/ask-copilot-microsoft-teams)
       and [Perplexity Side Chat](https://www.perplexity.ai/changelog/effort-mode-gpt-6-astra-and-skills-marketplace).
-- [ ] **Open search results at the matching message.** Show excerpts, highlight matches, and jump to
-      the relevant passage instead of opening the conversation at its latest message.
 - [ ] **Expand search.** Add type filters (chats, artifacts, images, documents), date and model
       filters, artifact names, extracted file and transcript text, and an incremental local search
       index for large histories. Inspiration:
