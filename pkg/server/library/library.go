@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // How long a built inventory is reused before the directory is re-walked.
@@ -38,7 +38,7 @@ func parseFrontmatter(data []byte, out any) {
 		return
 	}
 
-	yaml.Unmarshal([]byte(rest[:end]), out)
+	yaml.Load([]byte(rest[:end]), out)
 }
 
 // safePath resolves root/<rel>, returning the absolute file path and true only

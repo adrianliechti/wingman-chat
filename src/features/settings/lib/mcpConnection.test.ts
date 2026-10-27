@@ -1,7 +1,8 @@
 import { Client, type Transport } from "@modelcontextprotocol/client";
 import type { CallToolResult, ListToolsResult, ServerCapabilities, Tool } from "@modelcontextprotocol/client";
-import { InMemoryTransport, Server } from "@modelcontextprotocol/server";
+import { InMemoryTransport, McpServer, Server } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { ElicitationResult } from "@/shared/types/elicitation";
 import { MCPClient } from "./mcp";
 import { mcpToolName } from "./mcpToolNames";
@@ -69,6 +70,43 @@ afterEach(async () => {
 });
 
 describe("MCP discovery and call ownership with the real SDK", () => {
+  it("preserves unwrapped app output from a legacy server's named Zod object schema", async () => {
+    const fixture = new McpServer(
+      { name: "fixture", version: "1" },
+      { capabilities: { resources: {} }, supportedProtocolVersions: ["2025-11-25"] },
+    );
+    fixture.registerTool(
+      "app",
+      {
+        inputSchema: z.object({}),
+        outputSchema: z.object({ count: z.int() }).meta({ id: "app_output_schema" }),
+        _meta: { ui: { resourceUri: "ui://app" } },
+      },
+      async () => ({ ...result, structuredContent: { count: 2 } }),
+    );
+    fixture.server.setRequestHandler("resources/read", () => ({
+      contents: [{ uri: "ui://app", mimeType: "text/html;profile=mcp-app", text: "<p>Widget</p>" }],
+    }));
+    transportFactory.create = () => {
+      servers.push(fixture.server);
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      void fixture.connect(serverTransport);
+      return clientTransport;
+    };
+    await provider.connect();
+    expect(provider.toolDefinitions.get("app")?.outputSchema?.type).toBe("object");
+    const emitCustomEvent = vi.fn();
+    expect(await provider.tools[0].execute({}, { context: {}, emitCustomEvent })).toEqual([
+      { type: "text", content: "done" },
+    ]);
+    expect(emitCustomEvent).toHaveBeenCalledWith(
+      "ui-resource",
+      expect.objectContaining({
+        meta: expect.objectContaining({ mcpResult: { ...result, structuredContent: { count: 2 } } }),
+      }),
+    );
+  });
+
   it("preserves task-required calls and reads their completed payload", async () => {
     capabilities = { tools: {}, tasks: { requests: { tools: { call: {} } } } };
     list.mockResolvedValue({ tools: [{ ...tool("run"), execution: { taskSupport: "required" } }] });

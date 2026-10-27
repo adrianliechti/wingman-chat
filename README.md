@@ -255,12 +255,15 @@ PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
 ```
 
 Keep `vite-plus`, its core package and the `vite` alias at the same version, and
-pin Vitest to the version bundled with Vite+. Babel stays on 7 until React Compiler
-supports Babel 8; `npm run check:react-compiler` verifies that compatibility.
+pin Vitest to the version bundled with Vite+. Babel stays on 7: React Compiler 1.0.0
+fails to compile defaulted props with Babel 8.0.9. `npm run check:react-compiler`
+guards that compatibility and verifies the main render paths are compiled.
 The `vite` and `vitest` overrides keep dependencies on that shared toolchain;
 local and Docker installs use `npm ci` with normal peer-dependency resolution.
 The Chevrotain override updates its pinned `lodash-es` dependency to a patched release.
 The `guarded-fetch` override keeps its pinned Undici dependency on a patched 7.x release.
+
+The Go server uses `go.yaml.in/yaml/v4`, pinned to `v4.0.0-rc.6` while v4 is in release candidate status.
 
 ### Docker
 

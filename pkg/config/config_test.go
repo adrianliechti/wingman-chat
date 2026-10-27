@@ -49,6 +49,32 @@ func TestModelReplacementsReachBrowserConfig(t *testing.T) {
 	}
 }
 
+func TestLoadYAMLCompatibility(t *testing.T) {
+	filename := t.TempDir() + "/tools.yaml"
+	if err := os.WriteFile(filename, []byte(`
+- &defaults
+  id: base
+  needsApproval: yes
+  headers:
+    X-Tenant: "0123"
+- <<: *defaults
+  id: inherited
+  url: https://mcp.example.test/api
+  futureSetting: ignored
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var tools []Tool
+	loadYAML(filename, &tools)
+	want := []Tool{
+		{ID: "base", NeedsApproval: true, Headers: map[string]string{"X-Tenant": "0123"}},
+		{ID: "inherited", NeedsApproval: true, URL: "https://mcp.example.test/api", Headers: map[string]string{"X-Tenant": "0123"}},
+	}
+	if !reflect.DeepEqual(tools, want) {
+		t.Fatalf("YAML aliases, legacy booleans or quoted strings changed: got %#v, want %#v", tools, want)
+	}
+}
+
 func TestLoadAccountLinks(t *testing.T) {
 	previous, err := os.Getwd()
 	if err != nil {

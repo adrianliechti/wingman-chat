@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // Load builds a Config by reading YAML files and applying environment variable overrides.
@@ -62,7 +62,7 @@ func loadLinks(cfg *Config) {
 	}
 
 	var links []Link
-	if err := yaml.Unmarshal(data, &links); err == nil {
+	if err := yaml.Load(data, &links); err == nil {
 		cfg.Links = links
 		return
 	}
@@ -71,7 +71,7 @@ func loadLinks(cfg *Config) {
 		Support *Link `yaml:"support"`
 		Cost    *Link `yaml:"cost"`
 	}
-	if err := yaml.Unmarshal(data, &legacy); err == nil {
+	if err := yaml.Load(data, &legacy); err == nil {
 		cfg.Support = legacy.Support
 		cfg.Cost = legacy.Cost
 	}
@@ -238,14 +238,14 @@ func ensurePtr[T any](p *T) *T {
 
 func loadYAML[T any](filename string, target *T) {
 	if data, err := os.ReadFile(filename); err == nil {
-		yaml.Unmarshal(data, target)
+		yaml.Load(data, target)
 	}
 }
 
 func loadYAMLPtr[T any](filename string, target **T) {
 	if data, err := os.ReadFile(filename); err == nil {
 		*target = new(T)
-		yaml.Unmarshal(data, *target)
+		yaml.Load(data, *target)
 	}
 }
 
