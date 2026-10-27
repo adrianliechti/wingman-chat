@@ -71,7 +71,6 @@ afterEach(async () => {
 });
 
 describe("MCP discovery and call ownership with the real SDK", () => {
-<<<<<<< Updated upstream
   it("preserves unwrapped app output from a legacy server's named Zod object schema", async () => {
     const fixture = new McpServer(
       { name: "fixture", version: "1" },
@@ -108,7 +107,7 @@ describe("MCP discovery and call ownership with the real SDK", () => {
       }),
     );
   });
-=======
+
   it.each([undefined, "none", "single", "combined"] as const)(
     "wraps tools in an isolated agent only for combined approval (%s)",
     async (mode) => {
@@ -141,7 +140,6 @@ describe("MCP discovery and call ownership with the real SDK", () => {
       expect(elicit).not.toHaveBeenCalled();
     },
   );
->>>>>>> Stashed changes
 
   it("preserves task-required calls and reads their completed payload", async () => {
     capabilities = { tools: {}, tasks: { requests: { tools: { call: {} } } } };

@@ -17,7 +17,7 @@ export function SubagentCard({ name, status, messages, error }: SubagentPart["su
   const delegated = subagentToolCallIds(messages);
   const Icon = header.Icon ?? Bot;
   return (
-    <details open={running || status === "suspended"} className="group/subagent min-w-0">
+    <details className="group/subagent min-w-0">
       <summary className="grid cursor-pointer py-1 list-none grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 text-xs text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300 [&::-webkit-details-marker]:hidden">
         {/* Same slots as ActivityRow: spinner or chevron, then the icon, then the label. */}
         {running ? (
