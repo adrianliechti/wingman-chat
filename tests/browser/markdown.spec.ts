@@ -381,11 +381,15 @@ test("Inline UI disables streaming controls and handles empty choices", async ({
   await expect(page.getByTestId("markdown")).toContainText("Value: []");
 });
 
-test("emoji have one wrapper, preserve sequences, and use Noto for hearts and suns", async ({ page }) => {
-  const emojis = ["😀", "❤️", "☀️", "🗺️", "🏗️", "👩🏽‍💻", "🏳️‍🌈", "🇨🇭", "1️⃣", "❤️‍🔥"];
-  await page.evaluate((values) => window.markdownE2E.render(values.join(" ")), emojis);
+test("emoji preserve sequences, use Noto glyphs, and keep plain hearts colored", async ({ page }) => {
+  const emojis = ["😀", "☀️", "🗺️", "🏗️", "👩🏽‍💻", "🏳️‍🌈", "🇨🇭", "1️⃣", "💔", "❤️‍🔥", "❤️‍🩹"];
+  const hearts = ["❤️", "❤", "🩷", "🧡", "💛", "💚", "💙", "🩵", "💜", "🤎", "🖤", "🩶", "🤍"];
+  const source = [...emojis, ...hearts].join(" ");
+  await page.evaluate((source) => window.markdownE2E.render(source), source);
   await expect(page.locator(".noto-emoji")).toHaveCount(emojis.length);
   await expect(page.locator(".noto-emoji .noto-emoji")).toHaveCount(0);
+  await expect(page.locator(".emoji-swatch-heart")).toHaveText(hearts);
+  await expect(page.locator(".emoji-swatch-heart .noto-emoji")).toHaveCount(0);
   await page.waitForFunction(() => document.documentElement.classList.contains("noto-emoji-ready"));
   const client = await page.context().newCDPSession(page);
   await client.send("DOM.enable");
@@ -399,9 +403,13 @@ test("emoji have one wrapper, preserve sequences, and use Noto for hearts and su
       emojis[index],
     ).toEqual([expect.stringMatching(/^Noto Emoji/)]);
   }
-  await expect(page.getByTestId("markdown")).toHaveText(emojis.join(" ").replaceAll("\uFE0F", ""));
+  await expect(page.getByTestId("markdown")).toHaveText(
+    `${emojis.join(" ").replaceAll("\uFE0F", "")} ${hearts.join(" ")}`,
+  );
   await page.evaluate(() => window.markdownE2E.mode("native"));
-  await expect(page.getByTestId("markdown")).toHaveText(emojis.join(" "));
+  await expect(page.getByTestId("markdown")).toHaveText(source);
+  await expect(page.locator(".emoji-swatch-heart")).toHaveCount(0);
+  await expect(page.locator(".noto-emoji")).toHaveCount(emojis.length + hearts.length);
   await expect(page.locator(".noto-emoji").first()).not.toHaveCSS("font-family", /Noto Emoji/);
 });
 

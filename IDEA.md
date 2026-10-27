@@ -13,8 +13,8 @@ Linked features are inspiration for Wingman; provider and gateway support must b
       the composer. Inspiration: [ChatGPT what's new](https://learn.chatgpt.com/docs/whats-new).
 - [ ] **Steer or queue follow-ups during a run.** Messages already queue while a reply runs. Let users
       choose between steering the current run at its next tool boundary and queueing for the next
-      turn, with a default in settings. Show queued messages above the composer to edit, reorder,
-      send now, or delete. Inspiration: [ChatGPT follow-up behavior](https://learn.chatgpt.com/codex/prompting)
+      turn, with a default in settings. Extend the existing queued-message chips with edit, reorder,
+      and send-now actions. Inspiration: [ChatGPT follow-up behavior](https://learn.chatgpt.com/codex/prompting)
       and [LibreChat v0.8.8](https://github.com/LibreChat-AI/LibreChat/releases/tag/v0.8.8).
 - [ ] **Ask about a selected passage.** Select text in a reply to quote it into the composer, or open
       a side chat that answers from a snapshot of the conversation without adding to the main thread.
@@ -53,11 +53,9 @@ Linked features are inspiration for Wingman; provider and gateway support must b
 
 - [ ] **Add a command palette and keyboard shortcuts.** Use Cmd/Ctrl+K to search, open, archive, or
       delete chats and to switch models or agents. Add shortcuts for new chat, stop, and focusing the
-      composer, plus Up/Down for input history. Allow rebinding with conflict warnings. Today only
-      Enter, Shift+Enter, and Esc exist. Inspiration:
+      composer, plus Up/Down for input history. Allow rebinding with conflict warnings. Inspiration:
       [Open WebUI 0.11.4](https://github.com/open-webui/open-webui/releases/tag/v0.11.4).
-- [ ] **Navigate long conversations.** Add a rail of turns with jump-to-message and a way to stop
-      automatic scrolling while reading earlier output. Inspiration:
+- [ ] **Navigate long conversations.** Add a rail of turns with jump-to-message. Inspiration:
       [Chatbox 1.22.1](https://github.com/chatboxai/chatbox/releases/tag/v1.22.1).
 - [ ] **Translate the interface.** Extract UI strings, ship translations, and let operators reword
       labels per language without breaking placeholders. Inspiration:
@@ -93,9 +91,8 @@ Linked features are inspiration for Wingman; provider and gateway support must b
 
 ## Artifacts and media
 
-- [ ] **Allow manual artifact editing.** Type changes directly into Markdown, text, and code files
-      beside the chat, with save/cancel controls and revisions. Later, edit cells in the data grid and
-      chart data in generated decks. All viewers are read-only today. Inspiration:
+- [ ] **Edit structured artifacts.** Edit cells in the data grid and chart data in generated decks,
+      with save/cancel controls and revisions. Inspiration:
       [Claude's document and artifact editing](https://support.claude.com/en/articles/12138966-release-notes)
       and [Mistral spreadsheets in Canvas](https://docs.mistral.ai/resources/release-notes).
 - [ ] **Review proposed AI edits before applying them.** Show changes as suggestion cards beside the
@@ -106,16 +103,16 @@ Linked features are inspiration for Wingman; provider and gateway support must b
 - [ ] **Show the query behind dashboard numbers.** In HTML dashboards over workspace data, click a
       chart or figure to see its SQL, ask for an explanation, and see when it was last computed.
       Inspiration: [Claude Dashboards](https://support.claude.com/en/articles/17454700-get-started-with-claude-dashboards).
-- [ ] **Give HTML artifacts storage and connector access.** Add a durable store per artifact and, with
-      consent on first use, access to the viewer's MCP tools. Leave out tools that need approval per
-      action. Builds on the `window.wingman` SDK. Inspiration:
+- [ ] **Hide tools that need per-action approval from HTML artifacts.** Filter them out of
+      `wingman.tools.list()`. Durable per-artifact storage and first-use tool consent already exist
+      in the `window.wingman` SDK. Inspiration:
       [Claude artifacts](https://support.claude.com/en/articles/17153992-what-are-artifacts-and-how-do-i-use-them).
 - [ ] **Apply a brand kit.** Save logos, fonts, colors, and templates once, per user or from the
       deployment, and have document, deck, and visual skills apply and check them. Inspiration:
       [Claude Design](https://claude.com/blog/claude-design-stays-on-brand-for-daily-work) and
       [Gemini brand kits](https://blog.google/innovation-and-ai/products/gemini-app/new-tools-small-business-owners/).
-- [ ] **Add page thumbnails to document viewers.** Show a thumbnail rail for slides and pages in PPTX,
-      PDF, and DOCX previews. Inspiration:
+- [ ] **Add page thumbnails to PDF and DOCX previews.** Show selectable thumbnail rails, matching
+      the existing PPTX viewer. Inspiration:
       [Perplexity](https://www.perplexity.ai/changelog/ultrafast-computer-models-decisions-api-and-connector-controls).
 - [ ] **Extend inline UI.** Add timeline and zoomable-image components, and a preference for fewer
       visuals in replies. Inspiration: [Gemini release notes](https://gemini.google/release-notes/?hl=en)
@@ -147,8 +144,7 @@ Linked features are inspiration for Wingman; provider and gateway support must b
       retain retrieval times, surface conflicting evidence, and allow excluding individual sources.
 - [ ] **Research lists of items in parallel.** Turn a list of companies, products, or documents into
       a comparison table with per-item progress, sources, retry controls, and a shared execution budget.
-      Show each sub-agent as a card whose progress and result can be opened. Build on existing
-      sub-agents. Inspiration:
+      Build on existing expandable sub-agent activity and results. Inspiration:
       [Manus Wide Research](https://manus.im/blog/manus-wide-research-solve-context-problem).
 - [ ] **Refresh saved research.** Recheck a report's sources, highlight changed findings, and update
       the same artifact while retaining the previous version.
@@ -181,10 +177,10 @@ Linked features are inspiration for Wingman; provider and gateway support must b
       the model load full definitions through one search tool; keep pinned tools loaded. This keeps
       requests small and the prompt cache stable. Inspiration:
       [Open WebUI 0.12.0](https://github.com/open-webui/open-webui/releases/tag/v0.12.0).
-- [ ] **Connect a plugin's declared tools.** Turn compatible MCP server declarations into reviewed
-      connection setup, show missing dependencies and connected accounts, and provide a connection test
-      that names the failing step. Explain unsupported server types in the setup UI. Support several
-      accounts per connector, and suggest a matching connector when a task needs one. Inspiration:
+- [ ] **Improve plugin connection setup.** Build on automatic connections for compatible remote MCP
+      declarations. Add reviewed setup, missing-dependency and connected-account status, and a connection
+      test that names the failing step. Explain unsupported server types in the setup UI. Support
+      several accounts per connector, and suggest a matching connector when a task needs one. Inspiration:
       [Mistral Connectors Debugger](https://mistral.ai/news/more-control-over-connectors/) and
       [Manus connector suggestions](https://manus.im/blog/manus-recommended-connectors).
 - [ ] **Run long MCP tool calls as tasks.** Persist MCP task IDs and show them as cards with status,
@@ -212,8 +208,7 @@ Linked features are inspiration for Wingman; provider and gateway support must b
 - [ ] **Inspect the context for a turn.** Show active instructions, retrieved passages, recalled
       notes, and the latest conversation summary. Let users exclude individual context items from the
       next request and distinguish estimates from measured token usage. Add a context gauge by category
-      with cache hits, warn before an action resets the prompt cache, and mark memory reads and writes
-      in the chat. Inspiration:
+      with cache hits and warn before an action resets the prompt cache. Inspiration:
       [LibreChat v0.8.7](https://github.com/LibreChat-AI/LibreChat/releases/tag/v0.8.7) and
       [Mistral knowledge base](https://docs.mistral.ai/vibe/work/knowledge).
 - [ ] **Review automatic memory proposals.** Offer a review mode for accepting, editing, or rejecting
@@ -221,8 +216,7 @@ Linked features are inspiration for Wingman; provider and gateway support must b
       review for proposed changes to an agent's instructions, files, and skills. Inspiration:
       [Manus self-updating projects](https://manus.im/blog/manus-projects-self-updating).
 - [ ] **Add memory privacy controls.** Skip sensitive topics unless enabled, show a notice when one is
-      saved, never store ID or account numbers, and separate pausing memory from resetting it. Let users
-      suppress a fact without deleting it. Inspiration:
+      saved, never store ID or account numbers, and let users suppress a fact without deleting it. Inspiration:
       [Claude memory](https://support.claude.com/en/articles/11817273-use-claude-s-chat-search-and-memory-to-build-on-previous-context)
       and [ChatGPT memory](https://help.openai.com/en/articles/8590148-memory-faq).
 - [ ] **Summarize usage across work.** Aggregate recorded usage by conversation, agent, and project,

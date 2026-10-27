@@ -2,7 +2,7 @@
  * TanStack Markdown extensions that give the chat renderer the behaviour the
  * previous remark/rehype pipeline had: bare URL autolinks, chat-style line
  * breaks, `$$` and `\( \)` math, `:shortcode:` emoji, and emoji glyphs
- * wrapped for the Noto font. Everything here is synchronous and produces
+ * wrapped for the Noto font or color swatches. Everything here is synchronous and produces
  * plain AST nodes; the React renderer maps the custom nodes to components.
  */
 
@@ -192,6 +192,53 @@ export const emojiShortcodeExtension: MarkdownExtension = {
 
 // ── Noto emoji glyphs ──────────────────────────────────────────────────────
 
+// All solid circles, squares and plain colored hearts in Unicode Emoji 18.0.
+// Keep the size variants distinct; selectors are ignored only for lookup.
+// https://www.unicode.org/Public/emoji/latest/emoji-test.txt (version 18.0)
+const EMOJI_SWATCHES: Record<string, readonly [shape: string, color: string, size?: string]> = {
+  "🔴": ["circle", "red"],
+  "🟠": ["circle", "orange"],
+  "🟡": ["circle", "yellow"],
+  "🟢": ["circle", "green"],
+  "🔵": ["circle", "blue"],
+  "🟣": ["circle", "purple"],
+  "🟤": ["circle", "brown"],
+  "⚫": ["circle", "black"],
+  "⚪": ["circle", "white"],
+  "🟥": ["square", "red"],
+  "🟧": ["square", "orange"],
+  "🟨": ["square", "yellow"],
+  "🟩": ["square", "green"],
+  "🟦": ["square", "blue"],
+  "🟪": ["square", "purple"],
+  "🟫": ["square", "brown"],
+  "⬛": ["square", "black"],
+  "⬜": ["square", "white"],
+  "◼": ["square", "black", "medium"],
+  "◻": ["square", "white", "medium"],
+  "◾": ["square", "black", "medium-small"],
+  "◽": ["square", "white", "medium-small"],
+  "▪": ["square", "black", "small"],
+  "▫": ["square", "white", "small"],
+  "❤": ["heart", "red"],
+  "🩷": ["heart", "pink"],
+  "🧡": ["heart", "orange"],
+  "💛": ["heart", "yellow"],
+  "💚": ["heart", "green"],
+  "💙": ["heart", "blue"],
+  "🩵": ["heart", "light-blue"],
+  "💜": ["heart", "purple"],
+  "🤎": ["heart", "brown"],
+  "🖤": ["heart", "black"],
+  "🩶": ["heart", "grey"],
+  "🤍": ["heart", "white"],
+};
+
+function emojiClassName(glyph: string, mode: EmojiMode): string {
+  const swatch = mode === "monochrome" ? EMOJI_SWATCHES[glyph.replaceAll("\uFE0F", "")] : undefined;
+  return swatch ? `emoji-swatch ${swatch.map((part) => `emoji-swatch-${part}`).join(" ")}` : "noto-emoji";
+}
+
 function mapInlineText(nodes: InlineNode[], map: (text: string) => InlineNode[]): InlineNode[] {
   const out: InlineNode[] = [];
   for (const node of nodes) {
@@ -207,10 +254,9 @@ function mapInlineText(nodes: InlineNode[], map: (text: string) => InlineNode[])
 }
 
 /**
- * Wrap every emoji sequence in a span with the `noto-emoji` class so it
- * renders with Google's monochrome Noto Emoji font. The VS16 presentation
- * selector is dropped for display, because it can force a colour fallback;
- * native mode keeps the exact sequence.
+ * Use CSS swatches for solid circles, squares and plain colored hearts, and the monochrome
+ * Noto Emoji font for other sequences. Drop VS16 only for Noto, because it can
+ * force a colour fallback; swatches and native mode keep the exact sequence.
  */
 export function notoEmojiExtension(mode: EmojiMode): MarkdownExtension {
   return {
@@ -219,7 +265,7 @@ export function notoEmojiExtension(mode: EmojiMode): MarkdownExtension {
     renderHtml(node) {
       if (node.type !== "inlineComponent" || node.name !== "emoji") return undefined;
       const glyph = node.children.map((child) => (child.type === "text" ? child.value : "")).join("");
-      return `<span class="noto-emoji">${glyph.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`;
+      return `<span class="${emojiClassName(glyph, mode)}">${glyph.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`;
     },
     transformInline(nodes) {
       const pattern = emojiRegex();
@@ -231,13 +277,19 @@ export function notoEmojiExtension(mode: EmojiMode): MarkdownExtension {
         let last = 0;
         for (const match of value.matchAll(pattern)) {
           if (match.index > last) parts.push({ type: "text", value: value.slice(last, match.index) });
+          const className = emojiClassName(match[0], mode);
           parts.push({
             type: "inlineComponent",
             name: "emoji",
             tagName: "span",
             attributes: {},
-            properties: { className: "noto-emoji" },
-            children: [{ type: "text", value: mode === "native" ? match[0] : match[0].replaceAll("️", "") }],
+            properties: { className },
+            children: [
+              {
+                type: "text",
+                value: mode === "monochrome" && className === "noto-emoji" ? match[0].replaceAll("️", "") : match[0],
+              },
+            ],
           });
           last = match.index + match[0].length;
         }
