@@ -341,6 +341,7 @@ export async function clearAll(): Promise<void> {
 
 export interface IndexEntry {
   id: string;
+  projectId?: string;
   title?: string;
   customTitle?: string;
   customIndex?: number;

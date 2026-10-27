@@ -61,6 +61,7 @@ export interface ChatContextType {
     historyOverride?: UIMessage[],
     artifactFiles?: ProcessedFile[],
     deletedPaths?: string[],
+    onAccepted?: (chatId: string) => void,
   ) => Promise<void>;
   retryMessage: () => Promise<void>;
   queuedSends: readonly QueuedMessage[];

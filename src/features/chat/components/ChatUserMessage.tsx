@@ -1,4 +1,11 @@
-import { Pencil, TextSelect } from "lucide-react";
+import { Pencil, TextSelect, Undo2 } from "lucide-react";
+import { useComposerDraftStore } from "../context/ComposerDraftProvider";
+import { composerDraftKey } from "../lib/composerDrafts";
+import { FileSystemManager } from "@/features/artifacts/lib/fs";
+import { rehydrateContentParts } from "@/shared/lib/opfs-chat";
+import { contentToBlob } from "@/shared/lib/fileContent";
+import { notify } from "@/shared/lib/notify";
+import { confirm } from "@/shared/lib/confirm";
 import { memo, useState } from "react";
 import type { TextPart, UIMessage } from "@tanstack/ai";
 import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
@@ -48,6 +55,8 @@ type ChatUserMessageProps = {
 };
 
 export const ChatUserMessage = memo(function ChatUserMessage({ message, index, isResponding }: ChatUserMessageProps) {
+  const drafts = useComposerDraftStore();
+  const [restoring, setRestoring] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   // Drive the action-bar reveal with JS hover instead of CSS :hover — Safari
   // leaves :hover sticky (notably after a trackpad tap), so the buttons wouldn't
@@ -101,6 +110,56 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   const [editMediaContent, setEditMediaContent] = useState<MediaPart[]>(mediaContent);
   const { sendMessage } = useChatActions();
   const { chat } = useChatConversation();
+  const restoreDraft = async () => {
+    if (!chat || restoring) return;
+    setRestoring(true);
+    try {
+      const key = composerDraftKey(chat.id);
+      await drafts.load(key);
+      const existing = drafts.get(key).draft;
+      if (
+        (existing.content || existing.attachments.length || existing.pendingFiles.length) &&
+        !(await confirm({
+          title: "Replace composer draft?",
+          message: "Your unsent draft will be replaced with this message and its attachments.",
+          confirmLabel: "Replace draft",
+        }))
+      )
+        return;
+      const fs = new FileSystemManager(chat.id);
+      const originalFiles = new Map<string, File>();
+      for (const path of new Set(referencedPaths(message))) {
+        const part = message.parts.find((p) => p.type === "text" && textMetadata(p).artifactRef?.path === path);
+        const revision = part?.type === "text" ? textMetadata(part).artifactRef?.revision : undefined;
+        const file = revision ? await fs.readRevision(path, revision) : await fs.getFile(path);
+        if (!file) throw new Error(`The attached file is no longer available: ${path}`);
+        const name = basename(path);
+        originalFiles.set(
+          name,
+          new File([contentToBlob(file.content, file.contentType)], name, { type: file.contentType }),
+        );
+      }
+      const restoredMedia = await rehydrateContentParts(chat.id, mediaContent);
+      const attachments = [...plainTextAttachments, ...restoredMedia];
+      const inlineNames = new Set(restoredMedia.map(mediaName));
+      // A slow restore must not overwrite edits made while files were loading.
+      if (drafts.get(key).draft !== existing)
+        throw new Error("The composer changed while restoring. Please try again.");
+      drafts.update(key, () => ({
+        content: textContent,
+        attachments,
+        pendingFiles: [...originalFiles].filter(([name]) => !inlineNames.has(name)).map(([, file]) => file),
+        pendingImages: attachments.map((part) =>
+          isMediaPart(part) ? (originalFiles.get(mediaName(part) ?? "") ?? null) : null,
+        ),
+      }));
+      notify.success("Message restored to composer");
+    } catch (error) {
+      notify.error("Couldn't restore message", error);
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   const hasMedia = mediaContent.length > 0;
 
@@ -237,6 +296,16 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
               )}
             >
               <CopyButton markdown={textContent} className="h-4 w-4" />
+              <button
+                type="button"
+                disabled={restoring}
+                onClick={() => void restoreDraft()}
+                title="Restore to composer"
+                aria-label="Restore to composer"
+                className="p-2 -m-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 disabled:opacity-40"
+              >
+                <Undo2 className="h-4 w-4" />
+              </button>
               <button
                 onClick={handleStartEdit}
                 className="p-2 -m-1 text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-60 hover:opacity-100"

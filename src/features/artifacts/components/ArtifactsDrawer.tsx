@@ -42,6 +42,7 @@ import { ArtifactHistoryPopover } from "./ArtifactHistoryPopover";
 import { ArtifactRevisionBanner } from "./ArtifactRevisionBanner";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
 import { ArtifactsNavigator } from "./ArtifactsNavigator";
+import { SaveToProject } from "@/features/projects/components/SaveToProject";
 
 // Editors are loaded on demand. Each pulls in heavy, format-specific
 // dependencies (pdfjs, the docx/xlsx/pptx converters, mediabunny, shiki, …)
@@ -930,6 +931,9 @@ export function ArtifactsDrawer() {
                     </div>
                   )}
                   {/* Revision history */}
+                  {activeFileData && fs && !shownRevision && (
+                    <SaveToProject fs={fs} path={activeFileData.path} disabled={!!currentDraft?.dirty} />
+                  )}
                   {activeFileData && fs && (
                     <ArtifactHistoryPopover
                       fs={fs}

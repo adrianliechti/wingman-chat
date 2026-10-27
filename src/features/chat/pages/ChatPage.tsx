@@ -39,6 +39,8 @@ import { useBackground } from "@/shell/hooks/useBackground";
 import { useLayout } from "@/shell/hooks/useLayout";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
+import { useProjects } from "@/features/projects/context/ProjectsContext";
+import { ProjectSettings } from "@/features/projects/components/ProjectSettings";
 
 function loadDisclaimer() {
   try {
@@ -91,6 +93,7 @@ export function ChatPage() {
 
   const navigate = useNavigate();
   const { newChat } = useChatNavigate();
+  const { editingProjectId } = useProjects();
 
   // selectChat(null) already leaves realtime for a new chat without touching
   // the model stored on the chat being left.
@@ -386,11 +389,12 @@ export function ChatPage() {
   useEffect(() => {
     setRightActions(
       <div className="flex items-center gap-2">
-        <AgentButton />
+        {!editingProjectId && <AgentButton />}
         <button
           type="button"
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
           onClick={handleNewChat}
+          aria-label="New chat"
         >
           <PlusIcon size={20} />
         </button>
@@ -400,16 +404,12 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, handleNewChat]);
+  }, [setRightActions, handleNewChat, editingProjectId]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {
-    // Only show sidebar if there are chats
-    if (chats.length === 0) {
-      return null;
-    }
     return <ChatSidebar />;
-  }, [chats.length]);
+  }, []);
 
   // Set up sidebar content when it changes
   useEffect(() => {
@@ -427,6 +427,8 @@ export function ChatPage() {
     observer.observe(footer);
     return () => observer.disconnect();
   }, []);
+
+  if (editingProjectId) return <ProjectSettings key={editingProjectId} projectId={editingProjectId} />;
 
   return (
     <div className="h-full w-full flex overflow-hidden relative">
@@ -548,7 +550,7 @@ export function ChatPage() {
         )}
         style={{
           // Offset past the (resizable) sidebar so the input never sits under it.
-          ...(!isMobile && showSidebar && chats.length > 0 && !showAgentDrawer && !showAppDrawer && !showArtifactsDrawer
+          ...(!isMobile && showSidebar && !showAgentDrawer && !showAppDrawer && !showArtifactsDrawer
             ? { left: sidebarWidth + 12 }
             : {}),
           // Offset past the open right-side drawer(s); track the edge instantly while dragging.

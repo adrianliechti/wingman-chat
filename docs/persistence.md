@@ -1,6 +1,6 @@
 # Persistence contracts
 
-The browser stores chats, agents, images, skills, and the profile in OPFS. Theme,
+The browser stores chats, composer drafts, projects, agents, images, skills, and the profile in OPFS. Theme,
 device selection, and OAuth state in localStorage are outside the OPFS backup.
 
 ## Writes and state ownership
@@ -64,6 +64,19 @@ device selection, and OAuth state in localStorage are outside the OPFS backup.
   before deleting them, protecting recently saved chats with stale index dates.
 - Full deletion stops existing queues and rejects subsequent writes in the old
   page. The settings action reloads immediately after completing deletion.
+- Projects store their instructions and file membership in `projects/<id>/project.json`.
+  Original file bytes live under `files/<uuid>` and are committed before membership.
+  Removed files remain on disk for tools already using an older project snapshot;
+  deleting the project removes its directory and detaches its chats without deleting them.
+  Chats retain `projectId` and `agentId`; project tools read only the requesting
+  project's captured membership. Copies into a chat never overwrite existing files.
+- Composer drafts use `drafts/chat-<id>/` for saved chats and `drafts/new-<projectId>/`
+  for each project's new chat (`new-chat` outside projects). A manifest references
+  immutable original file blobs, written before the manifest. Drafts transfer to a
+  newly created conversation only after the destination is durable. The composer
+  clears an unchanged draft when the runtime accepts its message; failed preparation
+  preserves it. Deleting or expiring a chat also removes its draft. Restoring a sent
+  message resolves its attachment revisions before replacing the composer.
 
 ## Backup, restore, and compatibility
 
@@ -106,6 +119,9 @@ rejected before writing. Artifact content is preserved as supplied, including
 arbitrary JSON files.
 
 The settings drawer restores full or partial OPFS ZIP backups, including chats.
+Chat backups include drafts; projects have a separate export selection. Project
+backups include original shared file bytes and support the same index repair and
+restore flow as other collections.
 Restore also accepts an archive that carries a record without its collection
 folder — `chat.json`, `one/chat.json`, `AGENTS.md`, `one/agent.json` and the
 like — and files it under the collection its definition identifies, with blobs,

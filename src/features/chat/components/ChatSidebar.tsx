@@ -1,6 +1,19 @@
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { GitBranch, MoreVertical, PanelRightOpen, Pencil, Pin, PinOff, Search, Trash, X } from "lucide-react";
+import {
+  FolderInput,
+  GitBranch,
+  MoreVertical,
+  PanelRightOpen,
+  Pencil,
+  Pin,
+  PinOff,
+  Search,
+  Trash,
+  X,
+} from "lucide-react";
+import { ProjectPicker, MoveChatDialog } from "@/features/projects/components/ProjectPicker";
+import { useProjects } from "@/features/projects/context/ProjectsContext";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useChatActions, useChatList } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
@@ -15,6 +28,8 @@ type SidebarGroup = { category: string; chats: ChatEntry[] };
 type FlatSidebarItem = { type: "header"; group: SidebarGroup; groupIndex: number } | { type: "item"; chat: ChatEntry };
 
 export function ChatSidebar() {
+  const { selectedProjectId, projects } = useProjects();
+  const [movingChat, setMovingChat] = useState<string | null>(null);
   const { chats, chatId } = useChatList();
   const { deleteChat, createChat, updateChat, loadChat, searchChats } = useChatActions();
   const { setShowSidebar } = useSidebar();
@@ -78,10 +93,12 @@ export function ChatSidebar() {
   // sort once per chats change
   const sortedChats = useMemo(
     () =>
-      [...chats].sort(
-        (a, b) => new Date(b.updated || b.created || 0).getTime() - new Date(a.updated || a.created || 0).getTime(),
-      ),
-    [chats],
+      chats
+        .filter((chat) => !projects.some((p) => p.id === selectedProjectId) || chat.projectId === selectedProjectId)
+        .sort(
+          (a, b) => new Date(b.updated || b.created || 0).getTime() - new Date(a.updated || a.created || 0).getTime(),
+        ),
+    [chats, selectedProjectId, projects],
   );
 
   const [searchResult, setSearchResult] = useState<{ query: string; ids: Set<string> } | null>(null);
@@ -224,6 +241,8 @@ export function ChatSidebar() {
         title: chatToFork.title ? `${chatToFork.title}${forkSuffix}` : "Forked Chat",
         customTitle: chatToFork.customTitle ? `${chatToFork.customTitle}${forkSuffix}` : undefined,
         model: chatToFork.model,
+        projectId: chatToFork.projectId,
+        agentId: chatToFork.agentId,
         messages,
       }));
 
@@ -344,6 +363,7 @@ export function ChatSidebar() {
             anchor="bottom end"
             trigger={
               <MenuButton
+                aria-label={`Chat options for ${displayTitle}`}
                 className="absolute right-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-2 -m-1 rounded hover:bg-neutral-200/60 dark:hover:bg-white/10"
                 onClick={(e) => e.stopPropagation()}
               >
@@ -367,6 +387,9 @@ export function ChatSidebar() {
               }}
             >
               Fork
+            </DropdownMenuItem>
+            <DropdownMenuItem icon={<FolderInput size={14} />} onClick={() => setMovingChat(chatItem.id)}>
+              Move to project
             </DropdownMenuItem>
             <DropdownMenuItem
               icon={<Trash size={14} />}
@@ -417,8 +440,8 @@ export function ChatSidebar() {
           </div>
         ) : (
           <>
-            <div className="flex-1" />
-            <div className="flex items-center gap-2 md:gap-1 shrink-0">
+            <ProjectPicker />
+            <div className="ml-auto flex items-center gap-2 md:gap-1 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowSearch(true)}
@@ -440,6 +463,7 @@ export function ChatSidebar() {
         )}
       </div>
 
+      {movingChat && <MoveChatDialog chatId={movingChat} onClose={() => setMovingChat(null)} />}
       {/* Scrollable content area */}
       <VirtualChatList
         items={flatSidebarItems}

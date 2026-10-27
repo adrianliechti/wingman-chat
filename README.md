@@ -17,6 +17,10 @@ conversations, retrieval over your own files, and a library of reusable skills.
   [docs/inline-ui.md](docs/inline-ui.md).
 - **Conversation management** with optional retention, automatic summarization, and history
   optimization.
+- **Projects** group chats with shared instructions and files. Move existing chats between projects,
+  choose an agent per conversation, and save an artifact to a project's file library for reuse.
+- **Composer drafts** retain unsent text and attachments across navigation and reloads, including
+  separate new-chat drafts for each project. Restore a sent message to the composer to reuse it.
 - **Attachments & vision** — drop in images and documents; PDF/Office files are extracted to text.
 - **Screen capture** to share what you're looking at with the model.
 

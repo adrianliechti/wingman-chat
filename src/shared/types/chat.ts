@@ -239,6 +239,8 @@ export type ChatMetadata = Record<string, Record<string, unknown>>;
 /** Native transcript and resume state, plus the application's chat settings. */
 export interface Chat extends ChatPersistedState {
   id: string;
+  projectId?: string;
+  agentId?: string | null;
   title?: string;
   customTitle?: string;
   customIndex?: number;
@@ -252,4 +254,7 @@ export interface Chat extends ChatPersistedState {
 }
 
 /** Sidebar metadata; conversation bodies and attachments are loaded separately. */
-export type ChatEntry = Pick<Chat, "id" | "title" | "customTitle" | "customIndex" | "created" | "updated">;
+export type ChatEntry = Pick<
+  Chat,
+  "id" | "projectId" | "title" | "customTitle" | "customIndex" | "created" | "updated"
+>;

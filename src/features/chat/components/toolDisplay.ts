@@ -5,6 +5,7 @@ import { outputText } from "@/shared/lib/messages";
 import type { Tool, ToolDisplayBlock, ToolDisplayIcon, ToolDisplayState, ToolProvider } from "@/shared/types/chat";
 import { getToolCallPreview, toolPreviewList, toolPreviewText } from "@/shared/lib/toolPreview";
 import { memoryFileHeader } from "@/features/agent/lib/memoryFileDisplay";
+import { projectToolHeader } from "@/features/projects/lib/projectToolDisplay";
 import { DISCOVERY_TOOL_NAME } from "@tanstack/ai";
 import { Search } from "lucide-react";
 import { ASK_QUESTIONS_TOOL } from "../lib/questionsTool";
@@ -63,7 +64,8 @@ export function resolveToolHeader(
       ),
     };
   }
-  const h = memoryFileHeader(name, args, state) ?? tool?.display?.header?.(args, state);
+  const h =
+    memoryFileHeader(name, args, state) ?? projectToolHeader(name, args, state) ?? tool?.display?.header?.(args, state);
   const label = tool?.title ?? getToolDisplayName(name);
   const progress = state.running ? state.progress : undefined;
   const percentage =

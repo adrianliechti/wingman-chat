@@ -46,6 +46,9 @@ import { Tooltip } from "@/shared/ui/Tooltip";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { ChatInputAddMenu } from "./ChatInputAddMenu";
 import { ChatInputAttachments } from "./ChatInputAttachments";
+import { useComposerDraft } from "../context/ComposerDraftProvider";
+import { composerDraftKey } from "../lib/composerDrafts";
+import { useProjects } from "@/features/projects/context/ProjectsContext";
 import { formatArtifactReference } from "./chatMessageUtils";
 
 async function captureScreenAttachment(
@@ -67,6 +70,13 @@ async function captureScreenAttachment(
 }
 
 export function ChatInput() {
+  const { chatId } = useChatList();
+  const { selectedProjectId, isLoaded } = useProjects();
+  const draftKey = composerDraftKey(chatId, selectedProjectId);
+  return <ChatInputBody key={draftKey} draftKey={draftKey} projectsLoaded={isLoaded} />;
+}
+
+function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; projectsLoaded: boolean }) {
   const config = getConfig();
 
   const { sendMessage, stopStreaming, removeQueuedMessage } = useChatActions();
@@ -128,7 +138,22 @@ export function ChatInput() {
     }
   }, [isRealtimeViaToggle, voiceAvailable, isListening, startVoice]);
 
-  const [content, setContent] = useState("");
+  const {
+    draft,
+    loaded: savedDraftLoaded,
+    error: draftError,
+    sending: submitting,
+    update: updateDraft,
+    store: draftStore,
+  } = useComposerDraft(draftKey);
+  const draftLoaded = savedDraftLoaded && projectsLoaded;
+  const content = draft.content;
+  const setContent = useCallback<React.Dispatch<React.SetStateAction<string>>>(
+    (edit) => {
+      updateDraft((d) => ({ ...d, content: typeof edit === "function" ? edit(d.content) : edit }));
+    },
+    [updateDraft],
+  );
   const [transcribingContent, setTranscribingContent] = useState(false);
   const [voiceTextInput, setVoiceTextInput] = useState("");
 
@@ -149,9 +174,9 @@ export function ChatInput() {
     setExtractingAttachments,
     setPendingFiles,
     handleFiles,
-    clearAttachments,
     removeAttachment,
   } = useFileAttachments({
+    draftKey,
     visionFiles: config.vision?.files ?? [],
     artifactsAvailable,
     visionMaxFileSize: config.vision?.maxFileSize,
@@ -287,57 +312,75 @@ export function ChatInput() {
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-      if (chatLoading || chatError || interruptState?.interrupts.length) return;
+      if (
+        !draftLoaded ||
+        draftStore.get(draftKey).sending ||
+        extractingAttachments.size ||
+        chatLoading ||
+        chatError ||
+        interruptState?.interrupts.length
+      )
+        return;
 
       if (content.trim()) {
-        let finalAttachments: ContentPart[] = [...attachments];
-        let screenCaptureFile: File | null = null;
+        draftStore.setSending(draftKey, true);
+        try {
+          let finalAttachments: ContentPart[] = [...attachments];
+          let screenCaptureFile: File | null = null;
 
-        if (isContinuousCaptureActive) {
-          const capture = await captureScreenAttachment(captureFrame);
-          if (capture) {
-            finalAttachments = [capture.content, ...finalAttachments];
-            if (artifactsAvailable) screenCaptureFile = capture.file;
+          if (isContinuousCaptureActive) {
+            const capture = await captureScreenAttachment(captureFrame);
+            if (capture) {
+              finalAttachments = [capture.content, ...finalAttachments];
+              if (artifactsAvailable) screenCaptureFile = capture.file;
+            }
           }
+
+          const messageParts: ContentPart[] = [text(content), ...finalAttachments];
+
+          // Persist pending files (and original images) to the workspace at send.
+          const toArtifacts = (list: File[]) =>
+            Promise.all(
+              list.map(async (file) => {
+                return processUploadedFile(file);
+              }),
+            ).then((results) => results.flat());
+
+          const fileArtifacts = await toArtifacts(pendingFiles);
+          const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
+          const screenCaptureArtifacts = screenCaptureFile ? await toArtifacts([screenCaptureFile]) : [];
+          const artifacts = [...fileArtifacts, ...imageArtifacts, ...screenCaptureArtifacts];
+
+          // Reference every persisted attachment by its workspace path so the
+          // model can read/edit it by name. Images are also shown inline (vision),
+          // but the inline copy carries no filename — without this the model can't
+          // name the file it's looking at. The redundant chip is suppressed in the
+          // UI (see ChatUserMessage) since the image already renders inline.
+          const referencedPaths = artifacts.map((f) => f.path);
+          if (referencedPaths.length > 0) {
+            messageParts.push(text(formatArtifactReference(referencedPaths)));
+          }
+
+          const message = userMessage(messageParts);
+
+          void sendMessage(
+            message,
+            undefined,
+            artifacts.length > 0 ? artifacts : undefined,
+            undefined,
+            (acceptedChatId) => {
+              draftStore.finishSending(draft);
+              draftStore.clearIfUnchanged(draftKey, draft);
+              draftStore.clearIfUnchanged(composerDraftKey(acceptedChatId), draft);
+            },
+          ).catch((error) => {
+            draftStore.finishSending(draft);
+            notify.error("Message failed", error);
+          });
+        } catch (error) {
+          draftStore.finishSending(draft);
+          notify.error("Message failed", error);
         }
-
-        const messageParts: ContentPart[] = [text(content), ...finalAttachments];
-
-        // Persist pending files (and original images) to the workspace at send.
-        const toArtifacts = (list: File[]) =>
-          Promise.all(
-            list.map(async (file) => {
-              try {
-                return await processUploadedFile(file);
-              } catch (error) {
-                console.error(`Failed to process attachment ${file.name}:`, error);
-                return [];
-              }
-            }),
-          ).then((results) => results.flat());
-
-        const fileArtifacts = await toArtifacts(pendingFiles);
-        const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
-        const screenCaptureArtifacts = screenCaptureFile ? await toArtifacts([screenCaptureFile]) : [];
-        const artifacts = [...fileArtifacts, ...imageArtifacts, ...screenCaptureArtifacts];
-
-        // Reference every persisted attachment by its workspace path so the
-        // model can read/edit it by name. Images are also shown inline (vision),
-        // but the inline copy carries no filename — without this the model can't
-        // name the file it's looking at. The redundant chip is suppressed in the
-        // UI (see ChatUserMessage) since the image already renders inline.
-        const referencedPaths = artifacts.map((f) => f.path);
-        if (referencedPaths.length > 0) {
-          messageParts.push(text(formatArtifactReference(referencedPaths)));
-        }
-
-        const message = userMessage(messageParts);
-
-        void sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined).catch((error) =>
-          notify.error("Message failed", error),
-        );
-        setContent("");
-        clearAttachments();
       }
     },
     [
@@ -352,7 +395,11 @@ export function ChatInput() {
       chatLoading,
       chatError,
       interruptState,
-      clearAttachments,
+      draftLoaded,
+      extractingAttachments.size,
+      draftStore,
+      draftKey,
+      draft,
     ],
   );
 
@@ -482,6 +529,14 @@ export function ChatInput() {
 
   return (
     <>
+      {draftError && (
+        <p role="alert" className="mb-2 text-sm text-red-600">
+          Couldn’t load this draft.{" "}
+          <button type="button" className="underline" onClick={() => void draftStore.load(draftKey).catch(() => {})}>
+            Retry
+          </button>
+        </p>
+      )}
       {queuedSends.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2" aria-label="Queued messages">
           {queuedSends.map((item) => {
@@ -578,6 +633,7 @@ export function ChatInput() {
                   inputMode="text"
                   enterKeyHint="send"
                   onChange={handleContentChange}
+                  disabled={!draftLoaded || submitting}
                   onKeyDown={handleKeyDown}
                   onPaste={async (e) => {
                     e.preventDefault();
@@ -979,7 +1035,14 @@ export function ChatInput() {
                     <button
                       className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                       type="submit"
-                      disabled={chatLoading || !!chatError || !!interruptState?.interrupts.length}
+                      disabled={
+                        !draftLoaded ||
+                        submitting ||
+                        extractingAttachments.size > 0 ||
+                        chatLoading ||
+                        !!chatError ||
+                        !!interruptState?.interrupts.length
+                      }
                       aria-label={
                         interruptState?.interrupts.length ? "Answer the pending request to continue" : "Send message"
                       }
@@ -1041,7 +1104,9 @@ export function ChatInput() {
                     <button
                       className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                       type="submit"
-                      disabled={chatLoading || !!chatError}
+                      disabled={
+                        !draftLoaded || submitting || extractingAttachments.size > 0 || chatLoading || !!chatError
+                      }
                       aria-label="Send message"
                     >
                       <Send size={16} />
