@@ -22,6 +22,7 @@ import { useChatActions, useChatList, useChatModel, useChatRunState } from "@/fe
 import { chatAcceptString, useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
 import { getConfiguredModel, getSavedModel } from "@/features/chat/hooks/useModels";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
+import { useSkillAutocomplete } from "@/features/chat/hooks/useSkillAutocomplete";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { useTranscription } from "@/features/voice/hooks/useTranscription";
@@ -36,7 +37,7 @@ import { modelPresetIndex, resolveModelPresets } from "@/shared/lib/modelPresets
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
 import type { ContentPart } from "@tanstack/ai";
-import { mediaFromDataUrl, text, userMessage, type MediaPart } from "@/shared/lib/messages";
+import { mediaFromDataUrl, skillRefPart, text, userMessage, type MediaPart } from "@/shared/lib/messages";
 import type { ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -47,6 +48,7 @@ import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { ChatInputAddMenu } from "./ChatInputAddMenu";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { formatArtifactReference } from "./chatMessageUtils";
+import { SkillAutocomplete, SelectedSkills } from "./SkillAutocomplete";
 
 async function captureScreenAttachment(
   captureFrame: () => Promise<Blob | null>,
@@ -165,6 +167,15 @@ export function ChatInput() {
   const contentInputRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const profileName = profile?.name;
+  const completion = useSkillAutocomplete({
+    content,
+    setContent,
+    input: contentInputRef,
+    chatId,
+    enabled: !isRealtimeSelected,
+  });
+  const hasPrompt =
+    !!content.trim() || completion.selections.length > 0 || attachments.length > 0 || pendingFiles.length > 0;
 
   const randomPlaceholder = useMemo(() => {
     const personalizedVariations = [
@@ -287,9 +298,16 @@ export function ChatInput() {
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-      if (chatLoading || chatError || interruptState?.interrupts.length) return;
+      if (chatLoading || chatError || interruptState?.interrupts.length || extractingAttachments.size) return;
 
-      if (content.trim()) {
+      if (hasPrompt) {
+        const unavailable = completion.selections.find(
+          (name) => !completion.skills.some((skill) => skill.name === name),
+        );
+        if (unavailable) {
+          notify.error("Selected skill is unavailable", `Remove or reselect /${unavailable}.`);
+          return;
+        }
         let finalAttachments: ContentPart[] = [...attachments];
         let screenCaptureFile: File | null = null;
 
@@ -302,6 +320,7 @@ export function ChatInput() {
         }
 
         const messageParts: ContentPart[] = [text(content), ...finalAttachments];
+        messageParts.push(...completion.selections.map(skillRefPart));
 
         // Persist pending files (and original images) to the workspace at send.
         const toArtifacts = (list: File[]) =>
@@ -338,6 +357,7 @@ export function ChatInput() {
         );
         setContent("");
         clearAttachments();
+        completion.clear();
       }
     },
     [
@@ -353,6 +373,9 @@ export function ChatInput() {
       chatError,
       interruptState,
       clearAttachments,
+      completion,
+      hasPrompt,
+      extractingAttachments.size,
     ],
   );
 
@@ -438,12 +461,15 @@ export function ChatInput() {
     [setPendingFiles],
   );
 
-  const handleContentChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
+  const handleContentChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
-  }, []);
+    completion.changed(e.target);
+  };
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+      if (completion.onKeyDown(e)) return;
       if (e.key === "Escape" && isResponding) {
         e.preventDefault();
         stopStreaming();
@@ -454,7 +480,7 @@ export function ChatInput() {
         void handleSubmit(e as unknown as FormEvent);
       }
     },
-    [handleSubmit, isResponding, stopStreaming],
+    [handleSubmit, isResponding, stopStreaming, completion],
   );
 
   const handleTranscriptionClick = useCallback(async () => {
@@ -549,6 +575,7 @@ export function ChatInput() {
             </div>
           )}
 
+          {!isRealtimeSelected && <SelectedSkills names={completion.selections} onRemove={completion.remove} />}
           <div className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}>
             {isRealtimeSelected ? (
               <textarea
@@ -579,6 +606,16 @@ export function ChatInput() {
                   enterKeyHint="send"
                   onChange={handleContentChange}
                   onKeyDown={handleKeyDown}
+                  onSelect={(e) => completion.syncCaret(e.currentTarget)}
+                  onFocus={() => completion.setFocused(true)}
+                  onBlur={() => completion.setFocused(false)}
+                  aria-autocomplete="list"
+                  aria-controls={completion.open ? completion.listId : undefined}
+                  aria-activedescendant={
+                    completion.open && completion.options.length
+                      ? `${completion.listId}-${completion.activeIndex}`
+                      : undefined
+                  }
                   onPaste={async (e) => {
                     e.preventDefault();
 
@@ -975,11 +1012,16 @@ export function ChatInput() {
                 </>
               ) : isResponding || interruptState?.interrupts.length ? (
                 <div className="flex items-center">
-                  {content.trim() && (
+                  {hasPrompt && (
                     <button
                       className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                       type="submit"
-                      disabled={chatLoading || !!chatError || !!interruptState?.interrupts.length}
+                      disabled={
+                        chatLoading ||
+                        !!chatError ||
+                        !!interruptState?.interrupts.length ||
+                        extractingAttachments.size > 0
+                      }
                       aria-label={
                         interruptState?.interrupts.length ? "Answer the pending request to continue" : "Send message"
                       }
@@ -1037,11 +1079,11 @@ export function ChatInput() {
                         </button>
                       </Tooltip>
                     ))}
-                  {isTranscribing || transcribingContent ? null : content.trim() ? (
+                  {isTranscribing || transcribingContent ? null : hasPrompt ? (
                     <button
                       className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                       type="submit"
-                      disabled={chatLoading || !!chatError}
+                      disabled={chatLoading || !!chatError || extractingAttachments.size > 0}
                       aria-label="Send message"
                     >
                       <Send size={16} />
@@ -1083,6 +1125,7 @@ export function ChatInput() {
         </div>
       </form>
 
+      <SkillAutocomplete completion={completion} input={contentInputRef} />
       {activeDrive && (
         <DrivePicker
           isOpen={!!activeDrive}

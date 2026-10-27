@@ -691,3 +691,144 @@ test("hi then long Markdown keeps the start readable; Latest follows until the r
   await expect.poll(promptTop).toBeCloseTo(72, 0);
   expect(errors).toEqual([]);
 });
+
+test("composer skill picker loads disabled skills with resources on follow-ups and after reload", async ({ page }) => {
+  await open(page, "?composer");
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  const suggestions = page.getByRole("listbox", { name: "Skill suggestions" });
+  await input.fill("/");
+  await expect(suggestions.getByRole("option")).toHaveCount(3);
+  await expect(suggestions.getByRole("option", { name: /draft-response/ })).toBeVisible();
+  await expect(suggestions.getByRole("option", { name: /support:escalate/ })).toBeVisible();
+  await expect(suggestions.getByRole("option", { name: /html-artifacts/ })).toHaveCount(0);
+  await input.press("Escape");
+  await expect(suggestions).toHaveCount(0);
+  await expect(input).toHaveValue("/");
+  expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(0);
+
+  await input.fill("Please /draft then reply");
+  for (let i = 0; i < " then reply".length; i++) await input.press("ArrowLeft");
+  expect(
+    await input.evaluate((el: HTMLTextAreaElement) => ({
+      start: el.selectionStart,
+      end: el.selectionEnd,
+      focused: document.activeElement === el,
+    })),
+  ).toEqual({ start: 13, end: 13, focused: true });
+  await expect(suggestions.getByRole("option", { name: /draft-response/ })).toBeVisible();
+  await input.press("Tab");
+  await expect(input).toHaveValue("Please  then reply");
+  await expect(page.getByRole("button", { name: "Remove skill draft-response" })).toBeVisible();
+  await page.getByRole("button", { name: "Remove skill draft-response" }).click();
+
+  await input.fill("/draft");
+  await input.dispatchEvent("keydown", { key: "Enter", code: "Enter", isComposing: true });
+  expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(0);
+  await expect(suggestions).toBeVisible();
+  await input.press("Enter");
+  await expect(input).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Remove skill draft-response" })).toBeVisible();
+  expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(0);
+  await input.fill("Please reply");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  const state = await page.evaluate(() => window.reactUiE2E.state());
+  expect(JSON.stringify(state.input.at(-1))).toContain("load_skill");
+  expect(state.instructions).not.toContain("Follow the customer response template.");
+  expect(await page.evaluate(() => localStorage.getItem("app_skills"))).toBeNull();
+  await page.evaluate(() => window.reactUiE2E.callTool("load_skill", { name: "draft-response" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Follow the customer response template.",
+  );
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "references/response.md",
+  );
+  await page.evaluate(() => window.reactUiE2E.finish("Reply ready"));
+  await expect(page.getByText("Reply ready", { exact: true })).toBeVisible();
+  await expect(page.getByTitle("Selected skill")).toHaveText("draft-response");
+  await input.fill("Check the reply against the checklist");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
+  await page.evaluate(() =>
+    window.reactUiE2E.callTool("read_skill_resource", { skill: "draft-response", path: "references/response.md" }),
+  );
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(4);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Follow the customer response template.",
+  );
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Response checklist: acknowledge, explain, resolve.",
+  );
+  await page.evaluate(() => window.reactUiE2E.finish("Checklist complete"));
+  await expect(page.getByText("Checklist complete", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.reactUiE2E.flush());
+  const id = new URL(page.url()).pathname.split("/").pop();
+  await page.goto(`/tests/browser/fixtures/react-ui.html?composer&chat=${id}`);
+  await input.fill("Use that checklist again");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  await page.evaluate(() =>
+    window.reactUiE2E.callTool("read_skill_resource", { skill: "draft-response", path: "references/response.md" }),
+  );
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Response checklist: acknowledge, explain, resolve.",
+  );
+  await page.evaluate(() =>
+    window.reactUiE2E.callTool("execute_script", { path: "/skills/draft-response/scripts/check.js" }),
+  );
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Selected skill script ran",
+  );
+  await page.evaluate(() => window.reactUiE2E.finish("Review complete"));
+  await expect(page.getByText("Review complete", { exact: true })).toBeVisible();
+  await page.getByTitle("Edit message", { exact: true }).first().click();
+  await page.getByRole("button", { name: "Remove skill draft-response" }).click();
+  await page.getByTitle("Save & Submit", { exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(4);
+  expect(await page.evaluate(() => window.reactUiE2E.state().instructions)).not.toContain("draft-response");
+  await expect(page.getByTitle("Selected skill")).toHaveCount(0);
+});
+
+test("composer can send only a plugin skill without enabling the plugin", async ({ page }) => {
+  await open(page, "?composer");
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("/support");
+  await page.getByRole("option", { name: /support:escalate/ }).click();
+  await expect(input).toHaveValue("");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  await page.evaluate(() => window.reactUiE2E.callTool("load_skill", { name: "support:escalate" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Follow the escalation procedure.",
+  );
+  expect(await page.evaluate(() => localStorage.getItem("app_tools"))).not.toContain("plugin:support");
+});
+
+test("composer can send an attachment without typed text", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await expect(input).toBeVisible();
+  await page
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles({
+      name: "attachment-only.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("A document sent without a caption."),
+    });
+  const send = page.getByRole("button", { name: "Send message", exact: true });
+  await expect(input).toHaveValue("");
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input.at(-1)))).toContain(
+    "/attachment-only.txt",
+  );
+  await page.evaluate(() => window.reactUiE2E.finish("Document received"));
+  await expect(page.getByText("Document received", { exact: true })).toBeVisible();
+  await expect(send).toHaveCount(0);
+});

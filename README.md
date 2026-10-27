@@ -18,6 +18,11 @@ conversations, retrieval over your own files, and a library of reusable skills.
 - **Conversation management** with optional retention, automatic summarization, and history
   optimization.
 - **Attachments & vision** — drop in images and documents; PDF/Office files are extracted to text.
+  Attachments can be sent without accompanying text.
+- **Skill autocomplete** — type `/` to select personal or installed-plugin skills for a request, even when
+  automatic use is disabled. Studio skills stay available automatically and are hidden from this picker.
+  Selected skills use the normal loader and remain available with their bundled resources on follow-up turns.
+  Use arrow keys to navigate, Enter or Tab to select, and Escape to dismiss.
 - **Screen capture** to share what you're looking at with the model.
 
 ### Tools & Agents

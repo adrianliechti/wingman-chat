@@ -418,6 +418,28 @@ describe("coordinated artifact tools", () => {
     expect(executor.mock.calls[1][0].path).toBeUndefined();
   });
 
+  it("uses this run's skill resources even when another chat changes the automatic mounts", async () => {
+    const path = "/skills/manual/scripts/check.py";
+    setSkillResourceResolver("fs-test-skills", async () => ({ [path]: { content: "other chat" } }));
+    const executor = vi.fn<SandboxExecutor>(async (request) => ({ success: true, output: request.code }));
+    const result = await executeArtifactCode({
+      fs: new FileSystemManager("manual-skills"),
+      executor,
+      args: { path },
+      extension: "py",
+      context: { skillFiles: async () => ({ [path]: { content: "this chat" } }) },
+    });
+    expect(result.output).toBe("this chat");
+    const withoutSkills = await executeArtifactCode({
+      fs: new FileSystemManager("no-skills"),
+      executor,
+      args: { path },
+      extension: "py",
+      context: { skillFiles: async () => ({}) },
+    });
+    expect(withoutSkills.success).toBe(false);
+  });
+
   it("rejects a stale batch without changing any target, then accepts a reread and own subsequent edits", async () => {
     const fs = new FileSystemManager("freshness");
     const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });

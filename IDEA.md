@@ -151,9 +151,9 @@ Linked features are inspiration for Wingman; provider and gateway support must b
 
 ## Skills and connected apps
 
-- [ ] **Add composer shortcuts for skills and context.** Provide `/skill` autocomplete and `@`
-      mentions for files, other chats, and connected apps, with visible selections for the current
-      request. Inspiration:
+- [ ] **Extend composer context to chats and connected apps.** Skills already support `/` autocomplete;
+      files use the attachment menu, including drives. Consider references to other chats and connected
+      apps, with visible selections for the current request. Inspiration:
       [Gemini skills](https://blog.google/products-and-platforms/products/gemini/automate-tasks-with-skills/)
       and [connected apps](https://blog.google/innovation-and-ai/products/gemini-app/new-connected-apps-gemini/).
 - [ ] **Give saved workflows a run form.** Extend the skill builder with a conversation-to-workflow

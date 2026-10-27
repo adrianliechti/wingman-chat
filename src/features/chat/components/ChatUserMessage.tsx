@@ -1,4 +1,4 @@
-import { Pencil, TextSelect } from "lucide-react";
+import { Pencil, Sparkles, TextSelect } from "lucide-react";
 import { memo, useState } from "react";
 import type { TextPart, UIMessage } from "@tanstack/ai";
 import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
@@ -56,7 +56,10 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   // Plain text parts: the typed message first, then any attached text.
   const plainTextParts = message.parts.filter(
     (part): part is TextPart =>
-      part.type === "text" && !textMetadata(part).artifactRef && !textMetadata(part).artifactSelection,
+      part.type === "text" &&
+      !textMetadata(part).artifactRef &&
+      !textMetadata(part).artifactSelection &&
+      !textMetadata(part).skillRef,
   );
   const textContent = plainTextParts[0]?.content ?? "";
   const [editContent, setEditContent] = useState(textContent);
@@ -64,6 +67,10 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   const selectionParts = message.parts.filter(
     (part): part is TextPart => part.type === "text" && !!textMetadata(part).artifactSelection,
   );
+  const skillParts = message.parts.filter(
+    (part): part is TextPart => part.type === "text" && !!textMetadata(part).skillRef,
+  );
+  const [editSkillParts, setEditSkillParts] = useState(skillParts);
   // Additional text parts (file attachments) - all plain text content after the first one
   const additionalTextContent = plainTextParts.slice(1);
   // Names of attachments already rendered inline (images/audio/files). Their
@@ -114,6 +121,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
     // Preserve artifact reference paths so attachments aren't lost.
     setEditAdditionalTextContent(withArtifactReferences(editableAdditionalText, attachedArtifactPaths));
     setEditMediaContent(mediaContent);
+    setEditSkillParts(skillParts);
     setIsEditing(true);
   };
 
@@ -123,6 +131,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
     // Restore original text and artifact refs.
     setEditAdditionalTextContent(withArtifactReferences(editableAdditionalText, attachedArtifactPaths));
     setEditMediaContent(mediaContent);
+    setEditSkillParts(skillParts);
   };
 
   const handleRemoveAdditionalText = (indexToRemove: number) => {
@@ -135,7 +144,13 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
 
   const handleConfirmEdit = async () => {
     // Allow edit if there's text content OR attachments
-    if ((editContent.trim() === "" && editAdditionalTextContent.length === 0 && editMediaContent.length === 0) || !chat)
+    if (
+      (editContent.trim() === "" &&
+        editAdditionalTextContent.length === 0 &&
+        editMediaContent.length === 0 &&
+        editSkillParts.length === 0) ||
+      !chat
+    )
       return;
 
     setIsEditing(false);
@@ -148,6 +163,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
     }
     // The highlighted passage stays attached to an edited instruction.
     parts.push(...selectionParts);
+    parts.push(...editSkillParts);
     parts.push(...editAdditionalTextContent);
     parts.push(...editMediaContent);
     // Re-attach the workspace reference for media that survived editing (it was
@@ -197,6 +213,10 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
             onRemoveAdditionalText={handleRemoveAdditionalText}
             editMediaContent={editMediaContent}
             onRemoveMedia={handleRemoveMedia}
+            skillNames={editSkillParts.map((part) => textMetadata(part).skillRef!.name)}
+            onRemoveSkill={(name) =>
+              setEditSkillParts((parts) => parts.filter((part) => textMetadata(part).skillRef?.name !== name))
+            }
             onCancel={handleCancelEdit}
             onConfirm={handleConfirmEdit}
           />
@@ -207,6 +227,20 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
               {selectionParts.map((part, i) => (
                 <SelectionQuote key={i} selection={textMetadata(part).artifactSelection!} />
               ))}
+              {skillParts.length > 0 && (
+                <div className="pt-2 flex flex-wrap gap-2">
+                  {skillParts.map((part, i) => (
+                    <span
+                      key={i}
+                      title="Selected skill"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-100 px-2 py-1 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                    >
+                      <Sparkles size={13} />
+                      {textMetadata(part).skillRef!.name}
+                    </span>
+                  ))}
+                </div>
+              )}
               {/* Artifact attachments — clickable chips that open the file in the editor */}
               {attachedArtifactPaths.length > 0 && (
                 <div className="pt-2 flex flex-wrap gap-2">

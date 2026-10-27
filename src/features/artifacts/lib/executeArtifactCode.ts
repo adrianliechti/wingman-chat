@@ -160,7 +160,9 @@ export async function executeArtifactCode(options: {
     // Prefer inline code: providers sometimes append `path` as if it were a
     // working-directory hint even though the schema describes a selector.
     const artifactFiles: SandboxFiles = fs ? await fs.getOverlaySnapshot() : {};
-    const skillKeys = mountSkills ? mergeSkillFiles(artifactFiles, await mountSkillFiles()) : new Set<string>();
+    const skillKeys = mountSkills
+      ? mergeSkillFiles(artifactFiles, await (context?.skillFiles ? context.skillFiles() : mountSkillFiles()))
+      : new Set<string>();
     let script = inlineCode;
     if (!hasCode && path) {
       const file = artifactFiles[path];
