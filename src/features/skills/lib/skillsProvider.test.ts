@@ -5,7 +5,6 @@ import inlineUiInstructions from "@/features/chat/prompts/inline-ui.txt?raw";
 import { toolCallMessage } from "@/shared/lib/test-support/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ALREADY_LOADED } from "@tanstack/ai-skills";
-import { mountSkillFiles, setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { run } from "@/shared/lib/agent";
 import { Client } from "@/shared/lib/client";
 import { testClient, response, callItem, textItem, finished } from "@/shared/lib/test-support/ai";
@@ -14,7 +13,6 @@ import { createSkillsProvider } from "./skillsProvider";
 import { resolveToolHeader } from "@/features/chat/components/toolDisplay";
 
 afterEach(() => {
-  setSkillResourceResolver("test-skills", null);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -120,7 +118,7 @@ describe("native skills", () => {
     expect(provider.instructions).not.toContain("Create reports");
     const output = await load.execute({ name: "reports" });
     expect(output).toEqual([{ type: "text", content: expect.stringContaining("Use the personal template.") }]);
-    const files = await mountSkillFiles();
+    const files = await provider.loadFiles();
     expect(files["/skills/reports/scripts/check.py"]).toEqual({ content: "print('personal')" });
     expect(loadContent).toHaveBeenCalledOnce();
     expect(loadResource).toHaveBeenCalledExactlyOnceWith("scripts/check.py");
@@ -308,7 +306,7 @@ describe("native skills", () => {
 
 describe("selected skill resource mounts", () => {
   it("mounts resources from the provider-selected entries without model arguments", async () => {
-    createSkillsProvider(
+    const provider = createSkillsProvider(
       [
         {
           name: "selected-pdf",
@@ -328,24 +326,27 @@ describe("selected skill resource mounts", () => {
       { id: "test-skills", name: "Test skills", description: "Fixture" },
     );
 
-    await expect(mountSkillFiles()).resolves.toEqual({
+    await expect(provider!.loadFiles()).resolves.toEqual({
       "/skills/selected-pdf/scripts/check.py": { content: "print('ok')" },
       "/skills/selected-data/assets/schema.json": { content: '{"type":"object"}' },
     });
   });
 
   it("returns no mounts when the selected entries have no resources", async () => {
-    createSkillsProvider([{ name: "prompt-only", description: "No resources", loadContent: () => "instructions" }], {
-      id: "test-skills",
-      name: "Test skills",
-      description: "Fixture",
-    });
+    const provider = createSkillsProvider(
+      [{ name: "prompt-only", description: "No resources", loadContent: () => "instructions" }],
+      {
+        id: "test-skills",
+        name: "Test skills",
+        description: "Fixture",
+      },
+    );
 
-    await expect(mountSkillFiles()).resolves.toEqual({});
+    await expect(provider!.loadFiles()).resolves.toEqual({});
   });
 
-  it("isolates same-named plugin mounts and clears them when the selection becomes empty", async () => {
-    createSkillsProvider(
+  it("isolates same-named plugin mounts and keeps captured selections stable", async () => {
+    const provider = createSkillsProvider(
       [undefined, "one", "two"].map((plugin) => ({
         ...skill,
         plugin,
@@ -353,12 +354,12 @@ describe("selected skill resource mounts", () => {
       })),
       meta,
     );
-    await expect(mountSkillFiles()).resolves.toEqual({
+    await expect(provider!.loadFiles()).resolves.toEqual({
       "/skills/reports/scripts/check.py": { content: "personal" },
       "/skills/one:reports/scripts/check.py": { content: "one" },
       "/skills/two:reports/scripts/check.py": { content: "two" },
     });
     expect(createSkillsProvider([], meta)).toBeNull();
-    await expect(mountSkillFiles()).resolves.toEqual({});
+    expect(await provider!.loadFiles()).toHaveProperty("/skills/one:reports/scripts/check.py");
   });
 });

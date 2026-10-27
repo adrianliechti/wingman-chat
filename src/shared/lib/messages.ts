@@ -61,6 +61,8 @@ export interface TextMetadata {
   artifactRef?: ArtifactRef;
   /** The part is a passage the user highlighted in an artifact. */
   artifactSelection?: ArtifactSelection;
+  /** A skill the user explicitly selected for this request. */
+  skillRef?: { name: string };
   /** Where internal feedback came from. */
   source?: "verification" | "guardrail";
 }
@@ -101,6 +103,15 @@ export function text(content: string, metadata?: TextMetadata): TextPart {
 /** The model reads a workspace reference as prose on its own line; the UI shows a chip. */
 export function artifactRefPart(ref: ArtifactRef): TextPart {
   return text(`\nWorkspace file: ${ref.path}`, { artifactRef: ref });
+}
+
+export function skillRefPart(name: string): TextPart {
+  return text(
+    `Use the ${JSON.stringify(name)} skill for this request. Call load_skill with this exact name to read its instructions and resource inventory.`,
+    {
+      skillRef: { name },
+    },
+  );
 }
 
 /**
@@ -185,7 +196,10 @@ export function messageText(message: UIMessage): string {
 /** What the user typed: the text parts that are not references or selections. */
 export function promptText(message: UIMessage): string {
   return textParts(message)
-    .filter((part) => !textMetadata(part).artifactRef && !textMetadata(part).artifactSelection)
+    .filter(
+      (part) =>
+        !textMetadata(part).artifactRef && !textMetadata(part).artifactSelection && !textMetadata(part).skillRef,
+    )
     .map((part) => part.content)
     .join("");
 }

@@ -3,14 +3,14 @@ import { test, expect, type Page } from "@playwright/test";
 test.use({ actionTimeout: 15_000, navigationTimeout: 30_000 });
 
 const composer = (page: Page) => page.getByRole("textbox", { name: "Chat message input" });
-async function open(page: Page) {
+async function open(page: Page, query = "") {
   await page.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], artifacts: {}, vision: {}, navigation: true } }),
   );
   await page.route("**/api/v1/models", (route) =>
     route.fulfill({ json: { data: [{ id: "fixture", name: "Fixture" }] } }),
   );
-  await page.goto("/tests/browser/fixtures/react-ui.html");
+  await page.goto(`/tests/browser/fixtures/react-ui.html${query}`);
   await expect(composer(page)).toBeEnabled();
 }
 async function sidebar(page: Page) {
@@ -243,8 +243,10 @@ test("a generated artifact can be saved to the project and read in another chat"
   expect(JSON.stringify(await page.evaluate(() => window.reactUiE2E.state().input))).toContain("Generated report: 42");
 });
 
-test("a failed chat save preserves the draft and attachments for retry", async ({ page }) => {
-  await open(page);
+test("a failed chat save preserves the draft, skills and attachments for retry", async ({ page }) => {
+  await open(page, "?composer");
+  await composer(page).fill("/draft");
+  await page.getByRole("option", { name: /draft-response/ }).click();
   await composer(page).fill("Keep my unsent message");
   await page
     .locator('input[type="file"]')
@@ -264,6 +266,7 @@ test("a failed chat save preserves the draft and attachments for retry", async (
   });
   await composer(page).press("Enter");
   await expect(page.getByText("Message failed", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remove skill draft-response" })).toBeEnabled();
   await expect(composer(page)).toBeEnabled();
   await expect(composer(page)).toHaveValue("Keep my unsent message");
   await expect(page.getByTitle("keep.txt", { exact: true })).toBeVisible();
@@ -272,4 +275,39 @@ test("a failed chat save preserves the draft and attachments for retry", async (
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
   await expect(composer(page)).toHaveValue("");
   await expect(page.locator("footer").getByTitle("keep.txt", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Remove skill draft-response" })).toHaveCount(0);
+});
+
+test("selected skills follow project drafts through switching, reload, sending and restore", async ({ page }) => {
+  await open(page, "?composer");
+  await project(page, "Skills project", "Project and skill instructions should both apply.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await composer(page).fill("/draft");
+  await page.getByRole("option", { name: /draft-response/ }).click();
+  const selection = page.getByRole("button", { name: "Remove skill draft-response" });
+  await expect(selection).toBeVisible();
+  await choose(page, "All chats");
+  await expect(selection).toHaveCount(0);
+  await choose(page, "Skills project");
+  await expect(selection).toBeVisible();
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.goto("/tests/browser/fixtures/react-ui.html?composer");
+  await expect(selection).toBeVisible();
+  await expect(composer(page)).toHaveValue("");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  await expect(selection).toHaveCount(0);
+  expect((await page.evaluate(() => window.reactUiE2E.state())).instructions).toContain(
+    "Project and skill instructions should both apply.",
+  );
+  await page.evaluate(() => window.reactUiE2E.callTool("load_skill", { name: "draft-response" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  expect(JSON.stringify(await page.evaluate(() => window.reactUiE2E.state().input))).toContain(
+    "Follow the customer response template.",
+  );
+  await page.evaluate(() => window.reactUiE2E.finish("Project skill ready"));
+  await expect(page.getByText("Project skill ready", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Restore to composer" }).click();
+  await expect(selection).toBeVisible();
+  await expect(composer(page)).toHaveValue("");
 });

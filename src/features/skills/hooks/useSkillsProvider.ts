@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { Agent } from "@/features/agent/types/agent";
 import { pluginEntries } from "@/features/plugins/lib/pluginProvider";
 import type { InstalledPlugin } from "@/features/plugins/lib/types";
@@ -8,9 +8,11 @@ import {
   SKILLS_PROVIDER_ID,
   type SkillEntry,
   type SkillSources,
+  type SkillsToolProvider,
   builtinTemplateEntries,
 } from "@/features/skills/lib/skillsProvider";
-import type { ToolProvider } from "@/shared/types/chat";
+import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
+import { skillName } from "../lib/skillSource";
 import { useSkills } from "./useSkills";
 import { useSkillTemplates } from "./useSkillTemplates";
 
@@ -28,17 +30,18 @@ import { useSkillTemplates } from "./useSkillTemplates";
  *                   the same name.
  *
  * Template content is fetched lazily on `load_skill`; only name/description reach
- * the prompt. Returns null when there's nothing to expose.
+ * the prompt. Explicit selections extend the same provider for one chat run.
  */
 export function useSkillsProvider(
   agent: Agent | null,
   sources: SkillSources,
   activePlugins: InstalledPlugin[] = [],
-): ToolProvider | null {
+  installedPlugins: InstalledPlugin[] = activePlugins,
+): { provider: SkillsToolProvider | null; forSelection: (names: readonly string[]) => SkillsToolProvider | null } {
   const { skills } = useSkills();
   const { templates, loadTemplate } = useSkillTemplates();
 
-  return useMemo<ToolProvider | null>(() => {
+  const result = useMemo(() => {
     // Built-in capabilities are discovered by task, without a mode toggle.
     const entries: SkillEntry[] = builtinTemplateEntries(templates, loadTemplate);
     // 2. Personal library — an agent's curated subset, or the full library.
@@ -51,10 +54,26 @@ export function useSkillsProvider(
     // Plugin skills are keyed by plugin id, so they never collide with the above.
     const pluginSkills = pluginEntries(activePlugins);
 
-    return createSkillsProvider([...deduped, ...pluginSkills], {
+    const meta = {
       id: SKILLS_PROVIDER_ID,
       name: "Skills",
       description: agent ? "Specialized agent skills" : "Available skills",
-    });
-  }, [agent, skills, templates, loadTemplate, sources.personal, activePlugins]);
+    };
+    const manual = [...libraryEntries(skills), ...pluginEntries(installedPlugins)];
+    const forSelection = (names: readonly string[]) => {
+      const selected = new Set(names);
+      return createSkillsProvider(
+        [...deduped, ...pluginSkills, ...manual.filter((entry) => selected.has(skillName(entry)))],
+        meta,
+      );
+    };
+    return { provider: forSelection([]), forSelection };
+  }, [agent, skills, templates, loadTemplate, sources.personal, activePlugins, installedPlugins]);
+  // Editor and voice execution use the automatic selection. Chat runs capture
+  // their own provider's loader, so switching chats cannot change their files.
+  useEffect(() => {
+    setSkillResourceResolver(SKILLS_PROVIDER_ID, result.provider?.loadFiles ?? null);
+    return () => setSkillResourceResolver(SKILLS_PROVIDER_ID, null);
+  }, [result.provider]);
+  return result;
 }

@@ -12,6 +12,7 @@ import { type PersistenceQueue, withPersistenceLock } from "@/shared/lib/persist
 
 export interface ComposerDraft {
   content: string;
+  skills?: string[];
   attachments: ContentPart[];
   pendingFiles: File[];
   pendingImages: (File | null)[];
@@ -32,6 +33,7 @@ interface StoredFile {
 }
 interface StoredDraft {
   content: string;
+  skills?: string[];
   attachments: ContentPart[];
   pendingFiles: StoredFile[];
   pendingImages: (StoredFile | null)[];
@@ -49,7 +51,9 @@ export async function loadComposerDraft(key: string): Promise<ComposerDraft> {
       typeof saved.content !== "string" ||
       !Array.isArray(saved.attachments) ||
       !Array.isArray(saved.pendingFiles) ||
-      !Array.isArray(saved.pendingImages)
+      !Array.isArray(saved.pendingImages) ||
+      (saved.skills !== undefined &&
+        (!Array.isArray(saved.skills) || saved.skills.some((name) => typeof name !== "string")))
     )
       throw new Error("Invalid saved draft");
     const read = async (entry: StoredFile): Promise<File> => {
@@ -62,6 +66,7 @@ export async function loadComposerDraft(key: string): Promise<ComposerDraft> {
     };
     return {
       content: saved.content,
+      ...(saved.skills ? { skills: saved.skills } : {}),
       attachments: saved.attachments,
       pendingFiles: await Promise.all(saved.pendingFiles.map(read)),
       pendingImages: await Promise.all(saved.pendingImages.map((f) => (f ? read(f) : Promise.resolve(null)))),
@@ -71,7 +76,7 @@ export async function loadComposerDraft(key: string): Promise<ComposerDraft> {
 
 export async function saveComposerDraft(key: string, draft: ComposerDraft): Promise<void> {
   return withPersistenceLock("collection:drafts", async () => {
-    if (!draft.content && !draft.attachments.length && !draft.pendingFiles.length) {
+    if (!draft.content && !draft.skills?.length && !draft.attachments.length && !draft.pendingFiles.length) {
       await deleteDirectory(folder(key));
       return;
     }
@@ -94,6 +99,7 @@ export async function saveComposerDraft(key: string, draft: ComposerDraft): Prom
     });
     await writeJson(`${folder(key)}/draft.json`, {
       content: draft.content,
+      ...(draft.skills ? { skills: draft.skills } : {}),
       attachments: draft.attachments,
       pendingFiles: files.slice(0, draft.pendingFiles.length),
       pendingImages: files.slice(draft.pendingFiles.length),

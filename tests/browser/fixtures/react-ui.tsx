@@ -6,6 +6,8 @@ import { PanelShell } from "../../../src/features/chat/components/PanelShell";
 import { storeChat } from "../../../src/features/chat/lib/chatStorage";
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
+import { saveSkill } from "../../../src/shared/lib/opfs";
+import { savePlugin } from "../../../src/features/plugins/lib/opfs-plugins";
 import type { ModelMessage, UIMessage } from "@tanstack/ai";
 import { assistantMessage, userMessage } from "../../../src/shared/lib/messages";
 import "../../../src/index.css";
@@ -78,6 +80,32 @@ if (parameters.has("panels")) {
 } else {
   const config = await loadConfig();
   if (!config) throw new Error("Missing fixture config");
+  if (parameters.has("composer")) {
+    await saveSkill({
+      id: "draft-response",
+      name: "draft-response",
+      description: "Draft a customer reply",
+      content: "Follow the customer response template.",
+      resources: [
+        { path: "references/response.md", content: "Response checklist: acknowledge, explain, resolve." },
+        { path: "scripts/check.js", content: '#!/usr/bin/env node\nconsole.log("Selected skill script ran");' },
+      ],
+    });
+    await saveSkill({
+      id: "customer-research",
+      name: "customer-research",
+      description: "Research a customer",
+      content: "Gather customer context.",
+    });
+    await savePlugin({
+      id: "support",
+      hubUrl: "https://example.test",
+      installedAt: "2026-01-01",
+      skills: [
+        { name: "escalate", description: "Escalate a support case", content: "Follow the escalation procedure." },
+      ],
+    });
+  }
   const model = {
     id: "fixture",
     name: "Fixture",
@@ -170,7 +198,11 @@ if (parameters.has("panels")) {
       });
     }
   }
-  history.replaceState(null, "", parameters.has("seed") ? "/chat/history-119" : "/chat");
+  history.replaceState(
+    null,
+    "",
+    parameters.has("seed") ? "/chat/history-119" : parameters.has("chat") ? `/chat/${parameters.get("chat")}` : "/chat",
+  );
   const { default: App } = await import("../../../src/App");
   root.render(
     <StrictMode>

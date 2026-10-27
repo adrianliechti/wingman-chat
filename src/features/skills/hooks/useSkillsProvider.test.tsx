@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/features/agent/types/agent";
 import type { InstalledPlugin } from "@/features/plugins/lib/types";
 import type { ParsedSkill } from "@/features/skills/lib/skillParser";
-import { SKILLS_PROVIDER_ID } from "@/features/skills/lib/skillsProvider";
+import { SKILLS_PROVIDER_ID, type SkillsToolProvider } from "@/features/skills/lib/skillsProvider";
 import type { SkillTemplate } from "@/features/skills/lib/templates";
 import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import type { ToolProvider } from "@/shared/types/chat";
@@ -31,14 +31,21 @@ const agent = (skills: string[] = []): Agent => ({
   plugins: [],
   tools: [],
 });
-function provider(current: Agent | null = null, personal = false, plugins: InstalledPlugin[] = []) {
-  let result: ToolProvider | null = null;
+function provider(
+  current: Agent | null = null,
+  personal = false,
+  plugins: InstalledPlugin[] = [],
+  selected: string[] = [],
+  installed = plugins,
+) {
+  let result: SkillsToolProvider | null = null;
   function Harness() {
-    result = useSkillsProvider(current, { personal }, plugins);
+    const sources = useSkillsProvider(current, { personal }, plugins, installed);
+    result = selected.length ? sources.forSelection(selected) : sources.provider;
     return null;
   }
   renderToString(<Harness />);
-  return result! as ToolProvider;
+  return result! as SkillsToolProvider;
 }
 function catalog(value: ToolProvider) {
   const load = value.tools.find((tool) => tool.name === "load_skill")!;
@@ -72,6 +79,55 @@ beforeEach(() => {
 afterEach(() => setSkillResourceResolver(SKILLS_PROVIDER_ID, null));
 
 describe("default capability skills", () => {
+  it("explicit selection exposes disabled personal and plugin resources without changing automatic discovery", async () => {
+    state.skills = [
+      {
+        name: "draft-response",
+        description: "Reply",
+        content: "Response instructions.",
+        resources: [{ path: "scripts/check.py", content: "print('checked')" }],
+      },
+      { name: "private-notes", description: "Notes", content: "Unselected instructions." },
+    ];
+    const installed = [
+      {
+        id: "support",
+        hubUrl: "https://example.test",
+        installedAt: "2026-01-01",
+        skills: [
+          {
+            name: "escalate",
+            description: "Escalate",
+            content: "Escalation instructions.",
+            resources: [{ path: "template.md", content: "Escalation template" }],
+          },
+        ],
+      },
+    ];
+    const value = provider(agent(), false, [], ["draft-response", "support:escalate"], installed);
+    expect(catalog(value)).toMatchObject({
+      properties: { name: { enum: ["html-artifacts", "draft-response", "support:escalate"] } },
+    });
+    expect(await read(value, "draft-response")).toEqual([
+      { type: "text", content: expect.stringContaining("scripts/check.py") },
+    ]);
+    expect(
+      await value.tools
+        .find((t) => t.name === "read_skill_resource")!
+        .execute({ skill: "support:escalate", path: "template.md" }),
+    ).toEqual([{ type: "text", content: expect.stringContaining("Escalation template") }]);
+    expect(await value.loadFiles()).toMatchObject({
+      "/skills/draft-response/scripts/check.py": { content: "print('checked')" },
+      "/skills/support:escalate/template.md": { content: "Escalation template" },
+    });
+    const automatic = provider(agent(), false, [], [], installed);
+    expect(catalog(automatic)).toMatchObject({
+      properties: { name: { enum: ["html-artifacts"] } },
+    });
+    expect(await automatic.loadFiles()).not.toHaveProperty("/skills/draft-response/scripts/check.py");
+    expect(await value.loadFiles()).toHaveProperty("/skills/draft-response/scripts/check.py");
+  });
+
   it.each([null, agent()])("exposes built-ins without personal skills or selected tools (%j)", async (current) => {
     const value = provider(current);
     expect(catalog(value)).toMatchObject({ properties: { name: { enum: ["html-artifacts"] } } });

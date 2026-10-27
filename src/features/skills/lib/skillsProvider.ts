@@ -5,7 +5,6 @@ import type { ParsedSkill } from "@/features/skills/lib/skillParser";
 import { loadSkillResource, type SkillTemplate } from "@/features/skills/lib/templates";
 import skillsPrompt from "@/features/skills/prompts/skills.txt?raw";
 import type { ArtifactFiles } from "@/features/tools/lib/interpreterProtocol";
-import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { artifactLanguage } from "@/shared/lib/fileTypes";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
 import { toolPreviewResource, toolPreviewText } from "@/shared/lib/toolPreview";
@@ -95,12 +94,14 @@ export interface SkillsProviderMeta {
   description: string;
 }
 
+export interface SkillsToolProvider extends ToolProvider {
+  /** Resource loader bound to this provider's exact skill selection. */
+  loadFiles: () => Promise<ArtifactFiles>;
+}
+
 /** Shared chat/voice tools backed by TanStack's portable skills API. */
-export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProviderMeta): ToolProvider | null {
-  if (entries.length === 0) {
-    setSkillResourceResolver(meta.id, null);
-    return null;
-  }
+export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProviderMeta): SkillsToolProvider | null {
+  if (entries.length === 0) return null;
 
   const source = createSkillSource(entries);
   const skills = source.catalog;
@@ -115,26 +116,18 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
     .filter(Boolean)
     .join("\n\n");
 
-  // The user/agent selection owns these mounts. Native source checks also guard
-  // interpreter reads, and qualified names keep plugin resources from colliding.
-  setSkillResourceResolver(
-    meta.id,
-    hasResources
-      ? async () => {
-          const files: ArtifactFiles = {};
-          for (const skill of skills) {
-            for (const path of await source.listResources(skill.name)) {
-              const content = await source.readResource(skill.name, path).catch(() => null);
-              if (content !== null) files[`/skills/${skill.name}/${path}`] = { content };
-            }
-          }
-          return files;
-        }
-      : null,
-  );
-
   return {
     ...meta,
+    loadFiles: async () => {
+      const files: ArtifactFiles = {};
+      for (const skill of skills) {
+        for (const path of await source.listResources(skill.name)) {
+          const content = await source.readResource(skill.name, path).catch(() => null);
+          if (content !== null) files[`/skills/${skill.name}/${path}`] = { content };
+        }
+      }
+      return files;
+    },
     icon: Sparkles,
     instructions: `${instructions}\n\n${renderCatalog(skills, "openai")}`,
     // Realtime has no chat middleware. Each tools request gets its own native

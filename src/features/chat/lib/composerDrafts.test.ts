@@ -11,6 +11,24 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("composer drafts", () => {
+  it("persists skill-only drafts and clears them only after acceptance", async () => {
+    const queue = new PersistenceQueue(() => {}, 60_000);
+    const store = new ComposerDraftStore(queue);
+    await store.load("new-project");
+    store.update("new-project", () => ({ ...EMPTY_DRAFT, skills: ["draft-response", "support:escalate"] }));
+    await queue.flush();
+    expect((await loadComposerDraft("new-project")).skills).toEqual(["draft-response", "support:escalate"]);
+    const sent = store.get("new-project").draft;
+    store.setSending("new-project", true);
+    await store.transfer("new-project", "chat-created");
+    expect((await loadComposerDraft("chat-created")).skills).toEqual(sent.skills);
+    store.finishSending(sent);
+    store.clearIfUnchanged("chat-created", sent);
+    await queue.flush();
+    expect(await loadComposerDraft("chat-created")).toEqual(EMPTY_DRAFT);
+    await queue.stop();
+  });
+
   it("restores text, inline media and original binary files independently per conversation", async () => {
     const file = new File([new Uint8Array([0, 1, 255, 7])], "source.bin", {
       type: "application/octet-stream",

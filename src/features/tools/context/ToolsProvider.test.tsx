@@ -23,7 +23,9 @@ vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ current
 vi.mock("@/features/agent/hooks/useAgentProviders", () => ({ useAgentProviders: () => fixture.agents }));
 vi.mock("@/features/artifacts/hooks/useArtifactsProvider", () => ({ useArtifactsProvider: () => null }));
 vi.mock("@/features/skills/hooks/useSkillBuilderProvider", () => ({ useSkillBuilderProvider: () => null }));
-vi.mock("@/features/skills/hooks/useSkillsProvider", () => ({ useSkillsProvider: () => null }));
+vi.mock("@/features/skills/hooks/useSkillsProvider", () => ({
+  useSkillsProvider: () => ({ provider: null, forSelection: () => null }),
+}));
 vi.mock("@/shared/config", () => ({ getConfig: () => fixture.config }));
 vi.mock("@tanstack/react-query", async (original) => ({
   ...(await original<typeof import("@tanstack/react-query")>()),

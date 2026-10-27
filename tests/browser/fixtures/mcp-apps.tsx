@@ -126,6 +126,7 @@ const toolsContext: ToolsContextValue = {
   setModelOverrides: () => {},
   skillSources: { personal: false },
   setSkillSources: () => {},
+  getSkillsProvider: () => null,
   companionAvailable: false,
   companionEnabled: false,
   toggleCompanion: () => {},
