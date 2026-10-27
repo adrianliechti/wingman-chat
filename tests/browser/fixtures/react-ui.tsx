@@ -89,6 +89,16 @@ if (parameters.has("panels")) {
       resources: [
         { path: "references/response.md", content: "Response checklist: acknowledge, explain, resolve." },
         { path: "scripts/check.js", content: '#!/usr/bin/env node\nconsole.log("Selected skill script ran");' },
+        {
+          path: "run-form.json",
+          content: JSON.stringify({
+            version: 1,
+            title: "Draft response",
+            description: "Prepare a customer response.",
+            example: "Thank you for contacting us.",
+            fields: [{ id: "subject", type: "text", label: "Subject", required: true }],
+          }),
+        },
       ],
     });
     await saveSkill({

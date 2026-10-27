@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "title": "Draft a communication",
+  "description": "Turn a short brief into a clear message for colleagues or stakeholders.",
+  "example": "Subject: Updated timetable for the pilot\nOpening: what is changing and why.\nDetails: who is affected, the confirmed dates and what recipients need to do.\n\nIllustrative structure; missing facts remain questions or placeholders.",
+  "fields": [
+    {
+      "id": "brief",
+      "type": "text",
+      "label": "Message brief",
+      "placeholder": "What needs to be communicated, and what should readers do?",
+      "required": true,
+      "rows": 4,
+      "maxLength": 20000
+    },
+    {
+      "id": "audience",
+      "type": "text",
+      "label": "Audience",
+      "placeholder": "For example: branch employees, managers or a project team",
+      "required": true
+    },
+    {
+      "id": "source",
+      "type": "file",
+      "label": "Supporting document",
+      "required": false,
+      "accept": [".pdf", ".docx", ".txt", ".md"]
+    },
+    {
+      "id": "format",
+      "type": "select",
+      "label": "Message format",
+      "required": true,
+      "options": ["Email", "Internal announcement", "Short memo"],
+      "default": "Email"
+    },
+    {
+      "id": "tone",
+      "type": "select",
+      "label": "Tone",
+      "required": true,
+      "options": ["Professional and clear", "Warm and conversational", "Concise and direct"],
+      "default": "Professional and clear"
+    },
+    {
+      "id": "language",
+      "type": "select",
+      "label": "Output language",
+      "required": true,
+      "options": ["English", "German", "French", "Italian"],
+      "default": "English"
+    }
+  ]
+}

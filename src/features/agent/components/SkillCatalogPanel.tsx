@@ -1,8 +1,9 @@
 import { useDebouncer } from "@tanstack/react-pacer";
-import { Code, Download, Eye, Loader2, MoreVertical, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Code, Download, Eye, Loader2, MoreVertical, Pencil, Play, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState } from "react";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { Skill, SkillResource } from "@/features/skills/lib/skillParser";
+import { RUN_FORM_PATH } from "@/features/skills/lib/runForm";
 import {
   downloadSkill,
   downloadSkillsAsZip,
@@ -42,6 +43,8 @@ export interface SkillCatalogPanelProps {
   enabledSkillNames?: ReadonlySet<string>;
   onSkillSaved: (skill: Skill, isNew: boolean, oldName?: string) => void;
   onImported: (names: string[]) => void;
+  /** Opens the optional run form in a fresh conversation. */
+  onRunSkill?: (skill: Skill) => void;
   /** Called after a skill has been deleted. */
   onDeleted?: () => void;
   initialView?: "list" | "new";
@@ -101,6 +104,7 @@ export function SkillCatalogPanel({
   enabledSkillNames = NO_ENABLED_SKILLS,
   onSkillSaved,
   onImported,
+  onRunSkill,
   onDeleted,
   initialView = "list",
   initialSkillName,
@@ -633,6 +637,15 @@ export function SkillCatalogPanel({
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 pl-4 pr-3 dark:border-neutral-800/60">
           <CatalogBreadcrumb parents={[{ label: "Skills", onClick: onShowOverview }]} title={selectedSkill.name} />
+          {onRunSkill && selectedSkill.resources?.some((resource) => resource.path === RUN_FORM_PATH) && (
+            <button
+              type="button"
+              onClick={() => onRunSkill(selectedSkill)}
+              className="inline-flex items-center gap-1.5 rounded-md bg-neutral-900 px-2.5 py-1.5 text-xs font-medium text-white dark:bg-neutral-100 dark:text-neutral-900"
+            >
+              <Play size={13} /> Run
+            </button>
+          )}
           {onToggle && (
             <CatalogToggle
               enabled={enabledSkillNames.has(selectedSkill.name)}

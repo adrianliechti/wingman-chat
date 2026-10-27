@@ -38,6 +38,7 @@ export function LibraryDialog({
   onTogglePlugin,
   onSkillSaved,
   onImported,
+  onRunSkill,
   initialView,
   initialSkillName,
 }: LibraryDialogProps) {
@@ -818,6 +819,7 @@ export function LibraryDialog({
                           enabledSkillNames={enabledSkillNames}
                           onSkillSaved={onSkillSaved}
                           onImported={onImported}
+                          onRunSkill={onRunSkill}
                           onDeleted={() => {
                             setSection("skills");
                             setRequestedSkillName(undefined);

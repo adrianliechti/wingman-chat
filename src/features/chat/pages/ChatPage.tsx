@@ -25,6 +25,9 @@ import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { useDrawerExclusivity } from "@/features/chat/hooks/useDrawerExclusivity";
 import { useDrawerResize } from "@/features/chat/hooks/useDrawerResize";
 import { useSkills } from "@/features/skills/hooks/useSkills";
+import { useSkillWorkflow } from "@/features/skills/hooks/useSkillWorkflow";
+import { SkillRunDialog } from "@/features/skills/components/SkillRunDialog";
+import { WorkflowMenu } from "@/features/skills/components/WorkflowMenu";
 import type { Skill } from "@/features/skills/lib/skillParser";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
@@ -68,6 +71,7 @@ const Disclaimer = () => {
 };
 
 export function ChatPage() {
+  const workflows = useSkillWorkflow();
   const {
     messages,
     selectChat,
@@ -576,6 +580,16 @@ export function ChatPage() {
         >
           <div className="pointer-events-auto">
             <ChatInput />
+            {messages.length === 0 && artifactsAvailable && workflows.starters.length > 0 && (
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
+                <WorkflowMenu
+                  starters={workflows.starters}
+                  loading={!!workflows.loadingName}
+                  disabled={!workflows.canRun}
+                  onSelect={(starter) => void workflows.openTemplate(starter)}
+                />
+              </div>
+            )}
           </div>
         </div>
       </footer>
@@ -663,9 +677,18 @@ export function ChatPage() {
         onTogglePlugin={currentAgent ? handlePluginToggle : undefined}
         onSkillSaved={handleSkillSaved}
         onImported={handleSkillImported}
+        onRunSkill={workflows.canRun ? workflows.openSkill : undefined}
         initialSkillName={skillCatalogTarget ?? undefined}
         initialSection={skillCatalogSection}
       />
+      {workflows.workflow && (
+        <SkillRunDialog
+          workflow={workflows.workflow}
+          contextLabel={workflows.contextLabel}
+          onClose={workflows.close}
+          onRun={workflows.run}
+        />
+      )}
     </div>
   );
 }

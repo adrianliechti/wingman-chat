@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "title": "Meeting follow-up",
+  "description": "Paste your notes or upload a transcript to turn a meeting into clear decisions and next steps.",
+  "example": "Decision: continue the pilot for one more week.\nAction: confirm the revised timetable — owner and deadline not recorded.\nFollow-up: a short draft message summarizing the decisions and next steps.\n\nIllustrative example; actions must be supported by your notes.",
+  "fields": [
+    {
+      "id": "notes",
+      "type": "text",
+      "label": "Meeting notes",
+      "placeholder": "Paste notes, decisions or a transcript",
+      "required": false,
+      "rows": 4,
+      "maxLength": 50000
+    },
+    {
+      "id": "transcript",
+      "type": "file",
+      "label": "Notes or transcript file",
+      "required": false,
+      "accept": [".pdf", ".docx", ".txt", ".md"]
+    },
+    {
+      "id": "audience",
+      "type": "text",
+      "label": "Follow-up audience",
+      "placeholder": "For example: everyone who attended or the project sponsor",
+      "required": false
+    },
+    {
+      "id": "output",
+      "type": "select",
+      "label": "Deliverable",
+      "required": true,
+      "options": ["Summary, actions and email draft", "Minutes and action list", "Action list only"],
+      "default": "Summary, actions and email draft"
+    },
+    {
+      "id": "language",
+      "type": "select",
+      "label": "Output language",
+      "required": true,
+      "options": ["English", "German", "French", "Italian"],
+      "default": "English"
+    }
+  ],
+  "atLeastOneOf": ["notes", "transcript"]
+}

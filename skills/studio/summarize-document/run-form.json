@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "title": "Summarize a document",
+  "description": "Turn a long document into a useful brief for the people who need to read it.",
+  "example": "Purpose: explain a proposed process change.\nKey points: what changes, who is affected and the next decision.\nOpen question: the document does not name an implementation owner.\n\nIllustrative structure; findings and references come from your document.",
+  "fields": [
+    {
+      "id": "document",
+      "type": "file",
+      "label": "Document",
+      "required": true,
+      "accept": [".pdf", ".docx", ".txt", ".md"]
+    },
+    {
+      "id": "audience",
+      "type": "text",
+      "label": "Audience",
+      "placeholder": "For example: branch staff, management or a project team",
+      "required": true
+    },
+    {
+      "id": "focus",
+      "type": "text",
+      "label": "Summary focus",
+      "placeholder": "For example: decisions, responsibilities, costs or changes",
+      "required": false
+    },
+    {
+      "id": "length",
+      "type": "select",
+      "label": "Length",
+      "required": true,
+      "options": ["One-page brief", "Five key points", "Detailed summary"],
+      "default": "One-page brief"
+    },
+    {
+      "id": "language",
+      "type": "select",
+      "label": "Output language",
+      "required": true,
+      "options": ["English", "German", "French", "Italian"],
+      "default": "English"
+    }
+  ]
+}

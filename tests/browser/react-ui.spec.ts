@@ -33,6 +33,170 @@ async function open(page: Page, query = "") {
   await page.goto(`/tests/browser/fixtures/react-ui.html${query}`, { waitUntil: "domcontentloaded" });
 }
 
+test("document comparison workflow keeps drafts and uploads distinct in a fresh conversation", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("Keep this unsent draft");
+  await page.getByRole("button", { name: "Start a workflow", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Compare documents", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Compare documents" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByText("Example output", { exact: true }).click();
+  await expect(dialog.getByText(/Illustrative example/)).toBeVisible();
+  await dialog
+    .getByLabel("Previous version", { exact: true })
+    .setInputFiles({ name: "policy.txt", mimeType: "text/plain", buffer: Buffer.from("Payment within 30 days.") });
+  await dialog
+    .getByLabel("Current version", { exact: true })
+    .setInputFiles({ name: "policy.txt", mimeType: "text/plain", buffer: Buffer.from("Payment within 15 days.") });
+  await dialog.getByLabel("Review focus").fill("Deadlines and fees");
+  await dialog.getByRole("button", { name: /Output language/ }).click();
+  await page.getByRole("option", { name: "German", exact: true }).click();
+  await expect(page.getByRole("option", { name: "German", exact: true })).toHaveCount(0);
+  await page.screenshot({ path: test.info().outputPath("document-comparison.png") });
+  await dialog.getByRole("button", { name: "Run workflow" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  const inputText = await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input));
+  expect(inputText).toContain("compare-documents");
+  expect(inputText).toContain("/previous-policy.txt");
+  expect(inputText).toContain("/current-policy.txt");
+  expect(inputText).toContain("German");
+  expect(inputText).not.toContain("Keep this unsent draft");
+  await page.evaluate(() => window.reactUiE2E.callTool("artifacts_read", { path: "/previous-policy.txt" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Payment within 30 days.",
+  );
+  await page.evaluate(() => window.reactUiE2E.callTool("artifacts_read", { path: "/current-policy.txt" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Payment within 15 days.",
+  );
+  await page.evaluate(() => window.reactUiE2E.callTool("load_skill", { name: "compare-documents" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(4);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Do not invent page numbers",
+  );
+  await page.evaluate(() => window.reactUiE2E.finish("The payment deadline is 15 days shorter."));
+  await expect(page.getByText("The payment deadline is 15 days shorter.", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.goto("/tests/browser/fixtures/react-ui.html");
+  await expect(page.getByRole("textbox", { name: "Chat message input" })).toHaveValue("Keep this unsent draft");
+  expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(0);
+});
+
+test("saved skill workflow starts outside the old history and retains its composer", async ({ page }) => {
+  await open(page, "?composer");
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("Existing conversation only");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  await page.evaluate(() => window.reactUiE2E.finish("Existing answer"));
+  await expect(page.getByText("Existing answer", { exact: true })).toBeVisible();
+  const oldId = new URL(page.url()).pathname.split("/").pop();
+  await input.fill("Unsent follow-up in the old chat");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Skills / Plugins" }).hover();
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
+  await page.getByRole("button", { name: "Show all skills" }).click();
+  await page
+    .getByRole("button", { name: /draft-response/ })
+    .last()
+    .click();
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Draft response" });
+  await dialog.getByLabel("Subject", { exact: true }).fill("Changed payment date");
+  await dialog.getByRole("button", { name: "Run workflow" }).click();
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  expect(new URL(page.url()).pathname).not.toBe(`/chat/${oldId}`);
+  const request = await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input));
+  expect(request).toContain("draft-response");
+  expect(request).toContain("Changed payment date");
+  expect(request).not.toContain("Existing conversation only");
+  expect(request).not.toContain("Unsent follow-up in the old chat");
+  await page.evaluate(() => window.reactUiE2E.finish("Response drafted"));
+  await expect(page.getByText("Response drafted", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.goto(`/tests/browser/fixtures/react-ui.html?composer&chat=${oldId}`);
+  await expect(input).toHaveValue("Unsent follow-up in the old chat");
+  await expect(page.getByText("Existing answer", { exact: true })).toBeVisible();
+});
+
+test("document comparison workflow validates files and its dropdown works on a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page);
+  await page.getByRole("button", { name: "Start a workflow", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Compare documents", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Compare documents" });
+  await dialog.getByRole("button", { name: "Run workflow" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Previous version");
+  expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(0);
+  await dialog
+    .getByLabel("Previous version", { exact: true })
+    .setInputFiles({ name: "wrong.exe", mimeType: "application/octet-stream", buffer: Buffer.from("wrong") });
+  await expect(dialog.getByText("Choose .pdf, .docx, .txt, .md.", { exact: true })).toBeVisible();
+  await dialog
+    .getByLabel("Previous version", { exact: true })
+    .setInputFiles({ name: "old.txt", mimeType: "text/plain", buffer: Buffer.from("old") });
+  await expect(dialog.getByText("old.txt", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Remove Previous version" }).click();
+  await expect(dialog.getByText("old.txt", { exact: true })).toHaveCount(0);
+  const language = dialog.getByRole("button", { name: /Output language/ });
+  await language.click();
+  await page.getByRole("option", { name: "French", exact: true }).click();
+  await expect(language).toContainText("French");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await page.screenshot({ path: test.info().outputPath("workflow-mobile.png") });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await dialog.getByRole("button", { name: "Close workflow" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(0);
+});
+
+test("common workflows offer all six forms and run meeting follow-up from pasted notes", async ({ page }) => {
+  await open(page);
+  const starters = [
+    ["Compare documents", "Compare documents"],
+    ["Draft communication", "Draft a communication"],
+    ["Meeting follow up", "Meeting follow-up"],
+    ["Policy questions", "Ask about a policy"],
+    ["Prepare meeting", "Prepare a meeting"],
+    ["Summarize document", "Summarize a document"],
+  ];
+  for (const [menuName, title] of starters) {
+    await page.getByRole("button", { name: "Start a workflow", exact: true }).click();
+    await page.getByRole("menuitem", { name: menuName, exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: title, exact: true });
+    await expect(dialog.getByRole("heading", { name: title, exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: "Close workflow" }).click();
+  }
+  await page.getByRole("button", { name: "Start a workflow", exact: true }).click();
+  await expect(page.getByRole("menu")).toHaveCSS("opacity", "1");
+  await page.screenshot({ path: test.info().outputPath("workflow-menu.png") });
+  await page.getByRole("menuitem", { name: "Meeting follow up", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Meeting follow-up", exact: true });
+  await dialog.getByRole("button", { name: "Run workflow" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Provide at least one");
+  expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(0);
+  await dialog
+    .getByLabel("Meeting notes")
+    .fill("Agreed to extend the pilot by one week. Sara will confirm dates; no deadline was recorded.");
+  await dialog.getByRole("button", { name: /Deliverable/ }).click();
+  await page.getByRole("option", { name: "Action list only", exact: true }).click();
+  await dialog.getByRole("button", { name: "Run workflow" }).click();
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  const request = await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input));
+  expect(request).toContain("meeting-follow-up");
+  expect(request).toContain("Sara will confirm dates");
+  expect(request).toContain("Action list only");
+  await page.evaluate(() => window.reactUiE2E.callTool("load_skill", { name: "meeting-follow-up" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain("not recorded");
+  await page.evaluate(() => window.reactUiE2E.finish("Sara: confirm the pilot dates. Deadline: not recorded."));
+  await expect(page.getByText("Sara: confirm the pilot dates. Deadline: not recorded.", { exact: true })).toBeVisible();
+});
+
 test("invalid inline UI repairs automatically and stays repaired after reload", async ({ page }) => {
   await open(page);
   const input = page.getByRole("textbox", { name: "Chat message input" });

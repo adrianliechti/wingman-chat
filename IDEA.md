@@ -151,10 +151,11 @@ Linked features are inspiration for Wingman; provider and gateway support must b
       apps, with visible selections for the current request. Inspiration:
       [Gemini skills](https://blog.google/products-and-platforms/products/gemini/automate-tasks-with-skills/)
       and [connected apps](https://blog.google/innovation-and-ai/products/gemini-app/new-connected-apps-gemini/).
-- [ ] **Give saved workflows a run form.** Extend the skill builder with a conversation-to-workflow
-      action, reviewed instructions, named inputs, file slots, and an example output. Start each run in a
-      fresh conversation with the chosen agent. Offer an optional outline review before expensive
-      generation. Inspiration: [Open WebUI chat variables](https://github.com/open-webui/open-webui/releases/tag/v0.11.0).
+- [ ] **Turn conversations into reusable workflows.** Run forms now support named inputs, file slots,
+      an example output and a fresh conversation with the chosen agent, with six common-work starters.
+      Extend the skill builder with a conversation-to-workflow action and reviewed instructions.
+      Offer an optional outline review before expensive generation. Inspiration:
+      [Open WebUI chat variables](https://github.com/open-webui/open-webui/releases/tag/v0.11.0).
 - [ ] **Share skills with colleagues.** Skills already import from files and export. Add installing
       from a URL with a preview, and publishing a skill to the deployment's library, with optional
       admin approval. Inspiration:

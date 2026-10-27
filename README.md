@@ -148,6 +148,20 @@ design, data, finance, legal, HR, marketing, sales, operations, customer support
 and artifact output formats. General document, data and design skills are included by default;
 personal and plugin skills extend the catalog. Skills are plain Markdown, so they're easy to add, edit, and share.
 
+**Run forms** collect named inputs before starting a skill in a fresh conversation with the current
+agent, model and project. Open **Start a workflow** below the new-chat composer. The built-in workflows
+cover document comparison and summaries, meeting preparation and follow-up, policy questions, and
+communication drafts. Choose **Compare documents** to supply previous
+and current PDF, DOCX, TXT or Markdown versions, a review focus, language and output format. The
+workflow requests a sourced change table in chat or an editable Word report. Existing drafts are kept.
+
+Personal skills with a `run-form.json` resource have a **Run** button in their catalog detail view.
+Forms support text, dropdown and single-file fields, required inputs, defaults and an example output.
+Use `atLeastOneOf` with field IDs to accept alternatives such as pasted notes or a transcript file;
+text fields can set `rows` and `maxLength` (default 4,000, maximum 50,000 characters). Forms
+travel with the skill's normal ZIP export/import. See the bundled
+[comparison form](skills/studio/compare-documents/run-form.json) for the version 1 format.
+
 ### Cloud drives
 
 Optional integrations to bring in documents from **OneDrive**, **SharePoint** (via Microsoft Graph),

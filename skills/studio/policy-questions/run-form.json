@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "title": "Ask about a policy",
+  "description": "Find what a policy or procedure says, with the passages you need to check the answer.",
+  "example": "Answer: the procedure specifies a second review for this step.\nEvidence: the relevant section and exact wording.\nException or gap: the supplied document does not address this scenario.\n\nIllustrative structure; the answer depends on your policy and question.",
+  "fields": [
+    {
+      "id": "policy",
+      "type": "file",
+      "label": "Policy or procedure",
+      "required": true,
+      "accept": [".pdf", ".docx", ".txt", ".md"]
+    },
+    {
+      "id": "question",
+      "type": "text",
+      "label": "Your question",
+      "placeholder": "What do you need to understand or find?",
+      "required": true,
+      "rows": 3,
+      "maxLength": 12000
+    },
+    {
+      "id": "context",
+      "type": "text",
+      "label": "Relevant context",
+      "placeholder": "For example: your role, process step or the situation you are checking",
+      "required": false
+    },
+    {
+      "id": "detail",
+      "type": "select",
+      "label": "Answer style",
+      "required": true,
+      "options": ["Plain-language answer", "Answer with a checklist", "Detailed explanation"],
+      "default": "Plain-language answer"
+    },
+    {
+      "id": "language",
+      "type": "select",
+      "label": "Output language",
+      "required": true,
+      "options": ["English", "German", "French", "Italian"],
+      "default": "English"
+    }
+  ]
+}

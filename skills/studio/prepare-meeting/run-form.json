@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "title": "Prepare a meeting",
+  "description": "Bring the objective, discussion points and decisions together before a meeting.",
+  "example": "Objective: agree on the next pilot step.\nAgenda: context (5 min), options (15 min), decision (5 min), actions (5 min).\nQuestions: what evidence is missing, and who can confirm it?\n\nIllustrative structure; the agenda uses your objective and context.",
+  "fields": [
+    {
+      "id": "objective",
+      "type": "text",
+      "label": "Meeting objective",
+      "placeholder": "What should this meeting achieve?",
+      "required": true
+    },
+    {
+      "id": "participants",
+      "type": "text",
+      "label": "Participants or audience",
+      "placeholder": "For example: operations lead, branch representatives and project sponsor",
+      "required": false
+    },
+    {
+      "id": "background",
+      "type": "file",
+      "label": "Background document",
+      "required": false,
+      "accept": [".pdf", ".docx", ".txt", ".md"]
+    },
+    {
+      "id": "context",
+      "type": "text",
+      "label": "Context and open questions",
+      "placeholder": "Add relevant facts, previous decisions or questions to resolve",
+      "required": false,
+      "rows": 3,
+      "maxLength": 20000
+    },
+    {
+      "id": "duration",
+      "type": "select",
+      "label": "Meeting length",
+      "required": true,
+      "options": ["30 minutes", "15 minutes", "45 minutes", "60 minutes"],
+      "default": "30 minutes"
+    },
+    {
+      "id": "language",
+      "type": "select",
+      "label": "Output language",
+      "required": true,
+      "options": ["English", "German", "French", "Italian"],
+      "default": "English"
+    }
+  ]
+}

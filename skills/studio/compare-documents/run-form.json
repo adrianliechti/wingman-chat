@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "title": "Compare documents",
+  "description": "See what changed between two versions, with supporting passages and questions to follow up.",
+  "example": "Payment deadline · Changed\nPrevious: “within 30 days” → Current: “within 15 days”\nThe deadline is 15 days shorter. Both passages are linked to their source sections.\n\nIllustrative example; your comparison uses the documents you provide.",
+  "fields": [
+    {
+      "id": "previous",
+      "type": "file",
+      "label": "Previous version",
+      "required": true,
+      "accept": [".pdf", ".docx", ".txt", ".md"]
+    },
+    {
+      "id": "current",
+      "type": "file",
+      "label": "Current version",
+      "required": true,
+      "accept": [".pdf", ".docx", ".txt", ".md"]
+    },
+    {
+      "id": "focus",
+      "type": "text",
+      "label": "Review focus",
+      "placeholder": "For example: fees, deadlines, responsibilities or policy exceptions"
+    },
+    {
+      "id": "language",
+      "type": "select",
+      "label": "Output language",
+      "required": true,
+      "options": ["English", "German", "French", "Italian"],
+      "default": "English"
+    },
+    {
+      "id": "output",
+      "type": "select",
+      "label": "Deliverable",
+      "required": true,
+      "options": ["Chat summary and table", "Word report (.docx)"],
+      "default": "Chat summary and table"
+    }
+  ]
+}
