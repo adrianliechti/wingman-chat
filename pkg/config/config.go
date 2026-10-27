@@ -40,7 +40,7 @@ func loadConfigFiles(cfg *Config) {
 	loadLinks(cfg)
 	loadYAML("tools.yaml", &cfg.Tools)
 	loadYAML("models.yaml", &cfg.Models)
-	loadYAML("drives.yaml", &cfg.Drives)
+	loadDrives(cfg)
 	loadYAML("backgrounds.yaml", &cfg.Backgrounds)
 
 	loadYAMLPtr("chat.yaml", &cfg.Chat)
@@ -51,6 +51,20 @@ func loadConfigFiles(cfg *Config) {
 	loadYAMLPtr("renderer.yaml", &cfg.Renderer)
 	loadYAMLPtr("repository.yaml", &cfg.Repository)
 	loadYAMLPtr("artifacts.yaml", &cfg.Artifacts)
+}
+
+func loadDrives(cfg *Config) {
+	loadYAML("drives.yaml", &cfg.Drives)
+
+	for _, drive := range cfg.Drives {
+		if auth := drive.Auth; auth != nil {
+			// Expand after parsing to preserve quotes and newlines in secrets.
+			auth.Issuer = os.ExpandEnv(auth.Issuer)
+			auth.ClientID = os.ExpandEnv(auth.ClientID)
+			auth.ClientSecret = os.ExpandEnv(auth.ClientSecret)
+			auth.Scope = os.ExpandEnv(auth.Scope)
+		}
+	}
 }
 
 // loadLinks reads the ordered account-menu links from links.yaml. The old

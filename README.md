@@ -377,6 +377,26 @@ backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools
 `backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
 `extractor.yaml`, `renderer.yaml`, `repository.yaml`.
 
+In `drives.yaml`, the OBO `auth` fields (`issuer`, `client_id`, `client_secret`, and
+`scope`) support `$VAR` and `${VAR}` references to the Go server's environment:
+
+```yaml
+- id: onedrive
+  name: OneDrive
+  type: onedrive
+  auth:
+    issuer: https://login.microsoftonline.com/${AZURE_TENANT_ID}/v2.0
+    client_id: ${AZURE_CLIENT_ID}
+    client_secret: ${AZURE_CLIENT_SECRET}
+    scope: https://graph.microsoft.com/.default
+```
+
+Expansion uses Go's `os.ExpandEnv` after YAML parsing. Unset variables become empty
+strings; environment values are inserted once, preserving quotes, newlines, and
+dollar signs. An empty scope defaults to `https://graph.microsoft.com/.default`.
+Auth values stay on the server and are excluded from `/config.json`. Restart the
+server after changing these environment variables.
+
 Web search, page fetch, and research are gateway MCP tools. Replace `internet.yaml`
 and `INTERNET_*` settings with an entry in `tools.yaml`:
 
