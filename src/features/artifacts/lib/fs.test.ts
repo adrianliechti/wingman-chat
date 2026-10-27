@@ -440,6 +440,26 @@ describe("coordinated artifact tools", () => {
     expect(files.get("/a.txt")?.content).toBe("again externally changed");
   });
 
+  it("reports files that changed after the assistant read them until it reads them again", async () => {
+    const fs = new FileSystemManager("changed-since");
+    const manager = new ArtifactReadWriteManager();
+    const notified: string[] = [];
+    manager.subscribe((chatId) => notified.push(chatId));
+    const tools = manager.createTools(() => fs, { namespace: "artifacts" });
+    const read = (path: string) =>
+      tools.find((tool) => tool.name === "artifacts_read")!.execute({ path }, { context: {}, emitCustomEvent() {} });
+    expect(await manager.changedSinceObserved(fs)).toEqual([]);
+
+    await read("/a.txt");
+    await read("/b.txt");
+    expect(notified).toEqual(["changed-since", "changed-since"]);
+    await fs.createFile("/a.txt", "alpha edited", undefined, { origin: { actor: "user", reason: "edit" } });
+    expect(await manager.changedSinceObserved(fs)).toEqual(["/a.txt"]);
+
+    await read("/a.txt");
+    expect(await manager.changedSinceObserved(fs)).toEqual([]);
+  });
+
   it("keeps delayed tool calls in the originating chat after navigation, including draft-chat calls", async () => {
     const origin = new Map([["/a.txt", { content: "original" }]]);
     const other = new Map([["/a.txt", { content: "other chat" }]]);

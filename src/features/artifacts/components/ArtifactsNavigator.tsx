@@ -21,6 +21,8 @@ interface ArtifactsNavigatorProps {
   fs: FileSystemManager;
   files: FileEntry[];
   activePath: string;
+  /** The open file has unsaved edits. */
+  unsaved?: boolean;
   onOpen: (path: string) => void;
   /** Whether the breadcrumb opens the tree; false when the drawer shows the file column instead. */
   popover: boolean;
@@ -41,6 +43,7 @@ export function ArtifactsNavigator({
   fs,
   files,
   activePath,
+  unsaved = false,
   onOpen,
   popover,
   drives = [],
@@ -75,6 +78,14 @@ export function ArtifactsNavigator({
       >
         {getFileName(activePath)}
       </span>
+      {unsaved && (
+        <span
+          role="img"
+          aria-label="Unsaved changes"
+          title="Unsaved changes"
+          className="size-1.5 shrink-0 rounded-full bg-neutral-500 dark:bg-neutral-400"
+        />
+      )}
     </span>
   );
 

@@ -638,6 +638,7 @@ const MarkdownRenderContext = createContext<{
   onOpenArtifact?: (path: string) => void;
   onSendMessage?: (text: string) => void;
   uiStateKey?: string;
+  interactiveTasks?: boolean;
 }>({ isStreaming: false, compact: false, resolveAsset: () => undefined });
 
 function UiFence({ source, blockIndex }: { source?: string; blockIndex?: string }) {
@@ -680,16 +681,18 @@ const markdownComponents = {
       </p>
     );
   },
-  input: ({ type, checked, className, ...props }) => {
+  input: function Input({ type, checked, className, ...props }) {
+    const { interactiveTasks } = useContext(MarkdownRenderContext);
     if (type === "checkbox") {
       return (
         <input
+          {...props}
           type="checkbox"
           checked={checked}
           readOnly
-          disabled
-          className={cn(className, "task-checkbox", checked && "checked")}
-          {...props}
+          // The parser marks task boxes disabled; an editor that toggles them enables them.
+          disabled={!interactiveTasks}
+          className={cn(className, "task-checkbox", checked && "checked", interactiveTasks && "cursor-pointer")}
         />
       );
     }
@@ -1056,6 +1059,8 @@ type MarkdownProps = {
   onSendMessage?: (text: string) => void;
   /** Stable chat/message/text-part identity for independent UI fence state. */
   uiStateKey?: string;
+  /** Task checkboxes take clicks, for an editor that toggles them in the source. */
+  interactiveTasks?: boolean;
 };
 
 const NonMemoizedMarkdown = ({
@@ -1067,13 +1072,14 @@ const NonMemoizedMarkdown = ({
   onOpenArtifact,
   onSendMessage,
   uiStateKey,
+  interactiveTasks = false,
 }: MarkdownProps) => {
   const actionsEnabled = useContext(RendererActionsContext) && !isStreaming;
   const emojiMode = useContext(EmojiContext)?.emojiMode ?? "monochrome";
   const resolveAsset = useAssetUrlResolver(fs, basePath);
   const renderOptions = useMemo(
-    () => ({ isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage, uiStateKey }),
-    [isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage, uiStateKey],
+    () => ({ isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage, uiStateKey, interactiveTasks }),
+    [isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage, uiStateKey, interactiveTasks],
   );
   // The streaming profile keeps unfinished constructs predictable while text arrives.
   const extensions = useMemo(
@@ -1114,7 +1120,8 @@ export const Markdown = memo(
     prev.basePath === next.basePath &&
     prev.onOpenArtifact === next.onOpenArtifact &&
     prev.onSendMessage === next.onSendMessage &&
-    prev.uiStateKey === next.uiStateKey,
+    prev.uiStateKey === next.uiStateKey &&
+    prev.interactiveTasks === next.interactiveTasks,
 );
 
 const extractFilename = (code: string): string | undefined => {

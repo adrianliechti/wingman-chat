@@ -9,7 +9,6 @@ interface OfficeMarkdownEditorProps {
   content: string;
   contentType?: string;
   viewMode?: "code" | "preview";
-  onViewModeChange?: (mode: "code" | "preview") => void;
 }
 
 /**
@@ -25,7 +24,6 @@ export const OfficeMarkdownEditor = memo(function OfficeMarkdownEditor({
   content,
   contentType,
   viewMode,
-  onViewModeChange,
 }: OfficeMarkdownEditorProps) {
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +80,7 @@ export const OfficeMarkdownEditor = memo(function OfficeMarkdownEditor({
         Text preview — original formatting is not shown. Download the file for the original.
       </div>
       <div className="flex-1 min-h-0">
-        <MarkdownEditor content={markdown} path={path} viewMode={viewMode} onViewModeChange={onViewModeChange} />
+        <MarkdownEditor content={markdown} path={path} viewMode={viewMode} />
       </div>
     </div>
   );
