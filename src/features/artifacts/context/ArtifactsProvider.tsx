@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { ArtifactReadWriteManager } from "@/features/artifacts/lib/artifactFileTools";
 import type { ArtifactEditRequest } from "@/features/artifacts/lib/editRequest";
-import { getConfig } from "@/shared/config";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { ArtifactsContext } from "./ArtifactsContext";
 
@@ -18,7 +17,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   }>({ fs: null, activeFile: null });
   const [showArtifactsDrawer, setShowArtifactsDrawer] = useState(false);
   const [readWriteManager] = useState(() => new ArtifactReadWriteManager());
-  const isAvailable = !!getConfig().artifacts;
   // Injected by the host that owns the conversation (the chat feature); artifacts
   // only knows that a passage plus an instruction can be handed somewhere.
   const [requestEdit, setRequestEdit] = useState<((request: ArtifactEditRequest) => void) | null>(null);
@@ -79,7 +77,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   }, []);
 
   const value = {
-    isAvailable,
     fs,
     readWriteManager,
     activeFile,

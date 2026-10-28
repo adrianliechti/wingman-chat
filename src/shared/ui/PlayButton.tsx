@@ -20,6 +20,8 @@ async function speak(
 ) {
   const config = getConfig();
   const model = await resolveModel(config.tts?.model, "synthesizer");
+  signal.throwIfAborted();
+  if (!model) throw new Error("No speech synthesis model available");
   const resolvedVoice = voice ? (config.tts?.voices?.[voice] ?? voice) : undefined;
   await config.client.speakText(model, text, resolvedVoice, outputDeviceId, { signal, onPlaying });
 }

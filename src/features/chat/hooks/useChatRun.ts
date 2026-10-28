@@ -51,7 +51,6 @@ interface Options {
   threadId: string;
   chatIdRef: RefObject<string | null>;
   fsRef: RefObject<FileSystemManager | null>;
-  artifactsEnabled: boolean;
   getChat: (id: string) => Chat | undefined;
   loadChat: (id: string) => Promise<Chat>;
   updateChat: ChatStore["updateChat"];
@@ -70,7 +69,6 @@ export function useChatRun({
   threadId,
   chatIdRef,
   fsRef,
-  artifactsEnabled,
   getChat,
   loadChat,
   updateChat,
@@ -161,7 +159,7 @@ export function useChatRun({
       const memory = chatMemory();
       const releaseMemory = memory ? beginMemoryRun(memory) : undefined;
       const active = () => chatIdRef.current === id && !signal?.aborted;
-      const runFs = artifactsEnabled ? resolveArtifactFileSystem(fsRef.current, id) : null;
+      const runFs = resolveArtifactFileSystem(fsRef.current, id);
       const startLength = conversation.length;
       try {
         if (active()) setRunPhase("thinking");
@@ -280,7 +278,6 @@ export function useChatRun({
       model,
       chatIdRef,
       chatMemory,
-      artifactsEnabled,
       fsRef,
       chatTools,
       chatRuntimeContext,

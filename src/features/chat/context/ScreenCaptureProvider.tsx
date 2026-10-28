@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getConfig } from "@/shared/config";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useChatModel } from "@/features/chat/hooks/useChat";
+import { modelSupportsVision } from "@/shared/lib/models";
 import type { ScreenCaptureContextType } from "./ScreenCaptureContext";
 import { ScreenCaptureContext } from "./ScreenCaptureContext";
 
@@ -41,16 +42,15 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
   const [isActive, setIsActive] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const attemptRef = useRef(0);
 
-  // Check if screen capture is available (both supported by browser and enabled in config)
-  // This combines browser capability check with config.vision setting
-  const isAvailable = useMemo(() => {
-    const config = getConfig();
-    return !!config.vision && supportsScreenCapture();
-  }, []);
+  const { model, models } = useChatModel();
+  const isAvailable =
+    modelSupportsVision(models.find((candidate) => candidate.id === model?.id)) && supportsScreenCapture();
 
   // Helper to clean up resources
   const cleanupResources = useCallback(() => {
+    attemptRef.current++;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => {
         track.stop();
@@ -71,9 +71,15 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
     cleanupResources();
   }, [cleanupResources]);
 
+  useEffect(() => {
+    if (!isAvailable) cleanupResources();
+  }, [isAvailable, cleanupResources]);
+
   const startCapture = useCallback(async () => {
+    if (!isAvailable) return;
     // Clean up any existing capture first
     cleanupResources();
+    const attempt = attemptRef.current;
 
     try {
       // Request screen capture permission
@@ -85,12 +91,18 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
         audio: false,
       });
 
+      if (attempt !== attemptRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
       streamRef.current = stream;
 
       // Create video element for capturing frames
       const video = document.createElement("video");
       video.srcObject = stream;
       video.muted = true;
+      videoRef.current = video;
 
       // Wait for video to be ready
       await new Promise<void>((resolve, reject) => {
@@ -103,17 +115,18 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
         video.onerror = () => reject(new Error("Failed to load video stream"));
       });
 
-      videoRef.current = video;
+      if (attempt !== attemptRef.current) return;
       setIsActive(true);
 
       // Handle user stopping the share via browser UI
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {
         videoTrack.addEventListener("ended", () => {
-          cleanupResources();
+          if (attempt === attemptRef.current) cleanupResources();
         });
       }
     } catch (error) {
+      if (attempt !== attemptRef.current) return;
       console.error("Failed to start screen capture:", error);
       cleanupResources();
 
@@ -127,7 +140,7 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
       }
       throw error;
     }
-  }, [cleanupResources]);
+  }, [isAvailable, cleanupResources]);
 
   const captureFrame = useCallback(async (): Promise<Blob | null> => {
     if (!streamRef.current || !videoRef.current) {

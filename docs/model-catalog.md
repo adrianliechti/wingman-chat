@@ -7,7 +7,7 @@ are not used to infer capabilities or freshness.
 The catalogue resolves each available ID once, in this order:
 
 1. Deployment entries in `config.models`, including an explicit `type`.
-2. Optional backend `type`, `name`, and `description` fields.
+2. Optional backend `type`, `name`, `description`, and `supports_vision` fields.
 3. ID cues for endpoint type and known profiles for missing capabilities.
 
 Types are `completer`, `embedder`, `renderer`, `reranker`, `realtime`,
@@ -59,8 +59,28 @@ conversation. Initial restoration checks a saved effort against the resolved
 supported levels. Choosing realtime or clearing the selection during initial
 loading also wins over the late response.
 
-Speech calls use their configured model or backend default. They do not choose
-the first model in the catalogue. See [voice lifecycle](voice-lifecycle.md).
+Image generation, speech controls, routes, and artifact helpers share capability
+selection from the catalogue. Optional model defaults must match an available model
+of the right type; otherwise that helper is unavailable. Without a default, the first
+matching model is used. Live transcription models enable neither file transcription
+nor voice conversation. Failed refreshes retain the last successful list for both
+React consumers and helper calls; an initially unavailable or empty inventory enables
+no model-backed features. No global feature enable flags are required.
+
+Image attachments and screen capture require the selected chat model to support
+vision. `supportsVision` in `models.yaml` or browser configuration takes precedence
+over backend `supports_vision`, then known-model fallbacks. Explicit `false` is
+preserved. Unknown aliases require metadata. The `vision()` helper uses a configured
+capable model, otherwise the capable originating model, otherwise the first capable
+catalogue model. It never sends images to a known text-only model.
+
+Vision fallbacks were updated October 29, 2026 using the
+[OpenAI model documentation](https://developers.openai.com/api/docs/models),
+[Claude vision guide](https://platform.claude.com/docs/en/build-with-claude/vision), and
+[Gemini 4 Argon documentation](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon).
+They include GPT-6.1 Sol/Terra, Claude Sonnet/Haiku 5.5, and Gemini 4 Argon;
+unknown future families are not inferred. See [voice lifecycle](voice-lifecycle.md)
+for the separate realtime transcription contract.
 
 ## Model replacements
 

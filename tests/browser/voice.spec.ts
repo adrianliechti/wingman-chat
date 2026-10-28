@@ -27,6 +27,9 @@ async function open(page: Page) {
       },
     }),
   );
+  await page.route("**/api/v1/models", (route) =>
+    route.fulfill({ json: { data: [{ id: "realtime-test" }, { id: "stt-test" }, { id: "tts-test" }] } }),
+  );
   await page.routeWebSocket("**/api/v1/realtime?*", (route) => {
     const socket = { route, frames: [] as Record<string, any>[], closed: false };
     sockets.push(socket);
@@ -40,7 +43,7 @@ async function open(page: Page) {
     });
   });
   await page.goto("/tests/browser/fixtures/voice.html");
-  await page.waitForFunction(() => !!window.voiceE2E);
+  await page.waitForFunction(() => window.voiceE2E?.state().available);
   return { sockets, errors };
 }
 
@@ -350,7 +353,7 @@ test("devices unavailable and permission denial leave the UI retryable", async (
   expect(errors).toEqual([]);
   await page.addInitScript(() => Object.defineProperty(navigator, "mediaDevices", { value: undefined }));
   await page.reload();
-  await page.waitForFunction(() => !!window.voiceE2E);
+  await page.waitForFunction(() => window.voiceE2E?.state().available);
   expect(await page.evaluate(() => window.voiceE2E.devices())).toEqual({ inputs: [], outputs: [] });
   expect(errors).toEqual([]);
 });
@@ -382,7 +385,7 @@ test("realtime transcription does not inherit the file STT model", async ({ page
     route.fulfill({ json: { voice: {}, stt: { model: "file-only-transcriber" } } }),
   );
   await page.reload();
-  await page.waitForFunction(() => !!window.voiceE2E);
+  await page.waitForFunction(() => window.voiceE2E?.state().available);
   await page.evaluate(() => window.voiceE2E.startVoice());
   await page.waitForFunction(() => window.voiceE2E.state().listening);
   const update = sockets[0].frames.find((frame) => frame.type === "session.update");
@@ -394,7 +397,7 @@ test("realtime transcription does not inherit the file STT model", async ({ page
 test("a tool from a stopped session cannot pause or open an elicitation in its replacement", async ({ page }) => {
   const { sockets, errors } = await open(page);
   await page.goto("/tests/browser/fixtures/voice.html?late-tool");
-  await page.waitForFunction(() => !!window.voiceE2E);
+  await page.waitForFunction(() => window.voiceE2E?.state().available);
   await page.evaluate(() => window.voiceE2E.startVoice());
   await page.waitForFunction(() => window.voiceE2E.state().listening);
   sockets[0].route.send(JSON.stringify({ type: "response.created", response: { id: "old" } }));

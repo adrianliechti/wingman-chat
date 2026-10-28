@@ -11,9 +11,6 @@ export async function runTranscribe(
 ): Promise<string> {
   requestOptions.signal?.throwIfAborted();
   const config = getConfig();
-  if (!config.stt) {
-    throw new Error("transcribe: no transcription service configured");
-  }
   if (bytes.length === 0) {
     throw new Error(`transcribe: file is empty: ${path}`);
   }
@@ -26,9 +23,10 @@ export async function runTranscribe(
     throw new Error(`transcribe: not an audio file: ${name} — use a known audio extension like .mp3 or .wav`);
   }
 
-  const model = await resolveModel(config.stt.model, "transcriber");
+  const model = await resolveModel(config.stt?.model, "transcriber");
 
   requestOptions.signal?.throwIfAborted();
+  if (!model) throw new Error("transcribe: no transcription model available");
 
   // Video containers carry a large video track around a small audio one. Strip
   // the video and re-encode the audio to a compact file in the browser so long
@@ -36,7 +34,7 @@ export async function runTranscribe(
   let audio: Blob;
   if (type.startsWith("video/")) {
     try {
-      audio = await extractAudioForTranscription(bytes, type, config.stt.format, requestOptions.signal);
+      audio = await extractAudioForTranscription(bytes, type, config.stt?.format, requestOptions.signal);
     } catch (error) {
       requestOptions.signal?.throwIfAborted();
       const message = error instanceof Error ? error.message : String(error);

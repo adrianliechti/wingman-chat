@@ -158,6 +158,7 @@ function withChatFallback(model: Model): Model {
   const baseline = model.effort ?? model.defaultEffort ?? defaultEffort(model.id);
   return {
     ...model,
+    supportsVision: modelSupportsVision(model),
     supportedEfforts: supported,
     defaultEffort: baseline && (!supported || supported.includes(baseline)) ? baseline : undefined,
     maxOutputTokens: model.maxOutputTokens ?? modelMaxOutputTokens(model.id),
@@ -311,18 +312,42 @@ export function modelType(id: string): ModelType {
   return MODEL_TYPE_CUES.find(([, pattern]) => pattern.test(normalized))?.[0] ?? "completer";
 }
 
+// Image input for known chat families when /models only returns IDs.
+// Explicit metadata wins; unrecognized aliases need supportsVision in config.
+// Sources and the limits of these fallbacks are documented in model-catalog.md.
+const VISION_MODEL_CUES = [
+  /\bgpt-?(?:4o|4\.1|4\.5|4-turbo|4-vision)(?=$|[-/:])/,
+  /\bgpt-?5(?:\.[1-6])?(?=$|[-/:])/,
+  /\bgpt-?6(?:-(?:astra|sol|luna)|\.1-(?:sol|terra))(?=$|[-/:])/,
+  /\bo(?:1|3|4-mini)(?=$|[/:]|-\d{4})/,
+  /\bclaude-(?:3(?:\.[57])?-(?:haiku|sonnet|opus)|opus-4(?:\.[015678])?|sonnet-4(?:\.[056])?|haiku-4\.5|opus-5(?:\.5)?|sonnet-5(?:\.5)?|haiku-5\.5|(?:fable|mythos)-5(?:\.1)?|mythos-preview)(?=$|[-/:])/,
+  /\bgemini-?4-argon(?=$|[-/:])/,
+  /\bgemini-?(?:1\.5|2\.[05]|3(?:\.[15678])?)-(?:pro|flash)(?=$|[-/:])/,
+];
+
+/** Whether a chat model can receive image input, independently of image generation. */
+export function modelSupportsVision(model: Pick<Model, "id" | "type" | "supportsVision"> | undefined | null): boolean {
+  if (!model || (model.type ?? modelType(model.id)) !== "completer") return false;
+  if (typeof model.supportsVision === "boolean") return model.supportsVision;
+  const id = normalizedModelId(model.id);
+  if (/\bgpt-?4o.*(?:audio|search)|\bgpt-?4-turbo-preview\b/.test(id)) return false;
+  return VISION_MODEL_CUES.some((pattern) => pattern.test(id));
+}
+
 /** Optional gateway extensions to the standard /models record. */
 export function modelFromAPI(model: {
   id: string;
   type?: unknown;
   name?: unknown;
   description?: unknown;
+  supports_vision?: unknown;
   max_output_tokens?: unknown;
 }): Model {
   return {
     id: model.id,
     type: isModelType(model.type) ? model.type : modelType(model.id),
     name: typeof model.name === "string" && model.name.trim() ? model.name : modelName(model.id),
+    ...(typeof model.supports_vision === "boolean" && { supportsVision: model.supports_vision }),
     ...(typeof model.description === "string" && { description: model.description }),
     ...(typeof model.max_output_tokens === "number" &&
       Number.isSafeInteger(model.max_output_tokens) &&

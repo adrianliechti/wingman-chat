@@ -12,10 +12,14 @@ const config = vi.hoisted(() => ({
   client: { generateImage: vi.fn(async (..._args: unknown[]) => new Blob(["image"], { type: "image/png" })) },
   renderer: { model: "gpt-image-2" } as { model?: string; elicitation?: boolean },
   models: [] as Model[],
+  catalog: [] as Model[],
 }));
 vi.mock("@/shared/config", () => ({ getConfig: () => config }));
 // Stands in for the live catalog, which already applies config.models overrides.
-vi.mock("@/shared/hooks/useModelCatalog", () => ({ useModelCatalog: () => config.models }));
+vi.mock("@/shared/hooks/useModelCatalog", async () => {
+  const { configureModels } = await import("@/shared/lib/models");
+  return { useModelCatalog: () => configureModels(config.catalog, config.models) };
+});
 vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({ useArtifacts: () => ({ fs: null }) }));
 vi.mock("@/shared/lib/utils", async (original) => ({
   ...(await original<typeof import("@/shared/lib/utils")>()),
@@ -25,6 +29,7 @@ vi.mock("@/shared/lib/utils", async (original) => ({
 beforeEach(() => {
   config.renderer = { model: "gpt-image-2" };
   config.models = [];
+  config.catalog = [{ id: "gpt-image-2", name: "Image", type: "renderer" }];
   config.client.generateImage.mockReset().mockResolvedValue(new Blob(["image"], { type: "image/png" }));
 });
 
@@ -100,7 +105,7 @@ it("sends a configured supported quality instead of defaulting to unsupported lo
 
 it("falls back to the first catalog renderer when none is configured", async () => {
   config.renderer = {};
-  config.models = [
+  config.catalog = [
     { id: "chat", name: "Chat", type: "completer" },
     { id: "flux", name: "Flux", type: "renderer", supportedQualities: [] },
   ];

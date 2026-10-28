@@ -1,3 +1,4 @@
+import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { ArtifactBridge, resolveCapabilities } from "@/features/artifacts/lib/artifactBridge";
@@ -31,18 +32,12 @@ const EXCLUDED_PROVIDERS = new Set(["artifacts", "memory", "skills"]);
 
 const NO_TOOLS: Tool[] = [];
 
-export function HtmlEditor({
-  path,
-  content,
-  viewMode = "preview",
-  onSelectionRoot,
-  editing,
-  onAsk,
-}: HtmlEditorProps) {
+export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoot, editing, onAsk }: HtmlEditorProps) {
   const { fs } = useArtifacts();
   const draft = useTextDraft(content, editing);
   const toolsContext = useContext(ToolsContext);
   const config = getConfig();
+  const models = useModelCatalog();
   const bridgeEnabled = config.artifacts?.bridge !== false && !!fs;
 
   const tools = useMemo(() => {
@@ -61,7 +56,10 @@ export function HtmlEditor({
   });
 
   const hasTools = tools.length > 0;
-  const capabilities = useMemo(() => resolveCapabilities(config, { tools: hasTools }), [config, hasTools]);
+  const capabilities = useMemo(
+    () => resolveCapabilities(config, { tools: hasTools, models }),
+    [config, hasTools, models],
+  );
   const sdk = useMemo(
     () => (bridgeEnabled ? { source: sdkSource, capabilities } : undefined),
     [bridgeEnabled, capabilities],

@@ -1,3 +1,4 @@
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import { Shapes } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ARTIFACT_VALIDATORS } from "@/features/artifacts/lib/artifactValidators";
@@ -71,8 +72,9 @@ function useChangedSinceObserved(fs: FileSystemManager | null, manager: Artifact
   return changed.fs === fs ? changed.paths : [];
 }
 
-export function useArtifactsProvider(): ToolProvider | null {
-  const { fs, activeFile, isAvailable, readWriteManager } = useArtifacts();
+export function useArtifactsProvider(): ToolProvider {
+  const { vision, renderer, tts, stt } = useModelCapabilities();
+  const { fs, activeFile, readWriteManager } = useArtifacts();
   const changedPaths = useChangedSinceObserved(fs, readWriteManager);
   const entries = useArtifactEntries(fs);
   const duckdbEnabled = getConfig().artifacts?.bridge !== false && getConfig().artifacts?.duckdb !== false;
@@ -127,11 +129,7 @@ export function useArtifactsProvider(): ToolProvider | null {
     return [...fileTools, ...executionTools];
   }, [readWriteManager, fs]);
 
-  const provider = useMemo<ToolProvider | null>(() => {
-    if (!isAvailable) {
-      return null;
-    }
-
+  const provider = useMemo<ToolProvider>(() => {
     return {
       id: "artifacts",
       name: "Artifacts",
@@ -148,15 +146,14 @@ export function useArtifactsProvider(): ToolProvider | null {
         // Document libraries and local PDF rasterization need no backing service.
         documentsInstructionsText,
         llmInstructionsText,
-        // Only advertise the `ocr`, `vision`, `render`, `synthesize`,
-        // `transcribe`, and `translate` helpers when their backing services
-        // are configured.
-        ...(getConfig().extractor ? [ocrInstructionsText] : []),
-        ...(getConfig().vision ? [visionInstructionsText] : []),
-        ...(getConfig().renderer ? [renderInstructionsText] : []),
-        ...(getConfig().tts ? [synthesizeInstructionsText] : []),
-        ...(getConfig().stt ? [transcribeInstructionsText] : []),
-        ...(getConfig().translator ? [translateInstructionsText] : []),
+        // Model-backed helpers follow the live catalog. Extraction and
+        // translation use the gateway defaults independently of page visibility.
+        ocrInstructionsText,
+        ...(vision ? [visionInstructionsText] : []),
+        ...(renderer ? [renderInstructionsText] : []),
+        ...(tts ? [synthesizeInstructionsText] : []),
+        ...(stt ? [transcribeInstructionsText] : []),
+        translateInstructionsText,
       ].join("\n\n"),
       runtimeContext: [
         "## Artifact editor state",
@@ -179,7 +176,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       ].join("\n"),
       tools: artifactsTools(),
     };
-  }, [isAvailable, activeFile, artifactsTools, duckdbEnabled, queryable, changedPaths]);
+  }, [activeFile, artifactsTools, duckdbEnabled, queryable, changedPaths, vision, renderer, tts, stt]);
 
   return provider;
 }

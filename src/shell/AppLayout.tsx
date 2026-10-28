@@ -1,7 +1,8 @@
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import { Transition } from "@headlessui/react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { ChevronDown, Coffee, Image, Languages, MessageCircle, PanelLeftOpen } from "lucide-react";
-import { ViewTransition, useCallback, useEffect, useRef, useState } from "react";
+import { ViewTransition, useEffect, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useProjects } from "@/features/projects/context/ProjectsContext";
@@ -35,6 +36,7 @@ function getPageFromPath(pathname: string): Page {
 
 export function AppLayout() {
   const config = getConfig();
+  const { renderer: rendererAvailable } = useModelCapabilities();
   const currentPage = useRouterState({ select: (s) => getPageFromPath(s.location.pathname) });
   const {
     showSidebar,
@@ -82,11 +84,11 @@ export function AppLayout() {
   const [settingsAdvanced, setSettingsAdvanced] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
 
-  const openSettings = useCallback(({ advanced, section }: { advanced: boolean; section?: string }) => {
+  const openSettings = ({ advanced, section }: { advanced: boolean; section?: string }) => {
     setSettingsInitialSection(section);
     setSettingsAdvanced(advanced);
     setSettingsOpen(true);
-  }, []);
+  };
 
   // React to breakpoint changes; the active tab's highlight follows its own
   // layout and React coordinates the shared-element navigation animation.
@@ -121,12 +123,11 @@ export function AppLayout() {
     { key: "canvas" as const, label: "Canvas", icon: <Image size={20} />, to: "/canvas" },
   ].filter((page) => {
     if (page.key === "chat") return true;
-    if (page.key === "translate") return !!config.translator;
-    if (page.key === "canvas") return !!config.renderer;
+    if (page.key === "translate") return config.translatorEnabled;
+    if (page.key === "canvas") return config.canvasEnabled && rendererAvailable;
     return true;
   });
-  // `config.navigation: false` hides the tab bar entirely — only Chat is shown.
-  const showNavigation = config.navigation && pages.length > 1;
+  const showNavigation = pages.length > 1;
 
   // On desktop the sidebar pushes content aside; when a panel is open it becomes
   // an overlay instead, and on mobile it's always a full-width overlay.

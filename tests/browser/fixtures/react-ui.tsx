@@ -109,6 +109,7 @@ if (parameters.has("panels")) {
   const model = {
     id: "fixture",
     name: "Fixture",
+    supportsVision: true,
     ...(parameters.has("research") ? { tools: { enabled: ["internet"], disabled: [] } } : {}),
   };
   if (parameters.has("research")) {
@@ -153,7 +154,13 @@ if (parameters.has("panels")) {
       );
     };
   }
-  config.client.listModels = async () => [model];
+  config.client.listModels = async () => [
+    model,
+    ...(parameters.has("renderer-model") ? [{ id: "gpt-image-2", name: "Image", type: "renderer" as const }] : []),
+    ...(parameters.has("vision-models")
+      ? [{ id: "text-only", name: "Text only", type: "completer" as const, supportsVision: false }]
+      : []),
+  ];
   config.client.generateTitle = async () => "Fixture";
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
   const provider = testClient(
@@ -236,7 +243,13 @@ if (parameters.has("panels")) {
   history.replaceState(
     null,
     "",
-    parameters.has("seed") ? "/chat/history-119" : parameters.has("chat") ? `/chat/${parameters.get("chat")}` : "/chat",
+    parameters.has("canvas")
+      ? "/canvas"
+      : parameters.has("seed")
+        ? "/chat/history-119"
+        : parameters.has("chat")
+          ? `/chat/${parameters.get("chat")}`
+          : "/chat",
   );
   const { default: App } = await import("../../../src/App");
   root.render(

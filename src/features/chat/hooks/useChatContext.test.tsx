@@ -15,6 +15,9 @@ const state = vi.hoisted(() => ({
   renderer: undefined as { model: string } | undefined,
   agent: null as { model: string } | null,
 }));
+vi.mock("@/shared/hooks/useModelCatalog", () => ({
+  useModelCatalog: () => (state.renderer ? [{ id: state.renderer.model, name: "Image", type: "renderer" }] : []),
+}));
 vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ currentAgent: state.agent }) }));
 vi.mock("@/features/settings/hooks/useProfile", () => ({
   useProfile: () => ({ generateInstructions: () => "Profile instructions" }),

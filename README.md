@@ -159,9 +159,9 @@ or a **local** directory.
 ### Platform & UX
 
 - **Themes** (light / dark) with configurable backgrounds, and a PWA-capable install.
-- **Memory** for retaining context across conversations (when enabled).
+- **Memory** for retaining context across conversations, enabled per agent.
 - **OpenTelemetry** traces, metrics, and logs for observability.
-- **Feature flags** — every capability above can be turned on or off per deployment.
+- **Configuration** — opt-in Translate and Canvas pages, model defaults, and per-model tool policies.
 
 ## Architecture
 
@@ -377,19 +377,56 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
   information only. Supports both Agent Plugin archives (`skills/{name}/SKILL.md`) and standalone
   skill-folder archives (`SKILL.md` at the archive root).
 
-**Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
+**Pages and application settings**
 
-- `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
-- `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
-- `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED` (`TELEMETRY_NAME` — the OpenTelemetry `service.name`, default `wingman-chat`)
+- `TRANSLATOR_ENABLED=true` shows Translate; `CANVAS_ENABLED=true` shows Canvas when a renderer is available. Both pages are opt-in. The tab bar is hidden when only Chat is visible. For browser JSON, use `translatorEnabled` and `canvasEnabled`. These flags also guard direct page URLs and do not disable chat tools.
+- `TELEMETRY_ENABLED` (`TELEMETRY_NAME` — the OpenTelemetry `service.name`, default `wingman-chat`)
 - `CHAT_RETENTION_DAYS`, `CHAT_INSTRUCTIONS`, `CHAT_SUMMARIZER`, `CHAT_OPTIMIZER`
 - `CHAT_MODEL` (`CHAT_EFFORT`) — the model every new chat starts on; the reset next to the model picker returns to it. `chat.yaml` also accepts `verbosity`
-- `CHAT_COMPACTION_ENABLED` (`CHAT_COMPACTION_THRESHOLD` — deployment-wide ceiling on the estimated-token budget before older turns are summarized; per-model/family values apply below it)
+- `CHAT_COMPACTION_ENABLED` (`CHAT_COMPACTION_THRESHOLD` — zero disables compaction; positive values set a deployment-wide ceiling on the estimated-token budget before older turns are summarized; per-model/family values apply below it)
+
+**Images, speech, and voice**
+
+The model catalog determines availability: `renderer` enables image generation,
+`synthesizer` enables read-aloud, `transcriber` enables file/dictation transcription,
+and conversational `realtime` enables voice chat. Transcription-only realtime models
+are excluded from voice conversation. Controls and artifact helpers follow catalog
+refreshes; failed refreshes retain the last successful inventory.
+
+`RENDERER_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`, `VOICE_ENABLED`, and `VISION_ENABLED`
+are obsolete and ignored, including when set to `false`. There are no global enable
+switches for these model-backed tools. Expose the desired models through the backend inventory.
+Artifacts, repository files, and document extraction are always available; memory is
+controlled per agent. `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`, and
+`EXTRACTOR_ENABLED` are also ignored. The old `navigation` setting is replaced by the
+two opt-in page flags above.
+
+Optional defaults remain: `RENDERER_MODEL`, `TTS_MODEL`, `STT_MODEL`, `VOICE_MODEL`,
+and `VOICE_TRANSCRIBER`, or the corresponding `model`/`transcriber` fields in the
+feature YAML files or browser JSON. A configured model must appear in the inventory
+with the correct type; an unavailable default is not silently replaced. Otherwise,
+the first matching model is used. For opaque aliases, set `type` in `models.yaml`.
+Realtime transcription uses `voice.transcriber`, independently of file STT.
+`tts.voices` and `stt.format` customize speakers and video-audio extraction.
+`renderer.disclaimer` and `renderer.elicitation` (also `RENDERER_DISCLAIMER` and
+`RENDERER_ELICITATION`) retain the Canvas notice and chat image confirmation.
+
+Image input follows the selected chat model's `supportsVision` capability, independently
+of image generation. Configuration overrides backend `supports_vision` metadata and
+known-model fallbacks, including explicit `false`. Unknown aliases need metadata.
+`vision.model` optionally selects the interpreter helper's model; otherwise it prefers
+the capable originating chat model, then the first capable model. `vision.files` and
+`vision.maxFileSize` customize image intake.
+
+`EXTRACTOR_MODEL` / `extractor.model` and `REPOSITORY_EXTRACTOR` /
+`repository.extractor` have been removed: extraction uses the backend's default
+extractor. `extractor.files` and `extractor.maxFileSize` still customize supported
+formats and extraction limits. `REPOSITORY_EMBEDDER` remains supported.
 
 YAML files loaded from the working directory (when present) configure models, tools, drives,
 backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`, `links.yaml`,
-`backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
-`extractor.yaml`, `renderer.yaml`, `repository.yaml`.
+`backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `tts.yaml`, `stt.yaml`, `voice.yaml`,
+`vision.yaml`, `text.yaml`, `extractor.yaml`, `renderer.yaml`, `repository.yaml`, `artifacts.yaml`.
 
 In `drives.yaml`, the OBO `auth` fields (`issuer`, `client_id`, `client_secret`, and
 `scope`) support `$VAR` and `${VAR}` references to the Go server's environment:

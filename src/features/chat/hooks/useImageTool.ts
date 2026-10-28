@@ -8,7 +8,7 @@ import { getConfig } from "@/shared/config";
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { withRendererFallback } from "@/shared/lib/models";
-import { pickModel } from "@/shared/lib/modelSelection";
+import { getModelCapabilities, pickModel } from "@/shared/lib/modelSelection";
 import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
 import { readAsDataURL } from "@/shared/lib/utils";
 import { artifactDelta } from "@/shared/types/artifact";
@@ -234,16 +234,15 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
  * The `create_image` tool — generate/edit an image via the configured renderer,
  * saving the result to the artifacts workspace and returning it inline.
  *
- * Available by default in chat when an image renderer is configured.
+ * Available when the catalog exposes an allowed image renderer.
  */
 export function useImageTool(): Tool | null {
   const config = getConfig();
   const { fs } = useArtifacts();
 
-  const isAvailable = !!config.renderer;
-
   const client = config.client;
   const catalog = useModelCatalog();
+  const { renderer: isAvailable } = getModelCapabilities(catalog, config);
 
   const elicitation = config.renderer?.elicitation;
   const rendererModel = config.renderer?.model;

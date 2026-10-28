@@ -51,18 +51,21 @@ request. Extraction releases its decoder, conversion and output on success,
 failure and cancellation. Video audio is resampled to mono 16 kHz; unavailable
 compressed encoders fall back to WAV.
 
-`stt.model` selects file/dictation STT; `tts.model` selects synthesis. The UI and
-interpreter helpers both use these settings, or the backend default when absent.
-They no longer guess a default from the order of `/models`. The speech client
-validates empty audio and malformed STT responses and preserves cancellation.
+The shared catalogue enables file/dictation STT when it contains a `transcriber`,
+synthesis when it contains a `synthesizer`, and voice conversation when it contains
+a conversational `realtime` model. Transcription-only realtime models enable neither
+file STT nor conversation. Controls follow refreshes and preserve the last successful
+inventory during an outage. The old speech enable flags are ignored.
 
-Realtime uses **only** `voice.transcriber`, with the hook's realtime-compatible
-default when absent. File STT and realtime transcribers are different API
-contracts. For example, the local backend smoke test accepted
-`gpt-live-transcribe` in realtime configuration but rejected it at
-`/v1/audio/transcriptions`; `gpt-transcribe` successfully transcribed the
-synthetic WAV there. File STT needs a backend default that supports that upload endpoint, or an
-explicit `stt.model` override. Portable client defaults do not infer or substitute a different model.
+`stt.model`, `tts.model`, and `voice.model` optionally choose an available model of
+the correct type; otherwise the first matching catalogue model is selected. An
+unavailable configured default does not silently switch to another model. Missing
+models hide controls and prevent helper dispatch. The speech client validates empty
+audio and malformed STT responses and preserves cancellation.
+
+Realtime uses **only** `voice.transcriber`, with its realtime-compatible default when
+absent. File STT and realtime transcribers have different API contracts. File models
+are never substituted into realtime transcription configuration.
 
 ## Read-aloud
 

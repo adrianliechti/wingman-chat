@@ -1,17 +1,27 @@
+import type { Model } from "@/shared/types/chat";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { assistantMessage, text } from "@/shared/lib/messages";
 import { testClient } from "@/shared/lib/test-support/ai";
 import { runLlm, setModel } from "./llmCommand";
 import { runVision } from "./visionCommand";
 
-const { complete, vision } = vi.hoisted(() => ({
+const { complete, vision, listModels } = vi.hoisted(() => ({
   complete: vi.fn<Parameters<typeof testClient>[0]>(),
-  vision: { files: [], model: undefined as string | undefined },
+  listModels: vi.fn<() => Promise<Model[]>>(),
+  vision: { files: [], model: undefined as string | undefined, maxFileSize: undefined as number | undefined },
 }));
-vi.mock("@/shared/config", () => ({ getConfig: () => ({ client: testClient(complete), vision }) }));
+vi.mock("@/shared/config", () => ({
+  getConfig: () => ({ client: Object.assign(testClient(complete), { listModels }), models: [], vision }),
+}));
 beforeEach(() => {
   complete.mockReset().mockResolvedValue(assistantMessage("Answer"));
+  listModels
+    .mockReset()
+    .mockResolvedValue(
+      ["ui-model", "run-model", "vision-specialist"].map((id) => ({ id, name: id, supportsVision: true })),
+    );
   vision.model = undefined;
+  vision.maxFileSize = undefined;
   setModel("ui-model");
 });
 
@@ -80,6 +90,12 @@ describe("interpreter model calls", () => {
     vision.model = "vision-specialist";
     await runVision(new Uint8Array([1]), "/image.png", "Describe", { context: { model: "parent" } });
     expect(complete.mock.calls[0][0].model).toBe("vision-specialist");
+  });
+
+  it("enforces a zero image size limit before calling a model", async () => {
+    vision.maxFileSize = 0;
+    await expect(runVision(new Uint8Array([1]), "/image.png")).rejects.toThrow("configured size limit");
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it.each(["llm", "vision"])("honors parent cancellation for %s", async (helper) => {

@@ -1,3 +1,4 @@
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useChatActions, useChatList, useChatModel } from "@/features/chat/hooks/useChat";
@@ -33,7 +34,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const [audioLevel, setAudioLevel] = useState(0);
   const lastLevelUpdateRef = useRef(0);
   const config = getConfig();
-  const isAvailable = !!config.voice;
+  const { voice: isAvailable } = useModelCapabilities();
   const { addMessage, ensureChat, setVoiceToolCall, requestElicitation } = useChatActions();
   const { models, model, setModel } = useChatModel();
   const { chatId } = useChatList();
@@ -208,7 +209,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const startVoice = useCallback(async () => {
     // Guard against re-entrancy from auto-start, Start-audio button, and mic-switch effect.
-    if (sessionRef.current) return;
+    if (sessionRef.current || !isAvailable) return;
     const session = { chatId: chatId ?? null, inputDeviceId, outputDeviceId };
     sessionRef.current = session;
     const isCurrent = () => sessionRef.current === session;
@@ -223,6 +224,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       session.chatId = sessionChat.id;
       voiceChatIdRef.current = sessionChat.id;
       const realtimeModel = await resolveModel(voiceModel, "realtime");
+      if (!realtimeModel) throw new Error("No realtime voice model available");
       if (!isCurrent()) return;
       const tools = chatTools();
       const instructions = chatInstructions();
@@ -266,6 +268,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       );
     }
   }, [
+    isAvailable,
     chatId,
     stopVoice,
     ensureChat,
@@ -285,7 +288,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   useEffect(() => {
     const session = sessionRef.current;
     if (!session) return;
-    if (!isRealtimeSelected || (session.chatId !== null && chatId !== session.chatId)) {
+    if (!isAvailable || !isRealtimeSelected || (session.chatId !== null && chatId !== session.chatId)) {
       void stopVoice();
       return;
     }
@@ -293,12 +296,23 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       void stopVoice();
       void startVoice();
     }
-  }, [isRealtimeSelected, chatId, inputDeviceId, outputDeviceId, isListening, isConnecting, stopVoice, startVoice]);
+  }, [
+    isAvailable,
+    isRealtimeSelected,
+    chatId,
+    inputDeviceId,
+    outputDeviceId,
+    isListening,
+    isConnecting,
+    stopVoice,
+    startVoice,
+  ]);
 
   // A persisted grant only exposes device labels after a probe stream this
   // session, so refresh them when the user switches into live audio mode.
   useEffect(() => {
     if (
+      isAvailable &&
       isRealtimeSelected &&
       micPermission === "granted" &&
       devicesEnumerated &&
@@ -308,6 +322,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       void requestPermission();
     }
   }, [
+    isAvailable,
     isRealtimeSelected,
     micPermission,
     devicesEnumerated,

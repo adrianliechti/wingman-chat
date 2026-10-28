@@ -75,11 +75,7 @@ function ChatProviderBody({ children }: ChatProviderProps) {
     if (loadedChatId && projectsLoaded)
       selectProject(projects.some((p) => p.id === loadedProjectId) ? loadedProjectId! : null);
   }, [loadedChatId, loadedProjectId, projects, projectsLoaded, selectProject]);
-  const {
-    isAvailable: artifactsEnabled,
-    setFileSystem: setArtifactsFileSystem,
-    setEditRequestHandler,
-  } = useArtifacts();
+  const { setFileSystem: setArtifactsFileSystem, setEditRequestHandler } = useArtifacts();
   const { closeApp } = useApp();
   const { currentAgent, agents, setCurrentAgent, isLoaded: agentsLoaded = true } = useAgents();
   const agentOwner = useRef<{ id: string; previous: string | null; restoring?: string | null } | null>(null);
@@ -180,9 +176,9 @@ function ChatProviderBody({ children }: ChatProviderProps) {
   const [eagerFs, setEagerFs] = useState<FileSystemManager | null>(null);
   const shownChatId = chat?.id;
   const fs = useMemo(() => {
-    if (!artifactsEnabled || !shownChatId) return null;
+    if (!shownChatId) return null;
     return eagerFs?.chatId === shownChatId ? eagerFs : new FileSystemManager(shownChatId);
-  }, [artifactsEnabled, shownChatId, eagerFs]);
+  }, [shownChatId, eagerFs]);
   // Synchronous handle for async callers that can't wait for a re-render.
   const fsRef = useRef<FileSystemManager | null>(null);
 
@@ -312,7 +308,7 @@ function ChatProviderBody({ children }: ChatProviderProps) {
       setEagerFs(fsForChat);
       // Uploads can finish before React renders the newly created chat.
       // Bind eagerly so selecting their result uses this same workspace.
-      if (artifactsEnabled) setArtifactsFileSystem(fsForChat);
+      setArtifactsFileSystem(fsForChat);
     }
 
     return { id: chatItem.id, chat: chatItem, fs: fsForChat };
@@ -323,7 +319,6 @@ function ChatProviderBody({ children }: ChatProviderProps) {
     draftId,
     updateChat,
     loadChat,
-    artifactsEnabled,
     setArtifactsFileSystem,
     projectsLoaded,
     project,
@@ -346,7 +341,6 @@ function ChatProviderBody({ children }: ChatProviderProps) {
     chatId,
     chatIdRef,
     fsRef,
-    artifactsEnabled,
     getChat,
     loadChat,
     updateChat,

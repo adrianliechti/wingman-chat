@@ -27,7 +27,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   const { updateChat, ensureChat } = useChatActions();
   const { openChat, newChat } = useChatNavigate();
   const drafts = useComposerDraftStore();
-  const { openFile, setShowArtifactsDrawer, isAvailable } = useArtifacts();
+  const { openFile, setShowArtifactsDrawer } = useArtifacts();
   const [name, setName] = useState(project?.name ?? "");
   const [description, setDescription] = useState(project?.description ?? "");
   const [instructions, setInstructions] = useState(project?.instructions ?? "");
@@ -322,30 +322,28 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
                       (file) =>
                         matches(file.name) && (
                           <FileRow key={file.id} name={file.name} contentType={file.contentType} size={file.size}>
-                            {isAvailable && (
-                              <RowAction
-                                label={`Open copy of ${file.name}`}
-                                title="Open a copy in this chat"
-                                onClick={() =>
-                                  void run(async () => {
-                                    if (!project) return;
-                                    if (!(await confirmDiscard())) return;
-                                    const source = await readProjectFile(project, file.path);
-                                    if (!source) throw new Error("File not found");
-                                    const { chat, fs } = await ensureChat();
-                                    const copied = await fs.ingestFiles(
-                                      [{ ...source, contentType: source.contentType ?? "application/octet-stream" }],
-                                      { origin: { actor: "user", reason: "upload" } },
-                                    );
-                                    openChat(chat.id);
-                                    openFile(copied.pathMap[source.path] ?? source.path);
-                                    setShowArtifactsDrawer(true);
-                                  })
-                                }
-                              >
-                                <FolderOpen size={15} />
-                              </RowAction>
-                            )}
+                            <RowAction
+                              label={`Open copy of ${file.name}`}
+                              title="Open a copy in this chat"
+                              onClick={() =>
+                                void run(async () => {
+                                  if (!project) return;
+                                  if (!(await confirmDiscard())) return;
+                                  const source = await readProjectFile(project, file.path);
+                                  if (!source) throw new Error("File not found");
+                                  const { chat, fs } = await ensureChat();
+                                  const copied = await fs.ingestFiles(
+                                    [{ ...source, contentType: source.contentType ?? "application/octet-stream" }],
+                                    { origin: { actor: "user", reason: "upload" } },
+                                  );
+                                  openChat(chat.id);
+                                  openFile(copied.pathMap[source.path] ?? source.path);
+                                  setShowArtifactsDrawer(true);
+                                })
+                              }
+                            >
+                              <FolderOpen size={15} />
+                            </RowAction>
                             <RowAction
                               label={`Remove ${file.name}`}
                               danger

@@ -1,3 +1,4 @@
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioRecorder } from "@tanstack/ai-client";
 import { AudioResources } from "@/shared/lib/audioResources";
@@ -28,6 +29,7 @@ async function transcribe(session: Dictation): Promise<string> {
   if (!blob.size) throw new Error("No audio recorded");
   const config = getConfig();
   const model = await session.scope.wait(resolveModel(config.stt?.model, "transcriber"));
+  if (!model) throw new Error("No transcription model available");
   const text = await session.scope.wait(config.client.transcribe(model, blob, { signal: session.scope.signal }));
   session.scope.signal.throwIfAborted();
   return text;
@@ -37,8 +39,8 @@ export function useTranscription(ownerKey?: string, enabled = true): UseTranscri
   const [isTranscribing, setIsTranscribing] = useState(false);
   const current = useRef<Dictation | null>(null);
   const { inputDeviceId } = useAudioDevices();
-  const config = getConfig();
-  const canTranscribe = !!(enabled && config.stt && AudioRecorder.isSupported());
+  const { stt } = useModelCapabilities();
+  const canTranscribe = !!(enabled && stt && AudioRecorder.isSupported());
 
   const cancel = useCallback(() => {
     const session = current.current;
@@ -50,7 +52,7 @@ export function useTranscription(ownerKey?: string, enabled = true): UseTranscri
   useEffect(() => {
     setIsTranscribing(false);
     return cancel;
-  }, [cancel, ownerKey, inputDeviceId, enabled]);
+  }, [cancel, ownerKey, inputDeviceId, canTranscribe]);
 
   const startTranscription = useCallback(async () => {
     if (!canTranscribe) throw new Error("Transcription is not available");

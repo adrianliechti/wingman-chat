@@ -1,3 +1,4 @@
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import {
   AlertCircle,
   ChevronDown,
@@ -56,7 +57,7 @@ export function TranslatePage() {
   const rewriteController = useRef<AbortController | null>(null);
 
   const config = getConfig();
-  const enableTTS = !!config.tts;
+  const { tts: enableTTS } = useModelCapabilities();
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const [isFetchingDrive, setIsFetchingDrive] = useState(false);
 

@@ -87,7 +87,7 @@ describe("projects", () => {
     const fs = new FileSystemManager("chat-one");
     await fs.createFile("/data.bin", "existing", "text/plain");
     const before = await fs.getFile("/data.bin");
-    const copy = createProjectTools(project, true).find((tool) => tool.name === "project_copy")!;
+    const copy = createProjectTools(project).find((tool) => tool.name === "project_copy")!;
     const result = await copy.execute({ path: "/data.bin" }, { context: { chatId: "chat-one" }, emitCustomEvent() {} });
     const path = JSON.parse((result[0] as { content: string }).content).path;
     expect(path).not.toBe("/data.bin");
@@ -95,7 +95,6 @@ describe("projects", () => {
     expect((await fs.getFile(path))?.content).toBe("data:application/octet-stream;base64,AP8=");
     expect(projectInstructions(project)).toContain("Instructions for one");
     expect(projectInstructions(project)).not.toContain("Instructions for two");
-    expect(createProjectTools(project, false).some((tool) => tool.name === "project_copy")).toBe(false);
   });
 
   it("rejects invalid metadata and keeps duplicate uploads distinct", () => {

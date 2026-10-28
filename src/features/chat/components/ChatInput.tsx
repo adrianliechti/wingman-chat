@@ -19,7 +19,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { processUploadedFile } from "@/features/artifacts/lib/artifacts";
 import { useChatActions, useChatList, useChatModel, useChatRunState } from "@/features/chat/hooks/useChat";
-import { chatAcceptString, useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
+import { useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
 import { getConfiguredModel, getSavedModel } from "@/features/chat/hooks/useModels";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useSkillAutocomplete } from "@/features/chat/hooks/useSkillAutocomplete";
@@ -32,7 +32,7 @@ import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
-import { sameModelSettings } from "@/shared/lib/models";
+import { modelSupportsVision, sameModelSettings } from "@/shared/lib/models";
 import { modelPresetIndex, resolveModelPresets } from "@/shared/lib/modelPresets";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
@@ -83,6 +83,11 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
 
   const { sendMessage, stopStreaming, removeQueuedMessage } = useChatActions();
   const { models, model, setModel: onModelChange, effort, setEffort, verbosity, setVerbosity } = useChatModel();
+  const visionAvailable = modelSupportsVision(models.find((candidate) => candidate.id === model?.id));
+  const visionFiles = useMemo(
+    () => (visionAvailable ? (config.vision?.files ?? []) : []),
+    [visionAvailable, config.vision?.files],
+  );
   const presets = useMemo(() => resolveModelPresets(config.chat?.presets, models), [config.chat?.presets, models]);
   // The configured default for new chats; the reset next to the model returns to it.
   const configuredModel = useMemo(() => getConfiguredModel(models), [models]);
@@ -93,7 +98,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
     setCurrentAgent(null);
     setShowAgentDrawer(false);
   }, [setCurrentAgent, setShowAgentDrawer]);
-  const { isAvailable: artifactsAvailable, fs: artifactsFs } = useArtifacts();
+  const { fs: artifactsFs } = useArtifacts();
   const { profile } = useSettings();
   const {
     isAvailable: isScreenCaptureAvailable,
@@ -179,8 +184,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
     removeAttachment,
   } = useFileAttachments({
     draftKey,
-    visionFiles: config.vision?.files ?? [],
-    artifactsAvailable,
+    visionFiles,
     visionMaxFileSize: config.vision?.maxFileSize,
     artifactsMaxFileSize: config.artifacts?.maxFileSize,
     getTakenFileNames,
@@ -233,12 +237,6 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
   }, [profileName]);
 
   const placeholderText = !hasMessages ? randomPlaceholder : "Ask anything";
-
-  // Accept-attribute kept in sync with the intake rule in `useFileAttachments`.
-  const acceptString = useMemo(
-    () => chatAcceptString(config.vision?.files ?? [], artifactsAvailable),
-    [config.vision?.files, artifactsAvailable],
-  );
 
   const shouldShowPlaceholder = !content.trim();
 
@@ -340,6 +338,11 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
       )
         return;
 
+      if (!visionAvailable && attachments.some((part) => part.type === "image")) {
+        notify.error("This model doesn’t support image input", "Choose a model with vision or remove the images.");
+        return;
+      }
+
       if (hasPrompt) {
         const unavailable = completion.selections.find(
           (name) => !completion.skills.some((skill) => skill.name === name),
@@ -353,11 +356,11 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
           let finalAttachments: ContentPart[] = [...attachments];
           let screenCaptureFile: File | null = null;
 
-          if (isContinuousCaptureActive) {
+          if (visionAvailable && isContinuousCaptureActive) {
             const capture = await captureScreenAttachment(captureFrame);
             if (capture) {
               finalAttachments = [capture.content, ...finalAttachments];
-              if (artifactsAvailable) screenCaptureFile = capture.file;
+              screenCaptureFile = capture.file;
             }
           }
 
@@ -412,11 +415,11 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
     [
       content,
       attachments,
+      visionAvailable,
       pendingFiles,
       pendingImages,
       isContinuousCaptureActive,
       captureFrame,
-      artifactsAvailable,
       sendMessage,
       chatLoading,
       chatError,
@@ -448,11 +451,9 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
             f.mime && f.mime !== "application/octet-stream"
               ? f.mime
               : (inferContentTypeFromPath(f.name) ?? f.mime ?? "");
-          const maxBytes = (config.vision?.files ?? []).includes(effectiveType)
+          const maxBytes = visionFiles.includes(effectiveType)
             ? config.vision?.maxFileSize
-            : artifactsAvailable
-              ? config.artifacts?.maxFileSize
-              : undefined;
+            : config.artifacts?.maxFileSize;
           return downloadDriveFile(f, maxBytes ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES);
         }),
       )
@@ -465,14 +466,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
           }),
         );
     },
-    [
-      artifactsAvailable,
-      config.artifacts?.maxFileSize,
-      config.vision?.files,
-      config.vision?.maxFileSize,
-      handleFiles,
-      setExtractingAttachments,
-    ],
+    [config.artifacts?.maxFileSize, visionFiles, config.vision?.maxFileSize, handleFiles, setExtractingAttachments],
   );
 
   const handleContinuousCaptureToggle = useCallback(async () => {
@@ -603,14 +597,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
               : `border border-solid border-neutral-200/60 dark:border-neutral-700/60 bg-white/60 dark:bg-neutral-950/70 rounded-2xl md:rounded-2xl`
           } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
         >
-          <input
-            type="file"
-            multiple
-            accept={acceptString}
-            ref={fileInputRef}
-            className="hidden"
-            onChange={handleFileChange}
-          />
+          <input type="file" multiple accept="" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
 
           {isDragging && (
             <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-xl">
@@ -1204,7 +1191,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
           drive={activeDrive}
           onFilesSelected={handleDriveFiles}
           multiple
-          accept={acceptString}
+          accept=""
         />
       )}
     </>

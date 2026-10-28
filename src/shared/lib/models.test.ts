@@ -10,6 +10,8 @@ import {
   minimalEffort,
   modelName,
   modelType,
+  modelFromAPI,
+  modelSupportsVision,
   sameModelSettings,
   rendererCapabilities,
   shortModelName,
@@ -467,5 +469,54 @@ describe("sameModelSettings", () => {
     expect(sameModelSettings(luna, { ...luna, effort: "high" })).toBe(false);
     expect(sameModelSettings(luna, { ...luna, verbosity: "low" })).toBe(false);
     expect(sameModelSettings(luna, { ...luna, id: "sol" })).toBe(false);
+  });
+});
+
+describe("model image input", () => {
+  it.each([
+    ["gpt-6-astra", true],
+    ["gpt-6.1-sol", true],
+    ["gpt-6.1-terra", true],
+    ["claude-sonnet-5-5", true],
+    ["claude-haiku-5-5", true],
+    ["gemini-4-argon", true],
+    ["gpt-5.6-terra", true],
+    ["openai/gpt-4.1-mini", true],
+    ["gpt-4o", true],
+    ["gpt-4o-audio-preview", false],
+    ["gpt-4-turbo-preview", false],
+    ["gpt-3.5-turbo", false],
+    ["o3", true],
+    ["o3-mini", false],
+    ["o1-preview", false],
+    ["anthropic.claude-sonnet-4-6", true],
+    ["claude-3-7-sonnet", true],
+    ["claude-fable-5-1", true],
+    ["claude-2.1", false],
+    ["gemini-3.8-flash", true],
+    ["gemini-2.5-flash", true],
+    ["gpt-image-2", false],
+    ["gemini-3.1-flash-image", false],
+    ["gpt-4o-mini-tts", false],
+    ["gpt-7", false],
+    ["claude-opus-6", false],
+    ["team-chat", false],
+  ])("detects %s image input as %s without service configuration", (id, expected) => {
+    expect(modelSupportsVision({ id })).toBe(expected);
+  });
+
+  it("respects explicit API and config capabilities, including false and opaque aliases", () => {
+    const api = [
+      modelFromAPI({ id: "gpt-4.1", supports_vision: false }),
+      modelFromAPI({ id: "opaque", supports_vision: true }),
+    ];
+    expect(configureModels(api, []).map(modelSupportsVision)).toEqual([false, true]);
+    const configured = configureModels(api, [
+      { id: "gpt-4.1", name: "Chat", supportsVision: true },
+      { id: "opaque", name: "Text", supportsVision: false },
+    ]);
+    expect(configured.map(modelSupportsVision)).toEqual([true, false]);
+    expect(modelSupportsVision({ id: "opaque", type: "renderer", supportsVision: true })).toBe(false);
+    expect(modelSupportsVision(modelFromAPI({ id: "opaque", supports_vision: "true" }))).toBe(false);
   });
 });

@@ -71,7 +71,6 @@ interface RendererConfig {
 }
 
 interface ExtractorConfig {
-  model?: string;
   files: string[];
   /** Max file size in bytes sent to the extract endpoint; checked before upload. Optional. */
   maxFileSize?: number;
@@ -88,7 +87,6 @@ interface ArtifactsConfig {
 
 interface RepositoryConfig {
   embedder?: string;
-  extractor?: string;
 }
 
 export interface TranslatorProviderConfig {
@@ -204,8 +202,9 @@ interface TelemetryConfig {
 interface ConfigSchema {
   title: string;
   disclaimer: string;
-  /** Show the top-level navigation tabs. Set to false to show only Chat. Default true. */
-  navigation?: boolean;
+  /** Opt-in standalone pages; chat tools are independent of these flags. */
+  translatorEnabled?: boolean;
+  canvasEnabled?: boolean;
   bridge?: CompanionConfig;
   plugins?: PluginsConfig;
   links?: LinkConfig[];
@@ -230,8 +229,6 @@ interface ConfigSchema {
 
   renderer?: RendererConfig;
   extractor?: ExtractorConfig;
-
-  memory?: object;
 
   artifacts?: ArtifactsConfig;
   repository?: RepositoryConfig;
@@ -258,8 +255,8 @@ const DEFAULT_TELEMETRY_NAME = "wingman-chat";
 interface Config {
   title: string;
   disclaimer: string;
-  /** Whether to show the navigation tabs (false = Chat only, no tab bar). */
-  navigation: boolean;
+  translatorEnabled: boolean;
+  canvasEnabled: boolean;
   companion: CompanionConfig | null;
   plugins: PluginsConfig | null;
   links: LinkConfig[];
@@ -271,22 +268,20 @@ interface Config {
 
   drives: DriveConfig[];
 
-  tts: TTSConfig | null;
-  stt: STTConfig | null;
+  tts: TTSConfig;
+  stt: STTConfig;
 
-  voice: VoiceConfig | null;
-  vision: VisionConfig | null;
+  voice: VoiceConfig;
+  vision: VisionConfig;
 
   text: TextConfig | null;
-  extractor: ExtractorConfig | null;
+  extractor: ExtractorConfig;
 
-  renderer: RendererConfig | null;
-
-  memory: object | null;
+  renderer: RendererConfig;
 
   artifacts: ArtifactsConfig | null;
   repository: RepositoryConfig | null;
-  translator: TranslatorConfig | null;
+  translator: TranslatorConfig;
 
   chat: ChatConfig | null;
 
@@ -334,7 +329,8 @@ export const loadConfig = async (): Promise<Config | undefined> => {
     config = {
       title: cfg.title,
       disclaimer: cfg.disclaimer,
-      navigation: cfg.navigation !== false,
+      translatorEnabled: cfg.translatorEnabled === true,
+      canvasEnabled: cfg.canvasEnabled === true,
       companion,
       plugins: cfg.plugins ?? null,
       links: links
@@ -349,43 +345,26 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       drives: cfg.drives ?? [],
 
-      tts: cfg.tts ? { model: cfg.tts.model, voices: cfg.tts.voices ?? DEFAULT_TTS_VOICES } : null,
-      stt: cfg.stt ?? null,
+      tts: { ...cfg.tts, voices: cfg.tts?.voices ?? DEFAULT_TTS_VOICES },
+      stt: cfg.stt ?? {},
 
-      voice: cfg.voice ? { model: cfg.voice.model, transcriber: cfg.voice.transcriber } : null,
-      vision: cfg.vision
-        ? {
-            model: cfg.vision.model,
-            files: cfg.vision.files ?? DEFAULT_VISION_FILES,
-            maxFileSize: cfg.vision.maxFileSize,
-          }
-        : null,
+      voice: cfg.voice ?? {},
+      vision: { ...cfg.vision, files: cfg.vision?.files ?? DEFAULT_VISION_FILES },
 
       text: cfg.text ? { files: cfg.text.files } : null,
 
-      extractor: cfg.extractor
-        ? {
-            model: cfg.extractor.model,
-            files: cfg.extractor.files ?? [],
-            maxFileSize: cfg.extractor.maxFileSize,
-          }
-        : null,
+      extractor: { ...cfg.extractor, files: cfg.extractor?.files ?? [] },
 
-      renderer: cfg.renderer ?? null,
-      memory: cfg.memory ?? null,
+      renderer: cfg.renderer ?? {},
       repository: cfg.repository ?? null,
       artifacts: cfg.artifacts ?? null,
 
-      translator: cfg.translator
-        ? {
-            model: cfg.translator.model,
-            providers: (cfg.translator.providers ?? []).filter((provider) => provider.id),
-            files: cfg.translator.files ?? [],
-            languages: cfg.translator.languages ?? DEFAULT_TRANSLATOR_LANGUAGES,
-            maxFileSize: cfg.translator.maxFileSize,
-            maxTextLength: cfg.translator.maxTextLength,
-          }
-        : null,
+      translator: {
+        ...cfg.translator,
+        providers: (cfg.translator?.providers ?? []).filter((provider) => provider.id),
+        files: cfg.translator?.files ?? [],
+        languages: cfg.translator?.languages ?? DEFAULT_TRANSLATOR_LANGUAGES,
+      },
 
       chat: cfg.chat ?? null,
 

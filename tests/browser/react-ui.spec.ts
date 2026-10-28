@@ -25,10 +25,11 @@ async function open(page: Page, query = "") {
     route.fulfill({
       json: {
         models: [],
-        navigation: true,
+        translatorEnabled: true,
+        canvasEnabled: true,
         artifacts: {},
         translator: { model: "fixture", files: [], languages: ["English", "German"] },
-        renderer: { model: "fixture" },
+        renderer: { model: "gpt-image-2" },
       },
     }),
   );
@@ -256,7 +257,7 @@ test("Canvas loads optional image styles from the shared design reference", asyn
     const path = new URL(request.url()).pathname;
     if (path.startsWith("/skills/") && path.endsWith(".md")) loaded.push(path);
   });
-  await open(page);
+  await open(page, "?renderer-model");
   await page.getByRole("link", { name: "Canvas", exact: true }).click();
   await page.getByRole("button", { name: "Style", exact: true }).click();
   await page.getByRole("menuitem", { name: "Watercolor", exact: true }).click();
@@ -905,6 +906,11 @@ test("hi then long Markdown keeps the start readable; Latest follows until the r
   await expect.poll(gap).toBeLessThan(3);
   await page.setViewportSize({ width: 700, height: 550 });
   await expect.poll(gap).toBeLessThan(3);
+  // Let the viewport ResizeObserver finish its follow-position write before
+  // simulating a scrollbar move (which has no wheel or key event).
+  await scroll.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+  );
   // Scrollbar/accessibility scrolling also pauses, then reaching the end resumes.
   await scroll.evaluate((element) => {
     element.scrollTop -= 300;

@@ -45,6 +45,9 @@ func loadConfigFiles(cfg *Config) {
 
 	loadYAMLPtr("chat.yaml", &cfg.Chat)
 	loadYAMLPtr("translator.yaml", &cfg.Translator)
+	loadYAMLPtr("tts.yaml", &cfg.TTS)
+	loadYAMLPtr("stt.yaml", &cfg.STT)
+	loadYAMLPtr("voice.yaml", &cfg.Voice)
 	loadYAMLPtr("vision.yaml", &cfg.Vision)
 	loadYAMLPtr("text.yaml", &cfg.Text)
 	loadYAMLPtr("extractor.yaml", &cfg.Extractor)
@@ -92,45 +95,40 @@ func loadLinks(cfg *Config) {
 }
 
 func applyEnvOverrides(cfg *Config) {
-	withFeature("TTS_ENABLED", &cfg.TTS, func(t *TTS) {
-		envOverride("TTS_MODEL", &t.Model)
-	})
-
-	withFeature("STT_ENABLED", &cfg.STT, func(t *STT) {
-		envOverride("STT_MODEL", &t.Model)
-	})
-
-	withFeature("VOICE_ENABLED", &cfg.Voice, func(v *Voice) {
-		envOverride("VOICE_MODEL", &v.Model)
-		envOverride("VOICE_TRANSCRIBER", &v.Transcriber)
-	})
-
-	withFeature("VISION_ENABLED", &cfg.Vision, nil)
-
-	withFeature("RENDERER_ENABLED", &cfg.Renderer, func(r *Renderer) {
-		envOverride("RENDERER_MODEL", &r.Model)
-		envOverride("RENDERER_DISCLAIMER", &r.Disclaimer)
-		if envBool("RENDERER_ELICITATION") {
-			r.Elicitation = true
+	// Model availability comes from the inventory; these settings only select defaults.
+	if model := os.Getenv("TTS_MODEL"); model != "" {
+		cfg.TTS = ensurePtr(cfg.TTS)
+		cfg.TTS.Model = model
+	}
+	if model := os.Getenv("STT_MODEL"); model != "" {
+		cfg.STT = ensurePtr(cfg.STT)
+		cfg.STT.Model = model
+	}
+	if os.Getenv("VOICE_MODEL") != "" || os.Getenv("VOICE_TRANSCRIBER") != "" {
+		cfg.Voice = ensurePtr(cfg.Voice)
+		envOverride("VOICE_MODEL", &cfg.Voice.Model)
+		envOverride("VOICE_TRANSCRIBER", &cfg.Voice.Transcriber)
+	}
+	if os.Getenv("RENDERER_MODEL") != "" || os.Getenv("RENDERER_DISCLAIMER") != "" || os.Getenv("RENDERER_ELICITATION") != "" {
+		cfg.Renderer = ensurePtr(cfg.Renderer)
+		envOverride("RENDERER_MODEL", &cfg.Renderer.Model)
+		envOverride("RENDERER_DISCLAIMER", &cfg.Renderer.Disclaimer)
+		if enabled, err := strconv.ParseBool(os.Getenv("RENDERER_ELICITATION")); err == nil {
+			cfg.Renderer.Elicitation = enabled
 		}
-	})
+	}
 
-	withFeature("ARTIFACTS_ENABLED", &cfg.Artifacts, nil)
+	if model := os.Getenv("REPOSITORY_EMBEDDER"); model != "" {
+		cfg.Repository = ensurePtr(cfg.Repository)
+		cfg.Repository.Embedder = model
+	}
 
-	withFeature("REPOSITORY_ENABLED", &cfg.Repository, func(r *Repository) {
-		envOverride("REPOSITORY_EMBEDDER", &r.Embedder)
-		envOverride("REPOSITORY_EXTRACTOR", &r.Extractor)
-	})
-
-	withFeature("MEMORY_ENABLED", &cfg.Memory, nil)
-
-	withFeature("EXTRACTOR_ENABLED", &cfg.Extractor, func(e *Extractor) {
-		envOverride("EXTRACTOR_MODEL", &e.Model)
-	})
-
-	withFeature("TRANSLATOR_ENABLED", &cfg.Translator, func(t *Translator) {
-		envOverride("TRANSLATOR_MODEL", &t.Model)
-	})
+	if model := os.Getenv("TRANSLATOR_MODEL"); model != "" {
+		cfg.Translator = ensurePtr(cfg.Translator)
+		cfg.Translator.Model = model
+	}
+	cfg.TranslatorEnabled = envBool("TRANSLATOR_ENABLED")
+	cfg.CanvasEnabled = envBool("CANVAS_ENABLED")
 
 	if days := envPositiveInt("CHAT_RETENTION_DAYS", nil); days != nil {
 		cfg.Chat = ensurePtr(cfg.Chat)
@@ -167,13 +165,15 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Chat.Compaction = ensurePtr(cfg.Chat.Compaction)
 	}
 
-	if v := envPositiveInt("CHAT_COMPACTION_THRESHOLD", nil); v != nil {
+	if v := envNonNegativeInt("CHAT_COMPACTION_THRESHOLD"); v != nil {
 		cfg.Chat = ensurePtr(cfg.Chat)
 		cfg.Chat.Compaction = ensurePtr(cfg.Chat.Compaction)
-		cfg.Chat.Compaction.Threshold = *v
+		cfg.Chat.Compaction.Threshold = v
 	}
 
-	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)
+	if envBool("TELEMETRY_ENABLED") {
+		cfg.Telemetry = ensurePtr(cfg.Telemetry)
+	}
 
 	if cfg.Telemetry != nil {
 		envOverride("TELEMETRY_NAME", &cfg.Telemetry.Name)
@@ -219,6 +219,13 @@ func envOverride(key string, target *string) {
 	}
 }
 
+func envNonNegativeInt(key string) *int {
+	if n, err := strconv.Atoi(os.Getenv(key)); err == nil && n >= 0 {
+		return &n
+	}
+	return nil
+}
+
 func envPositiveInt(key string, fallback *int) *int {
 	if s := os.Getenv(key); s != "" {
 		if n, err := strconv.Atoi(s); err == nil && n > 0 {
@@ -227,20 +234,6 @@ func envPositiveInt(key string, fallback *int) *int {
 	}
 
 	return fallback
-}
-
-// withFeature enables a feature if the env var is "true", ensures the pointer
-// is non-nil, and calls configure with the guaranteed non-nil value.
-func withFeature[T any](key string, target **T, configure func(*T)) {
-	if !envBool(key) {
-		return
-	}
-
-	*target = ensurePtr(*target)
-
-	if configure != nil {
-		configure(*target)
-	}
 }
 
 func ensurePtr[T any](p *T) *T {

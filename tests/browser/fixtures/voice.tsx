@@ -1,3 +1,4 @@
+import { ArtifactReadWriteManager } from "../../../src/features/artifacts/lib/artifactFileTools";
 import { z } from "zod";
 import { extractAudioForTranscription } from "../../../src/features/tools/lib/extractAudio";
 import { StrictMode, useState } from "react";
@@ -122,7 +123,11 @@ const tools = {
 const profile = { generateInstructions: () => "Test instructions" } as NonNullable<
   React.ContextType<typeof ProfileContext>
 >;
-const artifacts = { isAvailable: false, fs: null, activeFile: null } as ArtifactsContextType;
+const artifacts = {
+  fs: null,
+  activeFile: null,
+  readWriteManager: new ArtifactReadWriteManager(),
+} as ArtifactsContextType;
 
 function Consumer({ chatId, realtime, showPlay }: { chatId: string; realtime: boolean; showPlay: boolean }) {
   const voice = useVoice();
@@ -131,6 +136,7 @@ function Consumer({ chatId, realtime, showPlay }: { chatId: string; realtime: bo
   window.voiceE2E = {
     ...window.voiceControls,
     state: () => ({
+      available: voice.isAvailable,
       listening: voice.isListening,
       connecting: voice.isConnecting,
       recording: dictation.isTranscribing,
@@ -284,6 +290,7 @@ declare global {
     };
     voiceE2E: Window["voiceControls"] & {
       state: () => {
+        available: boolean;
         listening: boolean;
         connecting: boolean;
         recording: boolean;

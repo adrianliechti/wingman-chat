@@ -56,11 +56,9 @@ export function useChatContext(
       let filteredProviders = providers.filter((p: ToolProvider) => getProviderState(p.id) === ProviderState.Connected);
       if (skills) filteredProviders = [...filteredProviders.filter((p) => p.id !== skills.id), skills];
 
-      // Add the artifacts provider whenever the feature is available (the
-      // provider is null otherwise). It may already be present if explicitly
-      // enabled via the agent tools toggle.
+      // Include workspace tools once; model tool policies are applied below.
       const artifactsAlreadyIncluded = filteredProviders.some((p: ToolProvider) => p.id === "artifacts");
-      if (!artifactsAlreadyIncluded && artifactsProvider) {
+      if (!artifactsAlreadyIncluded) {
         filteredProviders = [...filteredProviders, artifactsProvider];
       }
 
@@ -92,14 +90,14 @@ export function useChatContext(
           id: "project",
           name: project.name,
           instructions: projectInstructions(project),
-          tools: createProjectTools(project, !!artifactsProvider),
+          tools: createProjectTools(project),
         });
 
       return filteredProviders;
     };
 
     const memory = () =>
-      currentAgent?.memory && getConfig().memory && getFilteredProviders().some((p) => p.id === "memory")
+      currentAgent?.memory && getFilteredProviders().some((p) => p.id === "memory")
         ? getMemoryManager(currentAgent.id)
         : undefined;
     const chatMiddleware = (filteredProviders: ToolProvider[]) =>

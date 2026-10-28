@@ -9,7 +9,6 @@ import { mediaFromDataUrl, type MediaPart } from "@/shared/lib/messages";
 interface UseFileAttachmentsOptions {
   draftKey: string;
   visionFiles: string[];
-  artifactsAvailable: boolean;
   visionMaxFileSize?: number;
   artifactsMaxFileSize?: number;
   getTakenFileNames?: () => Promise<Set<string>>;
@@ -39,11 +38,6 @@ function dedupeFileName(name: string, used: Set<string>): string {
   return candidate;
 }
 
-/** Accept-attribute for the chat file picker, kept in sync with `handleFiles`' intake rule. */
-export function chatAcceptString(visionFiles: string[], artifactsAvailable: boolean): string {
-  return artifactsAvailable ? "" : visionFiles.join(",");
-}
-
 export interface UseFileAttachmentsReturn {
   attachments: ContentPart[];
   pendingFiles: File[];
@@ -60,7 +54,6 @@ export interface UseFileAttachmentsReturn {
 export function useFileAttachments({
   draftKey,
   visionFiles,
-  artifactsAvailable,
   visionMaxFileSize,
   artifactsMaxFileSize,
   getTakenFileNames,
@@ -120,8 +113,8 @@ export function useFileAttachments({
                 continue;
               }
               // Sent inline as vision (resized); the original is also kept as an artifact.
-              images.push({ file: effectiveFile, keepOriginal: artifactsAvailable && !overArtifactLimit });
-            } else if (artifactsAvailable) {
+              images.push({ file: effectiveFile, keepOriginal: !overArtifactLimit });
+            } else {
               if (artifactsMaxFileSize != null && effectiveFile.size > artifactsMaxFileSize) {
                 notify.error(
                   "File too large",
@@ -174,17 +167,7 @@ export function useFileAttachments({
       intake.current = work;
       return work;
     },
-    [
-      visionFiles,
-      artifactsAvailable,
-      visionMaxFileSize,
-      artifactsMaxFileSize,
-      getTakenFileNames,
-      store,
-      draftKey,
-      setPendingFiles,
-      update,
-    ],
+    [visionFiles, visionMaxFileSize, artifactsMaxFileSize, getTakenFileNames, store, draftKey, setPendingFiles, update],
   );
 
   const clearAttachments = useCallback(() => {

@@ -1,3 +1,4 @@
+import { resolveVisionModel } from "@/shared/lib/modelSelection";
 import { getConfig } from "@/shared/config";
 import { mediaFromDataUrl } from "@/shared/lib/messages";
 import { bytesToDataUrl } from "@/shared/lib/fileContent";
@@ -16,15 +17,9 @@ export async function runVision(
   prompt?: string,
   requestOptions: BridgeRequestOptions = {},
 ): Promise<string> {
+  requestOptions.signal?.throwIfAborted();
+  requestOptions.context?.invocationContext?.signal?.throwIfAborted();
   const config = getConfig();
-  if (!config.vision) {
-    throw new Error("vision: no vision service configured");
-  }
-  // Configured vision model, or whatever model the chat currently uses.
-  const model = config.vision.model || requestOptions.context?.model || getModel();
-  if (!model) {
-    throw new Error("vision: no model");
-  }
   if (bytes.length === 0) {
     throw new Error(`vision: file is empty: ${path}`);
   }
@@ -34,9 +29,17 @@ export async function runVision(
   if (!type?.startsWith("image/")) {
     throw new Error(`vision: not an image: ${name} — use a known image extension like .png or .jpg`);
   }
-  if (config.vision.files.length > 0 && !config.vision.files.includes(type)) {
-    throw new Error(`vision: unsupported image type ${type} — supported: ${config.vision.files.join(", ")}`);
+  const files = config.vision?.files ?? [];
+  if (files.length > 0 && !files.includes(type)) {
+    throw new Error(`vision: unsupported image type ${type} — supported: ${files.join(", ")}`);
   }
+  if (config.vision?.maxFileSize != null && bytes.length > config.vision.maxFileSize) {
+    throw new Error(`vision: image exceeds the configured size limit: ${path}`);
+  }
+  const model = await resolveVisionModel(config.vision?.model, requestOptions.context?.model || getModel());
+  requestOptions.signal?.throwIfAborted();
+  requestOptions.context?.invocationContext?.signal?.throwIfAborted();
+  if (!model) throw new Error("vision: no image-capable chat model available");
 
   const text = await completeIsolated(
     model,

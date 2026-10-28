@@ -1,11 +1,13 @@
 package config
 
 type Config struct {
-	Title      string     `json:"title,omitempty" yaml:"title,omitempty"`
-	Disclaimer string     `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
-	Companion  *Companion `json:"bridge,omitempty" yaml:"bridge,omitempty"`
-	Plugins    *Plugins   `json:"plugins,omitempty" yaml:"plugins,omitempty"`
-	Links      []Link     `json:"links,omitempty" yaml:"links,omitempty"`
+	TranslatorEnabled bool       `json:"translatorEnabled,omitempty"`
+	CanvasEnabled     bool       `json:"canvasEnabled,omitempty"`
+	Title             string     `json:"title,omitempty" yaml:"title,omitempty"`
+	Disclaimer        string     `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
+	Companion         *Companion `json:"bridge,omitempty" yaml:"bridge,omitempty"`
+	Plugins           *Plugins   `json:"plugins,omitempty" yaml:"plugins,omitempty"`
+	Links             []Link     `json:"links,omitempty" yaml:"links,omitempty"`
 	// Legacy account links, used when Links is absent.
 	Support *Link `json:"support,omitempty" yaml:"support,omitempty"`
 	Cost    *Link `json:"cost,omitempty" yaml:"cost,omitempty"`
@@ -28,8 +30,6 @@ type Config struct {
 
 	Artifacts  *Artifacts  `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 	Repository *Repository `json:"repository,omitempty" yaml:"repository,omitempty"`
-
-	Memory *Memory `json:"memory,omitempty" yaml:"memory,omitempty"`
 
 	Chat *Chat `json:"chat,omitempty" yaml:"chat,omitempty"`
 
@@ -74,29 +74,36 @@ type ModelTools struct {
 }
 
 type Model struct {
-	ID                string      `json:"id,omitempty" yaml:"id,omitempty"`
-	Name              string      `json:"name,omitempty" yaml:"name,omitempty"`
-	Replaces          []string    `json:"replaces,omitempty" yaml:"replaces,omitempty"`
-	Caption           string      `json:"caption,omitempty" yaml:"caption,omitempty"`
-	Description       string      `json:"description,omitempty" yaml:"description,omitempty"`
-	Instructions      string      `json:"instructions,omitempty" yaml:"instructions,omitempty"`
-	Effort            string      `json:"effort,omitempty" yaml:"effort,omitempty"`
-	SupportedEfforts  []string    `json:"supportedEfforts,omitempty" yaml:"supportedEfforts,omitempty"`
-	Summary           string      `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Verbosity         string      `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
-	MaxOutputTokens   *int        `json:"maxOutputTokens,omitempty" yaml:"maxOutputTokens,omitempty"`
-	OutputTokenBudget *int        `json:"outputTokenBudget,omitempty" yaml:"outputTokenBudget,omitempty"`
-	CompactThreshold  *int        `json:"compactThreshold,omitempty" yaml:"compactThreshold,omitempty"`
-	Tools             *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
+	ID                    string      `json:"id,omitempty" yaml:"id,omitempty"`
+	Type                  string      `json:"type,omitempty" yaml:"type,omitempty"`
+	Name                  string      `json:"name,omitempty" yaml:"name,omitempty"`
+	Replaces              []string    `json:"replaces,omitempty" yaml:"replaces,omitempty"`
+	Caption               string      `json:"caption,omitempty" yaml:"caption,omitempty"`
+	Description           string      `json:"description,omitempty" yaml:"description,omitempty"`
+	SupportsVision        *bool       `json:"supportsVision,omitempty" yaml:"supportsVision,omitempty"`
+	Instructions          string      `json:"instructions,omitempty" yaml:"instructions,omitempty"`
+	Effort                string      `json:"effort,omitempty" yaml:"effort,omitempty"`
+	SupportedEfforts      *[]string   `json:"supportedEfforts,omitempty" yaml:"supportedEfforts,omitempty"`
+	Summary               string      `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Verbosity             string      `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
+	MaxOutputTokens       *int        `json:"maxOutputTokens,omitempty" yaml:"maxOutputTokens,omitempty"`
+	OutputTokenBudget     *int        `json:"outputTokenBudget,omitempty" yaml:"outputTokenBudget,omitempty"`
+	CompactThreshold      *int        `json:"compactThreshold,omitempty" yaml:"compactThreshold,omitempty"`
+	SupportedQualities    *[]string   `json:"supportedQualities,omitempty" yaml:"supportedQualities,omitempty"`
+	SupportedAspectRatios *[]string   `json:"supportedAspectRatios,omitempty" yaml:"supportedAspectRatios,omitempty"`
+	SupportedResolutions  *[]string   `json:"supportedResolutions,omitempty" yaml:"supportedResolutions,omitempty"`
+	SupportedBackgrounds  *[]string   `json:"supportedBackgrounds,omitempty" yaml:"supportedBackgrounds,omitempty"`
+	Tools                 *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
 }
 
 type TTS struct {
-	Model  string            `json:"model,omitempty" yaml:"model,omitempty"`
-	Voices map[string]string `json:"voices,omitempty" yaml:"voices,omitempty"`
+	Model  string             `json:"model,omitempty" yaml:"model,omitempty"`
+	Voices *map[string]string `json:"voices,omitempty" yaml:"voices,omitempty"`
 }
 
 type STT struct {
-	Model string `json:"model,omitempty" yaml:"model,omitempty"`
+	Format string `json:"format,omitempty" yaml:"format,omitempty"`
+	Model  string `json:"model,omitempty" yaml:"model,omitempty"`
 }
 
 type Voice struct {
@@ -105,7 +112,9 @@ type Voice struct {
 }
 
 type Vision struct {
-	Files []string `json:"files,omitempty" yaml:"files,omitempty"`
+	Model       string    `json:"model,omitempty" yaml:"model,omitempty"`
+	MaxFileSize *int      `json:"maxFileSize,omitempty" yaml:"maxFileSize,omitempty"`
+	Files       *[]string `json:"files,omitempty" yaml:"files,omitempty"`
 }
 
 type Text struct {
@@ -113,8 +122,8 @@ type Text struct {
 }
 
 type Extractor struct {
-	Model string   `json:"model,omitempty" yaml:"model,omitempty"`
-	Files []string `json:"files,omitempty" yaml:"files,omitempty"`
+	MaxFileSize *int     `json:"maxFileSize,omitempty" yaml:"maxFileSize,omitempty"`
+	Files       []string `json:"files,omitempty" yaml:"files,omitempty"`
 }
 
 type Renderer struct {
@@ -124,6 +133,7 @@ type Renderer struct {
 }
 
 type Artifacts struct {
+	MaxFileSize *int `json:"maxFileSize,omitempty" yaml:"maxFileSize,omitempty"`
 	// Bridge exposes window.wingman to HTML previews. Nil means enabled.
 	Bridge *bool `json:"bridge,omitempty" yaml:"bridge,omitempty"`
 	// DuckDB hosts DuckDB-WASM for SQL over workspace files. Nil means enabled.
@@ -131,11 +141,8 @@ type Artifacts struct {
 }
 
 type Repository struct {
-	Embedder  string `json:"embedder,omitempty" yaml:"embedder,omitempty"`
-	Extractor string `json:"extractor,omitempty" yaml:"extractor,omitempty"`
+	Embedder string `json:"embedder,omitempty" yaml:"embedder,omitempty"`
 }
-
-type Memory struct{}
 
 type Chat struct {
 	Instructions  string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
@@ -166,48 +173,50 @@ type Preset struct {
 }
 
 type Compaction struct {
-	Threshold int `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+	Threshold *int `json:"threshold,omitempty" yaml:"threshold,omitempty"`
 }
 
 type Classification struct {
-	Model     string  `json:"model,omitempty" yaml:"model,omitempty"`
-	Effort    string  `json:"effort,omitempty" yaml:"effort,omitempty"`
-	Threshold float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+	Model     string   `json:"model,omitempty" yaml:"model,omitempty"`
+	Effort    string   `json:"effort,omitempty" yaml:"effort,omitempty"`
+	Threshold *float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
 }
 
 type Category struct {
-	ID          string  `json:"id,omitempty" yaml:"id,omitempty"`
-	Name        string  `json:"name,omitempty" yaml:"name,omitempty"`
-	Description string  `json:"description,omitempty" yaml:"description,omitempty"`
-	Consent     any     `json:"consent,omitempty" yaml:"consent,omitempty"`
-	Threshold   float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+	ID          string   `json:"id,omitempty" yaml:"id,omitempty"`
+	Name        string   `json:"name,omitempty" yaml:"name,omitempty"`
+	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
+	Consent     any      `json:"consent,omitempty" yaml:"consent,omitempty"`
+	Threshold   *float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
 }
 
 type Risk struct {
-	ID          string  `json:"id,omitempty" yaml:"id,omitempty"`
-	Name        string  `json:"name,omitempty" yaml:"name,omitempty"`
-	Description string  `json:"description,omitempty" yaml:"description,omitempty"`
-	Severity    string  `json:"severity,omitempty" yaml:"severity,omitempty"`
-	Message     string  `json:"message,omitempty" yaml:"message,omitempty"`
-	Threshold   float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+	ID          string   `json:"id,omitempty" yaml:"id,omitempty"`
+	Name        string   `json:"name,omitempty" yaml:"name,omitempty"`
+	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
+	Severity    string   `json:"severity,omitempty" yaml:"severity,omitempty"`
+	Message     string   `json:"message,omitempty" yaml:"message,omitempty"`
+	Threshold   *float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
 }
 
 type Translator struct {
-	Model     string               `json:"model,omitempty" yaml:"model,omitempty"`
-	Providers []TranslatorProvider `json:"providers,omitempty" yaml:"providers,omitempty"`
-	Files     []string             `json:"files,omitempty" yaml:"files,omitempty"`
-	Languages []string             `json:"languages,omitempty" yaml:"languages,omitempty"`
+	MaxFileSize   *int                 `json:"maxFileSize,omitempty" yaml:"maxFileSize,omitempty"`
+	MaxTextLength *int                 `json:"maxTextLength,omitempty" yaml:"maxTextLength,omitempty"`
+	Model         string               `json:"model,omitempty" yaml:"model,omitempty"`
+	Providers     []TranslatorProvider `json:"providers,omitempty" yaml:"providers,omitempty"`
+	Files         []string             `json:"files,omitempty" yaml:"files,omitempty"`
+	Languages     *[]string            `json:"languages,omitempty" yaml:"languages,omitempty"`
 }
 
 // TranslatorProvider names a translator configured on the platform; ID is sent
 // as the translate request's model. Files and Languages override the
 // translator-wide lists when set.
 type TranslatorProvider struct {
-	ID          string   `json:"id,omitempty" yaml:"id,omitempty"`
-	Name        string   `json:"name,omitempty" yaml:"name,omitempty"`
-	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
-	Files       []string `json:"files,omitempty" yaml:"files,omitempty"`
-	Languages   []string `json:"languages,omitempty" yaml:"languages,omitempty"`
+	ID          string    `json:"id,omitempty" yaml:"id,omitempty"`
+	Name        string    `json:"name,omitempty" yaml:"name,omitempty"`
+	Description string    `json:"description,omitempty" yaml:"description,omitempty"`
+	Files       *[]string `json:"files,omitempty" yaml:"files,omitempty"`
+	Languages   *[]string `json:"languages,omitempty" yaml:"languages,omitempty"`
 }
 
 type Telemetry struct {

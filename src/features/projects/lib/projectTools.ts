@@ -20,7 +20,7 @@ export function projectInstructions(project: Project): string {
 }
 
 /** Closures retain the project's file manifest for the requesting run. */
-export function createProjectTools(project: Project, artifactsEnabled: boolean): Tool[] {
+export function createProjectTools(project: Project): Tool[] {
   const readTools = createReadonlyFileTools(
     {
       list: async () => project.files,
@@ -34,7 +34,6 @@ export function createProjectTools(project: Project, artifactsEnabled: boolean):
         display: { ...tool.display, header: (args, state) => projectToolHeader(tool.name, args, state)! },
       }) satisfies Tool,
   );
-  if (!artifactsEnabled) return readTools;
   return [
     ...readTools,
     {

@@ -158,12 +158,7 @@ export function ChatPage() {
   }, [chat?.id, navigate, routeChatId]);
 
   const { layoutMode } = useLayout();
-  const {
-    isAvailable: artifactsAvailable,
-    showArtifactsDrawer,
-    toggleArtifactsDrawer,
-    setShowArtifactsDrawer,
-  } = useArtifacts();
+  const { showArtifactsDrawer, toggleArtifactsDrawer, setShowArtifactsDrawer } = useArtifacts();
   const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer } = useAgents();
   const { showSkillCatalog, skillCatalogTarget, skillCatalogSection, closeSkillCatalog } = useSkills();
 
@@ -618,18 +613,16 @@ export function ChatPage() {
         onResizeStart={handleArtifactsResizeMouseDown}
         onClose={toggleArtifactsDrawer}
         latch={
-          artifactsAvailable && (
-            <EdgeLatch
-              label="Artifacts"
-              icon={<Shapes size={16} className="-rotate-90" />}
-              open={showArtifactsDrawer}
-              hidden={isMobile && showAppDrawer}
-              shiftVw={showAppDrawer ? appWidthVw : 0}
-              resizing={isAppResizing || isSwapping}
-              compact={isMobile}
-              onClick={toggleArtifactsDrawer}
-            />
-          )
+          <EdgeLatch
+            label="Artifacts"
+            icon={<Shapes size={16} className="-rotate-90" />}
+            open={showArtifactsDrawer}
+            hidden={isMobile && showAppDrawer}
+            shiftVw={showAppDrawer ? appWidthVw : 0}
+            resizing={isAppResizing || isSwapping}
+            compact={isMobile}
+            onClick={toggleArtifactsDrawer}
+          />
         }
       >
         <ArtifactsDrawer />
@@ -669,7 +662,7 @@ export function ChatPage() {
               shiftVw={showArtifactsDrawer ? artifactsWidthVw : 0}
               resizing={isArtifactsResizing || isSwapping}
               compact={isMobile}
-              slot={artifactsAvailable ? 1 : 0}
+              slot={1}
               onClick={toggleAppDrawer}
             />
           )

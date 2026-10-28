@@ -4,7 +4,6 @@ import type { ArtifactReadWriteManager } from "@/features/artifacts/lib/artifact
 import type { ArtifactEditRequest } from "@/features/artifacts/lib/editRequest";
 
 export interface ArtifactsContextType {
-  isAvailable: boolean;
   /**
    * The active filesystem. `null` while no chat is active (e.g. a draft
    * chat before the first message). Injected from the outside via

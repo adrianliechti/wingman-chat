@@ -237,6 +237,7 @@ export function CanvasPage() {
       return;
     }
 
+    if (!models.some((model) => model.id === selectedModel?.id)) return;
     setIsGenerating(true);
 
     // Capture and clear reference images
@@ -428,7 +429,7 @@ export function CanvasPage() {
                 selectedBackground={selectedBackground}
                 onSelectBackground={setSelectedBackground}
                 placeholder="Generate something new..."
-                disabled={isGenerating}
+                disabled={isGenerating || !models.some((model) => model.id === selectedModel?.id)}
                 autoFocus
                 className="max-w-4xl"
               />
@@ -464,7 +465,7 @@ export function CanvasPage() {
                 selectedBackground={selectedBackground}
                 onSelectBackground={setSelectedBackground}
                 placeholder="Refine the selected image..."
-                disabled={isGenerating}
+                disabled={isGenerating || !models.some((model) => model.id === selectedModel?.id)}
                 className="pointer-events-auto max-w-4xl"
               />
             </div>

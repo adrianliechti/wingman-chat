@@ -1,3 +1,4 @@
+import { getModelCapabilities, loadModels } from "./shared/lib/modelSelection";
 import {
   createRootRoute,
   createRoute,
@@ -83,7 +84,7 @@ const translateRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/translate",
   beforeLoad: () => {
-    if (!getConfig().translator) throw redirect({ to: "/chat" });
+    if (!getConfig().translatorEnabled) throw redirect({ to: "/chat" });
   },
   component: TranslatePage,
 });
@@ -91,8 +92,11 @@ const translateRoute = createRoute({
 const canvasRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/canvas",
-  beforeLoad: () => {
-    if (!getConfig().renderer) throw redirect({ to: "/chat" });
+  beforeLoad: async () => {
+    const config = getConfig();
+    if (!config.canvasEnabled || !getModelCapabilities(await loadModels(), config).renderer) {
+      throw redirect({ to: "/chat" });
+    }
   },
   component: CanvasPage,
 });

@@ -1,3 +1,4 @@
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import { SubagentCard } from "./SubagentCard";
 import { AlertCircle, RotateCcw, Sparkles } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
@@ -6,7 +7,6 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useChatActions, useChatConversation, useChatRunState } from "@/features/chat/hooks/useChat";
 import { SkillChip } from "@/features/skills/components/SkillChip";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { shortModelName } from "@/shared/lib/models";
 import type { ToolCallPart, UIMessage } from "@tanstack/ai";
@@ -258,8 +258,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
     lastPart?.type === "tool-call" &&
     toolCallParts.every((part) => toolResultFor(message, part.id));
 
-  const config = getConfig();
-  const enableTTS = !!config.tts;
+  const { tts: enableTTS } = useModelCapabilities();
   const textContent = finalText(message) || messageText(message);
 
   // Handle error messages

@@ -12,6 +12,35 @@ async function loadWith(data: object) {
   return config!;
 }
 
+it("loads model feature defaults without enable configuration and preserves optional settings", async () => {
+  const defaults = await loadWith({});
+  expect(defaults.tts.voices).toMatchObject({ narrator: "alloy" });
+  expect(defaults.stt).toEqual({});
+  expect(defaults.voice).toEqual({});
+  expect(defaults.renderer).toEqual({});
+  expect(defaults.vision.files).toEqual(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+  const overrides = {
+    tts: { model: "speaker", voices: { narrator: "custom" } },
+    stt: { model: "dictation", format: "wav" },
+    voice: { model: "conversation", transcriber: "live-transcription" },
+    renderer: { model: "image", disclaimer: "Please review", elicitation: true },
+    vision: { model: "reader", files: ["image/png"], maxFileSize: 1000 },
+  };
+  expect(await loadWith(overrides)).toMatchObject(overrides);
+});
+
+it("requires explicit page flags without disabling service defaults", async () => {
+  const defaults = await loadWith({ renderer: { model: "image" }, translator: { model: "chat" } });
+  expect(defaults.canvasEnabled).toBe(false);
+  expect(defaults.translatorEnabled).toBe(false);
+  expect(defaults.renderer.model).toBe("image");
+  expect(defaults.translator.model).toBe("chat");
+  const enabled = await loadWith({ canvasEnabled: true, translatorEnabled: true });
+  expect(enabled.canvasEnabled).toBe(true);
+  expect(enabled.translatorEnabled).toBe(true);
+  expect(enabled.extractor.files).toEqual([]);
+});
+
 it("loads an ordered list of account links and hides entries without destinations", async () => {
   const config = await loadWith({
     links: [

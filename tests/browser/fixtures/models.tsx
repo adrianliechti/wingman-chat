@@ -1,3 +1,4 @@
+import { useModelCapabilities } from "../../../src/shared/hooks/useModelCapabilities";
 import { StrictMode, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "../../../src/shared/lib/queryClient";
@@ -18,7 +19,13 @@ function Consumer() {
   const chat = useModels();
   const renderers = useRendererModels();
   const all = useModelCatalog();
-  const state = { all, chat: chat.models, renderers, selected: chat.selectedModel };
+  const state = {
+    capabilities: useModelCapabilities(),
+    all,
+    chat: chat.models,
+    renderers,
+    selected: chat.selectedModel,
+  };
   window.modelsE2E = {
     state: () => state,
     select: chat.setSelectedModel,
@@ -41,7 +48,13 @@ function Fixture() {
 declare global {
   interface Window {
     modelsE2E: {
-      state(): { all: Model[]; chat: Model[]; renderers: Model[]; selected: Model | null };
+      state(): {
+        capabilities: ReturnType<typeof useModelCapabilities>;
+        all: Model[];
+        chat: Model[];
+        renderers: Model[];
+        selected: Model | null;
+      };
       select(model: Model | null): void;
       refresh(): Promise<void>;
       resolveRenderer(): Promise<string>;

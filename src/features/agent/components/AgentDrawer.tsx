@@ -21,7 +21,6 @@ import { useEffect, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
 import { exportSingleAgentAsZip, triggerAgentImport } from "@/features/settings/lib/agentImportExport";
-import { getConfig } from "@/shared/config";
 import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
@@ -43,16 +42,14 @@ interface AgentDetailsProps {
 }
 
 function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
-  const config = getConfig();
-
   return (
     <div className="flex flex-col flex-1 overflow-auto">
       <ModelSection agent={agent} />
       <InstructionsSection agent={agent} />
       <ToolsSection agent={agent} />
       <SkillsSection key={agent.id} agent={agent} />
-      {config.repository && <FilesSection agent={agent} />}
-      {config.memory && <MemorySection key={agent.id} agent={agent} />}
+      <FilesSection agent={agent} />
+      <MemorySection key={agent.id} agent={agent} />
       <div className="shrink-0 px-3 py-3 mt-auto border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center justify-end gap-2">
         <button
           type="button"
@@ -88,7 +85,6 @@ export function AgentDrawer() {
     agentDrawerView: view,
     setAgentDrawerView: setView,
   } = useAgents();
-  const config = getConfig();
 
   // On mobile, tapping an agent activates it and closes the drawer instead of opening details.
   const isMobile = !useBreakpoint("md");
@@ -414,9 +410,7 @@ export function AgentDrawer() {
                               {(() => {
                                 const toolsCount = agent.tools.length;
                                 return (
-                                  (agent.skills.length > 0 ||
-                                    toolsCount > 0 ||
-                                    (config.repository && (agent.files?.length ?? 0) > 0)) && (
+                                  (agent.skills.length > 0 || toolsCount > 0 || (agent.files?.length ?? 0) > 0) && (
                                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                       {toolsCount > 0 && (
                                         <span className="inline-flex items-center gap-0.5 text-[10px] text-neutral-400 dark:text-neutral-500">
@@ -424,7 +418,7 @@ export function AgentDrawer() {
                                           {toolsCount} {toolsCount === 1 ? "tool" : "tools"}
                                         </span>
                                       )}
-                                      {config.repository && (agent.files?.length ?? 0) > 0 && (
+                                      {(agent.files?.length ?? 0) > 0 && (
                                         <span className="inline-flex items-center gap-0.5 text-[10px] text-neutral-400 dark:text-neutral-500">
                                           <Folder size={9} />
                                           {agent.files?.length} {agent.files?.length === 1 ? "file" : "files"}

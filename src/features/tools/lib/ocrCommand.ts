@@ -8,11 +8,11 @@ export async function runOcr(
   requestOptions: { signal?: AbortSignal } = {},
 ): Promise<string> {
   const config = getConfig();
-  if (!config.extractor) {
-    throw new Error("ocr: no document extraction service configured");
-  }
   if (bytes.length === 0) {
     throw new Error(`ocr: file is empty: ${path}`);
+  }
+  if (config.extractor?.maxFileSize != null && bytes.length > config.extractor.maxFileSize) {
+    throw new Error(`ocr: file exceeds the configured size limit: ${path}`);
   }
 
   // Ship the original filename and content type — the backend extractor

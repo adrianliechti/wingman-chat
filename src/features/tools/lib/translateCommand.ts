@@ -2,14 +2,6 @@ import { getConfig } from "@/shared/config";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
 
-function requireTranslator() {
-  const config = getConfig();
-  if (!config.translator) {
-    throw new Error("translate: no translation service configured");
-  }
-  return config;
-}
-
 function defaultProvider(config: ReturnType<typeof getConfig>): string {
   return config.translator?.providers?.[0]?.id ?? "";
 }
@@ -20,7 +12,7 @@ export async function runTranslateText(
   text: string,
   requestOptions: { signal?: AbortSignal } = {},
 ): Promise<string> {
-  const config = requireTranslator();
+  const config = getConfig();
   if (!lang.trim()) {
     throw new Error("translate: no target language provided");
   }
@@ -43,7 +35,7 @@ export async function runTranslateFile(
   path: string,
   requestOptions: { signal?: AbortSignal } = {},
 ): Promise<Uint8Array> {
-  const config = requireTranslator();
+  const config = getConfig();
   if (!lang.trim()) {
     throw new Error("translate: no target language provided");
   }

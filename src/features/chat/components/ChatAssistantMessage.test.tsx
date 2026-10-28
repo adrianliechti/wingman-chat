@@ -15,6 +15,7 @@ vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({
   useArtifacts: () => ({ openFile: vi.fn(), setShowArtifactsDrawer: vi.fn() }),
 }));
 vi.mock("@/features/tools/hooks/useToolsContext", () => ({ useToolsContext: () => ({ providers: [] }) }));
+vi.mock("@/shared/hooks/useModelCatalog", () => ({ useModelCatalog: () => [] }));
 vi.mock("@/shared/config", () => ({ getConfig: () => ({}) }));
 vi.mock("@/shared/ui/Markdown", () => ({ Markdown: ({ children }: { children: string }) => <div>{children}</div> }));
 vi.mock("@/shared/ui/ConvertButton", () => ({ ConvertButton: () => null }));

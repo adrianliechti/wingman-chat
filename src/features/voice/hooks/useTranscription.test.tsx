@@ -25,7 +25,16 @@ class FakeMediaRecorder {
 const transcribe = vi.hoisted(() =>
   vi.fn(async (_model: string, _blob: Blob, _options: { signal: AbortSignal }) => "Transcript"),
 );
-vi.mock("@/shared/config", () => ({ getConfig: () => ({ stt: { model: "stt" }, client: { transcribe } }) }));
+vi.mock("@/shared/config", () => ({
+  getConfig: () => ({
+    stt: { model: "stt" },
+    models: [],
+    client: { transcribe, listModels: async () => [{ id: "stt", name: "Dictation", type: "transcriber" }] },
+  }),
+}));
+vi.mock("@/shared/hooks/useModelCatalog", () => ({
+  useModelCatalog: () => [{ id: "stt", name: "Dictation", type: "transcriber" }],
+}));
 vi.mock("@/shell/hooks/useAudioDevices", () => ({ useAudioDevices: () => ({ inputDeviceId: "chosen" }) }));
 let audio: ReturnType<typeof installAudioFakes>;
 beforeEach(() => {

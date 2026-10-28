@@ -1,19 +1,38 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const inventory = [
-  { id: "gpt-6-astra" },
-  { id: "gpt-6.1-sol" },
-  { id: "gpt-6.1-terra" },
-  { id: "claude-fable-5-1" },
-  { id: "claude-mythos-5-1" },
-  { id: "qwen3.8-max" },
-  { id: "gpt-realtime-2.1" },
-  { id: "gpt-live-transcribe" },
-  { id: "gemini-3.1-flash-live-preview" },
-  { id: "gpt-transcribe" },
-  { id: "gpt-4o-mini-tts" },
-  { id: "opaque", name: "API name", description: "Backend metadata", type: "completer" },
-];
+const inventory: Array<{ id: string; name?: string; description?: string; type?: string; supports_vision?: boolean }> =
+  [
+    { id: "gpt-6-astra" },
+    { id: "gpt-6.1-sol" },
+    { id: "gpt-6.1-terra" },
+    { id: "claude-fable-5-1" },
+    { id: "claude-mythos-5-1" },
+    { id: "qwen3.8-max" },
+    { id: "gpt-realtime-2.1" },
+    { id: "gpt-live-transcribe" },
+    { id: "gemini-3.1-flash-live-preview" },
+    { id: "gpt-transcribe" },
+    { id: "gpt-4o-mini-tts" },
+    { id: "opaque", name: "API name", description: "Backend metadata", type: "completer" },
+  ];
+
+test("creates a named agent without voice configuration or a realtime model", async ({ page }) => {
+  await page.route("**/config.json", (route) => route.fulfill({ json: {} }));
+  await page.route("**/api/v1/mcp", (route) => route.fulfill({ json: { data: [] } }));
+  await page.goto("/tests/browser/fixtures/react-ui.html");
+  await page.getByRole("button", { name: "Manage agents", exact: true }).click();
+  await page.getByRole("button", { name: "Create Agent", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByPlaceholder("My Agent")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Real-time Voice/ })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(dialog.getByText("Name is required")).toBeVisible();
+  await dialog.getByPlaceholder("My Agent").fill("Text assistant");
+  for (let step = 0; step < 5; step++) await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await dialog.getByRole("button", { name: "Create Agent", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText("Text assistant", { exact: true }).first()).toBeVisible();
+});
 
 async function open(page: Page, config: Record<string, unknown> = {}, hold = false) {
   const errors: string[] = [];
@@ -211,4 +230,155 @@ test("refreshes a stale catalogue when visible and stops refreshing unmounted co
     window.dispatchEvent(new Event("visibilitychange"));
   });
   expect(api.requests).toBe(2);
+});
+
+test("vision, image, and speech availability follow the model inventory without feature config", async ({ page }) => {
+  const { api, release } = await open(page, {}, true);
+  expect(await page.evaluate(() => window.modelsE2E.state().capabilities)).toEqual({
+    vision: false,
+    renderer: false,
+    tts: false,
+    stt: false,
+    voice: false,
+  });
+  release();
+  await expect
+    .poll(() => page.evaluate(() => window.modelsE2E.state().capabilities))
+    .toEqual({ vision: true, renderer: false, tts: true, stt: true, voice: true });
+  expect(api.requests).toBe(1);
+
+  api.data = [{ id: "gpt-live-transcribe" }];
+  await page.evaluate(() => window.modelsE2E.refresh());
+  expect(await page.evaluate(() => window.modelsE2E.state().capabilities)).toEqual({
+    vision: false,
+    renderer: false,
+    tts: false,
+    stt: false,
+    voice: false,
+  });
+
+  api.data = [{ id: "gpt-4o-mini-tts" }];
+  await page.evaluate(() => window.modelsE2E.refresh());
+  expect(await page.evaluate(() => window.modelsE2E.state().capabilities)).toEqual({
+    vision: false,
+    renderer: false,
+    tts: true,
+    stt: false,
+    voice: false,
+  });
+
+  api.data = [{ id: "gpt-image-2" }];
+  await page.evaluate(() => window.modelsE2E.refresh());
+  expect(await page.evaluate(() => window.modelsE2E.state().capabilities)).toEqual({
+    vision: false,
+    renderer: true,
+    tts: false,
+    stt: false,
+    voice: false,
+  });
+});
+
+test("page flags are opt-in and Canvas also requires a renderer", async ({ page }) => {
+  await page.route("**/api/v1/mcp", (route) => route.fulfill({ json: { data: [] } }));
+  let config: Record<string, unknown> = {};
+  await page.route("**/config.json", (route) => route.fulfill({ json: config }));
+  await page.goto("/tests/browser/fixtures/react-ui.html?renderer-model&canvas");
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page.getByRole("link", { name: "Canvas", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Chat", exact: true })).toHaveCount(0);
+
+  config = { canvasEnabled: true };
+  await page.goto("/tests/browser/fixtures/react-ui.html?renderer-model&canvas");
+  await expect(page).toHaveURL(/\/canvas$/);
+  await expect(page.getByRole("link", { name: "Canvas", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Chat", exact: true })).toBeVisible();
+
+  await page.goto("/tests/browser/fixtures/react-ui.html?canvas");
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page.getByRole("link", { name: "Canvas", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Chat", exact: true })).toHaveCount(0);
+
+  config = { translatorEnabled: true };
+  await page.goto("/tests/browser/fixtures/react-ui.html");
+  await expect(page.getByRole("link", { name: "Translate", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Translate", exact: true }).click();
+  await expect(page).toHaveURL(/\/translate$/);
+  config = {};
+  await page.reload();
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page.getByRole("link", { name: "Translate", exact: true })).toHaveCount(0);
+});
+
+test("image attachments and screen capture follow the selected model without vision config", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/api/v1/mcp", (route) => route.fulfill({ json: { data: [] } }));
+  await page.route("**/config.json", (route) => route.fulfill({ json: { artifacts: {} } }));
+  await page.goto("/tests/browser/fixtures/react-ui.html?vision-models");
+  await expect(page.getByRole("button", { name: "Fixture", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByText("Share Screen", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  const png = await page.evaluate(() => document.createElement("canvas").toDataURL("image/png").split(",")[1]);
+  const upload = { name: "test-image.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") };
+  await page.locator('input[type="file"]').setInputFiles(upload);
+  await expect(page.getByRole("img", { name: upload.name, exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Fixture", exact: true }).click();
+  await page.getByText("Text only", { exact: true }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByText("Share Screen", { exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  const composer = page.getByRole("textbox", { name: "Chat message input" });
+  await composer.fill("Describe this image");
+  await composer.press("Enter");
+  await expect(page.getByText("This model doesn’t support image input", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(0);
+  await page.locator(`[title="${upload.name}"]`).hover();
+  await page.locator(`[title="${upload.name}"] button`).click();
+  const artifactName = "image-artifact.png";
+  await page.locator('input[type="file"]').setInputFiles({ ...upload, name: artifactName });
+  await expect(page.locator(`[title="${artifactName}"]`)).toBeVisible();
+  await expect(page.getByRole("img", { name: artifactName, exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("speech detection honors explicit types for available aliases", async ({ page }) => {
+  const { api } = await open(page, {
+    models: [
+      { id: "opaque", type: "synthesizer" },
+      { id: "missing", type: "realtime" },
+    ],
+  });
+  api.data = inventory.filter((model) => model.id === "opaque");
+  await page.evaluate(() => window.modelsE2E.refresh());
+  expect(await page.evaluate(() => window.modelsE2E.state().all.find((model) => model.id === "opaque")?.type)).toBe(
+    "synthesizer",
+  );
+  expect(await page.evaluate(() => window.modelsE2E.state().capabilities)).toEqual({
+    vision: false,
+    renderer: false,
+    tts: true,
+    stt: false,
+    voice: false,
+  });
+});
+
+test("vision metadata supports aliases and config can explicitly disable known models", async ({ page }) => {
+  const { api } = await open(page, { models: [{ id: "gpt-6-astra", supportsVision: false }] });
+  api.data = [
+    { id: "opaque", supports_vision: true },
+    { id: "gpt-6-astra", supports_vision: true },
+  ];
+  await page.evaluate(() => window.modelsE2E.refresh());
+  const state = await page.evaluate(() => window.modelsE2E.state());
+  expect(state.capabilities.vision).toBe(true);
+  expect(state.all.map((model) => [model.id, model.supportsVision])).toEqual([
+    ["opaque", true],
+    ["gpt-6-astra", false],
+  ]);
+  api.data = [{ id: "gpt-6-astra", supports_vision: true }];
+  await page.evaluate(() => window.modelsE2E.refresh());
+  expect(await page.evaluate(() => window.modelsE2E.state().capabilities.vision)).toBe(false);
 });

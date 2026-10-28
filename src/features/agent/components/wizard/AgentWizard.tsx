@@ -1,3 +1,4 @@
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import { Dialog, Transition } from "@headlessui/react";
 import { Bot, ClipboardCheck, Folder, LayoutGrid, Puzzle, Wrench, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useMemo, useReducer, useState } from "react";
@@ -128,12 +129,7 @@ function reducer(state: WizardState, action: WizardAction): WizardState {
 // ── Steps config ──
 
 function getSteps(hasPlugins: boolean): StepDef[] {
-  const config = getConfig();
-  const steps: StepDef[] = [];
-
-  if (config.voice) {
-    steps.push({ id: "type", label: "Type", icon: LayoutGrid });
-  }
+  const steps: StepDef[] = [{ id: "type", label: "Setup", icon: LayoutGrid }];
 
   steps.push({ id: "identity", label: "Identity", icon: Bot });
   if (hasPlugins) {
@@ -141,9 +137,7 @@ function getSteps(hasPlugins: boolean): StepDef[] {
   }
   steps.push({ id: "skills", label: "Skills", icon: Zap });
   steps.push({ id: "tools", label: "Tools", icon: Wrench });
-  if (config.repository) {
-    steps.push({ id: "knowledge", label: "Knowledge", icon: Folder });
-  }
+  steps.push({ id: "knowledge", label: "Knowledge", icon: Folder });
   steps.push({ id: "review", label: "Review", icon: ClipboardCheck });
   return steps;
 }
@@ -156,6 +150,7 @@ interface AgentWizardProps {
 }
 
 export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
+  const { voice: voiceAvailable } = useModelCapabilities();
   const { createAgent, addFile } = useAgents();
   const { plugins } = usePlugins();
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
@@ -167,19 +162,18 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
   const isLastStep = state.currentStep === steps.length - 1;
   const currentStepId = steps[state.currentStep]?.id;
 
-  // Type step (or identity step when no voice config) requires a name
+  // Setup always collects the name, independently of voice availability.
   const canAdvanceFromNameStep = !!state.name.trim();
-  const nameStepId = steps.find((s) => s.id === "type") ? "type" : "identity";
 
   const handleNext = useCallback(() => {
-    if (currentStepId === nameStepId && !canAdvanceFromNameStep) {
+    if (currentStepId === "type" && !canAdvanceFromNameStep) {
       dispatch({ type: "SHOW_VALIDATION" });
       return;
     }
     if (state.currentStep < steps.length - 1) {
       dispatch({ type: "SET_STEP", step: state.currentStep + 1 });
     }
-  }, [currentStepId, nameStepId, canAdvanceFromNameStep, state.currentStep, steps.length]);
+  }, [currentStepId, canAdvanceFromNameStep, state.currentStep, steps.length]);
 
   const handleBack = useCallback(() => {
     if (state.currentStep > 0) {
@@ -193,13 +187,18 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
 
   const handleCreate = useCallback(async () => {
     const s = state;
+    if (!s.name.trim()) {
+      dispatch({ type: "SHOW_VALIDATION" });
+      dispatch({ type: "SET_STEP", step: 0 });
+      return;
+    }
     setIsCreating(true);
     const options = {
       instructions: s.instructions.trim() || undefined,
       skills: s.selectedSkills,
       plugins: s.selectedPlugins,
       tools: s.selectedTools,
-      model: s.model || undefined,
+      model: s.model === "realtime" && !voiceAvailable ? undefined : s.model || undefined,
       memory: s.memory || undefined,
     };
     try {
@@ -215,7 +214,7 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
       console.error("Failed to create agent:", error);
     }
     setIsCreating(false);
-  }, [state, createAgent, addFile, onClose]);
+  }, [state, createAgent, addFile, onClose, voiceAvailable]);
 
   const handleClose = useCallback(() => {
     dispatch({ type: "RESET" });
@@ -275,7 +274,8 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
                 <div className="px-5 py-4 flex-1 overflow-y-auto">
                   {currentStepId === "type" && (
                     <TypeStep
-                      agentType={state.agentType}
+                      agentType={voiceAvailable ? state.agentType : "model"}
+                      voiceAvailable={voiceAvailable}
                       name={state.name}
                       showValidation={state.showValidation}
                       dispatch={dispatch}
@@ -302,7 +302,7 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
                       selectedPlugins={state.selectedPlugins}
                       selectedTools={state.selectedTools}
                       pendingFiles={state.pendingFiles}
-                      model={state.model}
+                      model={state.model === "realtime" && !voiceAvailable ? "" : state.model}
                       memory={state.memory}
                       dispatch={dispatch}
                     />

@@ -195,7 +195,7 @@ async function convert(file: File, requestOptions: ClientRequestOptions): Promis
   const overExtractLimit = extractLimit != null && file.size > extractLimit;
 
   // Try API extraction first for non-text builtin types
-  if (config.extractor && kind === "builtin" && !overExtractLimit) {
+  if (kind === "builtin" && !overExtractLimit) {
     try {
       const text = await config.client.extractText(file, requestOptions);
       requestOptions.signal?.throwIfAborted();

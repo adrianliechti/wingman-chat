@@ -3,7 +3,6 @@ import { type Dispatch, useId } from "react";
 import { useChatModel } from "@/features/chat/hooks/useChat";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
-import { getConfig } from "@/shared/config";
 import { defaultModelId } from "@/shared/lib/models";
 import { ModelDropdown } from "@/shared/ui/ModelDropdown";
 import type { WizardAction } from "../AgentWizard";
@@ -35,7 +34,6 @@ export function ReviewStep({
   const modelSelectId = useId();
   const { models } = useChatModel();
   const { plugins } = usePlugins();
-  const config = getConfig();
 
   const effectiveModel = model || defaultModelId(models, getSavedModelId());
 
@@ -175,21 +173,19 @@ export function ReviewStep({
       </div>
 
       {/* Memory toggle */}
-      {config.memory && (
-        <div className="flex items-center justify-between py-1">
-          <div>
-            <div className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Memory</div>
-            <div className="text-xs text-neutral-400 dark:text-neutral-500">Remember context across conversations</div>
-          </div>
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "SET_MEMORY", enabled: !memory })}
-            className={`shrink-0 ${memory ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
-          >
-            {memory ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-          </button>
+      <div className="flex items-center justify-between py-1">
+        <div>
+          <div className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Memory</div>
+          <div className="text-xs text-neutral-400 dark:text-neutral-500">Remember context across conversations</div>
         </div>
-      )}
+        <button
+          type="button"
+          onClick={() => dispatch({ type: "SET_MEMORY", enabled: !memory })}
+          className={`shrink-0 ${memory ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
+        >
+          {memory ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+        </button>
+      </div>
     </div>
   );
 }

@@ -4,7 +4,6 @@ import memoryPrompt from "@/features/agent/prompts/memory.txt?raw";
 import type { Agent } from "@/features/agent/types/agent";
 import { createRepositoryTools } from "@/features/repository/lib/repository-tools";
 import repositoryInstructions from "@/features/repository/prompts/repository.txt?raw";
-import { getConfig } from "@/shared/config";
 import type { ToolProvider } from "@/shared/types/chat";
 import { useAgentFiles } from "./useAgentFiles";
 import { getMemoryManager } from "../lib/memoryManager";
@@ -29,7 +28,6 @@ export interface AgentProviders {
  * knows which built-in tools to activate.
  */
 export function useAgentProviders(agent: Agent | null): AgentProviders {
-  const config = getConfig();
   const agentId = agent?.id || "";
   const { files, queryChunks } = useAgentFiles(agentId);
 
@@ -48,7 +46,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   }, [agent, files, queryChunks]);
 
   // --- Memory provider ---
-  const memoryEnabled = !!config.memory && !!agent?.memory;
+  const memoryEnabled = !!agent?.memory;
   const [coreMemory, setCoreMemory] = useState({ agentId: "", content: "" });
   useEffect(() => {
     if (!memoryEnabled) return;
