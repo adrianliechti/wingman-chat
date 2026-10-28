@@ -1,4 +1,5 @@
 import { ConversationUiProvider } from "@/shared/ui/inlineUi/UiRenderer";
+import { MarkdownNavigationContext } from "@/shared/ui/MarkdownNavigationContext";
 import { submissionText } from "@/shared/lib/inlineUi/diagnostics";
 import type { UiSubmission } from "@/shared/lib/inlineUi/runtime";
 import { userMessage } from "@/shared/lib/messages";
@@ -499,46 +500,49 @@ export function ChatPage() {
               >
                 <Disclaimer />
 
-                <ConversationUiProvider
-                  owner={chat?.id ?? selectedChatId ?? "new-chat"}
-                  messages={messages}
-                  streaming={isResponding}
-                  onSubmit={handleUiSubmission}
-                >
-                  {renderUnits.map((unit) => {
-                    if (unit.kind === "toolGroup") {
-                      // Key off the first tool-call id — stable as the group grows and across restarts.
-                      const first = messages[unit.indices[0]].parts.find((part) => part.type === "tool-call");
-                      const groupKey = first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
+                <MarkdownNavigationContext value={goToTarget}>
+                  <ConversationUiProvider
+                    owner={chat?.id ?? selectedChatId ?? "new-chat"}
+                    messages={messages}
+                    streaming={isResponding}
+                    onSubmit={handleUiSubmission}
+                  >
+                    {renderUnits.map((unit) => {
+                      if (unit.kind === "toolGroup") {
+                        // Key off the first tool-call id — stable as the group grows and across restarts.
+                        const first = messages[unit.indices[0]].parts.find((part) => part.type === "tool-call");
+                        const groupKey = first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
+                        return (
+                          <div key={groupKey} className="flow-root" data-role="tool-group">
+                            <ChatToolGroup messages={messages} indices={unit.indices} reply={unit.reply} />
+                          </div>
+                        );
+                      }
+                      const index = unit.index;
+                      const message = messages[index];
+                      // Tool-only turns are tagged so the scroll pin anchors to prompts and replies.
+                      const dataRole = isToolOnlyMessage(message) ? "tool" : message.role;
                       return (
-                        <div key={groupKey} className="flow-root" data-role="tool-group">
-                          <ChatToolGroup messages={messages} indices={unit.indices} reply={unit.reply} />
+                        <div
+                          key={messageRenderKeys[index]}
+                          className="flow-root"
+                          data-role={dataRole}
+                          data-message-id={message.id}
+                          data-markdown-document
+                        >
+                          <ChatMessage
+                            index={index}
+                            message={message}
+                            isLast={index === messages.length - 1}
+                            isResponding={isResponding}
+                            foldedReasoning={unit.foldedReasoning}
+                          />
                         </div>
                       );
-                    }
-                    const index = unit.index;
-                    const message = messages[index];
-                    // Tool-only turns are tagged so the scroll pin anchors to prompts and replies.
-                    const dataRole = isToolOnlyMessage(message) ? "tool" : message.role;
-                    return (
-                      <div
-                        key={messageRenderKeys[index]}
-                        className="flow-root"
-                        data-role={dataRole}
-                        data-message-id={message.id}
-                      >
-                        <ChatMessage
-                          index={index}
-                          message={message}
-                          isLast={index === messages.length - 1}
-                          isResponding={isResponding}
-                          foldedReasoning={unit.foldedReasoning}
-                        />
-                      </div>
-                    );
-                  })}
-                  <ChatInterrupts />
-                </ConversationUiProvider>
+                    })}
+                    <ChatInterrupts />
+                  </ConversationUiProvider>
+                </MarkdownNavigationContext>
                 {/* Spacer — allows the last user message to scroll to the top */}
                 <div ref={handleSpacerRef} aria-hidden="true" />
               </div>

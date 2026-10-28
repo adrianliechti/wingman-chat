@@ -45,7 +45,7 @@ import { ArtifactsNavigator } from "./ArtifactsNavigator";
 import { SaveToProject } from "@/features/projects/components/SaveToProject";
 
 // Editors are loaded on demand. Each pulls in heavy, format-specific
-// dependencies (pdfjs, the docx/xlsx/pptx converters, mediabunny, shiki, …)
+// dependencies (pdfjs, the docx/xlsx/pptx converters, mediabunny, TanStack Highlight, …)
 // that the chat view never needs until a user actually opens that file type.
 // `lazyRouteComponent` is the same primitive the router uses — it also reloads
 // gracefully when a chunk goes missing after a deploy.

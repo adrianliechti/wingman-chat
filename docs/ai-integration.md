@@ -28,7 +28,7 @@ frontend.
   `\( \)` math, `:shortcode:` emoji, Noto emoji spans) lives in
   `src/shared/lib/markdownExtensions.ts` as synchronous extensions; the
   streaming profile keeps unfinished constructs stable while a reply arrives.
-  KaTeX and Shiki stay lazy and outside the parser.
+  KaTeX and TanStack Highlight stay lazy and outside the parser.
 - `@tanstack/react-query` owns remote inventories: the model catalog, MCP
   availability and the skill template index. One shared `QueryClient`
   (`src/shared/lib/queryClient.ts`) serves hooks and helper calls alike, so
@@ -52,6 +52,23 @@ calls create their own thread ids. Compaction summaries use
 `<conversation-thread-id>:compaction`, separate from the history they summarize.
 
 ## Markdown compatibility
+
+Code blocks and source editor mirrors share a lazy `@tanstack/highlight@1.2.0`
+registry with all 79 shipped definitions (including plaintext). Unknown languages
+and sources over 30,000 characters stay readable as plain text. React renders
+`tokenize()` output directly, preserving source whitespace and escaping code as
+text. The built-in Markdown highlighter callback is unnecessary because our
+components own the code-block wrapper and preview controls. Theme changes use
+CSS variables, with GitHub Light and One Dark Pro; they do not retokenize code.
+There is no Shiki runtime or dependency. Markdown block editing only mutes the
+structural markers identified by Highlight; it no longer uses TextMate scopes
+to dim individual inline delimiters and link destinations.
+
+This follows Highlight's [custom-renderer API](https://tanstack.com/highlight/latest/docs/guides/output-and-css)
+and [theme API](https://tanstack.com/highlight/latest/docs/guides/themes).
+The [Markdown adapter](https://tanstack.com/markdown/latest/docs/guides/syntax-highlighting)
+is for the default Markdown-owned wrapper. Highlight is a documentation
+highlighter, so syntax coloring is less detailed than an editor grammar.
 
 TanStack remains the sole Markdown parser. Its [documented syntax scope](https://github.com/TanStack/markdown#readme)
 is a subset of CommonMark/GFM, so this migration does not claim complete parity

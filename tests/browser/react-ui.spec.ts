@@ -642,6 +642,74 @@ test("compiled chat keeps stream DOM stable, measures the composer and updates v
   expect(errors).toEqual([]);
 });
 
+for (const { label, title, hash, repeatedHeading, absolute } of [
+  { label: "unique heading", title: "TypeScript", hash: "typescript", repeatedHeading: false, absolute: false },
+  { label: "repeated heading", title: "TypeScript", hash: "typescript", repeatedHeading: true, absolute: false },
+  {
+    label: "punctuation and full URL",
+    title: "Shell & config",
+    hash: "shell--config",
+    repeatedHeading: true,
+    absolute: true,
+  },
+]) {
+  test(`chat fragment links land below the top bar in their own reply (${label})`, async ({ page }) => {
+    await open(page);
+    const input = page.getByRole("textbox", { name: "Chat message input" });
+    await input.fill("First question");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    await page.evaluate(
+      (text) => window.reactUiE2E.finish(text),
+      repeatedHeading ? `## ${title}\n\nEarlier reply.` : "Earlier reply.",
+    );
+    await expect(input).toBeEnabled();
+    await input.fill("Give me the full document");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    const href = `${absolute ? page.url().split("#")[0] : ""}#${hash}`;
+    let source =
+      `[Jump to details](${href})\n\n` +
+      "Background paragraph.\n\n".repeat(50) +
+      `## ${title}\n\n` +
+      "Supporting paragraph.\n\n".repeat(40);
+    await page.evaluate((text) => window.reactUiE2E.stream(text), source);
+    const reply = page.locator('[data-role="assistant"]').last();
+    const heading = reply.getByRole("heading", { name: title, exact: true });
+    await expect(heading).toHaveCount(1);
+    const route = page.url();
+    await reply.getByRole("link", { name: "Jump to details" }).click();
+    const gap = () =>
+      heading.evaluate(
+        (element) =>
+          element.getBoundingClientRect().top -
+          document.querySelector("[data-app-topbar]")!.getBoundingClientRect().bottom,
+      );
+    await expect(heading).toBeInViewport();
+    await expect.poll(gap, { timeout: 5000 }).toBeGreaterThanOrEqual(20);
+    await expect.poll(gap).toBeLessThan(80);
+    // Streaming and a resized bar must preserve the selected passage.
+    source += "More streamed text.\n\n".repeat(20);
+    await page.evaluate((text) => window.reactUiE2E.stream(text), source);
+    await expect(reply).toContainText("More streamed text.");
+    await page.locator("[data-app-topbar]").evaluate((element) => {
+      (element as HTMLElement).style.minHeight = "100px";
+    });
+    await expect.poll(gap).toBeGreaterThanOrEqual(20);
+    await expect.poll(gap).toBeLessThan(80);
+    await page.evaluate((text) => window.reactUiE2E.finish(text), source);
+    await expect(input).toBeEnabled();
+    await expect.poll(gap).toBeGreaterThanOrEqual(20);
+    expect(page.url()).toBe(route);
+    // The normal reading gesture still releases the target.
+    await heading.hover();
+    await page.mouse.wheel(0, 450);
+    await expect(heading).not.toBeInViewport();
+    await page.getByRole("button", { name: "Latest", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
+  });
+}
+
 test("search opens the matching passage, highlights it and allows returning to latest", async ({ page }, info) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

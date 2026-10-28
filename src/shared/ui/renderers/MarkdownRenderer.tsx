@@ -25,7 +25,7 @@ const NonMemoizedMarkdownRenderer = ({ content, language }: MarkdownRendererProp
     >
       {showCode ? (
         <div className="p-4">
-          <pre className="text-neutral-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto">
+          <pre className="text-neutral-800 dark:text-neutral-300 text-sm whitespace-pre overflow-x-auto">
             <code>{content}</code>
           </pre>
         </div>
@@ -37,7 +37,7 @@ const NonMemoizedMarkdownRenderer = ({ content, language }: MarkdownRendererProp
           </div>
         </div>
       ) : (
-        <div className="p-4">
+        <div data-markdown-document className="p-4">
           <Markdown>{content}</Markdown>
         </div>
       )}

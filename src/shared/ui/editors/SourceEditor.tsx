@@ -1,6 +1,7 @@
 import { Bold, Code, Italic, Link, Strikethrough } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import type { BundledLanguage, Highlighter } from "shiki";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useHighlight } from "@/shared/hooks/useHighlight";
+import { HighlightStyles } from "@/shared/ui/HighlightStyles";
 import { cn } from "@/shared/lib/cn";
 import { lineAt } from "@/shared/lib/markdownBlocks";
 import {
@@ -12,95 +13,12 @@ import {
 import { detectIndent, indentSelection, newlineWithIndent, type SourceEdit } from "@/shared/lib/sourceEditing";
 import { SelectionActionPopover, type SelectionAction } from "@/shared/ui/selection/SelectionActionPopover";
 import type { TextSelectionSnapshot } from "@/shared/ui/selection/useTextSelection";
-import { useTheme } from "@/shell/hooks/useTheme";
 import type { TextDraft } from "./useTextDraft";
-
-/** Longer sources are shown unhighlighted: tokenizing runs on every keystroke. */
-const MAX_HIGHLIGHT_LENGTH = 30_000;
 
 const CODE_FONT: React.CSSProperties = {
   fontFamily: "Fira Code, Monaco, Cascadia Code, Roboto Mono, monospace",
   fontVariantLigatures: "none",
 };
-
-let highlighterLoad: Promise<Highlighter> | null = null;
-
-/** The shared highlighter with `language` loaded; null when shiki does not know the language. */
-function loadHighlighter(language: string): Promise<Highlighter | null> {
-  if (!highlighterLoad) {
-    highlighterLoad = import("shiki").then(({ getSingletonHighlighter }) =>
-      getSingletonHighlighter({ themes: ["one-light", "one-dark-pro"] }),
-    );
-  }
-  return highlighterLoad.then((highlighter) =>
-    highlighter.loadLanguage(language as BundledLanguage).then(
-      () => highlighter,
-      () => null,
-    ),
-  );
-}
-
-/** A run of mirrored text: a theme colour, the muted markup colour, or the surrounding text colour. */
-interface Segment {
-  content: string;
-  color?: string;
-  muted?: boolean;
-}
-
-/** Markdown syntax rather than content: delimiters, link destinations, a fence's language. */
-const isMarkup = (scope: string) =>
-  scope.startsWith("punctuation.") ||
-  scope.startsWith("markup.underline.link") ||
-  scope.startsWith("fenced_code.block.language");
-
-/**
- * Highlighted lines of `text`, computed synchronously so they never lag behind
- * the textarea. `theme` colours everything like a code view; `markup` keeps
- * the surrounding text colour and only dims markdown syntax, like prose.
- */
-function useSegments(text: string, language: string | undefined, style: "theme" | "markup"): Segment[][] | null {
-  const { isDark } = useTheme();
-  const [loaded, setLoaded] = useState<{ language: string; highlighter: Highlighter | null } | null>(null);
-  useEffect(() => {
-    if (!language) return;
-    let live = true;
-    loadHighlighter(language).then(
-      (highlighter) => {
-        if (live) setLoaded({ language, highlighter });
-      },
-      (error: unknown) => console.error("Source highlighting failed to load:", error),
-    );
-    return () => {
-      live = false;
-    };
-  }, [language]);
-  const highlighter = loaded && loaded.language === language ? loaded.highlighter : null;
-  return useMemo(() => {
-    if (!highlighter || !language || text.length > MAX_HIGHLIGHT_LENGTH) return null;
-    const theme = isDark ? "one-dark-pro" : "one-light";
-    // Loading succeeded, so shiki knows this id or alias.
-    const lang = language as BundledLanguage;
-    if (style === "theme") {
-      const { tokens, fg } = highlighter.codeToTokens(text, { lang, theme });
-      const base = fg?.toLowerCase();
-      return tokens.map((line) =>
-        line.map((token) => ({
-          content: token.content,
-          color: token.color?.toLowerCase() === base ? undefined : token.color,
-        })),
-      );
-    }
-    const { tokens } = highlighter.codeToTokens(text, { lang, theme, includeExplanation: "scopeName" });
-    return tokens.map((line) =>
-      line.flatMap((token) =>
-        (token.explanation ?? [{ content: token.content, scopes: [] }]).map((part) => ({
-          content: part.content,
-          muted: isMarkup(part.scopes.at(-1)?.scopeName ?? ""),
-        })),
-      ),
-    );
-  }, [highlighter, language, text, isDark, style]);
-}
 
 /** Viewport box of the character at `offset` in the mirrored text. */
 function characterRect(mirror: HTMLElement, offset: number): TextSelectionSnapshot["rect"] | null {
@@ -187,7 +105,7 @@ interface SourceSelection {
 
 interface SourceEditorProps {
   value: string;
-  /** A shiki language id or alias (`py`, `html`, `markdown`, …); none for plain text. */
+  /** A syntax-highlight language id or alias (`py`, `html`, `markdown`, …); none for plain text. */
   language?: string;
   /** Absent for a read-only view. */
   onChange?: (value: string) => void;
@@ -207,7 +125,7 @@ interface SourceEditorProps {
 
 /**
  * A source editor: a native textarea with transparent text over a
- * shiki-highlighted mirror of the same text. Selecting text offers the
+ * syntax-highlighted mirror of the same text. Selecting text offers the
  * select-to-edit instruction and, for markdown, inline formatting.
  */
 export function SourceEditor({
@@ -224,7 +142,11 @@ export function SourceEditor({
   onAsk,
 }: SourceEditorProps) {
   const markdown = language === "markdown";
-  const segments = useSegments(value, language, variant === "block" && markdown ? "markup" : "theme");
+  const fencedCode = markdown && /^ {0,3}(?:`{3,}|~{3,})/.test(value);
+  const wrap = (variant === "block" && !fencedCode) || !language || language === "text" || language === "plaintext";
+  // Inline prose keeps its text color; only structural Markdown markers are muted.
+  const markup = variant === "block" && markdown;
+  const tokens = useHighlight(value, language);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLPreElement>(null);
   const [selection, setSelection] = useState<SourceSelection | null>(null);
@@ -278,42 +200,38 @@ export function SourceEditor({
       : undefined;
 
   const layout = cn(
-    "m-0 block w-full border-0 whitespace-pre-wrap break-words [tab-size:4]",
+    "m-0 block w-full border-0 [tab-size:4]",
+    wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
     variant === "document" ? "p-4 text-sm leading-5" : "p-0 [font:inherit] [letter-spacing:inherit]",
   );
   const font = variant === "document" ? CODE_FONT : undefined;
 
   return (
     <div
-      className={cn(variant === "document" && "h-full overflow-auto")}
+      className={cn(variant === "document" ? "h-full overflow-auto" : !wrap && "overflow-x-auto")}
       onScroll={variant === "document" ? () => setSelection(null) : undefined}
     >
-      <div className={cn("relative", variant === "document" && "min-h-full")}>
+      <HighlightStyles />
+      <div className={cn("relative", variant === "document" && "min-h-full", !wrap && "w-max min-w-full")}>
         <pre
           ref={mirrorRef}
           aria-hidden
           style={font}
-          className={cn(
-            layout,
-            "pointer-events-none",
-            variant === "document" && "text-neutral-800 dark:text-neutral-200",
-          )}
+          className={cn(layout, "pointer-events-none", !markup && "syntax-highlight")}
         >
-          {segments
-            ? segments.map((line, index) => (
-                <Fragment key={index}>
-                  {index > 0 && "\n"}
-                  {line.map((segment, at) => (
-                    <span
-                      key={at}
-                      style={segment.color ? { color: segment.color } : undefined}
-                      className={segment.muted ? "text-neutral-400 dark:text-neutral-500" : undefined}
-                    >
-                      {segment.content}
-                    </span>
-                  ))}
-                </Fragment>
-              ))
+          {tokens
+            ? tokens.map((token, index) => {
+                const className = markup
+                  ? token.className === "meta" && "text-neutral-400 dark:text-neutral-500"
+                  : token.className && `th-${token.className}`;
+                return className ? (
+                  <span key={index} className={className}>
+                    {token.value}
+                  </span>
+                ) : (
+                  token.value
+                );
+              })
             : value}
           {/* A trailing newline needs a character after it to take up its line. */}
           {!value || value.endsWith("\n") ? " " : null}
@@ -322,6 +240,7 @@ export function SourceEditor({
           ref={textareaRef}
           value={value}
           readOnly={!onChange}
+          wrap={wrap ? "soft" : "off"}
           onChange={(event) => onChange?.(event.target.value)}
           onKeyDown={(event) => {
             const edit = onChange ? keyEdit(event, language) : null;
