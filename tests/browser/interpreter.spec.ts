@@ -134,6 +134,17 @@ test("execute_script detects shebangs, requires an inline language and shares fi
   expect(results[5].files?.["/intermediate.txt"]).toBeUndefined();
 });
 
+test("Bash gzip commands and compressed search work in the browser worker", async ({ page }) => {
+  await openFixture(page);
+  const result = await page.evaluate(() =>
+    window.interpreterE2E.executeBash({
+      code: "set -e\nprintf 'alpha\\nbeta\\n' > notes.txt\ngzip -c notes.txt > notes.gz\ngunzip -c notes.gz\nzcat notes.gz\nrg -z beta notes.gz",
+    }),
+  );
+  expect(result.success, result.error).toBe(true);
+  expect(result.output).toBe("alpha\nbeta\nalpha\nbeta\nbeta");
+});
+
 test("Bash cancellation terminates the worker and the next run starts cleanly", async ({ page }) => {
   await openFixture(page);
   const result = await page.evaluate(async () => {

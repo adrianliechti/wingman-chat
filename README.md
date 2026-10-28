@@ -267,9 +267,11 @@ PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
 ```
 
 Keep `vite-plus`, its core package and the `vite` alias at the same version, and
-pin Vitest to the version bundled with Vite+. Babel stays on 7: React Compiler 1.0.0
-fails to compile defaulted props with Babel 8.0.9. `npm run check:react-compiler`
-guards that compatibility and verifies the main render paths are compiled.
+pin Vitest to the version bundled with Vite+. React Compiler runs through the
+experimental native `oxc-transform-react` integration in `@vitejs/plugin-react`,
+targeting React 19. Keep the compiler version within the plugin's supported peer range.
+`npm run check:react-compiler` verifies memoization in the main render paths,
+defaulted props, and the `use no memo` opt-out.
 The `vite` and `vitest` overrides keep dependencies on that shared toolchain;
 local and Docker installs use `npm ci` with normal peer-dependency resolution.
 The Chevrotain override updates its pinned `lodash-es` dependency to a patched release.

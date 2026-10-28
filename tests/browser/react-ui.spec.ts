@@ -672,11 +672,15 @@ for (const { label, title, hash, repeatedHeading, absolute } of [
       `[Jump to details](${href})\n\n` +
       "Background paragraph.\n\n".repeat(50) +
       `## ${title}\n\n` +
-      "Supporting paragraph.\n\n".repeat(40);
+      "Supporting paragraph.\n\n".repeat(40) +
+      "End of initial chunk.\n\n";
     await page.evaluate((text) => window.reactUiE2E.stream(text), source);
     const reply = page.locator('[data-role="assistant"]').last();
     const heading = reply.getByRole("heading", { name: title, exact: true });
     await expect(heading).toHaveCount(1);
+    // Let the first received chunk finish its reveal before clicking; the response
+    // remains live, and the next chunk below verifies that navigation stays anchored.
+    await expect(reply).toContainText("End of initial chunk.");
     const route = page.url();
     await reply.getByRole("link", { name: "Jump to details" }).click();
     const gap = () =>

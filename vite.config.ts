@@ -1,7 +1,6 @@
 import path from "node:path";
-import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
-import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
 import { configDefaults } from "vitest/config";
 import { artifactLibrarySourcesPlugin } from "./scripts/artifact-library-sources";
@@ -27,13 +26,14 @@ export default defineConfig({
     alias: {
       "@": src,
       stream: path.resolve(src, "shared/lib/saxStreamBrowser.ts"),
+      "node:zlib": path.resolve(src, "shared/lib/zlibBrowser.ts"),
     },
   },
   optimizeDeps: {
     exclude: ["pyodide"],
-    // Discover the lazy Bash worker dependency before a run starts; otherwise
+    // Discover lazy interpreter dependencies before a run starts; otherwise
     // cold runs can invalidate chunks already being loaded by another page.
-    include: ["just-bash/browser"],
+    include: ["just-bash/browser", "apache-arrow", "buffer", "echarts"],
   },
   worker: {
     // Pyodide 314 (ES-module-only) requires a module worker — classic workers
@@ -70,8 +70,7 @@ export default defineConfig({
     },
   },
   plugins: [
-    react(),
-    babel({ presets: [reactCompilerPreset({ target: "19" })] }),
+    react({ compiler: { target: "19" } }),
     tailwindcss(),
     skillsDevPlugin(),
     pdfjsAssetsPlugin(),

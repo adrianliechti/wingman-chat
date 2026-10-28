@@ -6,7 +6,8 @@ import { mediaFromDataUrl, text } from "@/shared/lib/messages";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MCPClient } from "./mcp";
 import { McpAuthorizationPending } from "./mcpAuthFetch";
-import { createAppBridge, getHtmlContent, buildHostCapabilities, type McpAppData } from "./mcpAppSession";
+import { createAppBridge } from "./mcpAppBridge";
+import { getHtmlContent, buildHostCapabilities, type McpAppData } from "./mcpAppSession";
 
 const tool = { name: "app", inputSchema: { type: "object" as const } };
 const resource = {

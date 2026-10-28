@@ -1,5 +1,5 @@
 import type { ToolCallPart, ToolResultPart, UIMessage } from "@tanstack/ai";
-import { memo, useMemo, useState } from "react";
+import { lazy, memo, Suspense, useMemo, useState } from "react";
 import { useChatActions, useChatConversation } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
@@ -8,8 +8,9 @@ import { CodeRenderer } from "@/shared/ui/CodeRenderer";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { Markdown } from "@/shared/ui/Markdown";
 import { ActivityRow } from "./ActivityRow";
-import { McpApp } from "./McpApp";
 import { findTool, resolveToolHeader, resolveToolInput, resolveToolOutput } from "./toolDisplay";
+
+const McpApp = lazy(() => import("./McpApp").then((module) => ({ default: module.McpApp })));
 
 type ChatToolMessageProps = {
   /** The assistant message that holds the round. */
@@ -138,14 +139,22 @@ export const ChatToolMessage = memo(function ChatToolMessage({
 
         {/* Render the native UI resource alongside its originating tool result. */}
         {hasMcpApp && app && result && (
-          <McpApp
-            key={`${chat?.id}-${message.id}-${call.id}`}
-            call={call}
-            app={app}
-            result={result}
-            isLastFullscreenApp={isLastFullscreenApp}
-            onPrompt={(text) => sendMessage(userMessage(text))}
-          />
+          <Suspense
+            fallback={
+              <div className="p-3 text-sm text-neutral-500" role="status">
+                Loading app…
+              </div>
+            }
+          >
+            <McpApp
+              key={`${chat?.id}-${message.id}-${call.id}`}
+              call={call}
+              app={app}
+              result={result}
+              isLastFullscreenApp={isLastFullscreenApp}
+              onPrompt={(text) => sendMessage(userMessage(text))}
+            />
+          </Suspense>
         )}
       </div>
     </div>
