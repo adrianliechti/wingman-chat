@@ -1,6 +1,8 @@
 import { expect, test as base, type Page } from "@playwright/test";
 import { mcpToolName } from "../../src/features/settings/lib/mcpToolNames";
 
+const AGENT_TOOL_NAME = mcpToolName("internet", "@agent");
+
 const test = base.extend({
   context: async ({ browserName, context, playwright, baseURL, viewport }, use, info) => {
     if (browserName !== "webkit") return use(context);
@@ -368,12 +370,33 @@ test("activity labels vary across responses and stay stable while composing", as
   expect(labels.size).toBeGreaterThan(1);
 });
 
+test("Stop clears subagent loading activity and keeps it stopped after reload", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("Delegate this task");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().tools)).toContain("agent");
+  await page.evaluate(() => window.reactUiE2E.callTool("agent", { prompt: "Find evidence" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  const card = page.locator('[class~="group/subagent"]');
+  await expect(card.locator("summary .animate-spin")).toHaveCount(1);
+  await page.getByRole("button", { name: "Stop generating (Esc)", exact: true }).click();
+  await expect(card.locator("summary")).toContainText("Stopped");
+  await expect(card.locator(".animate-spin")).toHaveCount(0);
+  await page.evaluate(() => window.reactUiE2E.finish("Late child reply"));
+  await expect(page.getByText("Late child reply", { exact: true })).toHaveCount(0);
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.reload();
+  await expect(card.locator("summary")).toContainText("Stopped");
+  await expect(card.locator(".animate-spin")).toHaveCount(0);
+});
+
 for (const feature of [
   { name: "web_research", label: "Deep research" },
   { name: "web_search", label: "Web Search" },
   { name: "web_fetch", label: "Web Fetch" },
 ]) {
-  test(`MCP ${feature.name} approval shows input before sending and remains usable on a narrow screen`, async ({
+  test(`approved research can use ${feature.name} without another prompt and remains usable on a narrow screen`, async ({
     page,
   }, info) => {
     const errors: string[] = [];
@@ -394,7 +417,6 @@ for (const feature of [
               query: "Coverage and reliability",
               max_chars: 4096,
             };
-    const details = feature.name === "web_research" ? [instructions] : (args.queries ?? [args.url!]);
     const originalViewport = page.viewportSize()!;
     page.on("pageerror", (error) => errors.push(error.message));
     await page.route("**/fixture-research-mcp", async (route) => {
@@ -434,21 +456,31 @@ for (const feature of [
       }
       await route.fulfill({ json: { jsonrpc: "2.0", id: request.id, result } });
     });
+    const discovery = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/fixture-research-mcp") &&
+        response.request().method() === "POST" &&
+        response.request().postDataJSON()?.method === "tools/list",
+    );
     await open(page, "?seed&research");
+    await discovery;
+    await expect(page.getByRole("button", { name: "Fixture", exact: true })).toBeVisible();
     const input = page.getByRole("textbox", { name: "Chat message input" });
-    await input.fill("Research this topic");
+    await input.fill("Research this topic for CLIENT_SECRET");
     await input.press("Enter");
-    await expect
-      .poll(() => page.evaluate(() => window.reactUiE2E.state().tools))
-      .toContain(mcpToolName("internet", feature.name));
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().tools)).toContain(AGENT_TOOL_NAME);
+    expect(await page.evaluate(() => window.reactUiE2E.state().tools)).not.toContain(
+      mcpToolName("internet", feature.name),
+    );
     await page.evaluate(({ name, args }) => window.reactUiE2E.callTool(name, args), {
-      name: mcpToolName("internet", feature.name),
-      args,
+      name: AGENT_TOOL_NAME,
+      args: { prompt: instructions },
     });
     const requests = page.getByLabel("Agent requests");
-    await expect(requests.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
+    const approve = requests.getByRole("button", { name: "Allow", exact: true });
+    await expect(approve).toBeVisible();
     await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
-    await expect(requests.getByRole("heading", { name: `Allow ${feature.label}?`, exact: true })).toBeVisible();
+    await expect(requests.getByRole("heading", { name: "Allow Web Search?", exact: true })).toBeVisible();
     await expect(page.locator("footer").getByLabel("Agent requests")).toHaveCount(0);
     expect(
       await requests.evaluate(
@@ -456,18 +488,16 @@ for (const feature of [
           element.getBoundingClientRect().top >= element.previousElementSibling!.getBoundingClientRect().bottom,
       ),
     ).toBe(true);
-    for (const item of details) await expect(requests.getByText(item, { exact: true })).toHaveCount(1);
-    // Only the request itself is shown; options stay in the tool row.
-    for (const option of ["max_chars", "Max chars", "max_results", "Allowed domains", "Coverage and reliability"])
-      await expect(requests).not.toContainText(option);
+    await expect(requests.getByLabel("Prompt shared with Web Search")).toHaveText(instructions);
+    await expect(requests.getByRole("textbox")).toHaveCount(0);
     await expect(requests.locator("pre, details")).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("approval.png") });
     await page.setViewportSize({ width: 390, height: 750 });
-    const label = page.getByText(feature.label, { exact: true }).first();
+    const label = requests.getByRole("heading", { name: "Allow Web Search?" });
     await expect(label).toBeVisible();
     expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await expect(requests.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
+    await expect(approve).toBeVisible();
     await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
     for (const name of ["Allow", "Decline", "Cancel"]) {
       const button = requests.getByRole("button", { name, exact: true });
@@ -484,15 +514,27 @@ for (const feature of [
     await page.screenshot({ path: info.outputPath("approval-narrow.png") });
     await page.setViewportSize(originalViewport);
     expect(remoteCalls).toBe(0);
-    await requests.getByRole("button", { name: "Allow", exact: true }).click();
+    await approve.click();
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    const card = page.locator('[class~="group/subagent"]');
+    await expect(card).not.toHaveAttribute("open");
+    await card.locator("summary").click();
+    expect(remoteCalls).toBe(0);
+    expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).not.toContain("CLIENT_SECRET");
+    expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).not.toContain("Question 119");
+    await page.evaluate(({ name, args }) => window.reactUiE2E.callTool(name, args), {
+      name: mcpToolName("internet", feature.name),
+      args,
+    });
     await expect(page.getByText("Searching sources", { exact: true })).toBeVisible();
     expect(remoteCalls).toBe(1);
-    expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    await expect(requests).toHaveCount(0);
     await page.evaluate(() => window.reactUiE2E.researchProgress(2, "Reading sources", 4));
     await expect(page.getByText("Reading sources · 50%", { exact: true })).toBeVisible();
     await page.screenshot({ path: info.outputPath("progress.png") });
     await page.evaluate(() => window.reactUiE2E.finishResearch());
-    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
     await expect(page.getByText("Reading sources · 50%", { exact: true })).toHaveCount(0);
     const result = page.getByRole("button", { name: feature.label, exact: false });
     await expect(result).toBeVisible();
@@ -503,6 +545,8 @@ for (const feature of [
     await page.setViewportSize({ width: 390, height: 750 });
     await expect(result).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.evaluate(() => window.reactUiE2E.finish("Public report with sources"));
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(4);
     await page.evaluate(() => window.reactUiE2E.finish("Here is the answer"));
     await expect(page.locator('[data-role="assistant"]').last()).toContainText("Here is the answer");
     await expect(requests).toHaveCount(0);

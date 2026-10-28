@@ -504,11 +504,12 @@ export function useChatRun({
   }, [chatIdRef, session, isLoading, ai.isHydrating, setMessages, append]);
 
   const stopStreaming = useCallback(() => {
+    for (const subagent of ai.subagents) subagent.stop?.();
     stop();
     clearElicitation();
     setStreamingMessage(null);
     setRunPhase("idle");
-  }, [stop, clearElicitation]);
+  }, [ai.subagents, stop, clearElicitation]);
   const setVoiceToolCall = useCallback(
     (name: string | null, callId?: string) => {
       const id = chatIdRef.current;

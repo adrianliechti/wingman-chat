@@ -1,5 +1,5 @@
-import { z } from "zod";
 // @vitest-environment happy-dom
+import { z } from "zod";
 import { act, useContext } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { UIMessage } from "@tanstack/ai";
@@ -27,6 +27,7 @@ import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import { legacyChatPath, loadChat, storeChat } from "../lib/chatStorage";
 import { readJson } from "@/shared/lib/opfs";
 import { createAgentTool } from "@/features/tools/lib/subagent";
+import { createMcpAgentChat } from "@/features/tools/lib/mcpAgent";
 import type { getConfig } from "@/shared/config";
 
 const fixture = vi.hoisted(() => ({
@@ -69,7 +70,12 @@ vi.mock("@/features/artifacts/lib/fs", () => ({
   resolveArtifactFileSystem: (_fs: unknown, chatId: string) => ({ chatId }),
 }));
 vi.mock("@/features/tools/hooks/useToolsContext", () => ({
-  useToolsContext: () => ({ providers: [], getProviderState: () => "connected", isProviderEnabled: () => true }),
+  useToolsContext: () => ({
+    providers: [],
+    getProviderState: () => "connected",
+    isProviderEnabled: () => true,
+    getSkillsProvider: () => undefined,
+  }),
 }));
 vi.mock("@/features/chat/hooks/useChatContext", () => {
   const context = {
@@ -546,6 +552,62 @@ describe("chat run integration", () => {
     expect(execute).toHaveBeenCalledOnce();
   });
 
+  it.each([false, true])("restores a prompt agent across reload (prompt already approved=%s)", async (approved) => {
+    const execute = vi.fn<Tool["execute"]>().mockResolvedValue(output("Evidence"));
+    const research = createMcpAgentChat({
+      id: "internet",
+      name: "Web Search",
+      tools: [{ name: "work", description: "Work", inputSchema: z.looseObject({}), needsApproval: true, execute }],
+    }).tools[0];
+    fixture.tools = [research];
+    fixture.complete
+      .mockResolvedValueOnce(calls(["research", research.name, { prompt: "Find public rules" }]))
+      .mockResolvedValueOnce(call)
+      .mockResolvedValueOnce(assistant("Public findings"))
+      .mockResolvedValueOnce(assistant("Final answer"));
+    const original = await harness();
+    await act(() => original.sendMessage(user("Research CLIENT_SECRET")));
+    if (approved) {
+      const approval = original.interruptState!.interrupts[0];
+      if (approval.kind === "unbound") throw new Error("Expected prompt approval");
+      await act(async () => {
+        approval.resolveInterrupt(true);
+        await vi.waitFor(() => expect(fixture.complete).toHaveBeenCalledTimes(2));
+      });
+    }
+    expect(saved().resume?.pendingInterrupts).toHaveLength(1);
+    expect(execute).not.toHaveBeenCalled();
+    const id = saved().id;
+    await act(async () => {
+      root?.unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await storeChat(saved());
+    fixture.chats = [(await loadChat(id, false))!];
+    const restored = await harness();
+    await act(async () => restored.selectChat(id));
+    expect(fixture.complete).toHaveBeenCalledTimes(approved ? 2 : 1);
+    const approval = restored.interruptState!.interrupts[0];
+    expect(approval.kind).toBe("tool-approval");
+    if (approval.kind === "unbound") throw new Error("Expected a bound approval");
+    expect(saved().resume?.pendingInterrupts?.[0].toolCallId).toBe(approved ? "call" : "research");
+    await act(async () => {
+      approval.resolveInterrupt(true);
+      if (!approved) {
+        await vi.waitFor(() => {
+          expect(saved().resume?.pendingInterrupts?.[0].toolCallId).toBe("call");
+        });
+        const child = restored.interruptState!.interrupts[0];
+        if (child.kind === "unbound") throw new Error("Expected child approval");
+        child.resolveInterrupt(true);
+      }
+      await vi.waitFor(() => expect(lastText()).toBe("Final answer"));
+    });
+    expect(execute).toHaveBeenCalledOnce();
+    expect(fixture.complete).toHaveBeenCalledTimes(4);
+    expect(JSON.stringify(fixture.complete.mock.calls[2][0].messages)).not.toContain("CLIENT_SECRET");
+  });
+
   it.each([undefined, { generation: 0 }])(
     "opens old approvals without replaying tools when a binding is unsupported: %j",
     async (binding) => {
@@ -630,6 +692,61 @@ describe("chat run integration", () => {
     expect(execute).toHaveBeenCalledOnce();
     expect(fixture.complete).toHaveBeenCalledTimes(4);
     expect(JSON.stringify(saved().messages)).toContain("Child finished");
+  });
+
+  it("Stop aborts a running prompt agent and persists its stopped activity", async () => {
+    const pending = deferred();
+    let signal: AbortSignal | undefined;
+    const execute = vi.fn<Tool["execute"]>(async (_args, execution) => {
+      signal = execution?.context?.signal;
+      await pending.promise;
+      signal?.throwIfAborted();
+      return output("Late findings");
+    });
+    const research = createMcpAgentChat({
+      id: "internet",
+      name: "Web Search",
+      tools: [{ name: "work", description: "Research", inputSchema: z.looseObject({}), execute }],
+    }).tools[0];
+    fixture.tools = [research];
+    fixture.complete
+      .mockResolvedValueOnce(calls(["delegate", research.name, { prompt: "Find public evidence" }]))
+      .mockResolvedValueOnce(call)
+      .mockResolvedValueOnce(assistant("Fresh answer"));
+    const context = await harness();
+    await act(() => context.sendMessage(user("Research this")));
+    const approval = context.interruptState!.interrupts[0];
+    if (approval.kind === "unbound") throw new Error("Expected prompt approval");
+    await act(async () => {
+      approval.resolveInterrupt(true);
+      await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+    });
+    const child = () =>
+      saved()
+        .messages.flatMap((message) => message.parts)
+        .find((part) => part.type === "subagent")!;
+    expect(child().subagent.status).toBe("running");
+    act(() => context.stopStreaming());
+    expect(signal?.aborted).toBe(true);
+    expect(context.isResponding).toBe(false);
+    expect(child().subagent.status).toBe("error");
+    expect(child().subagent.error?.message).toBe("Stopped");
+    await act(async () => {
+      pending.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(fixture.complete).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(saved().messages)).not.toContain("Late findings");
+    const id = saved().id;
+    await act(async () => root?.unmount());
+    await storeChat(saved());
+    fixture.chats = [(await loadChat(id, false))!];
+    const restored = await harness();
+    await act(async () => restored.selectChat(id));
+    expect(child().subagent.status).toBe("error");
+    await act(() => restored.sendMessage(user("Different request")));
+    expect(lastText()).toBe("Fresh answer");
+    expect(child().subagent.status).toBe("error");
   });
 
   it.each([false, true])("explicit Stop clears an approval without executing the tool (reload=%s)", async (reload) => {

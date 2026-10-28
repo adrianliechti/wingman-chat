@@ -64,6 +64,7 @@ function InterruptRequest({ interrupt }: { interrupt: ChatInterrupt | ToolApprov
     return (
       <ApprovalRequest
         approval={{
+          kind: tool?.approval,
           tool: header.label,
           source: provider && provider.name !== header.label ? provider.name : undefined,
           input,

@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { loadConfig } from "./config";
+import { sameMcpServer, type McpServerDefinition } from "@/features/settings/lib/mcpConfig";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -59,7 +60,9 @@ it("normalizes configured endpoints and headers and retains companion wire compa
   const config = await loadWith({
     bridge: { url: "http://LOCALHOST:4242/" },
     tools: [
-      { id: "gateway", name: "Gateway", needsApproval: true },
+      { id: "gateway", name: "Gateway", approval: { mode: "individual" } },
+      { id: "legacy", name: "Legacy", needsApproval: true },
+      { id: "invalid", name: "Invalid", approval: { mode: "always" } },
       { id: "direct", url: "https://MCP.test:443/api#ignored", headers: { "X-Tenant": " demo " } },
       { id: "direct", url: "https://duplicate.test" },
       { id: "bad", url: "file:///etc/passwd" },
@@ -75,7 +78,7 @@ it("normalizes configured endpoints and headers and retains companion wire compa
       name: "Gateway",
       description: "",
       url: "http://localhost/api/v1/mcp/gateway",
-      needsApproval: true,
+      approval: { mode: "individual" },
     },
     {
       id: "direct",
@@ -97,7 +100,7 @@ it("keeps the Internet provider ID while resolving its gateway research endpoint
         name: "Web Search",
         description: "Access up-to-date information",
         url: "/api/v1/mcp/research",
-        needsApproval: true,
+        approval: { mode: "delegated" },
       },
     ],
   });
@@ -108,9 +111,41 @@ it("keeps the Internet provider ID while resolving its gateway research endpoint
       description: "Access up-to-date information",
       url: "http://localhost/api/v1/mcp/research",
       source: "configured",
-      needsApproval: true,
+      approval: { mode: "delegated" },
     },
   ]);
+});
+
+it.each([undefined, "none", "individual", "delegated"] as const)("loads MCP approval mode %s", async (mode) => {
+  const approval = mode === undefined ? undefined : { mode };
+  const config = await loadWith({ tools: [{ id: "test", approval }] });
+  expect(config.mcps).toHaveLength(1);
+  expect(config.mcps[0].approval).toEqual(approval);
+});
+
+it.each([null, "call", "prompt", {}, { mode: "call" }, { mode: true }, ["delegated"]])(
+  "rejects malformed MCP approval rather than disabling approval: %j",
+  async (approval) => {
+    const config = await loadWith({ tools: [{ id: "invalid", approval }] });
+    expect(config.mcps).toEqual([]);
+  },
+);
+
+it("compares approval modes by value, treating omitted approval as none", () => {
+  const server: McpServerDefinition = {
+    id: "test",
+    source: "configured",
+    url: "https://example.test/mcp",
+    name: "Test",
+    description: "",
+  };
+  expect(sameMcpServer(server, { ...server, approval: { mode: "none" } })).toBe(true);
+  expect(
+    sameMcpServer({ ...server, approval: { mode: "delegated" } }, { ...server, approval: { mode: "delegated" } }),
+  ).toBe(true);
+  expect(
+    sameMcpServer({ ...server, approval: { mode: "delegated" } }, { ...server, approval: { mode: "individual" } }),
+  ).toBe(false);
 });
 
 it.each(["categories", "risks"])("preserves explicit IDs for chat.%s", async (kind) => {
