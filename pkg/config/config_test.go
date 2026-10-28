@@ -54,7 +54,8 @@ func TestLoadYAMLCompatibility(t *testing.T) {
 	if err := os.WriteFile(filename, []byte(`
 - &defaults
   id: base
-  needsApproval: yes
+  approval:
+    mode: individual
   headers:
     X-Tenant: "0123"
 - <<: *defaults
@@ -67,11 +68,11 @@ func TestLoadYAMLCompatibility(t *testing.T) {
 	var tools []Tool
 	loadYAML(filename, &tools)
 	want := []Tool{
-		{ID: "base", NeedsApproval: true, Headers: map[string]string{"X-Tenant": "0123"}},
-		{ID: "inherited", NeedsApproval: true, URL: "https://mcp.example.test/api", Headers: map[string]string{"X-Tenant": "0123"}},
+		{ID: "base", Approval: &Approval{Mode: ApprovalIndividual}, Headers: map[string]string{"X-Tenant": "0123"}},
+		{ID: "inherited", Approval: &Approval{Mode: ApprovalIndividual}, URL: "https://mcp.example.test/api", Headers: map[string]string{"X-Tenant": "0123"}},
 	}
 	if !reflect.DeepEqual(tools, want) {
-		t.Fatalf("YAML aliases, legacy booleans or quoted strings changed: got %#v, want %#v", tools, want)
+		t.Fatalf("YAML aliases or quoted strings changed: got %#v, want %#v", tools, want)
 	}
 }
 
@@ -244,11 +245,18 @@ func TestMCPConfigReachesBrowser(t *testing.T) {
 	t.Setenv("BRIDGE_URL", "http://localhost:4242/")
 	if err := os.WriteFile("tools.yaml", []byte(`
 - id: managed
+  approval:
+    mode: delegated
 - id: direct
-  needsApproval: true
+  approval:
+    mode: individual
   url: https://mcp.example.test/api
   headers:
     X-Tenant: example
+- id: explicit-none
+  approval:
+    mode: none
+- id: implicit-none
 `), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -264,8 +272,14 @@ func TestMCPConfigReachesBrowser(t *testing.T) {
 	if err := json.Unmarshal(data, &browser); err != nil {
 		t.Fatal(err)
 	}
-	if len(browser.Tools) != 2 || browser.Tools[0].URL != "" || browser.Tools[1].Headers["X-Tenant"] != "example" || !browser.Tools[1].NeedsApproval {
+	if len(browser.Tools) != 4 || browser.Tools[0].URL != "" || browser.Tools[1].Headers["X-Tenant"] != "example" {
 		t.Fatalf("tools.yaml lost MCP fields: %s", data)
+	}
+	approvals := []*Approval{{Mode: ApprovalDelegated}, {Mode: ApprovalIndividual}, {Mode: ApprovalNone}, nil}
+	for i, expected := range approvals {
+		if !reflect.DeepEqual(browser.Tools[i].Approval, expected) {
+			t.Fatalf("tools.yaml lost approval for %s: %s", browser.Tools[i].ID, data)
+		}
 	}
 	if browser.Bridge == nil || browser.Bridge.URL != "http://localhost:4242/" {
 		t.Fatalf("BRIDGE_URL changed its browser configuration contract: %s", data)

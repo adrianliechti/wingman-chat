@@ -30,7 +30,7 @@ export function findTool(providers: readonly ToolProvider[], name: string | unde
     return undefined;
   };
   for (const provider of providers) {
-    const tool = find(provider.tools);
+    const tool = (provider.chat && find(provider.chat.tools)) || find(provider.tools);
     if (tool) return tool;
   }
   // Chat injects this tool only when no provider supplies the same name.

@@ -1,6 +1,7 @@
 import { cn } from "@/shared/lib/cn";
 import { inputLabel, inputValue } from "@/shared/lib/toolInput";
 import type { ToolApproval } from "@/shared/types/elicitation";
+import { PromptApprovalDetails } from "./PromptApprovalDetails";
 import {
   primaryRequestButtonClass,
   quietRequestButtonClass,
@@ -60,15 +61,21 @@ export function ApprovalRequest({
         </>
       }
     >
-      {shown.length > 0 && (
-        <div tabIndex={0} className={cn(requestValueClass, "space-y-1.5")}>
-          {shown.map((key) => (
-            <div key={key} className="min-w-0">
-              {shown.length > 1 && <p className="text-xs text-neutral-500 dark:text-neutral-400">{inputLabel(key)}</p>}
-              <InputValue value={input[key]} />
-            </div>
-          ))}
-        </div>
+      {approval.kind === "prompt" ? (
+        <PromptApprovalDetails {...approval} />
+      ) : (
+        shown.length > 0 && (
+          <div tabIndex={0} className={cn(requestValueClass, "space-y-1.5")}>
+            {shown.map((key) => (
+              <div key={key} className="min-w-0">
+                {shown.length > 1 && (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">{inputLabel(key)}</p>
+                )}
+                <InputValue value={input[key]} />
+              </div>
+            ))}
+          </div>
+        )
       )}
     </RequestCard>
   );

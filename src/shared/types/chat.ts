@@ -116,6 +116,8 @@ export type Tool = Omit<WorkspaceTool, "inputSchema"> & {
   execute: NonNullable<WorkspaceTool["execute"]>;
   title?: string;
   icon?: string;
+  /** The user reviews the `prompt` once before an isolated agent starts. */
+  approval?: "prompt";
   /** Chat uses a native defineAgent; execute remains the realtime tool boundary. */
   subagent?: {
     /** Defaults to the caller's model. */
@@ -124,7 +126,7 @@ export type Tool = Omit<WorkspaceTool, "inputSchema"> & {
     tools: Tool[];
     runtimeContext?: string;
     middleware?: ChatMiddleware[];
-    /** Research receives its explicit brief instead of the parent conversation. */
+    /** False runs on the approved prompt alone, without parent history or tool-context callbacks. */
     inheritHistory?: boolean;
     /** Optional bounds for a delegated run, including its tools and middleware. */
     maxIterations?: number;

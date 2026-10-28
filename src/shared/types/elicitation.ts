@@ -72,6 +72,8 @@ export type ElicitationSchema = {
 
 /** The exact tool input a person approves before it is sent. */
 export type ToolApproval = {
+  /** "prompt" shows `input.prompt` as the only information shared with an isolated agent. */
+  kind?: "prompt";
   /** Display name of the tool, e.g. "Web Fetch". */
   tool: string;
   /** Service that receives the input, when it isn't the tool itself. */
