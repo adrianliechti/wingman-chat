@@ -40,7 +40,7 @@ const NonMemoizedHtmlRenderer = ({ html, language, name }: HtmlRendererProps) =>
     >
       {showCode ? (
         <div className="p-4">
-          <pre className="text-neutral-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto">
+          <pre className="text-neutral-800 dark:text-neutral-300 text-sm whitespace-pre overflow-x-auto">
             <code>{html}</code>
           </pre>
         </div>

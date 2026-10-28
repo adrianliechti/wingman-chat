@@ -41,6 +41,7 @@ interface Session {
   hydrated: ChatPersistedState | null;
   interrupts: ChatInterruptState | null;
   toolWaiters: Set<() => void>;
+  pendingSends: Map<string, () => void>;
 }
 
 interface Options {
@@ -90,6 +91,7 @@ export function useChatRun({
       hydrated: null,
       interrupts: null,
       toolWaiters: new Set(),
+      pendingSends: new Map(),
     }),
     [threadId],
   );
@@ -400,6 +402,19 @@ export function useChatRun({
     [ai.interrupts, ai.interruptErrors, ai.resuming],
   );
   const { sendMessage: sendNativeMessage, setMessages, append, stop, isLoading } = ai;
+  useEffect(() => {
+    const accepted = new Set(ai.messages.map((m) => m.id));
+    for (const queued of ai.queue) {
+      if (typeof queued.content !== "string" && queued.content.id) accepted.add(queued.content.id);
+    }
+    for (const id of accepted) {
+      const done = session.pendingSends.get(id);
+      if (done) {
+        session.pendingSends.delete(id);
+        done();
+      }
+    }
+  }, [ai.messages, ai.queue, session]);
   const isResponding = ai.isLoading || !!streamingMessage;
   const status: ChatContextType["status"] =
     pendingElicitation || ai.interrupts.length
@@ -432,6 +447,7 @@ export function useChatRun({
       historyOverride?: UIMessage[],
       artifactFiles?: ProcessedFile[],
       deletedPaths?: string[],
+      onAccepted?: (chatId: string) => void,
     ) => {
       const { id, chat: chatObj, fs: chatFs } = await getOrCreateChat();
       if (!chatObj) {
@@ -478,18 +494,24 @@ export function useChatRun({
           );
         }
       }
-      if (!getChat(id) || chatIdRef.current !== id) return;
-      if (session.id !== id) return;
+      if (!getChat(id) || chatIdRef.current !== id || session.id !== id)
+        throw new Error("Conversation changed before the message was sent. Your draft was kept.");
       if (historyOverride) {
         // An edited turn replaces itself and everything after it in the live transcript.
         const cut = session.native.findIndex((native) => native.id === resolvedMessage.id);
         setMessages(cut >= 0 ? session.native.slice(0, cut) : historyOverride);
       }
-      await sendNativeMessage({
-        id: resolvedMessage.id,
-        content: resolvedMessage.parts as ContentPart[],
-        metadata: resolvedMessage.metadata,
-      });
+      if (onAccepted) session.pendingSends.set(resolvedMessage.id, () => onAccepted(id));
+      try {
+        await sendNativeMessage({
+          id: resolvedMessage.id,
+          content: resolvedMessage.parts as ContentPart[],
+          metadata: resolvedMessage.metadata,
+        });
+      } catch (error) {
+        session.pendingSends.delete(resolvedMessage.id);
+        throw error;
+      }
     },
     [getOrCreateChat, getChat, chatIdRef, session, setMessages, sendNativeMessage],
   );

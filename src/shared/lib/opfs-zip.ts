@@ -115,7 +115,7 @@ async function createFolderZip(folderPath: string): Promise<JSZip> {
   const collection = folderPath.split("/").filter(Boolean)[0];
   // Same lock order as restoreFiles so an export and a restore in two tabs
   // cannot wait on each other forever.
-  const keys = collection ? [collection] : [...STORAGE_COLLECTIONS, "plugins", "profile"].sort();
+  const keys = collection ? [collection] : [...STORAGE_COLLECTIONS, "drafts", "plugins", "profile"].sort();
   const snapshot = async () => {
     const isRoot = !folderPath || folderPath === "/";
     let folderHandle: FileSystemDirectoryHandle;
@@ -139,10 +139,11 @@ export async function exportFolderAsZip(folderPath: string, onProgress?: ZipProg
   return generateZipBlob(await createFolderZip(folderPath), onProgress);
 }
 
-type InferredRecord = { collection: "chats" | "agents" | "skills"; id?: string };
+type InferredRecord = { collection: "chats" | "agents" | "skills" | "projects"; id?: string };
 /** Definitions that identify records exported without their collection folder. */
 const RECORD_MARKERS = new Map<string, InferredRecord["collection"]>([
   ["chat.json", "chats"],
+  ["project.json", "projects"],
   ["AGENTS.md", "agents"],
   ["AGENT.md", "agents"],
   ["agent.json", "agents"],
@@ -172,9 +173,11 @@ async function withInferredCollections(files: ReadonlyMap<string, Blob>): Promis
   if (!roots.size) return new Map(files);
 
   const flat = roots.get("");
-  if (flat?.collection === "chats") {
+  if (flat?.collection === "chats" || flat?.collection === "projects") {
     try {
-      const id: unknown = JSON.parse(await files.get("chat.json")!.text())?.id;
+      const id: unknown = JSON.parse(
+        await files.get(flat.collection === "chats" ? "chat.json" : "project.json")!.text(),
+      )?.id;
       if (typeof id === "string" && id) {
         if (/[/\\\0]/.test(id) || id === "." || id === "..") throw new Error(`Invalid chat id: ${id}`);
         flat.id = id;

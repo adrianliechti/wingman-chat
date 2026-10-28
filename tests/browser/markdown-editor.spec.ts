@@ -70,6 +70,52 @@ test("cancel drops unsaved edits", async ({ page }) => {
   expect(await read()).toBe(NOTES);
 });
 
+for (const readOnly of [false, true]) {
+  test(`fragment links navigate within the ${readOnly ? "archived" : "editable"} file preview without entering edit mode`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const source =
+      "# Contents\n\n[Jump to details](#shell--config)\n\n" +
+      // An embedded Markdown preview has its own headings and must not steal the jump.
+      "```md\n## Shell & config\n\nEmbedded document.\n```\n\n" +
+      "Filler paragraph.\n\n".repeat(60) +
+      "## Shell & config\n\nDestination.\n\n" +
+      "Following paragraph.\n\n".repeat(30);
+    const { read, write } = await openFile(page, "/anchors.md", source);
+    if (readOnly) {
+      await write(`${source}\nAppendix.\n`);
+      await expect(page.locator(".prose p", { hasText: "Appendix." })).toHaveCount(1);
+      await page.getByRole("button", { name: "History" }).click();
+      await page.getByRole("list", { name: "Revisions" }).getByRole("button").nth(1).click();
+      await expect(page.locator(".prose [data-block-start]")).toHaveCount(0);
+    }
+    const before = await read();
+    // A heading in another chat/document must not steal this file's fragment link.
+    await page.evaluate(() => {
+      const decoy = document.createElement("h2");
+      decoy.id = "shell--config";
+      decoy.textContent = "Other document";
+      document.body.prepend(decoy);
+    });
+    const target = page.locator(".prose > h2");
+    await expect(target).not.toBeInViewport();
+    await page.getByRole("link", { name: "Jump to details" }).click();
+    await expect(target).toBeInViewport();
+    const gap = () =>
+      target.evaluate(
+        (element) =>
+          element.getBoundingClientRect().top -
+          element.closest("[data-markdown-document]")!.parentElement!.getBoundingClientRect().top,
+      );
+    await expect.poll(async () => Math.abs(await gap())).toBeLessThan(2);
+    await expect(page.getByRole("button", { name: "History" })).toBeInViewport();
+    await expect(page.getByRole("textbox", { name: "Block source" })).toHaveCount(0);
+    await expect(saveButton(page)).toBeHidden();
+    expect(await read()).toBe(before);
+  });
+}
+
 test("switching views keeps the draft", async ({ page }) => {
   await openFile(page, "/notes.md", NOTES);
   await page.locator(".prose h1").click();
@@ -266,10 +312,45 @@ test("text files are edited in place", async ({ page }) => {
   await expect.poll(read).toBe("Shopping\n\tmilk\n\teggs");
 });
 
+test("long source lines scroll horizontally and keep the editor mirror aligned", async ({ page }) => {
+  const code = `const message = "${"long source line ".repeat(30)}";\n`;
+  const { read } = await openFile(page, "/wide.ts", code);
+  const source = page.getByRole("textbox", { name: "Source" });
+  const mirror = page.locator("pre[aria-hidden].syntax-highlight");
+  await expect(source).toHaveValue(code);
+  await expect(source).toHaveAttribute("wrap", "off");
+  await expect(mirror).toHaveCSS("white-space", "pre");
+  await expect(mirror.locator(".th-keyword")).toHaveText("const");
+  const bounds = await mirror.evaluate((pre) => {
+    const textarea = pre.parentElement!.querySelector("textarea")!;
+    const scroller = pre.parentElement!.parentElement!;
+    scroller.scrollLeft = 300;
+    return {
+      mirrorWidth: pre.getBoundingClientRect().width,
+      editorWidth: textarea.getBoundingClientRect().width,
+      height: pre.getBoundingClientRect().height,
+      lineHeight: parseFloat(getComputedStyle(pre).lineHeight),
+      viewport: scroller.clientWidth,
+      scrollLeft: scroller.scrollLeft,
+    };
+  });
+  expect(bounds.mirrorWidth).toBeGreaterThan(bounds.viewport);
+  expect(bounds.editorWidth).toBe(bounds.mirrorWidth);
+  expect(bounds.scrollLeft).toBe(300);
+  expect(bounds.height).toBe(32 + 2 * bounds.lineHeight);
+  await source.evaluate(caretAtEnd);
+  await source.pressSequentially("// edited");
+  await expect(mirror).toHaveJSProperty("textContent", code + "// edited");
+  await saveButton(page).click();
+  await expect.poll(read).toBe(code + "// edited");
+});
+
 test("source files keep and open indentation", async ({ page }) => {
   const { read } = await openFile(page, "/app.ts", "function main() {}\n");
   const source = page.getByRole("textbox", { name: "Source" });
   await expect(source).toHaveValue("function main() {}\n");
+  const mirror = page.locator("pre[aria-hidden].syntax-highlight");
+  await expect(mirror.locator(".th-keyword")).toHaveText("function");
   await source.evaluate((textarea: HTMLTextAreaElement) => {
     textarea.focus();
     textarea.setSelectionRange(17, 17);
@@ -277,6 +358,8 @@ test("source files keep and open indentation", async ({ page }) => {
   await source.press("Enter");
   await source.pressSequentially("return 1;");
   await expect(source).toHaveValue("function main() {\n  return 1;\n}\n");
+  await expect(mirror).toHaveJSProperty("textContent", "function main() {\n  return 1;\n}\n ");
+  await expect(mirror.locator(".th-number")).toHaveText("1");
 
   // Shift+Tab outdents the line; the edit is one undo step.
   await source.press("Shift+Tab");
@@ -285,6 +368,20 @@ test("source files keep and open indentation", async ({ page }) => {
   await expect(source).toHaveValue("function main() {\n  return 1;\n}\n");
   await saveButton(page).click();
   await expect.poll(read).toBe("function main() {\n  return 1;\n}\n");
+});
+
+test("editing a fenced code block preserves long lines", async ({ page }) => {
+  const code = `const message = "${"long source line ".repeat(30)}";`;
+  await openFile(page, "/wide.md", "```ts\n" + code + "\n```\n");
+  await expect(page.locator("pre code")).toHaveText(code);
+  await page.locator("pre .th-keyword").click();
+  const source = page.getByRole("textbox", { name: "Block source" });
+  await expect(source).toHaveValue("```ts\n" + code + "\n```");
+  await expect(source).toHaveAttribute("wrap", "off");
+  await expect(page.locator("pre[aria-hidden]")).toHaveCSS("white-space", "pre");
+  await source.press("Escape");
+  await expect(page.locator("pre code")).toHaveText(code);
+  await expect(saveButton(page)).toBeHidden();
 });
 
 test("running a script runs the text on screen without saving it", async ({ page }) => {

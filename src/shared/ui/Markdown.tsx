@@ -35,6 +35,7 @@ import { downloadBlob } from "@/shared/lib/utils";
 import type { FileSystem } from "@/shared/types/file";
 import { ACTION_ICON_SIZE, actionButtonClassName } from "./actionButton";
 import { CodeRenderer } from "./CodeRenderer";
+import { MarkdownNavigationContext, markdownFragmentTarget } from "./MarkdownNavigationContext";
 import { UiRenderer } from "@/shared/ui/inlineUi/UiRenderer";
 import { UI_TAG, uiFenceExtension } from "./markdownUi";
 import { loadKatex, type Katex } from "./markdownMath";
@@ -53,17 +54,15 @@ const slugify = (children: ReactNode): string => {
   const text = extractText(children);
   return text
     .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(/[^\p{L}\p{M}\p{N}_\s-]/gu, "")
+    .replace(/\s/g, "-");
 };
 
 const getInternalHash = (url: string): string | null => {
   if (!url) return null;
-  if (url.startsWith("#")) return decodeURIComponent(url.slice(1));
-  if (typeof window === "undefined") return null;
   try {
+    if (url.startsWith("#")) return decodeURIComponent(url.slice(1));
+    if (typeof window === "undefined") return null;
     const parsed = new URL(url, window.location.href);
     if (parsed.origin === window.location.origin && parsed.pathname === window.location.pathname && parsed.hash) {
       return decodeURIComponent(parsed.hash.slice(1));
@@ -736,6 +735,7 @@ const markdownComponents = {
   },
   a: function Link({ children, href, ...props }) {
     const { onOpenArtifact } = useContext(MarkdownRenderContext);
+    const navigateToTarget = useContext(MarkdownNavigationContext);
     let url = href || "";
     const internalHash = getInternalHash(url);
 
@@ -779,7 +779,11 @@ const markdownComponents = {
           href={`#${internalHash}`}
           onClick={(e) => {
             e.preventDefault();
-            document.getElementById(internalHash)?.scrollIntoView({ behavior: "smooth" });
+            const link = e.currentTarget;
+            const resolve = () => markdownFragmentTarget(link, internalHash);
+            if (!resolve()) return;
+            if (navigateToTarget) navigateToTarget(resolve);
+            else resolve()?.scrollIntoView({ behavior: "smooth", block: "start" });
           }}
           {...props}
         >
@@ -980,8 +984,7 @@ const markdownComponents = {
     );
   },
   code: function Code({ children, className, ...rest }) {
-    const { isStreaming } = useContext(MarkdownRenderContext);
-    const match = /language-([\w-]+)/.exec(className || "");
+    const match = /(?:^|\s)language-(\S+)/.exec(className || "");
     const text = extractText(children);
     const isMultiLine = text.includes("\n");
 
@@ -997,7 +1000,7 @@ const markdownComponents = {
     }
 
     if (!match) {
-      return <CodeRenderer code={text} language="text" isStreaming={isStreaming} />;
+      return <CodeRenderer code={text} language="text" />;
     }
 
     const language = match[1].toLowerCase();
@@ -1020,7 +1023,7 @@ const markdownComponents = {
     }
 
     if (language === "undefined" || language === "text" || language === "plain") {
-      return <CodeRenderer code={text} language="text" isStreaming={isStreaming} />;
+      return <CodeRenderer code={text} language="text" />;
     }
 
     if (language === "markdown" || language === "md") {
@@ -1028,7 +1031,7 @@ const markdownComponents = {
     }
 
     const filename = extractFilename(text);
-    return <CodeRenderer code={text} language={language} name={filename} isStreaming={isStreaming} />;
+    return <CodeRenderer code={text} language={language} name={filename} />;
   },
 } satisfies MarkdownComponents;
 

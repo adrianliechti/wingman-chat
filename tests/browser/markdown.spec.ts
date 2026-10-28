@@ -427,13 +427,75 @@ test("finishing a stream and loading math preserve preview state", async ({ page
   await expect(page.getByRole("button", { name: "Preview", exact: true })).toBeVisible();
 });
 
-test("code shows the latest source while highlighting waits", async ({ page }) => {
+test("code highlights the latest source while streaming", async ({ page }) => {
   await page.evaluate(() => window.markdownE2E.render("```js\nconst oldValue = 1;\n```"));
-  await expect(page.locator("pre.shiki")).toBeVisible();
+  await expect(page.locator("pre.syntax-highlight .th-keyword")).toBeVisible();
   await page.clock.install();
   await page.evaluate(() => window.markdownE2E.render("```js\nconst newValue = 2;\n```", true));
   await expect(page.locator("pre")).toContainText("const newValue = 2;");
   await expect(page.locator("pre")).not.toContainText("oldValue");
+  await expect(page.locator("pre .th-number")).toHaveText("2");
+  await page.evaluate(() => window.markdownE2E.render("```js\nconst finalValue = 3;\n```"));
+  await expect(page.locator("pre code")).toHaveText("const finalValue = 3;");
+});
+
+test("code supports aliases, switches theme with CSS, and safely falls back for unknown languages", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  const code = 'def greet():\n\treturn "<img src=x onerror=alert(1)> 🦉 & hello"\n';
+  await page.evaluate((code) => window.markdownE2E.render("```py\n" + code + "```"), code);
+  const keyword = page.locator("pre .th-keyword").first();
+  await expect(keyword).toHaveText("def");
+  await expect(keyword).toHaveCSS("color", "rgb(207, 34, 46)");
+  await expect(page.locator("pre code")).toHaveJSProperty("textContent", code.trimEnd());
+  await expect(page.locator("pre img")).toHaveCount(0);
+  await expect(page.locator("pre")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+
+  // A theme change only recolors the existing tokens.
+  await keyword.evaluate((node) => node.setAttribute("data-theme-probe", "same"));
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(keyword).toHaveCSS("color", "rgb(198, 120, 221)");
+  await expect(keyword).toHaveAttribute("data-theme-probe", "same");
+
+  await page.evaluate((code) => window.markdownE2E.render("```unknown-language\n" + code + "```"), code);
+  await expect(page.locator("pre code")).toHaveJSProperty("textContent", code.trimEnd());
+  await expect(page.locator("pre .th-keyword, pre img")).toHaveCount(0);
+});
+
+for (const { language, code, keyword } of [
+  { language: "c++", code: "namespace demo { constexpr int answer = 42; }", keyword: "namespace" },
+  { language: "c#", code: "public record Person(string Name);", keyword: "record" },
+]) {
+  test(`code preserves the ${language} language alias`, async ({ page }) => {
+    await page.evaluate(({ language, code }) => window.markdownE2E.render(`\`\`\`${language}\n${code}\n\`\`\``), {
+      language,
+      code,
+    });
+    await expect(page.locator("pre .th-keyword").filter({ hasText: keyword })).toHaveText(keyword);
+    await expect(page.locator("pre code")).toHaveJSProperty("textContent", code);
+  });
+}
+
+test("embedded TypeScript and CSS highlight inside Vue code", async ({ page }) => {
+  const code = '<script lang="ts">const count: number = 1;</script>\n<style>.demo { color: red; }</style>';
+  await page.evaluate((code) => window.markdownE2E.render("```vue\n" + code + "\n```"), code);
+  await expect(page.locator("pre .th-keyword")).toHaveText("const");
+  await expect(page.locator("pre .th-selector")).toHaveText(".demo");
+  await expect(page.locator("pre code")).toHaveJSProperty("textContent", code);
+  await expect(page.locator("pre script, pre style, pre pre")).toHaveCount(0);
+});
+
+test("large streamed code stays intact without synchronous highlighting", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.evaluate(() => window.markdownE2E.render("```js\nconst start = 1;\n```", true));
+  await expect(page.locator("pre .th-keyword")).toHaveText("const");
+  const code = "const start = 1;\n" + "const next = 2;\n".repeat(2500);
+  await page.evaluate((code) => window.markdownE2E.render("```js\n" + code, true), code);
+  await expect(page.locator("pre code")).toHaveJSProperty("textContent", code);
+  await expect(page.locator("pre span")).toHaveCount(0);
+  await page.evaluate(() => window.markdownE2E.render("```js\nconst smaller = 3;\n```"));
+  await expect(page.locator("pre .th-keyword")).toHaveText("const");
 });
 
 test("resolved artifact images update without reparsing the Markdown", async ({ page }) => {

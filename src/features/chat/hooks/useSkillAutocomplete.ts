@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useState, type KeyboardEvent, type RefObject } from "react";
+import { useId, useMemo, useState, type KeyboardEvent, type RefObject } from "react";
 import { availableSkills, matchingSkills, skillTrigger, type SkillSuggestion } from "../lib/skillAutocomplete";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
@@ -7,11 +7,12 @@ interface Options {
   content: string;
   setContent: (value: string) => void;
   input: RefObject<HTMLTextAreaElement | null>;
-  chatId: string | null;
+  selections: string[];
+  setSelections: (names: string[]) => void;
   enabled: boolean;
 }
 
-export function useSkillAutocomplete({ content, setContent, input, chatId, enabled }: Options) {
+export function useSkillAutocomplete({ content, setContent, input, selections, setSelections, enabled }: Options) {
   const { skills: personal } = useSkills();
   const { plugins } = usePlugins();
   const listId = useId();
@@ -19,8 +20,6 @@ export function useSkillAutocomplete({ content, setContent, input, chatId, enabl
   const [focused, setFocused] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [active, setActive] = useState(0);
-  const [chosen, setChosen] = useState<{ scope: string | null; items: string[] }>({ scope: chatId, items: [] });
-  const selections = chosen.scope === chatId ? chosen.items : [];
   const skills = useMemo(() => availableSkills(personal, plugins), [personal, plugins]);
   const trigger = enabled && focused ? skillTrigger(content, caret.start, caret.end) : null;
   const triggerId = trigger ? `${trigger.start}:${trigger.query}` : null;
@@ -40,11 +39,7 @@ export function useSkillAutocomplete({ content, setContent, input, chatId, enabl
     setActive(0);
     setDismissed(null);
   };
-  const clear = useCallback(() => {
-    setChosen({ scope: chatId, items: [] });
-    setDismissed(null);
-  }, [chatId]);
-  const remove = (name: string) => setChosen({ scope: chatId, items: selections.filter((item) => item !== name) });
+  const remove = (name: string) => setSelections(selections.filter((item) => item !== name));
   const choose = (option: SkillSuggestion) => {
     if (!trigger) return;
     let after = content.slice(trigger.end);
@@ -53,7 +48,7 @@ export function useSkillAutocomplete({ content, setContent, input, chatId, enabl
     setCaret({ start: trigger.start, end: trigger.start });
     setActive(0);
     setDismissed(triggerId);
-    setChosen({ scope: chatId, items: [...selections, option.name] });
+    setSelections([...selections, option.name]);
     requestAnimationFrame(() => {
       input.current?.focus();
       input.current?.setSelectionRange(trigger.start, trigger.start);
@@ -95,7 +90,6 @@ export function useSkillAutocomplete({ content, setContent, input, chatId, enabl
     activeIndex,
     choose,
     remove,
-    clear,
     setActive,
     onKeyDown,
     syncCaret,

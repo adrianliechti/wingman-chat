@@ -10,13 +10,20 @@ conversations, retrieval over your own files, and a library of reusable skills.
 ### Chat
 
 - **Multi-model chat** with configurable models, system instructions, and per-model defaults.
-- **Rich Markdown rendering** — TanStack Markdown with GitHub-style tables, task lists and footnotes, syntax highlighting (Shiki), math (KaTeX),
+- **Rich Markdown rendering** — TanStack Markdown with GitHub-style tables, task lists and footnotes, syntax highlighting (TanStack Highlight), math (KaTeX),
   Mermaid diagrams, emoji, and tables.
 - **Inline UI** — replies can embed small interactive interfaces (what-if calculators, filtered
   tables, charts, option buttons) as a validated JSON component tree with reactive state. See
   [docs/inline-ui.md](docs/inline-ui.md).
 - **Conversation management** with optional retention, automatic summarization, and history
   optimization.
+- **Chat search** shows matching excerpts and opens the first matching message with highlighted text.
+  Message links use `/chat/<chatId>/<messageId>` and retain their target across reloads;
+  title-only matches open the conversation normally.
+- **Projects** group chats with shared instructions and files. Move existing chats between projects,
+  choose an agent per conversation, and save an artifact to a project's file library for reuse.
+- **Composer drafts** retain unsent text and attachments across navigation and reloads, including
+  separate new-chat drafts for each project. Restore a sent message to the composer to reuse it.
 - **Attachments & vision** — drop in images and documents; PDF/Office files are extracted to text.
   Attachments can be sent without accompanying text.
 - **Skill autocomplete** — type `/` to select personal or installed-plugin skills for a request, even when
@@ -260,9 +267,11 @@ PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
 ```
 
 Keep `vite-plus`, its core package and the `vite` alias at the same version, and
-pin Vitest to the version bundled with Vite+. Babel stays on 7: React Compiler 1.0.0
-fails to compile defaulted props with Babel 8.0.9. `npm run check:react-compiler`
-guards that compatibility and verifies the main render paths are compiled.
+pin Vitest to the version bundled with Vite+. React Compiler runs through the
+experimental native `oxc-transform-react` integration in `@vitejs/plugin-react`,
+targeting React 19. Keep the compiler version within the plugin's supported peer range.
+`npm run check:react-compiler` verifies memoization in the main render paths,
+defaulted props, and the `use no memo` opt-out.
 The `vite` and `vitest` overrides keep dependencies on that shared toolchain;
 local and Docker installs use `npm ci` with normal peer-dependency resolution.
 The Chevrotain override updates its pinned `lodash-es` dependency to a patched release.

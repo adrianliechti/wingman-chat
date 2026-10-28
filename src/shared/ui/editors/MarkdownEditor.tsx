@@ -19,7 +19,7 @@ function MarkdownPreview({
   return (
     <div className="@container h-full overflow-auto">
       {/* The same reading column as the block editor, so switching views keeps the text in place. */}
-      <div ref={onSelectionRoot} className="mx-auto max-w-225 px-2 py-6 @[600px]:px-12">
+      <div data-markdown-document ref={onSelectionRoot} className="mx-auto max-w-225 px-2 py-6 @[600px]:px-12">
         <div className="prose prose-neutral dark:prose-invert max-w-none [&>*:first-child]:mt-0">
           <Markdown fs={fs ?? undefined} basePath={path}>
             {content}

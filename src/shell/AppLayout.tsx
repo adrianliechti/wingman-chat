@@ -4,6 +4,7 @@ import { ChevronDown, Coffee, Image, Languages, MessageCircle, PanelLeftOpen } f
 import { ViewTransition, useCallback, useEffect, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { useProjects } from "@/features/projects/context/ProjectsContext";
 import { AccountMenu } from "@/features/settings/components/AccountMenu";
 import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
 import { useToolsContext } from "@/features/tools";
@@ -49,6 +50,7 @@ export function AppLayout() {
   const { showArtifactsDrawer } = useArtifacts();
   const { showAgentDrawer, currentAgent } = useAgents();
   const { showAppDrawer } = useApp();
+  const { editingProjectId } = useProjects();
   const { companionAvailable, companionEnabled, getProviderState } = useToolsContext();
   // Header indicator reflects the companion's actual availability: the live
   // connection state under an agent (its config decides), the persisted global
@@ -56,7 +58,8 @@ export function AppLayout() {
   const companionActive = currentAgent ? getProviderState(COMPANION_ID) === ProviderState.Connected : companionEnabled;
 
   // Detect if any panel is open - sidebar becomes overlay when panels are open
-  const hasPanelOpen = showArtifactsDrawer || showAgentDrawer || showAppDrawer;
+  const hasPanelOpen =
+    !(currentPage === "chat" && editingProjectId) && (showArtifactsDrawer || showAgentDrawer || showAppDrawer);
 
   // Auto-close sidebar when a panel opens (desktop only)
   const prevHasPanelOpenRef = useRef(hasPanelOpen);
@@ -225,6 +228,7 @@ export function AppLayout() {
       >
         {/* Fixed navigation bar with glass effect */}
         <nav
+          data-app-topbar
           className={cn(
             "fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-800 shadow-sm ease-in-out",
             !isSidebarResizing && "transition-[padding] duration-500",

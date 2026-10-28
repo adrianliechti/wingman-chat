@@ -5,6 +5,7 @@ import { ArtifactsProvider } from "./features/artifacts/context/ArtifactsProvide
 import { ChatProvider } from "./features/chat/context/ChatProvider";
 import { ScreenCaptureProvider } from "./features/chat/context/ScreenCaptureProvider";
 import { PluginsProvider } from "./features/plugins/context/PluginsProvider";
+import { ProjectsProvider } from "./features/projects/context/ProjectsProvider";
 import { ProfileProvider } from "./features/settings/context/ProfileProvider";
 import { SkillsProvider } from "./features/skills/context/SkillsProvider";
 import { ToolsProvider } from "./features/tools/context/ToolsProvider";
@@ -43,6 +44,7 @@ const providers = [
   { key: "ArtifactsProvider", Provider: ArtifactsProvider },
   { key: "AppProvider", Provider: AppProvider },
   { key: "AgentProvider", Provider: AgentProvider },
+  { key: "ProjectsProvider", Provider: ProjectsProvider },
   { key: "ScreenCaptureProvider", Provider: ScreenCaptureProvider },
   { key: "ToolsProvider", Provider: ToolsProvider },
   { key: "ChatProvider", Provider: ChatProvider },

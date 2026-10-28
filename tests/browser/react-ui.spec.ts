@@ -642,6 +642,194 @@ test("compiled chat keeps stream DOM stable, measures the composer and updates v
   expect(errors).toEqual([]);
 });
 
+for (const { label, title, hash, repeatedHeading, absolute } of [
+  { label: "unique heading", title: "TypeScript", hash: "typescript", repeatedHeading: false, absolute: false },
+  { label: "repeated heading", title: "TypeScript", hash: "typescript", repeatedHeading: true, absolute: false },
+  {
+    label: "punctuation and full URL",
+    title: "Shell & config",
+    hash: "shell--config",
+    repeatedHeading: true,
+    absolute: true,
+  },
+]) {
+  test(`chat fragment links land below the top bar in their own reply (${label})`, async ({ page }) => {
+    await open(page);
+    const input = page.getByRole("textbox", { name: "Chat message input" });
+    await input.fill("First question");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    await page.evaluate(
+      (text) => window.reactUiE2E.finish(text),
+      repeatedHeading ? `## ${title}\n\nEarlier reply.` : "Earlier reply.",
+    );
+    await expect(input).toBeEnabled();
+    await input.fill("Give me the full document");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    const href = `${absolute ? page.url().split("#")[0] : ""}#${hash}`;
+    let source =
+      `[Jump to details](${href})\n\n` +
+      "Background paragraph.\n\n".repeat(50) +
+      `## ${title}\n\n` +
+      "Supporting paragraph.\n\n".repeat(40) +
+      "End of initial chunk.\n\n";
+    await page.evaluate((text) => window.reactUiE2E.stream(text), source);
+    const reply = page.locator('[data-role="assistant"]').last();
+    const heading = reply.getByRole("heading", { name: title, exact: true });
+    await expect(heading).toHaveCount(1);
+    // Let the first received chunk finish its reveal before clicking; the response
+    // remains live, and the next chunk below verifies that navigation stays anchored.
+    await expect(reply).toContainText("End of initial chunk.");
+    const route = page.url();
+    await reply.getByRole("link", { name: "Jump to details" }).click();
+    const gap = () =>
+      heading.evaluate(
+        (element) =>
+          element.getBoundingClientRect().top -
+          document.querySelector("[data-app-topbar]")!.getBoundingClientRect().bottom,
+      );
+    await expect(heading).toBeInViewport();
+    await expect.poll(gap, { timeout: 5000 }).toBeGreaterThanOrEqual(20);
+    await expect.poll(gap).toBeLessThan(80);
+    // Streaming and a resized bar must preserve the selected passage.
+    source += "More streamed text.\n\n".repeat(20);
+    await page.evaluate((text) => window.reactUiE2E.stream(text), source);
+    await expect(reply).toContainText("More streamed text.");
+    await page.locator("[data-app-topbar]").evaluate((element) => {
+      (element as HTMLElement).style.minHeight = "100px";
+    });
+    await expect.poll(gap).toBeGreaterThanOrEqual(20);
+    await expect.poll(gap).toBeLessThan(80);
+    await page.evaluate((text) => window.reactUiE2E.finish(text), source);
+    await expect(input).toBeEnabled();
+    await expect.poll(gap).toBeGreaterThanOrEqual(20);
+    expect(page.url()).toBe(route);
+    // The normal reading gesture still releases the target.
+    await heading.hover();
+    await page.mouse.wheel(0, 450);
+    await expect(heading).not.toBeInViewport();
+    await page.getByRole("button", { name: "Latest", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
+  });
+}
+
+test("search opens the matching passage, highlights it and allows returning to latest", async ({ page }, info) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page, "?search");
+  await page.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Search chats", exact: true }).click();
+  const search = page.getByRole("textbox", { name: "Search chats", exact: true });
+  await search.fill("violet");
+  const result = page.getByRole("button", { name: "Planning notes", exact: true });
+  await expect(result.locator("mark")).toHaveText("violet");
+  await expect(result).toContainText("delivery marker");
+  expect(
+    await result
+      .locator('[id^="search-excerpt-"]')
+      .evaluate((element) => element.getBoundingClientRect().height / parseFloat(getComputedStyle(element).lineHeight)),
+  ).toBeLessThanOrEqual(3);
+  const titleWidth = await result
+    .locator("span")
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().width);
+  await result.hover();
+  expect(
+    await result
+      .locator("span")
+      .first()
+      .evaluate((element) => element.getBoundingClientRect().width),
+  ).toBe(titleWidth);
+  const menu = await page.getByRole("button", { name: "Chat options for Planning notes" }).boundingBox();
+  const title = await result.locator("span").first().boundingBox();
+  expect(Math.abs(menu!.y + menu!.height / 2 - title!.y - title!.height / 2)).toBeLessThan(3);
+  await result.click();
+  await expect(page).toHaveURL(/\/chat\/search-history\/search-answer$/);
+  const passage = page.locator('[data-message-id="search-answer"]').getByText("violet beacon", { exact: true });
+  await expect(passage).toBeInViewport();
+  const gapBelowBar = () =>
+    passage.evaluate(
+      (element) =>
+        element.getBoundingClientRect().top -
+        document.querySelector("[data-app-topbar]")!.getBoundingClientRect().bottom,
+    );
+  await expect.poll(gapBelowBar).toBeGreaterThanOrEqual(20);
+  await expect
+    .poll(() =>
+      page.evaluate(() => Array.from(CSS.highlights.get("chat-search") ?? [], (range) => (range as Range).toString())),
+    )
+    .toContain("violet");
+  await page.getByRole("button", { name: "Latest", exact: true }).click();
+  await expect(passage).not.toBeInViewport();
+  // Reopening the same result must jump again, even though its URL is unchanged.
+  await result.click();
+  await expect(passage).toBeInViewport();
+  await page.reload();
+  await expect(passage).toBeInViewport();
+  // A human message can be targeted too, within the already open conversation.
+  const searchButton = page.getByRole("button", { name: "Search chats", exact: true });
+  if ((await searchButton.boundingBox())!.x < 0) {
+    await page.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
+  }
+  await searchButton.click();
+  await search.fill("copper compass");
+  await expect(result.locator("mark")).toHaveText("copper compass");
+  await result.click();
+  await expect(page.locator('[data-message-id="search-followup"]')).toBeInViewport();
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-message-id="search-followup"]')
+        .evaluate(
+          (element) =>
+            element.getBoundingClientRect().top -
+            document.querySelector("[data-app-topbar]")!.getBoundingClientRect().bottom,
+        ),
+    )
+    .toBeGreaterThanOrEqual(20);
+  await page.screenshot({ path: info.outputPath("search-result.png") });
+  // Title-only hits retain ordinary chat navigation and clear the previous highlight.
+  await search.fill("violet");
+  await page.getByRole("button", { name: "Violet archive", exact: true }).click();
+  await expect(page).toHaveURL(/\/chat\/search-title$/);
+  await expect.poll(() => page.evaluate(() => CSS.highlights.has("chat-search"))).toBe(false);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/chat\/search-history\/search-followup$/);
+  await expect(page.locator('[data-message-id="search-followup"]')).toBeInViewport();
+  await expect
+    .poll(() =>
+      page.evaluate(() => Array.from(CSS.highlights.get("chat-search") ?? [], (range) => (range as Range).toString())),
+    )
+    .toContain("copper compass");
+  // A copied URL opens its message without relying on the original search state.
+  await page.goto("/chat/search-history/search-prompt", { waitUntil: "domcontentloaded" });
+  await expect(page.locator('[data-message-id="search-prompt"]')).toBeInViewport();
+  expect(errors).toEqual([]);
+});
+
+test("search targets stay below a resized top bar on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, "?search");
+  await page.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Search chats", exact: true }).click();
+  await page.getByRole("textbox", { name: "Search chats", exact: true }).fill("copper compass");
+  await page.getByRole("button", { name: "Planning notes", exact: true }).click();
+  const message = page.locator('[data-message-id="search-followup"]');
+  await expect(message).toBeInViewport();
+  const gap = () =>
+    message.evaluate(
+      (element) =>
+        element.getBoundingClientRect().top -
+        document.querySelector("[data-app-topbar]")!.getBoundingClientRect().bottom,
+    );
+  await expect.poll(gap).toBeGreaterThanOrEqual(20);
+  await page.locator("[data-app-topbar]").evaluate((element) => {
+    (element as HTMLElement).style.minHeight = "100px";
+  });
+  await expect.poll(gap).toBeGreaterThanOrEqual(20);
+});
+
 test("hi then long Markdown keeps the start readable; Latest follows until the reader scrolls up", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

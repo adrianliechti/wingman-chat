@@ -116,6 +116,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     images: false,
     skills: false,
     plugins: false,
+    projects: false,
   });
   const {
     theme,
@@ -287,7 +288,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
       const result = await rebuildAllIndexes();
       notify.success(
         "Indexes rebuilt",
-        `${result.chats} chats, ${result.agents} agents, ${result.images} images, ${result.skills} skills.`,
+        `${result.chats} chats, ${result.projects} projects, ${result.agents} agents, ${result.images} images, ${result.skills} skills.`,
       );
       await loadStorageInfo();
     } catch (error) {
@@ -299,7 +300,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
 
   const exportSelectedBackup = async () => {
     const folders = [
-      ...(backupSelection.chats ? ["chats"] : []),
+      ...(backupSelection.chats ? ["chats", "drafts"] : []),
+      ...(backupSelection.projects ? ["projects"] : []),
       ...(backupSelection.agents ? ["agents"] : []),
       ...(backupSelection.profile ? ["profile.json"] : []),
       ...(backupSelection.images ? ["images"] : []),
@@ -735,6 +737,25 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                               {backupSelectionOpen && (
                                 <>
                                   <div className="divide-y divide-neutral-200/60 overflow-hidden rounded-lg border border-neutral-200/60 dark:divide-neutral-700/60 dark:border-neutral-700/60">
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
+                                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                                        Projects
+                                      </span>
+                                      <span className="ml-auto text-xs text-neutral-500">
+                                        {storageInfo.isLoading ? "…" : formatBytes(storageSizeFor("projects/"))}
+                                      </span>
+                                      <input
+                                        type="checkbox"
+                                        checked={backupSelection.projects}
+                                        onChange={(event) =>
+                                          setBackupSelection((selection) => ({
+                                            ...selection,
+                                            projects: event.target.checked,
+                                          }))
+                                        }
+                                        className="h-4 w-4 rounded accent-neutral-800 dark:accent-neutral-200"
+                                      />
+                                    </label>
                                     <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
                                       <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
                                         Profile
@@ -889,6 +910,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                       isExporting ||
                                       isRestoring ||
                                       (!backupSelection.chats &&
+                                        !backupSelection.projects &&
                                         !backupSelection.agents &&
                                         !backupSelection.profile &&
                                         !backupSelection.images &&

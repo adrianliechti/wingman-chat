@@ -6,7 +6,15 @@ import { cn } from "@/shared/lib/cn";
 
 type Completion = ReturnType<typeof useSkillAutocomplete>;
 
-export function SelectedSkills({ names, onRemove }: { names: string[]; onRemove: (name: string) => void }) {
+export function SelectedSkills({
+  names,
+  onRemove,
+  disabled = false,
+}: {
+  names: string[];
+  onRemove: (name: string) => void;
+  disabled?: boolean;
+}) {
   if (!names.length) return null;
   return (
     <div aria-label="Selected skills" className="flex flex-wrap gap-2 px-3 pt-3 md:px-4">
@@ -21,6 +29,7 @@ export function SelectedSkills({ names, onRemove }: { names: string[]; onRemove:
           <button
             type="button"
             aria-label={`Remove skill ${name}`}
+            disabled={disabled}
             onClick={() => onRemove(name)}
             className="shrink-0 rounded p-0.5 hover:bg-neutral-200 dark:hover:bg-neutral-700"
           >

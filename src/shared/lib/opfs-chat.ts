@@ -249,6 +249,8 @@ export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
   return {
     version: STORED_CHAT_VERSION,
     id: chat.id,
+    projectId: chat.projectId,
+    agentId: chat.agentId,
     title: chat.title,
     customTitle: chat.customTitle,
     customIndex: chat.customIndex,
@@ -266,6 +268,8 @@ export function restoreChatManifest(stored: StoredChat): Chat {
   return {
     ...runtimeFields(stored),
     id: stored.id,
+    projectId: stored.projectId,
+    agentId: stored.agentId,
     title: stored.title,
     customTitle: stored.customTitle,
     customIndex: stored.customIndex,

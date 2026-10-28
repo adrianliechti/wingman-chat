@@ -10,8 +10,8 @@ import { withPersistenceLock } from "@/shared/lib/persistence";
 import type { Chat, ChatEntry } from "@/shared/types/chat";
 
 export function chatEntry(chat: ChatEntry): ChatEntry {
-  const { id, title, customTitle, customIndex, created, updated } = chat;
-  return { id, title, customTitle, customIndex, created, updated };
+  const { id, projectId, title, customTitle, customIndex, created, updated } = chat;
+  return { id, projectId, title, customTitle, customIndex, created, updated };
 }
 
 export async function storeChat(chat: Chat): Promise<void> {
@@ -20,6 +20,7 @@ export async function storeChat(chat: Chat): Promise<void> {
     await opfs.writeJson(`chats/${chat.id}/chat.json`, stored);
     await opfs.upsertIndexEntry("chats", {
       id: chat.id,
+      projectId: chat.projectId,
       title: chat.title,
       customTitle: chat.customTitle,
       customIndex: chat.customIndex,
@@ -41,6 +42,9 @@ async function removeChatFiles(id: string): Promise<void> {
   await opfs.deleteDirectory(`chats/${id}`);
   await opfs.deleteFile(`chats/${id}.json`);
   await opfs.removeIndexEntry("chats", id);
+  await withPersistenceLock("collection:drafts", () =>
+    opfs.deleteDirectory(`drafts/${encodeURIComponent(`chat-${id}`)}`),
+  );
 }
 
 export function removeChat(id: string): Promise<void> {

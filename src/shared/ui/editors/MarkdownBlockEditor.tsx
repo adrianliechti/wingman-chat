@@ -272,8 +272,8 @@ export function MarkdownBlockEditor({ draft, fs, path, onAsk }: MarkdownBlockEdi
     }
     if (target.closest(INTERACTIVE)) return;
     const link = target.closest("a");
-    // Modifier clicks follow links; plain clicks edit the text they sit in.
-    if (link && (event.metaKey || event.ctrlKey)) return;
+    // Fragment links navigate the document; modifier clicks follow other links.
+    if (link && (link.getAttribute("href")?.startsWith("#") || event.metaKey || event.ctrlKey)) return;
     if (link) {
       event.preventDefault();
       event.stopPropagation();
@@ -308,7 +308,12 @@ export function MarkdownBlockEditor({ draft, fs, path, onAsk }: MarkdownBlockEdi
 
   return (
     <div className="@container h-full overflow-auto">
-      <div ref={setRoot} onClickCapture={handleClick} className="mx-auto max-w-225 px-2 py-6 @[600px]:px-12">
+      <div
+        data-markdown-document
+        ref={setRoot}
+        onClickCapture={handleClick}
+        className="mx-auto max-w-225 px-2 py-6 @[600px]:px-12"
+      >
         <div
           ref={flowRef}
           className={cn(

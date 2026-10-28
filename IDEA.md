@@ -5,9 +5,6 @@ Linked features are inspiration for Wingman; provider and gateway support must b
 
 ## Conversations
 
-- [ ] **Save composer drafts.** Preserve unsent text and attachments per conversation, including a
-      new-chat draft, across navigation and reloads. Clear the draft after a successful send. Offer to
-      put a sent message and its attachments back into the composer.
 - [ ] **Handle large pastes.** Offer to turn a long paste (ChatGPT uses about 10,000 characters) into a
       named text attachment, with a preview and a "Show in text field" action that moves it back into
       the composer. Inspiration: [ChatGPT what's new](https://learn.chatgpt.com/docs/whats-new).
@@ -21,8 +18,6 @@ Linked features are inspiration for Wingman; provider and gateway support must b
       Reuse the artifact selection popover. Inspiration:
       [Ask Copilot in Teams](https://support.microsoft.com/en-US/teams/copilot/ask-copilot-microsoft-teams)
       and [Perplexity Side Chat](https://www.perplexity.ai/changelog/effort-mode-gpt-6-astra-and-skills-marketplace).
-- [ ] **Open search results at the matching message.** Show excerpts, highlight matches, and jump to
-      the relevant passage instead of opening the conversation at its latest message.
 - [ ] **Expand search.** Add type filters (chats, artifacts, images, documents), date and model
       filters, artifact names, extracted file and transcript text, and an incremental local search
       index for large histories. Inspiration:
@@ -67,16 +62,14 @@ Linked features are inspiration for Wingman; provider and gateway support must b
 
 ## Projects and reusable files
 
-- [ ] **Group work into projects.** Keep related chats, instructions, files, and agent choices together;
-      allow moving existing chats between projects and adding a chat to a project as a source. Show a
-      project overview with a summary and recent work. Keep projects separate from agents so one agent
-      can serve several projects. Inspiration:
+- [ ] **Use chats as project sources.** Add a conversation to a project's shared context and provide
+      a project summary with links to the source material. Inspiration:
       [Gemini notebooks](https://blog.google/innovation-and-ai/products/gemini-app/notebooks-gemini-notebooklm/).
-- [ ] **Scope context to a project.** Inside a project, use its memory and files plus personal memory,
-      never another project's, with a toggle to leave personal memory out. Keep chat search and
-      retrieval within the project. Inspiration:
+- [ ] **Add project memory.** Keep learned context within its project, with a toggle to leave
+      personal memory out. Add project-scoped conversation retrieval. Shared project files,
+      instructions, and sidebar chat search are already scoped. Inspiration:
       [Claude project memory](https://support.claude.com/en/articles/11817273-use-claude-s-chat-search-and-memory-to-build-on-previous-context).
-- [ ] **Add a reusable file library.** Save artifacts to a searchable, tagged library and attach them
+- [ ] **Expand the reusable file library.** Add search and tags to saved project files and attach them
       to another chat from the composer, next to OneDrive and SharePoint. Retain the source conversation
       and revision; distinguish a fixed copy from a file that follows updates to its source. Optionally
       let the assistant search the library. Inspiration:

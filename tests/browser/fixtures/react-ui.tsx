@@ -198,6 +198,41 @@ if (parameters.has("panels")) {
       });
     }
   }
+  if (parameters.has("search")) {
+    await storeChat({
+      id: "search-history",
+      title: "Planning notes",
+      created: new Date(),
+      updated: new Date(),
+      model,
+      messages: [
+        userMessage("Outline the plan", { id: "search-prompt" }),
+        assistantMessage(
+          `${"Background context.\n\n".repeat(50)}The delivery marker is **violet beacon** for this release.\n\n${"Supporting detail.\n\n".repeat(50)}`,
+          { id: "search-answer" },
+        ),
+        userMessage("Follow the copper compass", { id: "search-followup" }),
+        assistantMessage(
+          [
+            { type: "tool-call", id: "search-tool-1", name: "lookup", arguments: "{}", state: "complete" },
+            { type: "tool-result", toolCallId: "search-tool-1", content: "Found", state: "complete" },
+            { type: "tool-call", id: "search-tool-2", name: "lookup", arguments: "{}", state: "complete" },
+            { type: "tool-result", toolCallId: "search-tool-2", content: "Found", state: "complete" },
+          ],
+          { id: "search-tools" },
+        ),
+        assistantMessage("Later discussion.\n\n".repeat(50), { id: "search-latest" }),
+      ],
+    });
+    await storeChat({
+      id: "search-title",
+      title: "Violet archive",
+      created: new Date(),
+      updated: new Date(),
+      model,
+      messages: [userMessage("An unrelated question"), assistantMessage("An unrelated answer")],
+    });
+  }
   history.replaceState(
     null,
     "",

@@ -2,7 +2,8 @@ import { AppWindow, Loader2, Maximize2, Minimize2, PanelRightClose, PanelRightOp
 import type { CSSProperties } from "react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { AppFrame, type AppBridge } from "@mcp-ui/client";
-import { buildHostContext, createAppBridge, type McpAppData } from "@/features/settings/lib/mcpAppSession";
+import { buildHostContext, type McpAppData } from "@/features/settings/lib/mcpAppSession";
+import { createAppBridge } from "@/features/settings/lib/mcpAppBridge";
 import { isAbortError } from "@/shared/lib/errors";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { useOverlayRect } from "@/shared/lib/useOverlayRect";

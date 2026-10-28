@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { useComposerDraft } from "../context/ComposerDraftProvider";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { notify } from "@/shared/lib/notify";
 import { formatBytes, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
@@ -6,6 +7,7 @@ import type { ContentPart } from "@tanstack/ai";
 import { mediaFromDataUrl, type MediaPart } from "@/shared/lib/messages";
 
 interface UseFileAttachmentsOptions {
+  draftKey: string;
   visionFiles: string[];
   artifactsAvailable: boolean;
   visionMaxFileSize?: number;
@@ -56,114 +58,149 @@ export interface UseFileAttachmentsReturn {
 }
 
 export function useFileAttachments({
+  draftKey,
   visionFiles,
   artifactsAvailable,
   visionMaxFileSize,
   artifactsMaxFileSize,
   getTakenFileNames,
 }: UseFileAttachmentsOptions): UseFileAttachmentsReturn {
-  const [attachments, setAttachments] = useState<ContentPart[]>([]);
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  // Original image files aligned 1:1 with `attachments`, persisted at send.
-  const [pendingImages, setPendingImages] = useState<(File | null)[]>([]);
+  const { draft, update, store } = useComposerDraft(draftKey);
+  const { attachments, pendingFiles, pendingImages } = draft;
+  const setPendingFiles = useCallback<React.Dispatch<React.SetStateAction<File[]>>>(
+    (edit) => {
+      update((d) => ({ ...d, pendingFiles: typeof edit === "function" ? edit(d.pendingFiles) : edit }));
+    },
+    [update],
+  );
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
-  // Filenames already claimed by pending artifacts/images, across calls to `handleFiles`.
-  const usedFileNamesRef = useRef<Set<string>>(new Set());
+  const intake = useRef(Promise.resolve());
 
   const handleFiles = useCallback(
-    async (files: File[]) => {
-      // Normalize MIME types up front (browsers sometimes omit/guess them),
-      // and dedupe names so same-named files (e.g. pasted clipboard images)
-      // don't collide once they're written to the workspace by name. Names
-      // must be unique against pending attachments AND files already in the
-      // workspace root — listed fresh per call, so deletions free names up.
-      const taken = new Set(usedFileNamesRef.current);
-      if (getTakenFileNames) {
-        for (const name of await getTakenFileNames()) taken.add(name);
-      }
-
-      const images: { file: File; keepOriginal: boolean }[] = [];
-      const artifacts: File[] = [];
-      for (const file of files) {
-        const effectiveType =
-          file.type && file.type !== "application/octet-stream"
-            ? file.type
-            : (inferContentTypeFromPath(file.name) ?? file.type);
-        const uniqueName = dedupeFileName(file.name, taken);
-        usedFileNamesRef.current.add(uniqueName);
-        const effectiveFile =
-          effectiveType !== file.type || uniqueName !== file.name
-            ? new File([file], uniqueName, { type: effectiveType })
-            : file;
-
-        const isVisionImage = visionFiles.includes(effectiveType);
-        const overArtifactLimit = artifactsMaxFileSize != null && effectiveFile.size > artifactsMaxFileSize;
-
-        if (isVisionImage) {
-          if (visionMaxFileSize != null && effectiveFile.size > visionMaxFileSize) {
-            notify.error("Image too large", `"${file.name}" exceeds the ${formatBytes(visionMaxFileSize)} limit.`);
-            continue;
+    (files: File[]) => {
+      const ids = files.map((file) => `${file.name}-${crypto.randomUUID()}`);
+      setExtractingAttachments((prev) => new Set([...prev, ...ids]));
+      const work = intake.current
+        .catch(() => {})
+        .then(async () => {
+          await store.load(draftKey);
+          if (store.get(draftKey).sending) return;
+          // Normalize MIME types up front (browsers sometimes omit/guess them),
+          // and dedupe names so same-named files (e.g. pasted clipboard images)
+          // don't collide once they're written to the workspace by name. Names
+          // must be unique against pending attachments AND files already in the
+          // workspace root — listed fresh per call, so deletions free names up.
+          const current = store.get(draftKey).draft;
+          const taken = new Set(
+            [...current.pendingFiles, ...current.pendingImages].flatMap((f) => (f ? [f.name] : [])),
+          );
+          if (getTakenFileNames) {
+            for (const name of await getTakenFileNames()) taken.add(name);
           }
-          // Sent inline as vision (resized); the original is also kept as an artifact.
-          images.push({ file: effectiveFile, keepOriginal: artifactsAvailable && !overArtifactLimit });
-        } else if (artifactsAvailable) {
-          if (artifactsMaxFileSize != null && effectiveFile.size > artifactsMaxFileSize) {
-            notify.error("File too large", `"${file.name}" exceeds the ${formatBytes(artifactsMaxFileSize)} limit.`);
-          } else {
-            artifacts.push(effectiveFile);
+
+          const images: { file: File; keepOriginal: boolean }[] = [];
+          const artifacts: File[] = [];
+          for (const file of files) {
+            const effectiveType =
+              file.type && file.type !== "application/octet-stream"
+                ? file.type
+                : (inferContentTypeFromPath(file.name) ?? file.type);
+            const uniqueName = dedupeFileName(file.name, taken);
+            const effectiveFile =
+              effectiveType !== file.type || uniqueName !== file.name
+                ? new File([file], uniqueName, { type: effectiveType })
+                : file;
+
+            const isVisionImage = visionFiles.includes(effectiveType);
+            const overArtifactLimit = artifactsMaxFileSize != null && effectiveFile.size > artifactsMaxFileSize;
+
+            if (isVisionImage) {
+              if (visionMaxFileSize != null && effectiveFile.size > visionMaxFileSize) {
+                notify.error("Image too large", `"${file.name}" exceeds the ${formatBytes(visionMaxFileSize)} limit.`);
+                continue;
+              }
+              // Sent inline as vision (resized); the original is also kept as an artifact.
+              images.push({ file: effectiveFile, keepOriginal: artifactsAvailable && !overArtifactLimit });
+            } else if (artifactsAvailable) {
+              if (artifactsMaxFileSize != null && effectiveFile.size > artifactsMaxFileSize) {
+                notify.error(
+                  "File too large",
+                  `"${file.name}" exceeds the ${formatBytes(artifactsMaxFileSize)} limit.`,
+                );
+              } else {
+                artifacts.push(effectiveFile);
+              }
+            }
           }
-        }
-      }
 
-      // Held pending until send, then written to the workspace by `sendMessage`.
-      if (artifacts.length > 0) {
-        setPendingFiles((prev) => [...prev, ...artifacts]);
-      }
+          // Held pending until send, then written to the workspace by `sendMessage`.
+          if (artifacts.length > 0) {
+            setPendingFiles((prev) => [...prev, ...artifacts]);
+          }
 
-      // Resize/encode images now; keep each original (or null) aligned with its
-      // attachment so removal and send stay in step.
-      if (images.length > 0) {
-        const ids = images.map((image, index) => `${image.file.name}-${index}`);
-        setExtractingAttachments((prev) => new Set([...prev, ...ids]));
+          // Resize/encode images now; keep each original (or null) aligned with its
+          // attachment so removal and send stay in step.
+          if (images.length > 0) {
+            const settled = await Promise.allSettled(
+              images.map(async ({ file, keepOriginal }) => {
+                const blob = await resizeImageBlob(file, 1920, 1920);
+                const dataUrl = await readAsDataURL(blob);
+                const content = mediaFromDataUrl(dataUrl, file.name, "image");
+                return { content, original: keepOriginal ? file : null };
+              }),
+            );
 
-        const settled = await Promise.allSettled(
-          images.map(async ({ file, keepOriginal }) => {
-            const blob = await resizeImageBlob(file, 1920, 1920);
-            const dataUrl = await readAsDataURL(blob);
-            const content = mediaFromDataUrl(dataUrl, file.name, "image");
-            return { content, original: keepOriginal ? file : null };
-          }),
-        );
+            const valid = settled
+              .filter(
+                (r): r is PromiseFulfilledResult<{ content: MediaPart; original: File | null }> =>
+                  r.status === "fulfilled",
+              )
+              .map((r) => r.value);
 
-        const valid = settled
-          .filter(
-            (r): r is PromiseFulfilledResult<{ content: MediaPart; original: File | null }> => r.status === "fulfilled",
-          )
-          .map((r) => r.value);
-
-        setAttachments((prev) => [...prev, ...valid.map((v) => v.content)]);
-        setPendingImages((prev) => [...prev, ...valid.map((v) => v.original)]);
-        setExtractingAttachments((prev) => {
-          const next = new Set(prev);
-          for (const id of ids) next.delete(id);
-          return next;
+            update((d) => ({
+              ...d,
+              attachments: [...d.attachments, ...valid.map((v) => v.content)],
+              pendingImages: [...d.pendingImages, ...valid.map((v) => v.original)],
+            }));
+          }
+        })
+        .finally(() => {
+          setExtractingAttachments((prev) => {
+            const next = new Set(prev);
+            for (const id of ids) next.delete(id);
+            return next;
+          });
         });
-      }
+      intake.current = work;
+      return work;
     },
-    [visionFiles, artifactsAvailable, visionMaxFileSize, artifactsMaxFileSize, getTakenFileNames],
+    [
+      visionFiles,
+      artifactsAvailable,
+      visionMaxFileSize,
+      artifactsMaxFileSize,
+      getTakenFileNames,
+      store,
+      draftKey,
+      setPendingFiles,
+      update,
+    ],
   );
 
   const clearAttachments = useCallback(() => {
-    setAttachments([]);
-    setPendingFiles([]);
-    setPendingImages([]);
-    usedFileNamesRef.current = new Set();
-  }, []);
+    update((d) => ({ ...d, attachments: [], pendingFiles: [], pendingImages: [] }));
+  }, [update]);
 
-  const removeAttachment = useCallback((index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
-    setPendingImages((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  const removeAttachment = useCallback(
+    (index: number) => {
+      update((d) => ({
+        ...d,
+        attachments: d.attachments.filter((_, i) => i !== index),
+        pendingImages: d.pendingImages.filter((_, i) => i !== index),
+      }));
+    },
+    [update],
+  );
 
   return {
     attachments,

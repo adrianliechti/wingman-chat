@@ -1,4 +1,8 @@
-import { useMemo } from "react";
+import { useContext, useMemo } from "react";
+import { useProjects } from "@/features/projects/context/ProjectsContext";
+import { createProjectTools, projectInstructions } from "@/features/projects/lib/projectTools";
+import type { Project } from "@/features/projects/lib/projects";
+import { ChatConversationContext } from "../context/ChatContext";
 import type { ChatMiddleware } from "@tanstack/ai";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { getMemoryManager, type MemoryManager } from "@/features/agent/lib/memoryManager";
@@ -29,7 +33,12 @@ export function useChatContext(
   mode: "voice" | "chat" = "chat",
   model?: Model | null,
   models: Model[] = [],
+  projectOverride?: Project | null,
 ): ChatContext {
+  const { projects } = useProjects();
+  const conversation = useContext(ChatConversationContext);
+  const project =
+    projectOverride === undefined ? projects.find((p) => p.id === conversation?.chat?.projectId) : projectOverride;
   const { generateInstructions } = useProfile();
   const { providers, coreProviders, getProviderState } = useToolsContext();
 
@@ -78,6 +87,13 @@ export function useChatContext(
       // Core providers (e.g. Skill Builder) are always available and exempt from
       // model tool allow/deny lists, so append them after all filtering.
       filteredProviders = [...filteredProviders, ...coreProviders];
+      if (project)
+        filteredProviders.push({
+          id: "project",
+          name: project.name,
+          instructions: projectInstructions(project),
+          tools: createProjectTools(project, !!artifactsProvider),
+        });
 
       return filteredProviders;
     };
@@ -210,6 +226,7 @@ export function useChatContext(
     artifactsProvider,
     imageTool,
     currentAgent,
+    project,
   ]);
 
   return context;

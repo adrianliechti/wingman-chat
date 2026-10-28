@@ -11,6 +11,7 @@ import type {
   PendingElicitation,
 } from "@/shared/types/elicitation";
 import type { ChatInterruptState, QueuedMessage } from "@tanstack/ai-client";
+import type { ChatSearchMatch } from "../lib/chatSearch";
 
 export type RunStatus = "idle" | "compacting" | "thinking" | "responding" | "running_tool" | "waiting";
 
@@ -34,7 +35,7 @@ export interface ChatContextType {
   chatError: string | null;
   hasMessages: boolean;
   loadChat: (id: string) => Promise<Chat>;
-  searchChats: (query: string, signal: AbortSignal) => Promise<Set<string>>;
+  searchChats: (query: string, signal: AbortSignal) => Promise<Map<string, ChatSearchMatch>>;
   chat: Chat | null;
   messages: UIMessage[];
   isResponding: boolean;
@@ -61,6 +62,7 @@ export interface ChatContextType {
     historyOverride?: UIMessage[],
     artifactFiles?: ProcessedFile[],
     deletedPaths?: string[],
+    onAccepted?: (chatId: string) => void,
   ) => Promise<void>;
   retryMessage: () => Promise<void>;
   queuedSends: readonly QueuedMessage[];

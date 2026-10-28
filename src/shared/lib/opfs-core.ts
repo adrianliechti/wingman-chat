@@ -2,6 +2,7 @@ import { contentToBlob } from "./fileContent";
 import { inferContentTypeFromPath } from "./fileTypes";
 import { stopPersistence, withPersistenceLock } from "./persistence";
 import { decodeDataURL, readAsDataURL } from "./utils";
+import { isRebuildableCollection, salvageIndexEntries, scanFolderIndex } from "./opfs-index";
 
 /**
  * OPFS Core — File/folder CRUD, index management, storage usage, and shared utilities.
@@ -34,6 +35,15 @@ import { decodeDataURL, readAsDataURL } from "./utils";
  *   ├── metadata.json         # Metadata
  *   └── image.bin             # Image binary
  *   /images/index.json        # Images index for fast listing
+ *
+ *   /projects/{id}/
+ *   ├── project.json          # Name, description, instructions and the shared file listing
+ *   └── files/{fileId}        # Shared file bytes, named by id
+ *   /projects/index.json      # Projects index for fast listing
+ *
+ *   /drafts/{key}/            # Unsent composer state; key is chat-{chatId} or new-{projectId|chat}
+ *   ├── draft.json            # Text, skills, attachments and pending file listing
+ *   └── files/{id}            # Pending attachment bytes
  *
  *   /profile.json             # User profile settings
  */
@@ -341,6 +351,7 @@ export async function clearAll(): Promise<void> {
 
 export interface IndexEntry {
   id: string;
+  projectId?: string;
   title?: string;
   customTitle?: string;
   customIndex?: number;
@@ -374,8 +385,6 @@ export async function readIndex(collection: string): Promise<IndexEntry[]> {
  */
 async function healIndex(collection: string, reason: Error): Promise<IndexEntry[]> {
   console.warn(`Repairing ${collection}/index.json from stored records:`, reason);
-  // Loaded lazily: the scanner depends on record parsers built on this module.
-  const { isRebuildableCollection, salvageIndexEntries, scanFolderIndex } = await import("./opfs-index");
   const salvaged = await salvageIndexEntries(collection);
   const entries = isRebuildableCollection(collection) ? await scanFolderIndex(collection, salvaged) : salvaged;
   await writeJson(`${collection}/index.json`, entries);
