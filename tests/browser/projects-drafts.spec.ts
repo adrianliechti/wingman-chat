@@ -26,22 +26,141 @@ async function choose(page: Page, name: string) {
   await expect(page.getByRole("button", { name: "Choose project" })).toHaveText(name);
   await expect(composer(page)).toBeEnabled();
 }
-async function project(page: Page, name: string, instructions: string) {
+async function newProject(page: Page) {
   await sidebar(page);
   await page.getByRole("button", { name: "Choose project" }).click();
   await page.getByRole("menuitem", { name: "New project", exact: true }).click();
+  return page.getByRole("region", { name: "New project", exact: true });
+}
+async function openSettings(page: Page) {
+  await sidebar(page);
+  await page.getByRole("button", { name: "Choose project" }).click();
+  await page.getByRole("menuitem", { name: "Project settings", exact: true }).click();
+  return page.getByRole("region", { name: "Project settings", exact: true });
+}
+async function project(page: Page, name: string, instructions: string) {
+  await newProject(page);
   const dialog = page.getByRole("region", { name: "New project", exact: true });
   await dialog.getByLabel("Name", { exact: true }).fill(name);
-  await dialog.getByLabel("Instructions", { exact: true }).fill(instructions);
+  await dialog.getByRole("textbox", { name: "Instructions", exact: true }).fill(instructions);
   await dialog.getByRole("button", { name: "Create project", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Project settings", exact: true })).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole("region", { name: "Project settings", exact: true })).toBeHidden();
+  await expect(composer(page)).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Choose project" })).toHaveText(name);
 }
+
+test("project creation, edits and file changes respect Save and Close", async ({ page }) => {
+  await open(page);
+  let editor = await newProject(page);
+  await expect(editor.getByRole("button", { name: "Create project", exact: true })).toBeDisabled();
+  await editor.getByRole("button", { name: "Close project", exact: true }).click();
+  await expect(editor).toBeHidden();
+  editor = await newProject(page);
+  await editor.getByLabel("Name", { exact: true }).fill("Atlas");
+  await editor.getByLabel("Description", { exact: true }).fill("A shared workspace");
+  await editor.getByRole("textbox", { name: "Instructions", exact: true }).fill("Original instructions");
+  await editor.getByLabel("Add project files").setInputFiles([
+    { name: "keep.txt", mimeType: "text/plain", buffer: Buffer.from("Keep these bytes") },
+    { name: "discard.txt", mimeType: "text/plain", buffer: Buffer.from("Discard these bytes") },
+  ]);
+  await editor.getByRole("button", { name: "Remove discard.txt", exact: true }).click();
+  await editor.getByRole("button", { name: "Create project", exact: true }).click();
+  await expect(editor).toBeHidden();
+  await expect(composer(page)).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Choose project" })).toHaveText("Atlas");
+
+  editor = await openSettings(page);
+  await expect(editor.getByLabel("Description", { exact: true })).toHaveValue("A shared workspace");
+  await expect(editor.getByText("keep.txt", { exact: true })).toBeVisible();
+  await expect(editor.getByText("discard.txt", { exact: true })).toHaveCount(0);
+  await editor.getByLabel("Name", { exact: true }).fill("   ");
+  await expect(editor.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await editor.getByLabel("Name", { exact: true }).fill("Unsaved name");
+  await editor.getByRole("textbox", { name: "Instructions", exact: true }).fill("Unsaved instructions");
+  await editor.getByRole("button", { name: "Remove keep.txt", exact: true }).click();
+  await editor
+    .getByLabel("Add project files")
+    .setInputFiles({ name: "unsaved.txt", mimeType: "text/plain", buffer: Buffer.from("Unsaved file") });
+  await editor.getByRole("button", { name: "Close project", exact: true }).click();
+  const discard = page.getByRole("dialog", { name: "Discard changes?", exact: true });
+  await discard.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(editor.getByLabel("Name", { exact: true })).toHaveValue("Unsaved name");
+  await editor.getByRole("button", { name: "Close project", exact: true }).click();
+  await discard.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await expect(editor).toBeHidden();
+
+  editor = await openSettings(page);
+  await expect(editor.getByLabel("Name", { exact: true })).toHaveValue("Atlas");
+  await expect(editor.getByRole("textbox", { name: "Instructions", exact: true })).toHaveValue("Original instructions");
+  await expect(editor.getByText("keep.txt", { exact: true })).toBeVisible();
+  await expect(editor.getByText("unsaved.txt", { exact: true })).toHaveCount(0);
+  await editor.getByLabel("Name", { exact: true }).fill("  Atlas revised  ");
+  await editor.getByRole("textbox", { name: "Instructions", exact: true }).fill("Revised instructions");
+  await editor.getByRole("button", { name: "Remove keep.txt", exact: true }).click();
+  await editor
+    .getByLabel("Add project files")
+    .setInputFiles({ name: "revised.txt", mimeType: "text/plain", buffer: Buffer.from("Revised file") });
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(editor).toBeHidden();
+  await expect(page.getByRole("button", { name: "Choose project" })).toHaveText("Atlas revised");
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.reload();
+  editor = await openSettings(page);
+  await expect(editor.getByLabel("Name", { exact: true })).toHaveValue("Atlas revised");
+  await expect(editor.getByRole("textbox", { name: "Instructions", exact: true })).toHaveValue("Revised instructions");
+  await expect(editor.getByText("keep.txt", { exact: true })).toHaveCount(0);
+  await expect(editor.getByText("revised.txt", { exact: true })).toBeVisible();
+});
+
+test("a failed project save stays open and retries creation without duplicating the project", async ({ page }) => {
+  await open(page);
+  const editor = await newProject(page);
+  await editor.getByLabel("Name", { exact: true }).fill("Retry project");
+  await editor.getByRole("textbox", { name: "Instructions", exact: true }).fill("Keep these instructions");
+  await editor
+    .getByLabel("Add project files")
+    .setInputFiles({ name: "retry.txt", mimeType: "text/plain", buffer: Buffer.from("Keep this file") });
+  await page.evaluate(() => {
+    // Restored on the prototype and invoked with its original receiver below.
+    // oxlint-disable-next-line typescript/unbound-method
+    const original = FileSystemFileHandle.prototype.createWritable;
+    let writes = 0;
+    FileSystemFileHandle.prototype.createWritable = function (...args) {
+      if (this.name === "project.json" && ++writes === 2) {
+        FileSystemFileHandle.prototype.createWritable = original;
+        return Promise.reject(new DOMException("Simulated project save failure", "QuotaExceededError"));
+      }
+      return original.apply(this, args);
+    };
+  });
+  await editor.getByRole("button", { name: "Create project", exact: true }).click();
+  await expect(editor.getByRole("alert")).toContainText("Some changes could not be saved");
+  await expect(editor.getByRole("textbox", { name: "Instructions", exact: true })).toHaveValue(
+    "Keep these instructions",
+  );
+  await expect(editor.getByText("retry.txt", { exact: true })).toBeVisible();
+  // Let the storage notification expire without hovering over the footer.
+  await page.mouse.move(0, 0);
+  await expect(page.getByText("Couldn't save changes", { exact: true })).toBeHidden();
+  await editor.getByRole("button", { name: "Create project", exact: true }).click();
+  await expect(editor).toBeHidden();
+  await page.getByRole("button", { name: "Choose project" }).click();
+  await expect(page.getByRole("menuitem", { name: "Retry project", exact: true })).toHaveCount(1);
+  await page.getByRole("menuitem", { name: "Project settings", exact: true }).click();
+  const saved = page.getByRole("region", { name: "Project settings", exact: true });
+  await expect(saved.getByRole("textbox", { name: "Instructions", exact: true })).toHaveValue(
+    "Keep these instructions",
+  );
+  await expect(saved.getByText("retry.txt", { exact: true })).toBeVisible();
+});
 
 test("projects apply shared context, retain draft attachments, and switch to All chats on the first click", async ({
   page,
 }) => {
   await open(page);
   await project(page, "Atlas", "Always use the Atlas reporting format.");
+  await openSettings(page);
   const settings = page.getByRole("region", { name: "Project settings", exact: true });
   await settings
     .getByLabel("Add project files")
@@ -143,14 +262,12 @@ test("drafts survive reload with original image and file bytes", async ({ page }
 test("moving and deleting projects preserves conversations and changes their context", async ({ page }) => {
   await open(page);
   await project(page, "Nova", "Nova-only instructions.");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
   await composer(page).fill("A conversation to move");
   await composer(page).press("Enter");
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
   await page.evaluate(() => window.reactUiE2E.finish("A saved answer."));
   await expect(page.getByText("A saved answer.", { exact: true })).toBeVisible();
   await project(page, "Orion", "Orion-only instructions.");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
   await choose(page, "Nova");
   await page.getByRole("button", { name: /^Chat options for/ }).click();
   await page.getByRole("menuitem", { name: "Move to project" }).click();
@@ -181,6 +298,7 @@ test("project settings fit mobile and accept dropped files", async ({ page }) =>
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page);
   await project(page, "A project with a long name for a small screen", "Mobile context");
+  await openSettings(page);
   const settings = page.getByRole("region", { name: "Project settings", exact: true });
   const heading = settings.getByRole("heading", { name: "Project settings" });
   const navigation = (await page.getByRole("navigation").boundingBox())!;
@@ -212,7 +330,6 @@ test("project settings fit mobile and accept dropped files", async ({ page }) =>
 test("a generated artifact can be saved to the project and read in another chat", async ({ page }) => {
   await open(page);
   await project(page, "Reports", "Reuse shared reports.");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
   await composer(page).fill("Create a report");
   await composer(page).press("Enter");
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
@@ -255,6 +372,8 @@ test("a failed chat save preserves the draft, skills and attachments for retry",
   await expect(page.getByTitle("keep.txt", { exact: true })).toBeVisible();
   await page.evaluate(() => window.reactUiE2E.flush());
   await page.evaluate(() => {
+    // Restored on the prototype and invoked with its original receiver below.
+    // oxlint-disable-next-line typescript/unbound-method
     const original = FileSystemFileHandle.prototype.createWritable;
     FileSystemFileHandle.prototype.createWritable = function (...args) {
       if (this.name === "chat.json") {
@@ -281,7 +400,6 @@ test("a failed chat save preserves the draft, skills and attachments for retry",
 test("selected skills follow project drafts through switching, reload, sending and restore", async ({ page }) => {
   await open(page, "?composer");
   await project(page, "Skills project", "Project and skill instructions should both apply.");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
   await composer(page).fill("/draft");
   await page.getByRole("option", { name: /draft-response/ }).click();
   const selection = page.getByRole("button", { name: "Remove skill draft-response" });

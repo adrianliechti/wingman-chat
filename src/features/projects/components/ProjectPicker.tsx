@@ -10,8 +10,6 @@ import { useProjects } from "../context/ProjectsContext";
 
 const inputClass =
   "w-full rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700";
-const buttonClass = "rounded-lg px-3 py-2 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800";
-
 export function ProjectPicker() {
   const { projects, selectedProjectId, selectProject, editProject } = useProjects();
   const { newChat } = useChatNavigate();
@@ -88,13 +86,17 @@ export function MoveChatDialog({ chatId, onClose }: { chatId: string; onClose: (
               </option>
             ))}
           </select>
-          <div className="flex justify-end gap-2">
-            <button type="button" className={buttonClass} onClick={onClose}>
+          <div className="flex justify-end gap-2.5">
+            <button
+              type="button"
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-neutral-800/60"
+              onClick={onClose}
+            >
               Cancel
             </button>
             <button
               type="button"
-              className={buttonClass}
+              className="rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 dark:bg-neutral-200 dark:text-neutral-900"
               onClick={() => {
                 updateChat(chatId, () => ({ projectId: target || undefined }), { preserveDates: true });
                 if (activeId === chatId) selectProject(target || null);
