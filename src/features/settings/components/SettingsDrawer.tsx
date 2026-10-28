@@ -301,7 +301,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   const exportSelectedBackup = async () => {
     const folders = [
       ...(backupSelection.chats ? ["chats", "drafts"] : []),
-      ...(backupSelection.projects ? ["projects", "project-selection.json"] : []),
+      ...(backupSelection.projects ? ["projects"] : []),
       ...(backupSelection.agents ? ["agents"] : []),
       ...(backupSelection.profile ? ["profile.json"] : []),
       ...(backupSelection.images ? ["images"] : []),

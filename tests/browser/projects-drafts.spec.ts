@@ -38,6 +38,19 @@ async function openSettings(page: Page) {
   await page.getByRole("menuitem", { name: "Project settings", exact: true }).click();
   return page.getByRole("region", { name: "Project settings", exact: true });
 }
+/** Entry names in an OPFS folder, or null when the folder does not exist. */
+const opfsList = (page: Page, path: string) =>
+  page.evaluate(async (path) => {
+    let folder = await navigator.storage.getDirectory();
+    try {
+      for (const part of path.split("/")) folder = await folder.getDirectoryHandle(part);
+    } catch {
+      return null;
+    }
+    const names: string[] = [];
+    for await (const entry of folder.values()) names.push(entry.name);
+    return names;
+  }, path);
 async function project(page: Page, name: string, instructions: string) {
   await newProject(page);
   const dialog = page.getByRole("region", { name: "New project", exact: true });
@@ -111,6 +124,10 @@ test("project creation, edits and file changes respect Save and Close", async ({
   await expect(editor.getByRole("textbox", { name: "Instructions", exact: true })).toHaveValue("Revised instructions");
   await expect(editor.getByText("keep.txt", { exact: true })).toHaveCount(0);
   await expect(editor.getByText("revised.txt", { exact: true })).toBeVisible();
+  const atlasId = await page.evaluate(() => localStorage.getItem("app_project"));
+  expect(atlasId).toBeTruthy();
+  // Removing keep.txt also removed its bytes; only revised.txt is stored.
+  expect(await opfsList(page, `projects/${atlasId}/files`)).toHaveLength(1);
 });
 
 test("a failed project save stays open and retries creation without duplicating the project", async ({ page }) => {
@@ -285,11 +302,17 @@ test("moving and deleting projects preserves conversations and changes their con
   expect(state.instructions).not.toContain("Nova-only instructions.");
   await page.evaluate(() => window.reactUiE2E.finish("Moved successfully."));
   await expect(page.getByText("Moved successfully.", { exact: true })).toBeVisible();
+  const orionId = await page.evaluate(() => localStorage.getItem("app_project"));
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await composer(page).fill("An unsent Orion draft");
+  await expect.poll(() => opfsList(page, `drafts/new-${orionId}`)).toContain("draft.json");
   await page.getByRole("button", { name: "Choose project" }).click();
   await page.getByRole("menuitem", { name: "Project settings" }).click();
   await page.getByRole("button", { name: "Delete project", exact: true }).click();
   await page.getByRole("dialog", { name: "Delete Orion?" }).getByRole("button", { name: "Delete project" }).click();
   await expect(page.getByRole("button", { name: "Choose project" })).toHaveText("All chats");
+  await expect.poll(() => opfsList(page, `drafts/new-${orionId}`)).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem("app_project"))).toBeNull();
   await page.getByRole("complementary").getByRole("button", { name: "Fixture", exact: true }).click();
   await expect(page.getByText("Moved successfully.", { exact: true })).toBeVisible();
 });

@@ -2,6 +2,8 @@ import { FolderOpen, Loader2, Plus, Search, Trash2, Upload, X } from "lucide-rea
 import { useRef, useState } from "react";
 import { useChatActions, useChatList } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
+import { useComposerDraftStore } from "@/features/chat/context/ComposerDraftProvider";
+import { composerDraftKey } from "@/features/chat/lib/composerDrafts";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { confirm } from "@/shared/lib/confirm";
 import { flushPersistence } from "@/shared/lib/persistence";
@@ -24,6 +26,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   const { chats } = useChatList();
   const { updateChat, ensureChat } = useChatActions();
   const { openChat, newChat } = useChatNavigate();
+  const drafts = useComposerDraftStore();
   const { openFile, setShowArtifactsDrawer, isAvailable } = useArtifacts();
   const [name, setName] = useState(project?.name ?? "");
   const [description, setDescription] = useState(project?.description ?? "");
@@ -107,6 +110,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
         .forEach((chat) => updateChat(chat.id, () => ({ projectId: undefined }), { preserveDates: true }));
       await flushPersistence();
       await deleteProject(project.id);
+      drafts.remove(composerDraftKey(null, project.id));
       newChat();
     });
   const files = (project?.files ?? []).filter((file) => !removedFileIds.includes(file.id));

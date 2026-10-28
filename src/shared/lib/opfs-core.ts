@@ -35,6 +35,15 @@ import { decodeDataURL, readAsDataURL } from "./utils";
  *   └── image.bin             # Image binary
  *   /images/index.json        # Images index for fast listing
  *
+ *   /projects/{id}/
+ *   ├── project.json          # Name, description, instructions and the shared file listing
+ *   └── files/{fileId}        # Shared file bytes, named by id
+ *   /projects/index.json      # Projects index for fast listing
+ *
+ *   /drafts/{key}/            # Unsent composer state; key is chat-{chatId} or new-{projectId|chat}
+ *   ├── draft.json            # Text, skills, attachments and pending file listing
+ *   └── files/{id}            # Pending attachment bytes
+ *
  *   /profile.json             # User profile settings
  */
 

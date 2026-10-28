@@ -1,12 +1,13 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { usePersistentCollection } from "@/shared/hooks/usePersistentCollection";
-import { usePersistedState } from "@/shared/hooks/usePersistedState";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getConfig } from "@/shared/config";
 import { withPersistenceLock } from "@/shared/lib/persistence";
-import { projectStorage, saveProjectFile } from "../lib/projectStorage";
+import { deleteProjectFile, projectStorage, saveProjectFile } from "../lib/projectStorage";
 import type { Project, ProjectFile } from "../lib/projects";
 import { ProjectsContext } from "./ProjectsContext";
+
+const PROJECT_STORAGE_KEY = "app_project";
 
 export function ProjectsProvider({ children }: { children: ReactNode }) {
   const [editingProjectId, editProject] = useState<string | null>(null);
@@ -19,11 +20,24 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
     getItems,
     flush,
   } = usePersistentCollection(projectStorage);
-  const {
-    value: selectedProjectId,
-    setValue: selectProject,
-    isLoaded: selectionLoaded,
-  } = usePersistedState<string | null>({ key: "project-selection.json", defaultValue: null });
+  const [storedProjectId, setStoredProjectId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(PROJECT_STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  });
+  // Selection stores identity only; a project deleted elsewhere falls back to All chats.
+  const selectedProjectId = projects.some((p) => p.id === storedProjectId) ? storedProjectId : null;
+  const selectProject = useCallback((id: string | null) => {
+    setStoredProjectId(id);
+    try {
+      if (id) localStorage.setItem(PROJECT_STORAGE_KEY, id);
+      else localStorage.removeItem(PROJECT_STORAGE_KEY);
+    } catch (error) {
+      console.warn("Could not save project selection:", error);
+    }
+  }, []);
   const createProject = useCallback(
     async (name: string) => {
       if (!name.trim()) throw new Error("Give the project a name");
@@ -78,6 +92,11 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
     async (id: string, fileId: string) => {
       update(id, (p) => ({ ...p, files: p.files.filter((f) => f.id !== fileId), updated: new Date().toISOString() }));
       await flush(id);
+      try {
+        await deleteProjectFile(id, fileId);
+      } catch (error) {
+        console.warn("Project file cleanup failed:", error);
+      }
     },
     [update, flush],
   );
@@ -85,7 +104,7 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
     <ProjectsContext
       value={{
         projects,
-        isLoaded: isLoaded && selectionLoaded,
+        isLoaded,
         selectedProjectId,
         selectProject,
         editingProjectId,

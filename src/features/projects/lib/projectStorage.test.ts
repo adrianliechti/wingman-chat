@@ -1,8 +1,9 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
+import { readBlob } from "@/shared/lib/opfs-core";
 import { exportFolderAsZip, importFolderFromZip } from "@/shared/lib/opfs-zip";
 import { createProjectTools, projectInstructions } from "./projectTools";
-import { loadProject, projectStorage, readProjectFile, saveProjectFile } from "./projectStorage";
+import { deleteProjectFile, loadProject, projectStorage, readProjectFile, saveProjectFile } from "./projectStorage";
 import { isProject, projectFileName, type Project } from "./projects";
 import { FileSystemManager } from "@/features/artifacts/lib/fs";
 
@@ -53,6 +54,21 @@ describe("projects", () => {
     expect(restored).toEqual(project);
     expect((await projectStorage.load()).map((p) => p.id)).toEqual(["one"]);
     expect(await readProjectFile(restored, "/notes.txt")).toMatchObject({ content: "Revenue: 42" });
+  });
+
+  it("deletes a removed file's bytes and keeps the other files", async () => {
+    const project = makeProject("one");
+    await projectStorage.store(project);
+    const kept = await saveProjectFile(project, new File(["keep"], "keep.txt", { type: "text/plain" }));
+    const removed = await saveProjectFile(project, new File(["drop"], "drop.txt", { type: "text/plain" }));
+    project.files.push(kept, removed);
+    await projectStorage.store(project);
+    project.files = [kept];
+    await projectStorage.store(project);
+    await deleteProjectFile(project.id, removed.id);
+    await deleteProjectFile(project.id, removed.id);
+    expect(await readBlob(`projects/one/files/${removed.id}`)).toBeUndefined();
+    expect(await readProjectFile(project, "/keep.txt")).toMatchObject({ content: "keep" });
   });
 
   it("exposes only current project files and copies binaries without overwriting conversation files", async () => {

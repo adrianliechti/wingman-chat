@@ -5,6 +5,7 @@ import {
   writeBlob,
   readBlob,
   deleteDirectory,
+  deleteFile,
   upsertIndexEntry,
   removeIndexEntry,
   blobToDataUrl,
@@ -74,6 +75,11 @@ export async function saveProjectFile(
     lastModified: file.lastModified,
     source,
   };
+}
+
+/** Call once the saved project no longer lists the file; a failure then only leaves unused bytes. */
+export function deleteProjectFile(projectId: string, fileId: string): Promise<void> {
+  return withPersistenceLock("collection:projects", () => deleteFile(`${projectPath(projectId)}/files/${fileId}`));
 }
 
 export async function readProjectFile(project: Project, path: string): Promise<WorkspaceFile | undefined> {
