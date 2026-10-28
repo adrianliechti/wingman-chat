@@ -6,6 +6,7 @@ import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
 import type { FileEntry } from "@/shared/types/file";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
+import { useUnsavedPaths } from "@/shared/ui/editors/draftStore";
 import { FileIcon } from "@/shared/ui/FileIcon";
 
 interface FileNode {
@@ -95,6 +96,7 @@ export function FileTree({
   className,
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(activePath ? ancestors(activePath) : []));
+  const unsaved = useUnsavedPaths(fs.chatId);
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
 
@@ -221,6 +223,14 @@ export function FileTree({
             >
               {node.name}
             </span>
+            {unsaved.has(node.path) && (
+              <span
+                role="img"
+                aria-label="Unsaved changes"
+                title="Unsaved changes"
+                className="size-1.5 shrink-0 rounded-full bg-neutral-500 dark:bg-neutral-400"
+              />
+            )}
           </button>
         )}
         <DropdownMenu

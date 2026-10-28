@@ -103,7 +103,7 @@ export function useChatRun({
     };
   }, [session]);
   const tools = useMemo(() => approvalTools(chatTools()), [chatTools]);
-  const { providers, getProviderState, isProviderEnabled } = useToolsContext();
+  const { providers, getProviderState, isProviderEnabled, getSkillsProvider } = useToolsContext();
   const toolNames = new Set(tools.map((tool) => tool.name));
   const isAwaitingTools = (names: string[]) =>
     names.some(
@@ -146,6 +146,15 @@ export function useChatRun({
         nativeMessages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
       );
       const outgoing = conversation.findLast(isUserPrompt);
+      // Stored references keep manual skills (and their resources) available on
+      // follow-ups and reloads, without changing global automatic-use settings.
+      const selectedSkills = conversation.filter(isUserPrompt).flatMap((message) =>
+        message.parts.flatMap((part) => {
+          const skill = part.type === "text" ? textMetadata(part).skillRef : undefined;
+          return skill ? [skill.name] : [];
+        }),
+      );
+      const skills = getSkillsProvider(selectedSkills);
       const loadAttachments = createAttachmentLoader(id);
       const memory = chatMemory();
       const releaseMemory = memory ? beginMemoryRun(memory) : undefined;
@@ -155,7 +164,7 @@ export function useChatRun({
       try {
         if (active()) setRunPhase("thinking");
         updateChat(id, () => ({}));
-        const tools = chatTools();
+        const tools = chatTools(skills);
         signal?.throwIfAborted();
         const toolMessage = outgoing ? (await loadAttachments([outgoing], signal))[0] : undefined;
         let memoryContext = "";
@@ -183,7 +192,7 @@ export function useChatRun({
         const compaction = config.chat?.compaction;
         let threshold = compaction ? (model.compactThreshold ?? compactThreshold(model.id)) : 0;
         if (compaction?.threshold !== undefined && threshold > 0) threshold = Math.min(threshold, compaction.threshold);
-        yield* streamChatWithUiRepair(client, model.id, chatInstructions(), conversation, tools, {
+        yield* streamChatWithUiRepair(client, model.id, chatInstructions(skills), conversation, tools, {
           runId,
           threadId: id,
           parentRunId: runContext.parentRunId,
@@ -191,7 +200,7 @@ export function useChatRun({
           agentName: "chat",
           sidecar,
           middleware: [
-            ...chatMiddleware(),
+            ...chatMiddleware(skills),
             ...(runFs ? [artifactVerification(runFs, sidecar, conversation)] : []),
             uiDiagnostics(conversation),
             {
@@ -234,6 +243,7 @@ export function useChatRun({
             loadAttachments(prepareChatMessages(messages, requestContext), runSignal),
           createToolContext: (call, execution) => ({
             chatId: id,
+            skillFiles: skills?.loadFiles ?? (async () => ({})),
             content: () => (toolMessage?.parts ?? []).filter(isContentPart),
             elicit: (elicitation, options) =>
               requestElicitation(
@@ -279,6 +289,7 @@ export function useChatRun({
       client,
       chatInstructions,
       chatMiddleware,
+      getSkillsProvider,
       requestElicitation,
       completeElicitation,
       clearElicitation,

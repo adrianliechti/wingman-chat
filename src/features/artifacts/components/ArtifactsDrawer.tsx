@@ -1,5 +1,17 @@
 import { lazyRouteComponent } from "@tanstack/react-router";
-import { Code, Download, Eye, File as FileIcon2, Loader2, PanelRight, Play, Shapes, Upload } from "lucide-react";
+import {
+  Code,
+  Download,
+  Eye,
+  File as FileIcon2,
+  Loader2,
+  PanelRight,
+  Play,
+  Save,
+  Shapes,
+  Undo2,
+  Upload,
+} from "lucide-react";
 import { Suspense, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useArtifactEntries, useArtifactFile } from "@/features/artifacts/hooks/useArtifactFiles";
@@ -23,6 +35,8 @@ import { useTextSelection, type TextSelectionSnapshot } from "@/shared/ui/select
 import { downloadMarkdownAsDocx, getFileName } from "@/shared/lib/utils";
 import { DriveIcon } from "@/shared/ui/DriveIcon";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { allowDrafts, draftKey, dropDrafts, moveDrafts } from "@/shared/ui/editors/draftStore";
+import type { DraftStatus, FileEditing } from "@/shared/ui/editors/useTextDraft";
 import { DropdownMenu, DropdownMenuItem, Menu, MenuButton, MenuItem, MenuItems } from "@/shared/ui/DropdownMenu";
 import { ArtifactHistoryPopover } from "./ArtifactHistoryPopover";
 import { ArtifactRevisionBanner } from "./ArtifactRevisionBanner";
@@ -34,7 +48,6 @@ import { ArtifactsNavigator } from "./ArtifactsNavigator";
 // that the chat view never needs until a user actually opens that file type.
 // `lazyRouteComponent` is the same primitive the router uses — it also reloads
 // gracefully when a chunk goes missing after a deploy.
-const CodeEditor = lazyRouteComponent(() => import("@/shared/ui/editors/CodeEditor"), "CodeEditor");
 const DataEditor = lazyRouteComponent(() => import("@/shared/ui/editors/DataEditor"), "DataEditor");
 const DocxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/DocxEditor"), "DocxEditor");
 const HtmlEditor = lazyRouteComponent(() => import("@/shared/ui/editors/HtmlEditor"), "HtmlEditor");
@@ -248,6 +261,48 @@ export function ArtifactsDrawer() {
     [hoverRevision, pinnedRevision].find((view) => view && view.fs === fs && view.path === activeFile) ?? null;
   const canCompareRevision =
     !!activeFileData && DIFFABLE_KINDS.has(artifactKind(activeFileData.path, activeFileData.contentType));
+
+  // Text sources are edited in place. The open editor reports unsaved edits,
+  // and the header offers Save and Cancel for them.
+  const [draftStatus, setDraftStatus] = useState<{
+    fs: FileSystemManager | null;
+    path: string | null;
+    status: DraftStatus;
+  } | null>(null);
+  const currentDraft = draftStatus?.fs === fs && draftStatus?.path === activeFile ? draftStatus.status : null;
+  const onDraftStatus = useCallback(
+    (status: DraftStatus | null) => {
+      setDraftStatus((current) => {
+        const owns = current?.fs === fs && current?.path === activeFile;
+        if (!status) return owns ? null : current;
+        return { fs, path: activeFile, status };
+      });
+    },
+    [fs, activeFile],
+  );
+  // Unsaved drafts follow renames and go away with deleted files.
+  useEffect(() => {
+    if (!fs) return;
+    const subscriptions = [
+      fs.subscribe("fileDeleted", (path) => dropDrafts(fs.chatId, path)),
+      fs.subscribe("fileRenamed", (from, to) => moveDrafts(fs.chatId, from, to)),
+      fs.subscribe("fileCreated", (path) => allowDrafts(fs.chatId, path)),
+    ];
+    return () => subscriptions.forEach((unsubscribe) => unsubscribe());
+  }, [fs]);
+  const handleSaveShortcut = (event: React.KeyboardEvent) => {
+    if (!currentDraft || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+    if (event.key.toLowerCase() !== "s") return;
+    event.preventDefault();
+    currentDraft.save();
+  };
+  const saveActiveFile = useCallback(
+    (content: string) =>
+      fs && activeFile
+        ? fs.createFile(activeFile, content, undefined, { origin: { actor: "user", reason: "edit" } })
+        : Promise.resolve(null),
+    [fs, activeFile],
+  );
 
   // Select-to-edit: the editor reports the element (or preview iframe) whose
   // selection to watch; a floating control turns the highlight into a request
@@ -474,6 +529,12 @@ export function ArtifactsDrawer() {
       : activeFileData;
     const editorKey = JSON.stringify([fs?.chatId, shownFile.path, shownRevision?.entry.revision ?? "current"]);
     const kind = artifactKind(shownFile.path, shownFile.contentType);
+    // An archived revision is read-only.
+    const editing: FileEditing | undefined =
+      shownRevision || !fs
+        ? undefined
+        : { key: draftKey(fs.chatId, shownFile.path), save: saveActiveFile, onStatus: onDraftStatus };
+    const onAsk = requestEdit && !shownRevision ? submitSelectionEdit : undefined;
 
     switch (kind) {
       case "image":
@@ -535,7 +596,6 @@ export function ArtifactsDrawer() {
             content={shownFile.content}
             contentType={shownFile.contentType}
             viewMode={viewMode}
-            onViewModeChange={setViewMode}
           />
         );
       case "binary":
@@ -562,11 +622,20 @@ export function ArtifactsDrawer() {
             viewMode={viewMode}
             onViewModeChange={setViewMode}
             onSelectionRoot={onSelectionRoot}
+            editing={editing}
+            onAsk={onAsk}
           />
         );
       case "svg":
         return (
-          <SvgEditor key={editorKey} content={shownFile.content} viewMode={viewMode} onViewModeChange={setViewMode} />
+          <SvgEditor
+            key={editorKey}
+            content={shownFile.content}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            editing={editing}
+            onAsk={onAsk}
+          />
         );
       case "mermaid":
         return (
@@ -575,6 +644,8 @@ export function ArtifactsDrawer() {
             content={shownFile.content}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
+            editing={editing}
+            onAsk={onAsk}
           />
         );
       case "data":
@@ -586,8 +657,9 @@ export function ArtifactsDrawer() {
             content={shownFile.content}
             path={shownFile.path}
             viewMode={viewMode}
-            onViewModeChange={setViewMode}
             onSelectionRoot={onSelectionRoot}
+            editing={editing}
+            onAsk={onAsk}
           />
         );
       case "code": {
@@ -599,7 +671,8 @@ export function ArtifactsDrawer() {
               content={shownFile.content}
               onRunReady={onRunReady}
               onRunningChange={onRunningChange}
-              onSelectionRoot={onSelectionRoot}
+              editing={editing}
+              onAsk={onAsk}
             />
           );
         }
@@ -610,7 +683,8 @@ export function ArtifactsDrawer() {
               content={shownFile.content}
               onRunReady={onRunReady}
               onRunningChange={onRunningChange}
-              onSelectionRoot={onSelectionRoot}
+              editing={editing}
+              onAsk={onAsk}
             />
           );
         }
@@ -621,16 +695,17 @@ export function ArtifactsDrawer() {
               content={shownFile.content}
               onRunReady={onRunReady}
               onRunningChange={onRunningChange}
-              onSelectionRoot={onSelectionRoot}
+              editing={editing}
+              onAsk={onAsk}
             />
           );
         }
         return (
-          <CodeEditor key={editorKey} content={shownFile.content} language={lang} onSelectionRoot={onSelectionRoot} />
+          <TextEditor key={editorKey} content={shownFile.content} language={lang} editing={editing} onAsk={onAsk} />
         );
       }
       default:
-        return <TextEditor key={editorKey} content={shownFile.content} onSelectionRoot={onSelectionRoot} />;
+        return <TextEditor key={editorKey} content={shownFile.content} editing={editing} onAsk={onAsk} />;
     }
   };
 
@@ -681,6 +756,7 @@ export function ArtifactsDrawer() {
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      onKeyDown={handleSaveShortcut}
     >
       {/* Drag overlay */}
       {isDragOver && (
@@ -724,6 +800,7 @@ export function ArtifactsDrawer() {
                   fs={fs}
                   files={files}
                   activePath={activeFile}
+                  unsaved={!!currentDraft?.dirty}
                   onOpen={openFile}
                   popover={!showFileColumn && files.length > 1}
                   drives={config.drives}
@@ -780,6 +857,29 @@ export function ArtifactsDrawer() {
             {(runHandler || activeFileData) && (
               <>
                 <div className="flex items-center gap-0.5">
+                  {/* Unsaved edits of the open file */}
+                  {currentDraft?.dirty && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={currentDraft.discard}
+                        title="Discard changes"
+                        aria-label="Discard changes"
+                        className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                      >
+                        <Undo2 size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={currentDraft.save}
+                        title="Save (⌘S)"
+                        aria-label="Save"
+                        className="p-2 md:p-1.5 mr-1 rounded transition-all duration-150 ease-out text-neutral-900 dark:text-neutral-50 bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15"
+                      >
+                        <Save size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                      </button>
+                    </>
+                  )}
                   {/* Preview / code toggle, grouped with the other file actions */}
                   {supportsPreview() && (
                     <div

@@ -63,6 +63,34 @@ describe("chat prompt context", () => {
     state.agent = null;
   });
 
+  it("uses one selected skill provider consistently for the parent and delegated runs", () => {
+    const oldMiddleware = { name: "old-skills" };
+    const selectedMiddleware = { name: "selected-skills" };
+    state.providers = [
+      {
+        id: "skills",
+        name: "Skills",
+        tools: [],
+        chat: { tools: [], instructions: "Automatic only", middleware: [oldMiddleware] },
+      },
+    ];
+    const selected: ToolProvider = {
+      id: "skills",
+      name: "Skills",
+      tools: [],
+      chat: { tools: [], instructions: "Selected skill instructions", middleware: [selectedMiddleware] },
+    };
+    const value = context();
+    expect(value.middleware(selected)).toEqual([selectedMiddleware]);
+    expect(value.instructions(selected)).toContain("Selected skill instructions");
+    expect(value.instructions(selected)).not.toContain("Automatic only");
+    const child = value.tools(selected).find((tool) => tool.subagent)!.subagent!;
+    expect(child.middleware).toEqual([selectedMiddleware]);
+    expect(child.instructions).toContain("Selected skill instructions");
+    const restricted = context({ id: "restricted", name: "Restricted", tools: { enabled: [], disabled: ["skills"] } });
+    expect(restricted.middleware(selected)).toEqual([]);
+  });
+
   it("uses a retired agent model's replacement tool policy in voice mode", () => {
     state.agent = { model: "legacy" };
     const voice = context({ id: "realtime", name: "Voice" }, "voice", [

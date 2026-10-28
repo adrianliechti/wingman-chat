@@ -1,4 +1,6 @@
-import { CodeEditor } from "./CodeEditor";
+import type { TextSelectionSnapshot } from "@/shared/ui/selection/useTextSelection";
+import { DraftSourceEditor } from "./SourceEditor";
+import { useTextDraft, type FileEditing } from "./useTextDraft";
 
 // Component to display SVG content
 function SvgPreview({ content }: { content: string }) {
@@ -24,13 +26,22 @@ interface SvgEditorProps {
   content: string;
   viewMode?: "code" | "preview";
   onViewModeChange?: (mode: "code" | "preview") => void;
+  /** How the file is saved; without it the editor is read-only. */
+  editing?: FileEditing;
+  /** Sends an instruction about code selected in the code view. */
+  onAsk?: (instruction: string, selection: TextSelectionSnapshot) => void;
 }
 
-export function SvgEditor({ content, viewMode = "preview" }: SvgEditorProps) {
+export function SvgEditor({ content, viewMode = "preview", editing, onAsk }: SvgEditorProps) {
+  const draft = useTextDraft(content, editing);
   return (
     <div className="h-full flex flex-col overflow-hidden relative">
       <div className="flex-1 overflow-auto min-h-0">
-        {viewMode === "preview" ? <SvgPreview content={content} /> : <CodeEditor content={content} language="xml" />}
+        {viewMode === "preview" ? (
+          <SvgPreview content={draft.text} />
+        ) : (
+          <DraftSourceEditor draft={draft} language="xml" label="SVG source" onAsk={onAsk} />
+        )}
       </div>
     </div>
   );

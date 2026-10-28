@@ -165,7 +165,12 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       }),
     [installedPlugins, pluginRequiredIds, activeSelection],
   );
-  const skillsProvider = useSkillsProvider(currentAgent, skillSources, activePlugins);
+  const { provider: skillsProvider, forSelection: getSkillsProvider } = useSkillsProvider(
+    currentAgent,
+    skillSources,
+    activePlugins,
+    installedPlugins,
+  );
 
   // Only plugin parents are selectable. Remove old independently selected child
   // servers as well as selections for plugins that have been uninstalled.
@@ -339,6 +344,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         setModelOverrides,
         skillSources,
         setSkillSources,
+        getSkillsProvider,
         companionAvailable,
         companionEnabled,
         toggleCompanion,

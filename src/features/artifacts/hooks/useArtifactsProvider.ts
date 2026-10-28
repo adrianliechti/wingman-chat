@@ -1,8 +1,9 @@
 import { Shapes } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ARTIFACT_VALIDATORS } from "@/features/artifacts/lib/artifactValidators";
 import { SCRIPT_EXECUTION_SCHEMA } from "@/features/artifacts/lib/executionToolSchemas";
-import { resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
+import { resolveArtifactFileSystem, type FileSystemManager } from "@/features/artifacts/lib/fs";
+import type { ArtifactReadWriteManager } from "@/features/artifacts/lib/artifactFileTools";
 import { queryableMountNames } from "@/features/artifacts/lib/duckdbWorkspace";
 import { useArtifactEntries } from "./useArtifactFiles";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
@@ -30,8 +31,49 @@ function executionFailure(context: ToolContext | undefined, text: string) {
   return [{ type: "text" as const, content: text }];
 }
 
+/**
+ * Files the assistant has read or written that changed without it since, such
+ * as edits in the artifact editor, so the next request can tell it to re-read.
+ */
+function useChangedSinceObserved(fs: FileSystemManager | null, manager: ArtifactReadWriteManager): string[] {
+  const [changed, setChanged] = useState<{ fs: FileSystemManager | null; paths: string[] }>({ fs: null, paths: [] });
+  useEffect(() => {
+    if (!fs) return;
+    let version = 0;
+    const refresh = () => {
+      version += 1;
+      const request = version;
+      manager.changedSinceObserved(fs).then(
+        (paths) => {
+          if (request !== version) return;
+          setChanged((current) =>
+            current.fs === fs && current.paths.join("\n") === paths.join("\n") ? current : { fs, paths },
+          );
+        },
+        (error: unknown) => console.error("Failed to compare artifact revisions:", error),
+      );
+    };
+    const subscriptions = [
+      fs.subscribe("fileCreated", refresh),
+      fs.subscribe("fileUpdated", refresh),
+      fs.subscribe("fileDeleted", refresh),
+      fs.subscribe("fileRenamed", refresh),
+      manager.subscribe((chatId) => {
+        if (chatId === fs.chatId) refresh();
+      }),
+    ];
+    refresh();
+    return () => {
+      version += 1;
+      subscriptions.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [fs, manager]);
+  return changed.fs === fs ? changed.paths : [];
+}
+
 export function useArtifactsProvider(): ToolProvider | null {
   const { fs, activeFile, isAvailable, readWriteManager } = useArtifacts();
+  const changedPaths = useChangedSinceObserved(fs, readWriteManager);
   const entries = useArtifactEntries(fs);
   const duckdbEnabled = getConfig().artifacts?.bridge !== false && getConfig().artifacts?.duckdb !== false;
   // Keyed by content so the provider only changes when the queryable set does.
@@ -122,6 +164,12 @@ export function useArtifactsProvider(): ToolProvider | null {
         `active_file: ${activeFile ? JSON.stringify(activeFile) : "null"}`,
         `open_tabs: ${activeFile ? `[${JSON.stringify(activeFile)}]` : "[]"}`,
         "Use artifacts_read to inspect an active file; do not assume its contents from the path.",
+        ...(changedPaths.length > 0
+          ? [
+              `changed_since_your_last_read: ${JSON.stringify(changedPaths)}`,
+              "These files changed outside your tools (for example, the user edited them) after you last read or wrote them. Read them again before relying on their earlier content.",
+            ]
+          : []),
         ...(duckdbEnabled
           ? [
               `duckdb_files: ${JSON.stringify(queryable)}`,
@@ -131,7 +179,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       ].join("\n"),
       tools: artifactsTools(),
     };
-  }, [isAvailable, activeFile, artifactsTools, duckdbEnabled, queryable]);
+  }, [isAvailable, activeFile, artifactsTools, duckdbEnabled, queryable, changedPaths]);
 
   return provider;
 }

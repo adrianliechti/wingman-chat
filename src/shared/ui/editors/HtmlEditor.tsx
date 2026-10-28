@@ -8,16 +8,22 @@ import { confirm } from "@/shared/lib/confirm";
 import type { PreviewSession } from "@/shared/lib/htmlPreviewSession";
 import { ProviderState, type Tool } from "@/shared/types/chat";
 import { HtmlPreview } from "@/shared/ui/HtmlPreview";
+import type { TextSelectionSnapshot } from "@/shared/ui/selection/useTextSelection";
 import sdkSource from "virtual:artifact-library-source/wingman-sdk";
-import { CodeEditor } from "./CodeEditor";
+import { DraftSourceEditor } from "./SourceEditor";
+import { useTextDraft, type FileEditing } from "./useTextDraft";
 
 interface HtmlEditorProps {
   path: string;
   content: string;
   viewMode?: "code" | "preview";
   onViewModeChange?: (mode: "code" | "preview") => void;
-  /** Receives the preview iframe or the code view whose text selection the host watches. */
+  /** Receives the preview iframe whose text selection the host watches. */
   onSelectionRoot?: (element: HTMLElement | null) => void;
+  /** How the file is saved; without it the editor is read-only. */
+  editing?: FileEditing;
+  /** Sends an instruction about code selected in the code view. */
+  onAsk?: (instruction: string, selection: TextSelectionSnapshot) => void;
 }
 
 /** Providers a page must not drive: the model's own file tools, memory, and skills. */
@@ -25,8 +31,16 @@ const EXCLUDED_PROVIDERS = new Set(["artifacts", "memory", "skills"]);
 
 const NO_TOOLS: Tool[] = [];
 
-export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoot }: HtmlEditorProps) {
+export function HtmlEditor({
+  path,
+  content,
+  viewMode = "preview",
+  onSelectionRoot,
+  editing,
+  onAsk,
+}: HtmlEditorProps) {
   const { fs } = useArtifacts();
+  const draft = useTextDraft(content, editing);
   const toolsContext = useContext(ToolsContext);
   const config = getConfig();
   const bridgeEnabled = config.artifacts?.bridge !== false && !!fs;
@@ -97,7 +111,7 @@ export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoo
       {viewMode === "preview" ? (
         <HtmlPreview
           path={path}
-          content={content}
+          content={draft.text}
           fs={fs ?? undefined}
           className="w-full h-full"
           sdk={sdk}
@@ -106,7 +120,7 @@ export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoo
           iframeRef={onSelectionRoot}
         />
       ) : (
-        <CodeEditor content={content} language="html" onSelectionRoot={onSelectionRoot} />
+        <DraftSourceEditor draft={draft} language="html" label="HTML source" onAsk={onAsk} />
       )}
     </div>
   );

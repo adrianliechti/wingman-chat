@@ -208,6 +208,8 @@ export interface ToolContext {
   inputResponse?: { status: "resolved"; payload: unknown } | { status: "cancelled" };
   /** The content parts of the user turn that triggered this run (text and attachments). */
   content?(): ContentPart[];
+  /** Bundled skill files captured for this run, independent of the active UI chat. */
+  skillFiles?(): Promise<Record<string, { content: string; contentType?: string }>>;
   elicit?(
     elicitation: Elicitation,
     options?: { signal?: AbortSignal; onCancel?: () => void },
