@@ -7,6 +7,9 @@ conversations, retrieval over your own files, and a library of reusable skills.
 
 ## Features
 
+Activity identifiers for agents, skills, connectors and plugins are described in
+[Chat activity telemetry](docs/telemetry.md).
+
 ### Chat
 
 - **Multi-model chat** with configurable models, system instructions, and per-model defaults.

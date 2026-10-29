@@ -2,7 +2,7 @@ import type { ChatMiddleware, ContentPart, SchemaInput, Tool as NativeTool, UIMe
 import type { z } from "zod";
 import type { ChatPersistedState } from "@tanstack/ai-client";
 import type { Elicitation, ElicitationResult } from "./elicitation.ts";
-import type { AgentContext } from "./telemetry";
+import type { AgentContext, ToolTelemetry } from "./telemetry";
 
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
@@ -111,6 +111,7 @@ type WorkspaceTool = NativeTool<
 
 /** Native tools with rich workspace results and app-owned presentation. */
 export type Tool = Omit<WorkspaceTool, "inputSchema"> & {
+  telemetry?: ToolTelemetry;
   // Providers include native skill schemas and dynamically discovered MCP schemas.
   inputSchema: SchemaInput;
   execute: NonNullable<WorkspaceTool["execute"]>;

@@ -22,7 +22,7 @@ import {
   type UIMessage,
 } from "@tanstack/ai";
 import type { AgentRunContext, MessageError, MessageUsage, Tool, ToolContext } from "../types/chat";
-import type { AgentContext } from "../types/telemetry";
+import type { AgentContext, AgentIdentity } from "../types/telemetry";
 import type { Client, ClientRequestOptions } from "./client";
 import { followAbortSignal } from "./abortSignals";
 import {
@@ -62,6 +62,9 @@ interface ToolCall {
 
 /** Per-turn hooks the caller can supply. All optional. */
 export interface RunHooks {
+  agentIdentity?: AgentIdentity;
+  /** Saved conversation ID for telemetry; native children derive their own thread IDs. */
+  conversationId?: string;
   /** Provider-owned native extensions, scoped by TanStack to this invocation. */
   middleware?: ChatMiddleware[];
   /** App policies instantiated for this run and each native child, with that run's cancellation. */
@@ -298,7 +301,11 @@ export async function* streamRun(
 
   try {
     abortController.signal.throwIfAborted();
-    const telemetry = aiTelemetry(hooks.agentName ?? "chat", hooks.parentContext);
+    const telemetry = aiTelemetry(hooks.agentName ?? "chat", hooks.parentContext, {
+      conversationId: hooks.conversationId ?? hooks.threadId,
+      agent: hooks.agentIdentity,
+      tools,
+    });
     const adapter = client.textAdapter(model, abortController.signal, telemetry.requestContext);
     let terminal: RunFinishedEvent | undefined;
     let failure: Error | undefined;
@@ -475,6 +482,8 @@ export async function* streamRun(
                 middleware: spec.middleware,
                 sharedMiddleware: isolated ? undefined : hooks.sharedMiddleware,
                 agentName: tool.name,
+                agentIdentity: tool.telemetry?.agent,
+                conversationId: hooks.conversationId ?? hooks.threadId,
                 runId: ctx.runId,
                 threadId: ctx.threadId,
                 parentRunId: ctx.parentRunId,

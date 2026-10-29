@@ -10,6 +10,7 @@ import { finalText, toolResultMetadata, userMessage } from "@/shared/lib/message
 import { captureRequestContext, injectRequestContext } from "@/shared/lib/requestContext";
 import { artifactDelta, artifactDeltaFromMeta } from "@/shared/types/artifact";
 import type { Tool } from "@/shared/types/chat";
+import type { AgentIdentity } from "@/shared/types/telemetry";
 
 export function createSubagentTool(
   model: string,
@@ -36,11 +37,17 @@ export function createAgentTool(
   name: string,
   description: string,
   spec: NonNullable<Tool["subagent"]>,
-  options: { client?: Client; title?: string; approval?: "prompt" } = {},
+  options: { client?: Client; title?: string; approval?: "prompt"; agentIdentity?: AgentIdentity } = {},
 ): Tool {
   const isolated = spec.inheritHistory === false;
+  const agentIdentity: AgentIdentity = options.agentIdentity ?? {
+    id: `builtin:${name}`,
+    name: options.title ?? name,
+    kind: "builtin",
+  };
   return {
     name,
+    telemetry: { agent: agentIdentity },
     title: options.title,
     subagent: spec,
     description,
@@ -91,6 +98,8 @@ export function createAgentTool(
           spec.tools,
           {
             agentName: name,
+            agentIdentity,
+            threadId: ctx?.chatId,
             middleware: spec.middleware,
             parentContext: ctx?.agentContext,
             context: { ...(isolated ? {} : ctx?.invocationContext), subagentRunId: crypto.randomUUID() },

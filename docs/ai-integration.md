@@ -741,7 +741,7 @@ Provider requests carry an explicitly injected `traceparent` to connect gateway
 spans to the browser operation. Classification scores include the opaque chat ID
 as `gen_ai.conversation.id` so Insights can calculate classified prompts per
 conversation. Chat IDs are not included in model-usage metrics or provider request
-headers. MCP tool spans carry `wingman.mcp.server.id` and `mcp.tool.name`.
+headers. MCP tool spans carry `wingman.mcp.server.id` and `gen_ai.tool.name`.
 
 The Go telemetry proxy stamps `wingman.telemetry.source=chat` on resource
 attributes and removes client-supplied `service.peer.name`. Insights recognizes

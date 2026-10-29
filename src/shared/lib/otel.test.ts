@@ -1,11 +1,15 @@
 import { z } from "zod";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Client } from "./client";
-import { runMessages } from "./agent";
+import { run, runMessages } from "./agent";
 import { assistant, calls, finished, output, response, textItem, testClient, user } from "./test-support/ai";
 import { trace, type Span } from "@opentelemetry/api";
 import { chat } from "@tanstack/ai";
 import { aiTelemetry } from "./otel";
+import { createSkillsProvider } from "@/features/skills/lib/skillsProvider";
+import { createMcpAgentChat } from "@/features/tools/lib/mcpAgent";
+
+vi.mock("@/shared/config", () => ({ getConfig: () => ({ client: new Client() }) }));
 
 const telemetry = vi.hoisted(() => ({
   spans: [] as {
@@ -207,4 +211,193 @@ it("closes failed tool spans through the native error lifecycle", async () => {
   expect(spans[0].attributes["tanstack.ai.tool.outcome"]).toBe("error");
   expect(spans[0].setStatus).toHaveBeenCalledWith(expect.objectContaining({ code: 2 }));
   for (const span of telemetry.spans) expect(span.end).toHaveBeenCalledOnce();
+});
+
+it("identifies configured agents once per run and correlates their tools without recording content", async () => {
+  const complete = vi
+    .fn()
+    .mockResolvedValueOnce(calls(["tool-1", "search"]))
+    .mockResolvedValue(assistant("Private answer"));
+  await runMessages(
+    testClient(complete),
+    "model",
+    "Private instructions",
+    [user("Private prompt")],
+    [
+      {
+        name: "search",
+        description: "Private tool description",
+        inputSchema: z.looseObject({}),
+        telemetry: { serverId: "documents", serverName: "Documents", pluginId: "research" },
+        execute: async () => output("Private document"),
+      },
+    ],
+    { threadId: "conversation-1", agentIdentity: { id: "agent-1", name: "Research assistant", kind: "configured" } },
+  );
+  const invocations = telemetry.spans.filter((span) => span.attributes["gen_ai.operation.name"] === "invoke_agent");
+  expect(invocations).toHaveLength(1);
+  expect(invocations[0].attributes).toMatchObject({
+    "gen_ai.agent.id": "agent-1",
+    "gen_ai.agent.name": "Research assistant",
+  });
+  expect(invocations[0].attributes["wingman.agent.outcome"]).toBe("success");
+  const tool = telemetry.spans.find((span) => span.attributes["gen_ai.tool.name"] === "search");
+  expect(tool?.attributes).toMatchObject({
+    "wingman.mcp.server.id": "documents",
+    "wingman.plugin.id": "research",
+    "gen_ai.conversation.id": "conversation-1",
+  });
+  expect(JSON.stringify(telemetry.spans.map((span) => span.attributes))).not.toContain("Private");
+});
+
+it.each([
+  { name: "load_skill", args: { name: "office:reports" } },
+  { name: "read_skill_resource", args: { skill: "office:reports", path: "reference.md" } },
+  { name: "read_skill_resource", args: { skill: "office:reports", path: "Private unknown resource" } },
+])("records catalog-validated skill and plugin identity on $name", async ({ name, args }) => {
+  const provider = createSkillsProvider(
+    [
+      {
+        name: "reports",
+        plugin: "office",
+        description: "Private description",
+        loadContent: () => "Private instructions",
+        resources: ["reference.md"],
+        loadResource: () => "Private resource",
+      },
+    ],
+    { id: "skills", name: "Skills", description: "" },
+  )!;
+  const complete = vi
+    .fn()
+    .mockResolvedValueOnce(calls(["skill-1", name, args]))
+    .mockResolvedValue(assistant("Done"));
+  await runMessages(testClient(complete), "model", "", [], provider.chat!.tools, {
+    middleware: provider.chat!.middleware,
+  });
+  const load = telemetry.spans.filter((span) => span.attributes["gen_ai.tool.name"] === name);
+  expect(load).toHaveLength(1);
+  expect(load[0].attributes).toMatchObject({
+    "gen_ai.skill.name": "office:reports",
+    "wingman.plugin.id": "office",
+  });
+  if (args.path === "reference.md") expect(load[0].attributes["gen_ai.skill.resource.name"]).toBe("reference.md");
+  else expect(load[0].attributes).not.toHaveProperty("gen_ai.skill.resource.name");
+  expect(load[0].attributes).not.toHaveProperty("wingman.skill.name");
+  expect(load[0].attributes).not.toHaveProperty("wingman.skill.id");
+  expect(JSON.stringify(telemetry.spans.map((span) => span.attributes))).not.toContain("Private");
+});
+
+it("keeps native delegated agents in the parent trace and original conversation", async () => {
+  const complete = vi
+    .fn()
+    .mockResolvedValueOnce(calls(["delegation-1", "research", { prompt: "Private task" }]))
+    .mockResolvedValue(assistant("Done"));
+  await runMessages(
+    testClient(complete),
+    "model",
+    "",
+    [],
+    [
+      {
+        name: "research",
+        description: "Research",
+        inputSchema: z.object({ prompt: z.string() }),
+        telemetry: { agent: { id: "mcp:internet", name: "Web research", kind: "delegated" }, serverId: "internet" },
+        subagent: { instructions: "Private instructions", tools: [] },
+        execute: async () => [],
+      },
+    ],
+    {
+      threadId: "original-conversation",
+      agentIdentity: { id: "parent-agent", name: "Coordinator", kind: "configured" },
+    },
+  );
+  const delegation = telemetry.spans.find((span) => span.attributes["gen_ai.tool.call.id"] === "delegation-1");
+  expect(delegation?.attributes).toMatchObject({
+    "gen_ai.agent.id": "parent-agent",
+    "gen_ai.agent.name": "Coordinator",
+    "gen_ai.transfer.target.name": "Web research",
+    "gen_ai.transfer.mode": "return_to_caller",
+    "wingman.transfer.target.id": "mcp:internet",
+    "wingman.transfer.target.kind": "delegated",
+  });
+  expect(delegation?.attributes).not.toHaveProperty("wingman.activity.kind");
+  const child = telemetry.spans.find((span) => span.attributes["wingman.operation.name"] === "research");
+  expect(child).toBeDefined();
+  expect(child?.parent).toBe(delegation?.parent);
+  expect(child?.attributes["gen_ai.conversation.id"]).toBe("original-conversation");
+  expect(telemetry.spans.filter((span) => span.attributes["gen_ai.operation.name"] === "invoke_agent")).toHaveLength(1);
+});
+
+it.each(["personal", "builtin"] as const)("distinguishes %s skill loads without exporting content", async (source) => {
+  const provider = createSkillsProvider(
+    [{ name: "reports", source, description: "Private description", loadContent: () => "Private instructions" }],
+    { id: "skills", name: "Skills", description: "" },
+  )!;
+  const complete = vi
+    .fn()
+    .mockResolvedValueOnce(calls(["skill-1", "load_skill", { name: "reports" }]))
+    .mockResolvedValue(assistant("Done"));
+  await runMessages(testClient(complete), "model", "", [], [], { middleware: provider.chat!.middleware });
+  const load = telemetry.spans.find((span) => span.attributes["gen_ai.tool.name"] === "load_skill")!;
+  expect(load.attributes["wingman.skill.source"]).toBe(source);
+  expect(load.attributes).not.toHaveProperty("wingman.plugin.id");
+  expect(JSON.stringify(telemetry.spans.map((span) => span.attributes))).not.toContain("Private");
+});
+
+it.each(["error", "aborted"] as const)("records configured agent outcome on %s", async (outcome) => {
+  const controller = new AbortController();
+  const complete = vi.fn().mockImplementation(async () => {
+    if (outcome === "aborted") controller.abort();
+    throw new Error("Generation stopped");
+  });
+  const result = await run(testClient(complete), "model", "", [], [], {
+    agentIdentity: { id: "agent-1", name: "Research assistant", kind: "configured" },
+    options: { signal: controller.signal },
+  });
+  expect(result.status).toBe(outcome === "error" ? "failed" : "aborted");
+  const invocation = telemetry.spans.find((span) => span.attributes["gen_ai.operation.name"] === "invoke_agent");
+  expect(invocation?.attributes["wingman.agent.outcome"]).toBe(outcome);
+  for (const span of telemetry.spans) expect(span.end).toHaveBeenCalledOnce();
+});
+
+it("does not export unknown model-supplied skill identities", async () => {
+  const provider = createSkillsProvider([{ name: "reports", description: "", loadContent: () => "Instructions" }], {
+    id: "skills",
+    name: "Skills",
+    description: "",
+  })!;
+  const complete = vi
+    .fn()
+    .mockResolvedValueOnce(calls(["skill-1", "load_skill", { name: "Private hallucinated skill" }]))
+    .mockResolvedValue(assistant("Done"));
+  await runMessages(testClient(complete), "model", "", [], [], { middleware: provider.chat!.middleware });
+  const load = telemetry.spans.find((span) => span.attributes["gen_ai.tool.name"] === "load_skill")!;
+  expect(load.attributes).not.toHaveProperty("wingman.skill.id");
+  expect(load.attributes).not.toHaveProperty("gen_ai.skill.name");
+  expect(JSON.stringify(telemetry.spans.map((span) => span.attributes))).not.toContain("Private");
+});
+
+it("keeps the MCP agent identity when invoked through the realtime tool boundary", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(finished(response([textItem("Done")]))));
+  const provider = createMcpAgentChat({ id: "internet", name: "Web research", tools: [] });
+  await provider.tools[0].execute(
+    { prompt: "Research" },
+    {
+      context: {
+        model: "model",
+        chatId: "voice-conversation",
+        elicit: async () => ({ action: "accept" }),
+      },
+      emitCustomEvent() {},
+    },
+  );
+  const child = telemetry.spans.find((span) => span.attributes["wingman.operation.name"] === provider.tools[0].name);
+  expect(child?.attributes).toMatchObject({
+    "gen_ai.agent.id": "mcp:internet",
+    "gen_ai.agent.name": "Web research",
+    "wingman.agent.kind": "delegated",
+    "gen_ai.conversation.id": "voice-conversation",
+  });
 });
