@@ -27,6 +27,7 @@ import { useChatClassification } from "./useChatClassification";
 import { useChatElicitation } from "./useChatElicitation";
 import { createAttachmentLoader } from "../lib/chatAttachments";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { useAgents } from "@/features/agent/hooks/useAgents";
 import { mcpToolPrefix } from "@/features/settings/lib/mcpToolNames";
 import { ProviderState } from "@/shared/types/chat";
 import { beginMemoryRun, enqueueMemoryLearning } from "@/features/agent/lib/memoryLearning";
@@ -81,6 +82,7 @@ export function useChatRun({
   chatRuntimeContext,
   chatMemory,
 }: Options) {
+  const { getAgent } = useAgents();
   const config = getConfig();
   const client = config.client;
   const session = useMemo<Session>(
@@ -143,6 +145,8 @@ export function useChatRun({
     ): AsyncGenerator<AGUIEvent> {
       if (!model) throw new Error("No model selected");
       const { id, sidecar } = session;
+      const agentId = getChat(id)?.agentId;
+      const agent = agentId ? getAgent(agentId) : undefined;
       const runId = runContext.runId;
       const conversation = sidecar.apply(
         nativeMessages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
@@ -200,6 +204,7 @@ export function useChatRun({
           parentRunId: runContext.parentRunId,
           resume: runContext.resume,
           agentName: "chat",
+          agentIdentity: agent ? { id: agent.id, name: agent.name, kind: "configured" } : undefined,
           sidecar,
           middleware: [
             ...chatMiddleware(skills),
@@ -286,6 +291,7 @@ export function useChatRun({
       chatRuntimeContext,
       classify,
       getChat,
+      getAgent,
       config.chat?.compaction,
       config.chat?.summarizer,
       client,

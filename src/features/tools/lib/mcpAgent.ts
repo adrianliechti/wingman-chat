@@ -16,6 +16,7 @@ export const promptOf = (args: Record<string, unknown> | null | undefined): stri
 export function createMcpAgentChat(server: {
   id: string;
   name: string;
+  pluginId?: string;
   icon?: ToolIcon;
   instructions?: string;
   tools: Tool[];
@@ -34,7 +35,11 @@ export function createMcpAgentChat(server: {
         .filter(Boolean)
         .join("\n\n"),
     },
-    { title: name, approval: "prompt" },
+    {
+      title: name,
+      approval: "prompt",
+      agentIdentity: { id: `mcp:${server.id}`, name, kind: "delegated" },
+    },
   );
   const url = typeof server.icon === "string" ? server.icon : undefined;
   const icon = typeof server.icon === "string" ? undefined : server.icon;
@@ -42,6 +47,12 @@ export function createMcpAgentChat(server: {
     tools: [
       {
         ...tool,
+        telemetry: {
+          ...tool.telemetry,
+          serverId: server.id,
+          serverName: name,
+          pluginId: server.pluginId,
+        },
         icon: url,
         display: {
           header: (args, state) => ({

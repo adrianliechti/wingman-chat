@@ -55,7 +55,12 @@ vi.mock("@/shared/config", () => ({
     chat: fixture.chat,
   }),
 }));
-vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ currentAgent: fixture.agent }) }));
+vi.mock("@/features/agent/hooks/useAgents", () => ({
+  useAgents: () => ({
+    currentAgent: fixture.agent,
+    getAgent: (id: string) => (fixture.agent?.id === id ? fixture.agent : undefined),
+  }),
+}));
 vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({
   useArtifacts: () => ({ isAvailable: fixture.artifacts, setFileSystem: vi.fn(), setEditRequestHandler: vi.fn() }),
 }));

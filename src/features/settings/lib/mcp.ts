@@ -95,6 +95,7 @@ export class MCPClient implements ToolProvider {
   readonly description: string;
   readonly headers?: Record<string, string>;
   readonly approval: McpApproval;
+  readonly pluginId?: string;
   private readonly configIcon?: ToolIcon;
 
   constructor(
@@ -105,6 +106,7 @@ export class MCPClient implements ToolProvider {
     headers?: Record<string, string>,
     configIcon?: ToolIcon,
     approval?: McpApproval,
+    pluginId?: string,
   ) {
     this.id = id;
     this.url = url;
@@ -113,6 +115,7 @@ export class MCPClient implements ToolProvider {
     this.headers = headers;
     this.configIcon = id === "internet" ? Globe : configIcon;
     this.approval = approval ?? { mode: "none" };
+    this.pluginId = pluginId;
     this.icon = this.configIcon ?? new URL("icon", url.endsWith("/") ? url : `${url}/`).href;
     this.authProvider = new BrowserOAuthClientProvider(id, url);
   }
@@ -327,6 +330,7 @@ export class MCPClient implements ToolProvider {
               ? createMcpAgentChat({
                   id: this.id,
                   name: this.name,
+                  pluginId: this.pluginId,
                   icon: this.icon,
                   instructions: this.instructions,
                   tools: modelTools.map((tool) => this.toTool(tool, client, false)),
@@ -355,6 +359,7 @@ export class MCPClient implements ToolProvider {
       getToolDisplayName(tool.name);
     return {
       name: mcpToolName(this.id, tool.name),
+      telemetry: { serverId: this.id, serverName: this.name, pluginId: this.pluginId },
       needsApproval,
       icon: pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined),
       description: tool.description || "",
@@ -693,7 +698,7 @@ function annotateMcpSpan(serverUrl: string, serverId: string, toolName: string, 
 
   span.setAttribute("mcp.method.name", "tools/call");
   span.setAttribute("wingman.mcp.server.id", serverId);
-  span.setAttribute("mcp.tool.name", toolName);
+  span.setAttribute("gen_ai.tool.name", toolName);
   span.setAttribute("url.full", serverUrl);
 
   try {

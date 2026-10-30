@@ -141,7 +141,7 @@ it("parents SDK requests to each model iteration across an asynchronous tool cal
     const spanId = headers.get("traceparent")?.split("-")[2];
     const span = exported.find((span) => span.spanContext().spanId === spanId);
     expect(span?.attributes["gen_ai.operation.name"]).toBe("chat");
-    expect(span?.attributes).not.toHaveProperty("gen_ai.conversation.id");
+    expect(span?.attributes["gen_ai.conversation.id"]).toEqual(expect.any(String));
     return spanId;
   });
   expect(new Set(parents).size).toBe(2);

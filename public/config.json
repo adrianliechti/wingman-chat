@@ -42,7 +42,9 @@
       "url": "/api/v1/mcp/internet",
       "name": "Web Search",
       "description": "Access up-to-date information",
-      "needsApproval": true
+      "approval": {
+        "mode": "delegated"
+      }
     }
   ],
   "chat": {
