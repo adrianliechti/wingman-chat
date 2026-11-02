@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -64,14 +63,9 @@ func TestKeystoreCASLifecycle(t *testing.T) {
 		t.Fatalf("etag mismatch %q != %q", gotEtag, etag2)
 	}
 
-	// previous version was backed up
-	backup := filepath.Join(p.userDir("alice"), "keystore.prev.json")
-	prev, err := os.ReadFile(backup)
-	if err != nil {
-		t.Fatalf("backup missing: %v", err)
-	}
-	if string(prev) != `{"v":1}` {
-		t.Fatalf("backup is %q", prev)
+	// No old unlock method may survive in a backup sidecar.
+	if _, err := os.Stat(p.keystoreBackupPath("alice")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("obsolete keystore backup retained: %v", err)
 	}
 }
 
@@ -446,5 +440,53 @@ func TestOrphanLineRecovery(t *testing.T) {
 	out := string(buf)
 	if strings.Contains(out, "GHOST") || !strings.Contains(out, "REAL2") || strings.Count(out, `"seq":2`) != 1 {
 		t.Fatalf("orphan not replaced cleanly: %s", out)
+	}
+}
+
+func TestPutKeystoreRemovesLegacyBackup(t *testing.T) {
+	p := newTestProvider(t)
+	ctx := context.Background()
+	etag, err := p.PutKeystore(ctx, "alice", []byte(`{"dek":"plaintext"}`), "*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.keystoreBackupPath("alice"), []byte(`{"dek":"older-plaintext"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.PutKeystore(ctx, "alice", []byte(`{"passkeyProtected":true}`), "wrong"); !errors.Is(err, store.ErrKeystoreConflict) {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p.keystoreBackupPath("alice")); err != nil {
+		t.Fatalf("failed CAS changed backup: %v", err)
+	}
+	if _, err := p.PutKeystore(ctx, "alice", []byte(`{"passkeyProtected":true}`), etag); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p.keystoreBackupPath("alice")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old plaintext backup remains: %v", err)
+	}
+}
+
+func TestKeystoreBackupKeyCannotBeDiscardedByOlderClients(t *testing.T) {
+	p := newTestProvider(t)
+	ctx := context.Background()
+	initial := []byte(`{"pinProtected":true,"wrappedDek":"root","backup":{"publicKey":"public","encryptedPrivateKey":"sealed"}}`)
+	etag, err := p.PutKeystore(ctx, "alice", initial, "*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{
+		`{"pinProtected":true,"wrappedDek":"rewrapped"}`,
+		`{"backup":{"publicKey":"different","encryptedPrivateKey":"sealed"}}`,
+		`{"backup":{"publicKey":"public","encryptedPrivateKey":"different"}}`,
+		`{"backup":null}`,
+	} {
+		if _, err := p.PutKeystore(ctx, "alice", []byte(body), etag); !errors.Is(err, store.ErrKeystoreConflict) {
+			t.Fatalf("accepted destructive update %s: %v", body, err)
+		}
+	}
+	updated := []byte(`{"pinProtected":true,"wrappedDek":"rewrapped","backup":{"encryptedPrivateKey":"sealed","publicKey":"public"}}`)
+	if _, err := p.PutKeystore(ctx, "alice", updated, etag); err != nil {
+		t.Fatalf("root protection update failed: %v", err)
 	}
 }

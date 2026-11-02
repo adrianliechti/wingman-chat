@@ -167,3 +167,13 @@ it.each(["categories", "risks"])("rejects missing, blank, padded, or duplicate I
     error.mockRestore();
   }
 });
+
+it.each([
+  { data: {}, enabled: false },
+  { data: { store: {} }, enabled: false },
+  { data: { onlineBackup: null, store: {} }, enabled: false },
+  { data: { onlineBackup: {} }, enabled: true },
+  { data: { onlineBackup: {}, store: {} }, enabled: true },
+])("enables online backup when its feature object is present: $data", async ({ data, enabled }) => {
+  expect((await loadWith(data)).store).toBe(enabled);
+});

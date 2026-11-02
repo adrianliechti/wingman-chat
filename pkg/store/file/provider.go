@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"sync"
 
 	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
@@ -27,16 +26,13 @@ var _ store.Provider = (*Provider)(nil)
 //
 //	{root}/{sha256(userID)[:32]}/
 //	    keystore.json
-//	    keystore.prev.json    (one-version backup)
+//	    keystore.prev.json    (obsolete sidecar removed on keystore update)
 //	    chats/{chatID}.jsonl
 //	    chats/{chatID}.head   (8-byte big-endian head seq)
 //	    chats/{chatID}.ids    (binary LRU of last 1000 event_ids)
 //	    blobs/{blobID}
 type Provider struct {
 	root string
-
-	mu    sync.Mutex
-	locks map[string]*sync.Mutex
 }
 
 // uuidLike permits UUIDs as well as similarly-shaped opaque IDs the
@@ -58,23 +54,10 @@ func New(root string) (*Provider, error) {
 		return nil, err
 	}
 
-	return &Provider{
-		root:  abs,
-		locks: make(map[string]*sync.Mutex),
-	}, nil
-}
-
-func (p *Provider) lockFor(key string) *sync.Mutex {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if m, ok := p.locks[key]; ok {
-		return m
+	if err := os.MkdirAll(filepath.Join(abs, ".locks"), 0o700); err != nil {
+		return nil, err
 	}
-
-	m := &sync.Mutex{}
-	p.locks[key] = m
-	return m
+	return &Provider{root: abs}, nil
 }
 
 func userHash(userID string) string {
@@ -167,10 +150,12 @@ func (p *Provider) GetKeystore(_ context.Context, userID string) ([]byte, string
 	return data, etagOf(data), nil
 }
 
-func (p *Provider) PutKeystore(_ context.Context, userID string, data []byte, ifMatch string) (string, error) {
-	lock := p.lockFor("keystore:" + userID)
-	lock.Lock()
-	defer lock.Unlock()
+func (p *Provider) PutKeystore(ctx context.Context, userID string, data []byte, ifMatch string) (string, error) {
+	unlock, err := p.lock(ctx, "keystore:"+userID)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 
 	path := p.keystorePath(userID)
 
@@ -193,10 +178,27 @@ func (p *Provider) PutKeystore(_ context.Context, userID string, data []byte, if
 		}
 	}
 
-	if exists {
-		if err := writeAtomic(p.keystoreBackupPath(userID), current); err != nil {
-			return "", err
+	// Older clients can rewrap the root key but do not know the backup key
+	// envelope. Never let them discard or replace it and orphan v3 backups.
+	var previous, next map[string]json.RawMessage
+	if json.Unmarshal(current, &previous) == nil && len(previous["backup"]) > 0 && string(previous["backup"]) != "null" {
+		if json.Unmarshal(data, &next) != nil {
+			return "", store.ErrKeystoreConflict
 		}
+		var oldKey, newKey struct {
+			PublicKey           string `json:"publicKey"`
+			EncryptedPrivateKey string `json:"encryptedPrivateKey"`
+		}
+		if json.Unmarshal(previous["backup"], &oldKey) != nil || json.Unmarshal(next["backup"], &newKey) != nil || oldKey != newKey {
+			return "", store.ErrKeystoreConflict
+		}
+	}
+
+	// A previous keystore can contain a plaintext key or an obsolete unlock
+	// method. Keeping it would bypass the newly selected protection. Remove
+	// legacy sidecars before committing the replacement; payloads stay opaque.
+	if err := os.Remove(p.keystoreBackupPath(userID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
 	}
 
 	if err := writeAtomic(path, data); err != nil {
@@ -394,7 +396,7 @@ type frameLine struct {
 	Frame string `json:"frame"`
 }
 
-func (p *Provider) AppendEvents(_ context.Context, userID, chatID string, expectedSeq int64, eventIDs []string, frames [][]byte) (store.AppendResult, error) {
+func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expectedSeq int64, eventIDs []string, frames [][]byte) (store.AppendResult, error) {
 	if err := validateID(chatID); err != nil {
 		return store.AppendResult{}, err
 	}
@@ -409,9 +411,11 @@ func (p *Provider) AppendEvents(_ context.Context, userID, chatID string, expect
 		}
 	}
 
-	lock := p.lockFor(userID + ":" + chatID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := p.lock(ctx, userID+":"+chatID)
+	if err != nil {
+		return store.AppendResult{}, err
+	}
+	defer unlock()
 
 	if err := ensureDir(p.chatsDir(userID)); err != nil {
 		return store.AppendResult{}, err
@@ -519,10 +523,16 @@ func (p *Provider) AppendEvents(_ context.Context, userID, chatID string, expect
 	return store.AppendResult{NewSeq: seq, Deduped: deduped}, nil
 }
 
-func (p *Provider) ReadEvents(_ context.Context, userID, chatID string, fromSeq int64) (io.ReadCloser, error) {
+func (p *Provider) ReadEvents(ctx context.Context, userID, chatID string, fromSeq int64) (io.ReadCloser, error) {
 	if err := validateID(chatID); err != nil {
 		return nil, err
 	}
+
+	unlock, err := p.lock(ctx, userID+":"+chatID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 
 	logPath := p.chatLogPath(userID, chatID)
 
@@ -585,7 +595,7 @@ type bytesEmpty struct{}
 
 func (bytesEmpty) Read(p []byte) (int, error) { return 0, io.EOF }
 
-func (p *Provider) CompactChat(_ context.Context, userID, chatID string, beforeSeq int64) error {
+func (p *Provider) CompactChat(ctx context.Context, userID, chatID string, beforeSeq int64) error {
 	if err := validateID(chatID); err != nil {
 		return err
 	}
@@ -593,9 +603,11 @@ func (p *Provider) CompactChat(_ context.Context, userID, chatID string, beforeS
 		return nil // nothing to truncate
 	}
 
-	lock := p.lockFor(userID + ":" + chatID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := p.lock(ctx, userID+":"+chatID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	logPath := p.chatLogPath(userID, chatID)
 	src, err := os.Open(logPath)
@@ -677,14 +689,16 @@ func (p *Provider) BlobExists(_ context.Context, userID, blobID string) (bool, e
 	return true, nil
 }
 
-func (p *Provider) DeleteChat(_ context.Context, userID, chatID string) error {
+func (p *Provider) DeleteChat(ctx context.Context, userID, chatID string) error {
 	if err := validateID(chatID); err != nil {
 		return err
 	}
 
-	lock := p.lockFor(userID + ":" + chatID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := p.lock(ctx, userID+":"+chatID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	for _, path := range []string{
 		p.chatLogPath(userID, chatID),

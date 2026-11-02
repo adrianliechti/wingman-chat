@@ -1,3 +1,4 @@
+import { isBackupSessionCurrent, withBackupStorage } from "./backupLifecycle";
 /**
  * Whole-OPFS file sync with client-side encryption.
  *
@@ -15,8 +16,9 @@
  * resolve last-write-wins by file mtime.
  */
 
+import { areFileBackupsPaused, requireFileBackupReady, BackupPausedError } from "./chatBackupActivity";
 import * as api from "./storeClient";
-import { type DEK, decryptFile, encryptFile } from "./crypto";
+import { type StoreKey, canRestore, decryptFile, encryptFile } from "./crypto";
 import {
   deleteDirectory,
   deleteFile,
@@ -32,8 +34,8 @@ import {
   writeJson,
 } from "./opfs-core";
 
-/** chats/ is synced by ChatSync; _sync/ is this engine's own state. */
-const EXCLUDE_PREFIXES = ["chats/", "_sync/"];
+/** Chat manifests and blobs belong to ChatSync; revision history stays local. */
+const CHAT_FILE_PREFIX = /^chats\/[^/]+\/(artifacts|artifact-state)\//;
 const STATE_FILE = "_sync/files.json";
 const FLUSH_DEBOUNCE_MS = 2_000;
 /** Files above this are kept local-only (encryption buffers the whole
@@ -66,7 +68,9 @@ interface FileSyncState {
 }
 
 function isExcluded(path: string): boolean {
-  return EXCLUDE_PREFIXES.some((p) => path.startsWith(p)) || path === "_sync";
+  if (path === "_sync" || path.startsWith("_sync/")) return true;
+  if (path === "chats" || path.startsWith("chats/")) return !CHAT_FILE_PREFIX.test(path);
+  return false;
 }
 
 async function fileIdFor(path: string): Promise<string> {
@@ -119,11 +123,14 @@ async function scanLocalTree(): Promise<Map<string, number>> {
   async function scan(dirPath: string, handle: FileSystemDirectoryHandle): Promise<void> {
     for await (const [name, entry] of handle.entries()) {
       const path = dirPath ? `${dirPath}/${name}` : name;
-      if (isExcluded(path) || isExcluded(`${path}/`)) continue;
       if (entry.kind === "file") {
+        if (isExcluded(path)) continue;
         const file = await (entry as FileSystemFileHandle).getFile();
         out.set(path, file.lastModified);
       } else {
+        // Traverse chat ancestors to reach workspace files without scanning logs/blobs.
+        const chatAncestor = path === "chats" || /^chats\/[^/]+$/.test(path);
+        if (!chatAncestor && isExcluded(`${path}/`)) continue;
         await scan(path, entry as FileSystemDirectoryHandle);
       }
     }
@@ -133,10 +140,12 @@ async function scanLocalTree(): Promise<Map<string, number>> {
   return out;
 }
 
+class RestoreRequiredError extends Error {}
+
 export class FileSync {
   private state: FileSyncState;
   private readonly userId: string;
-  private readonly dek: DEK;
+  private dek: StoreKey;
 
   /** Paths with local changes awaiting push. */
   private dirty = new Set<string>();
@@ -152,20 +161,20 @@ export class FileSync {
   private activity: FileSyncActivity = { syncing: false, pendingCount: 0, lastSyncAt: null, lastError: null };
   private activityListeners = new Set<(a: FileSyncActivity) => void>();
 
-  private constructor(userId: string, dek: DEK, state: FileSyncState) {
+  private constructor(userId: string, dek: StoreKey, state: FileSyncState) {
     this.userId = userId;
     this.dek = dek;
     this.state = state;
   }
 
-  static async create(opts: { userId: string; dek: DEK }): Promise<FileSync> {
+  static async create(opts: { userId: string; dek: StoreKey }): Promise<FileSync> {
     let state = await readJson<FileSyncState>(STATE_FILE);
     if (state && state.userId !== opts.userId) {
       // Different user on this browser: their files must not bleed into
       // this account. Clear the workspace (chats are handled by ChatSync)
       // and start from the server's copy.
       for (const dir of await listDirectories("")) {
-        if (isExcluded(`${dir}/`)) continue;
+        if (dir === "chats" || isExcluded(`${dir}/`)) continue;
         await deleteDirectory(dir);
       }
       for (const file of await listFiles("")) {
@@ -174,6 +183,10 @@ export class FileSync {
       state = undefined;
     }
     return new FileSync(opts.userId, opts.dek, state ?? { userId: opts.userId, entries: {} });
+  }
+
+  setKey(dek: StoreKey): void {
+    this.dek = dek;
   }
 
   /** Watch sync activity (in-flight, pending count, last sync, last error). */
@@ -221,7 +234,14 @@ export class FileSync {
   }
 
   /** Push every dirty path (uploads, deletions, conflict resolution). */
-  async flushDirty(): Promise<void> {
+  flushDirty(): Promise<void> {
+    return withBackupStorage(async () => {
+      if (isBackupSessionCurrent()) await this.flushDirtyUnlocked();
+    });
+  }
+
+  private async flushDirtyUnlocked(): Promise<void> {
+    if (areFileBackupsPaused()) return;
     if (this.flushing) {
       this.scheduleFlush();
       return;
@@ -230,14 +250,16 @@ export class FileSync {
     this.setActivity({ syncing: true });
     try {
       for (const path of Array.from(this.dirty)) {
+        if (areFileBackupsPaused()) break;
         this.dirty.delete(path);
         try {
           await this.resolvePath(path);
         } catch (err) {
           this.dirty.add(path);
+          if (err instanceof BackupPausedError) break;
           this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
           console.warn(`fileSync: flush failed for ${path}`, err);
-          break;
+          if (!(err instanceof RestoreRequiredError)) break;
         }
       }
       await this.saveState();
@@ -252,7 +274,35 @@ export class FileSync {
   }
 
   /** Full reconcile: local tree vs state vs server listing. */
+  private fullSyncInFlight: Promise<void> | null = null;
+
   async fullSync(): Promise<void> {
+    if (this.fullSyncInFlight) return this.fullSyncInFlight;
+    this.fullSyncInFlight = withBackupStorage(async () => {
+      if (isBackupSessionCurrent()) await this.reconcile();
+    }).finally(() => {
+      this.fullSyncInFlight = null;
+    });
+    return this.fullSyncInFlight;
+  }
+
+  async restore(): Promise<void> {
+    await this.fullSyncInFlight;
+    await this.fullSync();
+  }
+
+  private async reconcile(): Promise<void> {
+    if (!canRestore(this.dek) || areFileBackupsPaused()) {
+      const local = await scanLocalTree();
+      for (const [path, mtime] of local) {
+        if (this.state.entries[path]?.mtime !== mtime) this.dirty.add(path);
+      }
+      for (const path of Object.keys(this.state.entries)) {
+        if (!local.has(path)) this.dirty.add(path);
+      }
+      await this.flushDirtyUnlocked();
+      return;
+    }
     this.setActivity({ syncing: true });
     this.applyFailures = 0;
     try {
@@ -312,7 +362,7 @@ export class FileSync {
       }
 
       await this.saveState();
-      await this.flushDirty();
+      await this.flushDirtyUnlocked();
 
       // Deletions converge here: after everything applied cleanly, index
       // entries whose backing item no longer exists locally are dropped
@@ -354,6 +404,8 @@ export class FileSync {
     if (!meta) {
       // Locally deleted. Propagate unless the file was never synced.
       if (entry) {
+        if (!canRestore(this.dek)) throw new RestoreRequiredError("Unlock restore before deleting a server backup.");
+        requireFileBackupReady();
         await api.deleteFile(entry.id);
         delete this.state.entries[path];
       }
@@ -374,15 +426,23 @@ export class FileSync {
     const cipher = await encryptFile(this.dek, header, bytes, this.userId, id);
 
     try {
+      requireFileBackupReady();
       const etag = await api.putFile(id, cipher, entry ? { ifMatch: entry.etag } : { ifNoneMatch: "*" });
       this.state.entries[path] = { id, etag, mtime: header.mtime };
     } catch (err) {
       if (!(err instanceof api.ServerError) || err.status !== 412) throw err;
 
+      if (!canRestore(this.dek))
+        throw new RestoreRequiredError(
+          "Another device changed this file. Unlock restore to reconcile before uploading.",
+        );
+
       // CAS conflict: someone else wrote this file. Last write wins.
+      requireFileBackupReady();
       const remote = await api.getFile(id);
       if (!remote) {
         // Deleted remotely but changed locally → re-create.
+        requireFileBackupReady();
         const etag = await api.putFile(id, cipher, { ifNoneMatch: "*" });
         this.state.entries[path] = { id, etag, mtime: header.mtime };
         return;
@@ -398,6 +458,7 @@ export class FileSync {
           const merged = new TextEncoder().encode(JSON.stringify(mergeIndexEntries(localEntries, remoteEntries)));
           const mergedCipher = await encryptFile(this.dek, { path, mtime: Date.now() }, merged, this.userId, id);
           try {
+            requireFileBackupReady();
             const etag = await api.putFile(id, mergedCipher, { ifMatch: remote.etag });
             await this.writeLocal(path, merged, id, etag);
           } catch (mergeErr) {
@@ -409,6 +470,7 @@ export class FileSync {
       }
 
       if (header.mtime > decrypted.header.mtime) {
+        requireFileBackupReady();
         const etag = await api.putFile(id, cipher, { ifMatch: remote.etag });
         this.state.entries[path] = { id, etag, mtime: header.mtime };
       } else {

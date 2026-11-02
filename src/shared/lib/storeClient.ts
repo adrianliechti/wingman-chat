@@ -6,7 +6,33 @@
  * client never needs to send any auth itself.
  */
 
+import { isBackupSessionCurrent } from "./backupLifecycle";
+
 const PREFIX = "/api/v1";
+
+let backupPublicKey: string | undefined;
+
+export function setBackupKey(publicKey: string): void {
+  backupPublicKey = publicKey;
+}
+
+async function storeFetch(input: string, init?: RequestInit): Promise<Response> {
+  if (!isBackupSessionCurrent() && !input.endsWith("/me")) {
+    throw new Error("Backup reset in progress. Reload before syncing.");
+  }
+  const headers = new Headers(init?.headers);
+  if (backupPublicKey) headers.set("X-Backup-Key", backupPublicKey);
+  return fetch(input, { ...init, headers });
+}
+
+/** Only the signed-in account is needed; restore secrets may have been lost. */
+export async function resetBackup(): Promise<void> {
+  const res = await fetch(`${PREFIX}/backup`, {
+    method: "DELETE",
+    headers: { "X-Confirm-Backup-Reset": "true" },
+  });
+  if (!res.ok) throw new ServerError(res.status, (await res.text()) || res.statusText);
+}
 
 export interface ServerUser {
   id: string;
@@ -47,7 +73,7 @@ function unquote(s: string): string {
 }
 
 async function fetchOrThrow(input: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(input, init);
+  const res = await storeFetch(input, init);
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new ServerError(res.status, body || res.statusText);
@@ -61,7 +87,7 @@ export async function fetchMe(): Promise<ServerUser> {
 }
 
 export async function getKeystore(): Promise<KeystoreResponse | null> {
-  const res = await fetch(`${PREFIX}/keystore`);
+  const res = await storeFetch(`${PREFIX}/keystore`);
   if (res.status === 404) return null;
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -82,7 +108,7 @@ export async function putKeystore(json: string, opts: PutKeystoreOptions = {}): 
   if (opts.ifMatch) headers["If-Match"] = `"${opts.ifMatch}"`;
   if (opts.ifNoneMatch) headers["If-None-Match"] = opts.ifNoneMatch;
 
-  const res = await fetch(`${PREFIX}/keystore`, { method: "PUT", headers, body: json });
+  const res = await storeFetch(`${PREFIX}/keystore`, { method: "PUT", headers, body: json });
   if (res.status === 412) throw new ServerError(412, "keystore conflict");
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -119,7 +145,7 @@ export async function appendEvents(
 ): Promise<AppendResponse | null> {
   const body = events.map((e) => JSON.stringify(e)).join("\n");
 
-  const res = await fetch(`${PREFIX}/chats/${encodeURIComponent(chatId)}/events`, {
+  const res = await storeFetch(`${PREFIX}/chats/${encodeURIComponent(chatId)}/events`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-ndjson",
@@ -137,7 +163,7 @@ export async function appendEvents(
 }
 
 export async function compactChat(chatId: string, beforeSeq: number): Promise<void> {
-  const res = await fetch(`${PREFIX}/chats/${encodeURIComponent(chatId)}/compact?beforeSeq=${beforeSeq}`, {
+  const res = await storeFetch(`${PREFIX}/chats/${encodeURIComponent(chatId)}/compact?beforeSeq=${beforeSeq}`, {
     method: "POST",
   });
   if (!res.ok) {
@@ -147,7 +173,7 @@ export async function compactChat(chatId: string, beforeSeq: number): Promise<vo
 }
 
 export async function deleteChat(chatId: string): Promise<void> {
-  const res = await fetch(`${PREFIX}/chats/${encodeURIComponent(chatId)}`, { method: "DELETE" });
+  const res = await storeFetch(`${PREFIX}/chats/${encodeURIComponent(chatId)}`, { method: "DELETE" });
   if (!res.ok && res.status !== 404) {
     const body = await res.text().catch(() => "");
     throw new ServerError(res.status, body || res.statusText);
@@ -155,7 +181,7 @@ export async function deleteChat(chatId: string): Promise<void> {
 }
 
 export async function headBlob(blobId: string): Promise<boolean> {
-  const res = await fetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`, { method: "HEAD" });
+  const res = await storeFetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`, { method: "HEAD" });
   if (res.status === 404) return false;
   if (!res.ok) {
     throw new ServerError(res.status, res.statusText);
@@ -164,7 +190,7 @@ export async function headBlob(blobId: string): Promise<boolean> {
 }
 
 export async function getBlob(blobId: string): Promise<Uint8Array | null> {
-  const res = await fetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`);
+  const res = await storeFetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`);
   if (res.status === 404) return null;
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -176,7 +202,7 @@ export async function getBlob(blobId: string): Promise<Uint8Array | null> {
 
 export async function putBlob(blobId: string, data: Uint8Array | Blob): Promise<void> {
   const body: BodyInit = data instanceof Blob ? data : new Blob([new Uint8Array(data)]);
-  const res = await fetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`, {
+  const res = await storeFetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/octet-stream" },
     body,
@@ -188,7 +214,7 @@ export async function putBlob(blobId: string, data: Uint8Array | Blob): Promise<
 }
 
 export async function deleteBlob(blobId: string): Promise<void> {
-  const res = await fetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`, { method: "DELETE" });
+  const res = await storeFetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`, { method: "DELETE" });
   if (!res.ok && res.status !== 404) {
     const body = await res.text().catch(() => "");
     throw new ServerError(res.status, body || res.statusText);
@@ -208,7 +234,7 @@ export async function listFiles(): Promise<ServerFileMeta[]> {
 }
 
 export async function getFile(fileId: string): Promise<{ data: Uint8Array; etag: string } | null> {
-  const res = await fetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`);
+  const res = await storeFetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`);
   if (res.status === 404) return null;
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -229,7 +255,7 @@ export async function putFile(fileId: string, data: Uint8Array, opts: PutFileOpt
   if (opts.ifMatch) headers["If-Match"] = `"${opts.ifMatch}"`;
   if (opts.ifNoneMatch) headers["If-None-Match"] = opts.ifNoneMatch;
 
-  const res = await fetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`, {
+  const res = await storeFetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`, {
     method: "PUT",
     headers,
     body: new Blob([new Uint8Array(data)]),
@@ -243,7 +269,7 @@ export async function putFile(fileId: string, data: Uint8Array, opts: PutFileOpt
 }
 
 export async function deleteFile(fileId: string): Promise<void> {
-  const res = await fetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`, { method: "DELETE" });
+  const res = await storeFetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`, { method: "DELETE" });
   if (!res.ok && res.status !== 404) {
     const body = await res.text().catch(() => "");
     throw new ServerError(res.status, body || res.statusText);

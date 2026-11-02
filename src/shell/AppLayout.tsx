@@ -331,7 +331,7 @@ export function AppLayout() {
                   <Coffee size={20} />
                 </button>
               )}
-              <SyncIndicator onClick={() => openSettings({ advanced: false, section: "sync" })} />
+              <SyncIndicator onClick={() => openSettings({ advanced: false, section: "backup" })} />
               {rightActions}
               <AccountMenu onOpenSettings={openSettings} />
             </div>

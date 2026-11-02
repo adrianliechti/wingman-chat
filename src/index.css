@@ -336,6 +336,21 @@ ol.task-list > li:not(.task-list-item) {
   }
 }
 
+/* Lucide CloudSync's third path is the cloud; the other four form the arrows.
+   Use their shared center in the 24 × 24 viewBox so they rotate as one unit. */
+@media (prefers-reduced-motion: no-preference) {
+  .backup-cloud-sync > path:not(:nth-child(3)) {
+    transform-origin: 12px 16px;
+    animation: backup-cloud-sync 1.5s linear infinite;
+  }
+}
+
+@keyframes backup-cloud-sync {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes typing {
   from {
     width: 0;

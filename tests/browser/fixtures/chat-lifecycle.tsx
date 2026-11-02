@@ -25,6 +25,7 @@ import type { McpServerDefinition } from "../../../src/features/settings/lib/mcp
 import { ChatMessageElicitation } from "../../../src/features/chat/components/ChatMessageElicitation";
 import { createSkillsProvider } from "../../../src/features/skills/lib/skillsProvider";
 import { loadConfig } from "../../../src/shared/config";
+import * as storeSession from "../../../src/shared/lib/storeSession";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
 import { readJson, writeJson, type StoredChat } from "../../../src/shared/lib/opfs";
 import { fetchModelCatalog } from "../../../src/shared/lib/modelCatalog";
@@ -51,6 +52,7 @@ const calls: {
   tools: string[];
   stream: (text: string) => void;
   finish: (text: string) => void;
+  fail: (message: string) => void;
   callTools: (tools: { name: string; args: object }[]) => void;
   signal?: AbortSignal;
 }[] = [];
@@ -58,7 +60,7 @@ if (!fixtureOptions.has("gateway"))
   config.client.textAdapter = (model, signal) =>
     testClient(
       async (options, handler) =>
-        new Promise((resolve) => {
+        new Promise((resolve, reject) => {
           // Deliberately ignore cancellation to exercise late provider events.
           const settings = options.modelOptions as {
             reasoning?: { effort?: Model["effort"] };
@@ -74,6 +76,7 @@ if (!fixtureOptions.has("gateway"))
             signal,
             stream: (text) => handler(text),
             finish: (text) => resolve(assistantMessage(text)),
+            fail: (message) => reject(new Error(message)),
             callTools: (tools) =>
               resolve(
                 assistantMessage(
@@ -187,6 +190,7 @@ function Fixture() {
     },
     stream: (index: number, value: string) => calls[index].stream(value),
     finish: (index: number, value: string) => calls[index].finish(value),
+    fail: (index: number, message: string) => calls[index].fail(message),
     callTool: (index: number, name: string, args: object) => calls[index].callTools([{ name, args }]),
     callTools: (index: number, tools: { name: string; args: object }[]) => calls[index].callTools(tools),
     stop: chat.stopStreaming,
@@ -213,6 +217,10 @@ function Fixture() {
         messages: [{ ...text(id), parts }],
       }),
     flush: flushPersistence,
+    enableBackups: async () => {
+      await storeSession.initSession();
+      await storeSession.setPin("test-pin");
+    },
     readRecord: (id: string, legacy = false) =>
       readJson<StoredChat>(`chats/${id}/${legacy ? "chat.legacy.json" : "chat.json"}`),
     writeRecord: (id: string, record: StoredChat) => writeJson(`chats/${id}/chat.json`, record),
@@ -250,7 +258,18 @@ function Fixture() {
 function AgentOwner({ children }: { children: ReactNode }) {
   const [currentAgent, setCurrentAgent] = useState<Agent | null>(null);
   window.setChatAgent = setCurrentAgent;
-  return <AgentContext value={{ currentAgent } as AgentContextType}>{children}</AgentContext>;
+  return (
+    <AgentContext
+      value={
+        {
+          currentAgent,
+          getAgent: (id: string) => (currentAgent?.id === id ? currentAgent : undefined),
+        } as AgentContextType
+      }
+    >
+      {children}
+    </AgentContext>
+  );
 }
 
 const skills = createSkillsProvider(
@@ -290,6 +309,7 @@ function ToolsOwner({ children }: { children: ReactNode }) {
         {
           providers: [...(enabled ? [skills] : []), ...clients],
           coreProviders: [],
+          getSkillsProvider: () => (enabled ? skills : undefined),
           isProviderEnabled: () => true,
           getProviderState: (id: string) => (id === "internet" ? getState(id) : "connected"),
         } as unknown as ToolsContextValue
@@ -357,6 +377,7 @@ declare global {
       send(message: string): void;
       stream(index: number, value: string): void;
       finish(index: number, value: string): void;
+      fail(index: number, message: string): void;
       callTool(index: number, name: string, args: object): void;
       callTools(index: number, tools: { name: string; args: object }[]): void;
       stop(): void;
@@ -369,6 +390,7 @@ declare global {
       answer(result: ElicitationResult): void;
       seed(id: string, parts: ContentPart[]): Promise<void>;
       flush(): Promise<void>;
+      enableBackups(): Promise<void>;
       readRecord(id: string, legacy?: boolean): Promise<StoredChat | undefined>;
       writeRecord(id: string, record: StoredChat): Promise<void>;
       unmount(): void;

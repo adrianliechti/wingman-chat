@@ -27,24 +27,25 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 
 	mux.HandleFunc("GET "+prefix+"/v1/me", h.handleMe)
 
-	mux.HandleFunc("GET "+prefix+"/v1/keystore", h.handleGetKeystore)
-	mux.HandleFunc("PUT "+prefix+"/v1/keystore", h.handlePutKeystore)
+	mux.HandleFunc("GET "+prefix+"/v1/keystore", h.withUserLock(h.handleGetKeystore))
+	mux.HandleFunc("PUT "+prefix+"/v1/keystore", h.withUserLock(h.handlePutKeystore))
+	mux.HandleFunc("DELETE "+prefix+"/v1/backup", h.handleResetBackup)
 
-	mux.HandleFunc("GET "+prefix+"/v1/chats", h.handleListChats)
-	mux.HandleFunc("GET "+prefix+"/v1/chats/{id}/events", h.handleReadEvents)
-	mux.HandleFunc("POST "+prefix+"/v1/chats/{id}/events", h.handleAppendEvents)
-	mux.HandleFunc("POST "+prefix+"/v1/chats/{id}/compact", h.handleCompactChat)
-	mux.HandleFunc("DELETE "+prefix+"/v1/chats/{id}", h.handleDeleteChat)
+	mux.HandleFunc("GET "+prefix+"/v1/chats", h.requireProtection(h.handleListChats))
+	mux.HandleFunc("GET "+prefix+"/v1/chats/{id}/events", h.requireProtection(h.handleReadEvents))
+	mux.HandleFunc("POST "+prefix+"/v1/chats/{id}/events", h.requireProtection(h.handleAppendEvents))
+	mux.HandleFunc("POST "+prefix+"/v1/chats/{id}/compact", h.requireProtection(h.handleCompactChat))
+	mux.HandleFunc("DELETE "+prefix+"/v1/chats/{id}", h.requireProtection(h.handleDeleteChat))
 
-	mux.HandleFunc("GET "+prefix+"/v1/blobs/{id}", h.handleGetBlob)
-	mux.HandleFunc("HEAD "+prefix+"/v1/blobs/{id}", h.handleHeadBlob)
-	mux.HandleFunc("PUT "+prefix+"/v1/blobs/{id}", h.handlePutBlob)
-	mux.HandleFunc("DELETE "+prefix+"/v1/blobs/{id}", h.handleDeleteBlob)
+	mux.HandleFunc("GET "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleGetBlob))
+	mux.HandleFunc("HEAD "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleHeadBlob))
+	mux.HandleFunc("PUT "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handlePutBlob))
+	mux.HandleFunc("DELETE "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleDeleteBlob))
 
-	mux.HandleFunc("GET "+prefix+"/v1/files", h.handleListFiles)
-	mux.HandleFunc("GET "+prefix+"/v1/files/{id}", h.handleGetFile)
-	mux.HandleFunc("PUT "+prefix+"/v1/files/{id}", h.handlePutFile)
-	mux.HandleFunc("DELETE "+prefix+"/v1/files/{id}", h.handleDeleteFile)
+	mux.HandleFunc("GET "+prefix+"/v1/files", h.requireProtection(h.handleListFiles))
+	mux.HandleFunc("GET "+prefix+"/v1/files/{id}", h.requireProtection(h.handleGetFile))
+	mux.HandleFunc("PUT "+prefix+"/v1/files/{id}", h.requireProtection(h.handlePutFile))
+	mux.HandleFunc("DELETE "+prefix+"/v1/files/{id}", h.requireProtection(h.handleDeleteFile))
 }
 
 // auth -------------------------------------------------------------------
@@ -132,6 +133,11 @@ func (h *Handler) handlePutKeystore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
+
+	if !protectedKeystore(body) {
+		http.Error(w, "Backups require a valid PIN or passkey-protected keystore", http.StatusBadRequest)
+		return
+	}
 
 	ifMatch := strings.Trim(r.Header.Get("If-Match"), `"`)
 	ifNone := strings.TrimSpace(r.Header.Get("If-None-Match"))

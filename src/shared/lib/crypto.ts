@@ -17,6 +17,8 @@
  *     log truncation that the opaque server cannot.
  */
 
+import { type BackupKeys, encryptBackup, decryptBackup } from "./backupCrypto";
+
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_BYTES = 16;
 const NONCE_BYTES = 12;
@@ -69,7 +71,20 @@ function encodeUtf8(s: string): Bytes {
 
 // DEK ---------------------------------------------------------------------
 
+export interface UploadKey {
+  kid: number;
+  backup: BackupKeys;
+  raw?: never;
+}
+
+export type StoreKey = DEK | UploadKey;
+
+export function canRestore(key: StoreKey): key is DEK {
+  return key.raw !== undefined;
+}
+
 export interface DEK {
+  backup?: BackupKeys;
   /** Raw 32-byte key material, used to derive AES-GCM CryptoKeys per call. */
   raw: Bytes;
   /** Key id (1–255) stamped into every frame envelope, so the DEK can be
@@ -172,7 +187,9 @@ export async function unwrapDEKWithPin(w: WrappedDek, pin: string, userId: strin
 // selects the wrong key and the GCM tag check fails, same as any other
 // corruption.
 
-async function aesGcmEncryptBytes(dek: DEK, plaintext: Uint8Array, aad: string): Promise<Bytes> {
+async function aesGcmEncryptBytes(dek: StoreKey, plaintext: Uint8Array, aad: string): Promise<Bytes> {
+  if (dek.backup) return encryptBackup(dek.backup, dek.kid, plaintext, aad);
+  if (!canRestore(dek)) throw new Error("Missing encryption key.");
   const key = await importDekForAesGcm(dek);
   const nonce = randomBytes(NONCE_BYTES);
   const ct = new Uint8Array(
@@ -190,15 +207,17 @@ async function aesGcmEncryptBytes(dek: DEK, plaintext: Uint8Array, aad: string):
   return out;
 }
 
-async function aesGcmEncrypt(dek: DEK, plaintext: Uint8Array, aad: string): Promise<string> {
+async function aesGcmEncrypt(dek: StoreKey, plaintext: Uint8Array, aad: string): Promise<string> {
   return toBase64(await aesGcmEncryptBytes(dek, plaintext, aad));
 }
 
-async function aesGcmDecrypt(dek: DEK, frame: string, aad: string): Promise<Bytes> {
+async function aesGcmDecrypt(dek: StoreKey, frame: string, aad: string): Promise<Bytes> {
   return aesGcmDecryptBytes(dek, fromBase64(frame), aad);
 }
 
-async function aesGcmDecryptBytes(dek: DEK, bytes: Bytes, aad: string): Promise<Bytes> {
+async function aesGcmDecryptBytes(dek: StoreKey, bytes: Bytes, aad: string): Promise<Bytes> {
+  if (bytes[0] === 3) return decryptBackup(dek.backup, dek.kid, bytes, aad);
+  if (!canRestore(dek)) throw new Error("Unlock with your PIN or passkey to restore server data.");
   if (bytes.length < 2 + NONCE_BYTES + GCM_TAG_BYTES) {
     throw new Error("frame too short");
   }
@@ -227,7 +246,7 @@ function blobAad(userId: string, blobId: string): string {
 }
 
 export async function encryptEvent(
-  dek: DEK,
+  dek: StoreKey,
   payload: unknown,
   userId: string,
   chatId: string,
@@ -238,7 +257,7 @@ export async function encryptEvent(
 }
 
 export async function decryptEvent<T = unknown>(
-  dek: DEK,
+  dek: StoreKey,
   frame: string,
   userId: string,
   chatId: string,
@@ -248,11 +267,11 @@ export async function decryptEvent<T = unknown>(
   return JSON.parse(decoder.decode(pt)) as T;
 }
 
-export async function encryptBlob(dek: DEK, data: Uint8Array, userId: string, blobId: string): Promise<Bytes> {
+export async function encryptBlob(dek: StoreKey, data: Uint8Array, userId: string, blobId: string): Promise<Bytes> {
   return aesGcmEncryptBytes(dek, data, blobAad(userId, blobId));
 }
 
-export async function decryptBlob(dek: DEK, data: Uint8Array, userId: string, blobId: string): Promise<Bytes> {
+export async function decryptBlob(dek: StoreKey, data: Uint8Array, userId: string, blobId: string): Promise<Bytes> {
   return aesGcmDecryptBytes(dek, bufFrom(data), blobAad(userId, blobId));
 }
 
@@ -268,7 +287,7 @@ function fileAad(userId: string, fileId: string): string {
 }
 
 export async function encryptFile(
-  dek: DEK,
+  dek: StoreKey,
   header: unknown,
   bytes: Uint8Array,
   userId: string,
@@ -283,7 +302,7 @@ export async function encryptFile(
 }
 
 export async function decryptFile<T>(
-  dek: DEK,
+  dek: StoreKey,
   data: Uint8Array,
   userId: string,
   fileId: string,

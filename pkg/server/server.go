@@ -15,7 +15,6 @@ import (
 	"github.com/adrianliechti/wingman-chat/pkg/server/otel"
 	"github.com/adrianliechti/wingman-chat/pkg/server/public"
 	storesrv "github.com/adrianliechti/wingman-chat/pkg/server/store"
-	"github.com/adrianliechti/wingman-chat/pkg/store"
 	storefile "github.com/adrianliechti/wingman-chat/pkg/store/file"
 )
 
@@ -35,16 +34,7 @@ func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.
 	}
 
 	if cfg.Store != nil {
-		var provider store.Provider
-		var err error
-
-		switch cfg.Store.Type {
-		case "file", "":
-			provider, err = storefile.New(cfg.Store.Path)
-		default:
-			err = fmt.Errorf("unknown store type: %s", cfg.Store.Type)
-		}
-
+		provider, err := storefile.New(cfg.Store.Path)
 		if err != nil {
 			panic(fmt.Errorf("store: %w", err))
 		}

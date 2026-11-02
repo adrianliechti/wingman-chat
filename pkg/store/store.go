@@ -38,9 +38,16 @@ type AppendResult struct {
 
 // Provider is a pluggable backend for the per-user chat store.
 //
-// Implementations must treat keystore, frame, and blob bytes as opaque:
-// the server side never decrypts or inspects payloads.
+// The server never decrypts key, frame, or blob contents. Providers must
+// preserve an existing keystore backup envelope when root-key protection changes.
 type Provider interface {
+	// LockUser coordinates complete API requests with account-wide resets.
+	// Ordinary requests hold a shared lock through validation and streaming.
+	LockUser(ctx context.Context, userID string, exclusive bool) (unlock func(), err error)
+
+	// ResetUser deletes all backup data and keys under an exclusive user lock.
+	ResetUser(ctx context.Context, userID string) error
+
 	// GetKeystore returns the raw keystore bytes and an opaque etag.
 	// Returns ErrNotFound if no keystore exists yet for the user.
 	GetKeystore(ctx context.Context, userID string) (data []byte, etag string, err error)

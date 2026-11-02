@@ -1,8 +1,8 @@
-import { CloudAlert, CloudCheck, CloudUpload, Lock, RefreshCw } from "lucide-react";
+import { BackupStatusIcon } from "./BackupStatusIcon";
 import { type SyncHealth, useSyncStatus } from "../hooks/useSyncStatus";
 
 interface SyncIndicatorProps {
-  /** Open the settings drawer at the sync section. */
+  /** Open the settings drawer at Backup & Restore. */
   onClick?: () => void;
 }
 
@@ -10,12 +10,16 @@ function describe(health: SyncHealth, pendingCount: number): string {
   switch (health) {
     case "connecting":
       return "Connecting to sync server…";
+    case "setup":
+      return "Backups disabled — set a PIN or passkey";
     case "locked":
-      return "Sync locked — enter your PIN";
+      return "Backup locked — unlock in Backup & Restore";
     case "error":
       return "Sync error — click for details";
     case "syncing":
       return "Syncing…";
+    case "upload-only":
+      return "Local changes uploaded — unlock backup to sync other devices";
     case "pending":
       return `${pendingCount} change${pendingCount === 1 ? "" : "s"} waiting to sync`;
     default:
@@ -30,17 +34,7 @@ export function SyncIndicator({ onClick }: SyncIndicatorProps) {
 
   if (health === "disabled") return null;
 
-  const attention = health === "error" || health === "locked";
-  const Icon =
-    health === "error"
-      ? CloudAlert
-      : health === "locked"
-        ? Lock
-        : health === "syncing" || health === "connecting"
-          ? RefreshCw
-          : health === "pending"
-            ? CloudUpload
-            : CloudCheck;
+  const attention = health === "error" || health === "locked" || health === "setup" || health === "upload-only";
 
   return (
     <button
@@ -54,7 +48,7 @@ export function SyncIndicator({ onClick }: SyncIndicatorProps) {
           : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
       }`}
     >
-      <Icon size={20} className={health === "syncing" || health === "connecting" ? "animate-spin" : undefined} />
+      <BackupStatusIcon health={health} />
     </button>
   );
 }

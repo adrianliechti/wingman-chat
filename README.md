@@ -266,6 +266,14 @@ PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
 # or: task serve
 ```
 
+For local development, run `task serve` and `task ui` in separate terminals, then
+open the URL printed by Vite using `localhost`. The Go server listens on port
+8080 and enables the sync store. It forwards model/platform requests to
+`WINGMAN_URL`, falling back to `OPENAI_BASE_URL`, then `http://localhost:4242`.
+Set `WINGMAN_URL` (and `WINGMAN_TOKEN` if required) when using another platform.
+`task ui` connects the frontend to the Go server at `http://localhost:8080`.
+
+
 Keep `vite-plus`, its core package and the `vite` alias at the same version, and
 pin Vitest to the version bundled with Vite+. React Compiler runs through the
 experimental native `oxc-transform-react` integration in `@vitejs/plugin-react`,
@@ -288,6 +296,21 @@ docker run -it --rm -p 8000:8000 \
   wingman-chat
 # or: task run
 ```
+
+To enable persistent server backups in the Alpine image, mount a writable volume:
+
+```bash
+docker run -it --rm -p 8000:8000 \
+  -e WINGMAN_URL=http://host.docker.internal:4242 \
+  -e ONLINE_BACKUP_ENABLED=true -e STORE_PATH=/data/store \
+  -v wingman-store:/data \
+  wingman-chat
+```
+
+Storage locking is built into the static Go binary; no extra Alpine packages or
+lock service are needed. Multiple containers can share a store directory when the
+volume supports cross-client file locks and atomic rename. See
+[shared storage](docs/persistence.md#multiple-backend-pods-and-shared-storage).
 
 ## Configuration
 
@@ -379,6 +402,7 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
 
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
+- `ONLINE_BACKUP_ENABLED` — show online backup instead of local ZIP backup controls (default `false`). Also enables file storage on the server; `STORE_PATH` configures its directory (default `./data/store`). `STORE_ENABLED` alone exposes storage routes without enabling online backup in the UI. For frontend development, add `"onlineBackup": {}` in `public/config.json`.
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED` (`TELEMETRY_NAME` — the OpenTelemetry `service.name`, default `wingman-chat`)

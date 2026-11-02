@@ -9,7 +9,6 @@ import {
   Mic,
   Palette,
   Settings,
-  ShieldCheck,
   ToggleLeft,
   ToggleRight,
   Trash2,
@@ -54,7 +53,7 @@ interface SettingsDrawerProps {
   initialSection?: string;
 }
 
-type SectionId = "general" | "audio" | "profile" | "backup" | "companion" | "sync" | "advanced";
+type SectionId = "general" | "audio" | "profile" | "backup" | "companion" | "advanced";
 
 const SECTION_META: { id: SectionId; label: string; icon: React.ReactNode }[] = [
   { id: "general", label: "Appearance", icon: <Palette size={16} /> },
@@ -62,7 +61,6 @@ const SECTION_META: { id: SectionId; label: string; icon: React.ReactNode }[] = 
   { id: "profile", label: "Profile", icon: <User size={16} /> },
   { id: "backup", label: "Backup & Restore", icon: <HardDrive size={16} /> },
   { id: "companion", label: "Companion", icon: <Coffee size={16} /> },
-  { id: "sync", label: "Sync & Security", icon: <ShieldCheck size={16} /> },
   { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
 ];
 
@@ -387,7 +385,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   // Reset (or jump to initial) section when the modal opens
   useEffect(() => {
     if (isOpen) {
-      setSection((initialSection as SectionId) ?? "general");
+      setSection(initialSection === "sync" ? "backup" : ((initialSection as SectionId) ?? "general"));
       setMobileShowList(!initialSection);
     }
   }, [isOpen, initialSection]);
@@ -398,13 +396,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   }, []);
 
   const visibleSections = SECTION_META.filter((s) =>
-    s.id === "companion"
-      ? companionAvailable
-      : s.id === "sync"
-        ? getConfig().store
-        : s.id === "advanced"
-          ? showAdvanced
-          : true,
+    s.id === "companion" ? companionAvailable : s.id === "advanced" ? showAdvanced : true,
   );
   const activeMeta = visibleSections.find((s) => s.id === section) ?? visibleSections[0];
 
@@ -697,237 +689,62 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
 
                       {/* Backup & Restore Section */}
                       {section === "backup" && (
-                        <section aria-labelledby="backup-settings-heading" className="flex flex-col gap-6">
+                        <section aria-labelledby="backup-settings-heading" className="flex min-h-full flex-col gap-6">
                           <SettingsViewHeader
                             id="backup-settings-heading"
                             title="Backup & Restore"
-                            description="Create copies of your data before making changes, or restore a previous backup."
+                            description={
+                              getConfig().store
+                                ? "Manage your online backup and restore your data."
+                                : "Download a copy of your data or restore a backup file."
+                            }
                           />
 
-                          <section aria-labelledby="full-backup-heading" className="space-y-3">
-                            <h4
-                              id="full-backup-heading"
-                              className="text-sm font-medium text-neutral-700 dark:text-neutral-300"
-                            >
-                              Backup
-                            </h4>
-                            <div className="space-y-3">
-                              <button
-                                type="button"
-                                onClick={() => void exportEverythingBackup()}
-                                disabled={isExporting || isRestoring}
-                                className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
-                              >
-                                {isExporting && (
-                                  <span
-                                    aria-hidden="true"
-                                    className="absolute inset-y-0 left-0 bg-neutral-500/15 transition-[width] duration-200 dark:bg-neutral-400/20"
-                                    style={{ width: `${Math.round(exportProgress * 100)}%` }}
-                                  />
-                                )}
-                                <span className="relative flex items-center justify-center gap-2">
-                                  <Download size={16} className={isExporting ? "animate-pulse" : undefined} />
-                                  {isExporting
-                                    ? `Creating backup… ${Math.round(exportProgress * 100)}%`
-                                    : "Back up everything"}
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setBackupSelectionOpen((open) => !open)}
-                                aria-expanded={backupSelectionOpen}
-                                className="flex w-full items-center justify-between px-1 py-1 text-left text-xs font-medium text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
-                              >
-                                Choose items instead
-                                <ChevronDown
-                                  size={15}
-                                  className={cn("transition-transform", backupSelectionOpen && "rotate-180")}
-                                />
-                              </button>
-                              {backupSelectionOpen && (
-                                <>
-                                  <div className="divide-y divide-neutral-200/60 overflow-hidden rounded-lg border border-neutral-200/60 dark:divide-neutral-700/60 dark:border-neutral-700/60">
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
-                                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                                        Projects
-                                      </span>
-                                      <span className="ml-auto text-xs text-neutral-500">
-                                        {storageInfo.isLoading ? "…" : formatBytes(storageSizeFor("projects/"))}
-                                      </span>
-                                      <input
-                                        type="checkbox"
-                                        checked={backupSelection.projects}
-                                        onChange={(event) =>
-                                          setBackupSelection((selection) => ({
-                                            ...selection,
-                                            projects: event.target.checked,
-                                          }))
-                                        }
-                                        className="h-4 w-4 rounded accent-neutral-800 dark:accent-neutral-200"
-                                      />
-                                    </label>
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
-                                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                                        Profile
-                                      </span>
-                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                        {storageInfo.isLoading
-                                          ? "…"
-                                          : formatBytes(
-                                              storageInfo.entries.find((entry) => entry.path === "profile.json")
-                                                ?.size ?? 0,
-                                            )}
-                                      </span>
-                                      <input
-                                        type="checkbox"
-                                        checked={backupSelection.profile}
-                                        onChange={(event) =>
-                                          setBackupSelection((selection) => ({
-                                            ...selection,
-                                            profile: event.target.checked,
-                                          }))
-                                        }
-                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
-                                      />
-                                    </label>
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
-                                      <span className="flex items-baseline gap-2">
-                                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                                          Chats
-                                        </span>
-                                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                                          {chats.length} chat{chats.length === 1 ? "" : "s"}
-                                        </span>
-                                      </span>
-                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                        {storageInfo.isLoading ? "…" : formatBytes(chatStorageSize)}
-                                      </span>
-                                      <input
-                                        type="checkbox"
-                                        checked={backupSelection.chats}
-                                        disabled={chats.length === 0}
-                                        onChange={(event) =>
-                                          setBackupSelection((selection) => ({
-                                            ...selection,
-                                            chats: event.target.checked,
-                                          }))
-                                        }
-                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
-                                      />
-                                    </label>
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
-                                      <span className="flex items-baseline gap-2">
-                                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                                          Agents
-                                        </span>
-                                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                                          {agents.length} agent{agents.length === 1 ? "" : "s"}
-                                        </span>
-                                      </span>
-                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                        {storageInfo.isLoading ? "…" : formatBytes(agentStorageSize)}
-                                      </span>
-                                      <input
-                                        type="checkbox"
-                                        checked={backupSelection.agents}
-                                        disabled={agents.length === 0}
-                                        onChange={(event) =>
-                                          setBackupSelection((selection) => ({
-                                            ...selection,
-                                            agents: event.target.checked,
-                                          }))
-                                        }
-                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
-                                      />
-                                    </label>
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
-                                      <span className="flex items-baseline gap-2">
-                                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                                          Images
-                                        </span>
-                                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                                          {imageCount} image{imageCount === 1 ? "" : "s"}
-                                        </span>
-                                      </span>
-                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                        {storageInfo.isLoading ? "…" : formatBytes(imageStorageSize)}
-                                      </span>
-                                      <input
-                                        type="checkbox"
-                                        checked={backupSelection.images}
-                                        onChange={(event) =>
-                                          setBackupSelection((selection) => ({
-                                            ...selection,
-                                            images: event.target.checked,
-                                          }))
-                                        }
-                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
-                                      />
-                                    </label>
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
-                                      <span className="flex items-baseline gap-2">
-                                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                                          Skills
-                                        </span>
-                                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                                          {skillCount} skill{skillCount === 1 ? "" : "s"}
-                                        </span>
-                                      </span>
-                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                        {storageInfo.isLoading ? "…" : formatBytes(skillStorageSize)}
-                                      </span>
-                                      <input
-                                        type="checkbox"
-                                        checked={backupSelection.skills}
-                                        onChange={(event) =>
-                                          setBackupSelection((selection) => ({
-                                            ...selection,
-                                            skills: event.target.checked,
-                                          }))
-                                        }
-                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
-                                      />
-                                    </label>
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
-                                      <span className="flex items-baseline gap-2">
-                                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                                          Plugins
-                                        </span>
-                                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                                          {plugins.length} plugin{plugins.length === 1 ? "" : "s"}
-                                        </span>
-                                      </span>
-                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                        {storageInfo.isLoading ? "…" : formatBytes(pluginStorageSize)}
-                                      </span>
-                                      <input
-                                        type="checkbox"
-                                        checked={backupSelection.plugins}
-                                        onChange={(event) =>
-                                          setBackupSelection((selection) => ({
-                                            ...selection,
-                                            plugins: event.target.checked,
-                                          }))
-                                        }
-                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
-                                      />
-                                    </label>
-                                  </div>
+                          <SyncSection
+                            dangerDisabled={isExporting || isRestoring}
+                            dangerActions={
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={deleteChats}
+                                  disabled={chats.length === 0}
+                                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-300 px-3 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
+                                >
+                                  <Trash2 size={14} />
+                                  Delete all chats
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={deleteAgents}
+                                  disabled={agents.length === 0}
+                                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-300 px-3 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
+                                >
+                                  <Trash2 size={14} />
+                                  Delete all agents
+                                </button>
+                              </>
+                            }
+                          >
+                            {!getConfig().store && (
+                              <section aria-labelledby="local-backups-heading" className="space-y-3">
+                                <div className="space-y-1.5">
+                                  <h4
+                                    id="local-backups-heading"
+                                    className="text-xs font-medium text-neutral-500 dark:text-neutral-400"
+                                  >
+                                    Local backup files
+                                  </h4>
+                                  <p className="text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+                                    Download a ZIP file to your device, or restore a file you saved earlier. These files
+                                    don’t update automatically.
+                                  </p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => void exportSelectedBackup()}
-                                    disabled={
-                                      isExporting ||
-                                      isRestoring ||
-                                      (!backupSelection.chats &&
-                                        !backupSelection.projects &&
-                                        !backupSelection.agents &&
-                                        !backupSelection.profile &&
-                                        !backupSelection.images &&
-                                        !backupSelection.skills &&
-                                        !backupSelection.plugins)
-                                    }
-                                    className="relative mt-2 w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
+                                    onClick={() => void exportEverythingBackup()}
+                                    disabled={isExporting || isRestoring}
+                                    className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
                                   >
                                     {isExporting && (
                                       <span
@@ -937,90 +754,251 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                       />
                                     )}
                                     <span className="relative flex items-center justify-center gap-2">
-                                      <Download size={16} className={isExporting ? "animate-pulse" : undefined} />
+                                      <Download size={14} className={isExporting ? "animate-pulse" : undefined} />
                                       {isExporting
                                         ? `Creating backup… ${Math.round(exportProgress * 100)}%`
-                                        : "Back up selected"}
+                                        : "Download backup"}
                                     </span>
                                   </button>
-                                </>
-                              )}
-                            </div>
-                          </section>
-
-                          <section
-                            aria-labelledby="restore-backup-heading"
-                            className="space-y-3 border-t border-neutral-200/60 pt-5 dark:border-neutral-800/60"
-                          >
-                            <div>
-                              <h4
-                                id="restore-backup-heading"
-                                className="text-sm font-medium text-neutral-700 dark:text-neutral-300"
-                              >
-                                Restore
-                              </h4>
-                              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                                Merge data from a full or partial backup ZIP.
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={restoreBackup}
-                              disabled={isExporting || isRestoring}
-                              className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
-                            >
-                              {isRestoring && (
-                                <span
-                                  aria-hidden="true"
-                                  className="absolute inset-y-0 left-0 bg-neutral-500/15 transition-[width] duration-200 dark:bg-neutral-400/20"
-                                  style={{ width: `${Math.round(restoreProgress * 100)}%` }}
-                                />
-                              )}
-                              <span className="relative flex items-center justify-center gap-2">
-                                <Upload size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-                                <span className="font-medium">
-                                  {isRestoring ? `Restoring… ${Math.round(restoreProgress * 100)}%` : "Restore backup"}
-                                </span>
-                              </span>
-                            </button>
-                          </section>
-
-                          <section
-                            aria-labelledby="backup-danger-heading"
-                            className="space-y-3 border-t border-red-200/70 pt-5 dark:border-red-900/40"
-                          >
-                            <div>
-                              <h4
-                                id="backup-danger-heading"
-                                className="text-sm font-medium text-red-700 dark:text-red-400"
-                              >
-                                Danger zone
-                              </h4>
-                              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                                These actions permanently remove local data and cannot be undone.
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={deleteChats}
-                                disabled={chats.length === 0}
-                                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-300 px-3 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
-                              >
-                                <Trash2 size={14} />
-                                Delete all chats
-                              </button>
-                              <button
-                                type="button"
-                                onClick={deleteAgents}
-                                disabled={agents.length === 0}
-                                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-300 px-3 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
-                              >
-                                <Trash2 size={14} />
-                                Delete all agents
-                              </button>
-                            </div>
-                          </section>
+                                  <button
+                                    type="button"
+                                    onClick={restoreBackup}
+                                    disabled={isExporting || isRestoring}
+                                    className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
+                                  >
+                                    {isRestoring && (
+                                      <span
+                                        aria-hidden="true"
+                                        className="absolute inset-y-0 left-0 bg-neutral-500/15 transition-[width] duration-200 dark:bg-neutral-400/20"
+                                        style={{ width: `${Math.round(restoreProgress * 100)}%` }}
+                                      />
+                                    )}
+                                    <span className="relative flex items-center justify-center gap-2">
+                                      <Upload size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+                                      <span className="font-medium">
+                                        {isRestoring
+                                          ? `Restoring… ${Math.round(restoreProgress * 100)}%`
+                                          : "Restore from file"}
+                                      </span>
+                                    </span>
+                                  </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setBackupSelectionOpen((open) => !open)}
+                                  aria-expanded={backupSelectionOpen}
+                                  className="flex w-full items-center justify-between px-1 py-1 text-left text-xs font-medium text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
+                                >
+                                  Choose items instead
+                                  <ChevronDown
+                                    size={15}
+                                    className={cn("transition-transform", backupSelectionOpen && "rotate-180")}
+                                  />
+                                </button>
+                                {backupSelectionOpen && (
+                                  <>
+                                    <div className="divide-y divide-neutral-200/60 overflow-hidden rounded-lg border border-neutral-200/60 dark:divide-neutral-700/60 dark:border-neutral-700/60">
+                                      <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
+                                        <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                                          Projects
+                                        </span>
+                                        <span className="ml-auto text-xs text-neutral-500">
+                                          {storageInfo.isLoading ? "…" : formatBytes(storageSizeFor("projects/"))}
+                                        </span>
+                                        <input
+                                          type="checkbox"
+                                          checked={backupSelection.projects}
+                                          onChange={(event) =>
+                                            setBackupSelection((selection) => ({
+                                              ...selection,
+                                              projects: event.target.checked,
+                                            }))
+                                          }
+                                          className="h-4 w-4 rounded accent-neutral-800 dark:accent-neutral-200"
+                                        />
+                                      </label>
+                                      <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
+                                        <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                                          Profile
+                                        </span>
+                                        <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                          {storageInfo.isLoading
+                                            ? "…"
+                                            : formatBytes(
+                                                storageInfo.entries.find((entry) => entry.path === "profile.json")
+                                                  ?.size ?? 0,
+                                              )}
+                                        </span>
+                                        <input
+                                          type="checkbox"
+                                          checked={backupSelection.profile}
+                                          onChange={(event) =>
+                                            setBackupSelection((selection) => ({
+                                              ...selection,
+                                              profile: event.target.checked,
+                                            }))
+                                          }
+                                          className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
+                                        />
+                                      </label>
+                                      <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
+                                        <span className="flex items-baseline gap-2">
+                                          <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                                            Chats
+                                          </span>
+                                          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                            {chats.length} chat{chats.length === 1 ? "" : "s"}
+                                          </span>
+                                        </span>
+                                        <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                          {storageInfo.isLoading ? "…" : formatBytes(chatStorageSize)}
+                                        </span>
+                                        <input
+                                          type="checkbox"
+                                          checked={backupSelection.chats}
+                                          disabled={chats.length === 0}
+                                          onChange={(event) =>
+                                            setBackupSelection((selection) => ({
+                                              ...selection,
+                                              chats: event.target.checked,
+                                            }))
+                                          }
+                                          className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
+                                        />
+                                      </label>
+                                      <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
+                                        <span className="flex items-baseline gap-2">
+                                          <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                                            Agents
+                                          </span>
+                                          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                            {agents.length} agent{agents.length === 1 ? "" : "s"}
+                                          </span>
+                                        </span>
+                                        <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                          {storageInfo.isLoading ? "…" : formatBytes(agentStorageSize)}
+                                        </span>
+                                        <input
+                                          type="checkbox"
+                                          checked={backupSelection.agents}
+                                          disabled={agents.length === 0}
+                                          onChange={(event) =>
+                                            setBackupSelection((selection) => ({
+                                              ...selection,
+                                              agents: event.target.checked,
+                                            }))
+                                          }
+                                          className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
+                                        />
+                                      </label>
+                                      <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
+                                        <span className="flex items-baseline gap-2">
+                                          <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                                            Images
+                                          </span>
+                                          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                            {imageCount} image{imageCount === 1 ? "" : "s"}
+                                          </span>
+                                        </span>
+                                        <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                          {storageInfo.isLoading ? "…" : formatBytes(imageStorageSize)}
+                                        </span>
+                                        <input
+                                          type="checkbox"
+                                          checked={backupSelection.images}
+                                          onChange={(event) =>
+                                            setBackupSelection((selection) => ({
+                                              ...selection,
+                                              images: event.target.checked,
+                                            }))
+                                          }
+                                          className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
+                                        />
+                                      </label>
+                                      <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
+                                        <span className="flex items-baseline gap-2">
+                                          <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                                            Skills
+                                          </span>
+                                          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                            {skillCount} skill{skillCount === 1 ? "" : "s"}
+                                          </span>
+                                        </span>
+                                        <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                          {storageInfo.isLoading ? "…" : formatBytes(skillStorageSize)}
+                                        </span>
+                                        <input
+                                          type="checkbox"
+                                          checked={backupSelection.skills}
+                                          onChange={(event) =>
+                                            setBackupSelection((selection) => ({
+                                              ...selection,
+                                              skills: event.target.checked,
+                                            }))
+                                          }
+                                          className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
+                                        />
+                                      </label>
+                                      <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
+                                        <span className="flex items-baseline gap-2">
+                                          <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                                            Plugins
+                                          </span>
+                                          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                            {plugins.length} plugin{plugins.length === 1 ? "" : "s"}
+                                          </span>
+                                        </span>
+                                        <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                          {storageInfo.isLoading ? "…" : formatBytes(pluginStorageSize)}
+                                        </span>
+                                        <input
+                                          type="checkbox"
+                                          checked={backupSelection.plugins}
+                                          onChange={(event) =>
+                                            setBackupSelection((selection) => ({
+                                              ...selection,
+                                              plugins: event.target.checked,
+                                            }))
+                                          }
+                                          className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
+                                        />
+                                      </label>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => void exportSelectedBackup()}
+                                      disabled={
+                                        isExporting ||
+                                        isRestoring ||
+                                        (!backupSelection.chats &&
+                                          !backupSelection.projects &&
+                                          !backupSelection.agents &&
+                                          !backupSelection.profile &&
+                                          !backupSelection.images &&
+                                          !backupSelection.skills &&
+                                          !backupSelection.plugins)
+                                      }
+                                      className="relative mt-2 w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
+                                    >
+                                      {isExporting && (
+                                        <span
+                                          aria-hidden="true"
+                                          className="absolute inset-y-0 left-0 bg-neutral-500/15 transition-[width] duration-200 dark:bg-neutral-400/20"
+                                          style={{ width: `${Math.round(exportProgress * 100)}%` }}
+                                        />
+                                      )}
+                                      <span className="relative flex items-center justify-center gap-2">
+                                        <Download size={14} className={isExporting ? "animate-pulse" : undefined} />
+                                        {isExporting
+                                          ? `Creating backup… ${Math.round(exportProgress * 100)}%`
+                                          : "Download selected"}
+                                      </span>
+                                    </button>
+                                  </>
+                                )}
+                              </section>
+                            )}
+                          </SyncSection>
                         </section>
                       )}
 
@@ -1119,8 +1097,6 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                           </section>
                         </section>
                       )}
-
-                      {section === "sync" && getConfig().store && <SyncSection />}
 
                       {/* Advanced — only visible via Alt+click */}
                       {section === "advanced" && showAdvanced && (

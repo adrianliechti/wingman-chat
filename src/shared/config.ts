@@ -238,7 +238,8 @@ interface ConfigSchema {
   translator?: TranslatorConfig;
 
   chat?: ChatConfig;
-  store?: object;
+  /** Show online backup instead of local backup controls. Omit to disable. */
+  onlineBackup?: object;
   telemetry?: TelemetryConfig;
 }
 
@@ -391,7 +392,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       chat: cfg.chat ?? null,
 
-      store: cfg.store != null,
+      store: cfg.onlineBackup != null,
       telemetry: cfg.telemetry != null ? { name: cfg.telemetry.name?.trim() || DEFAULT_TELEMETRY_NAME } : null,
 
       backgrounds: cfg.backgrounds ?? {},

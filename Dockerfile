@@ -24,6 +24,8 @@ RUN go mod download
 
 COPY *.go ./
 COPY pkg ./pkg
+# Verify storage and cross-process locking on Alpine before cross-compiling.
+RUN CGO_ENABLED=0 go test ./pkg/store/... ./pkg/server/store/...
 ARG TARGETOS
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o server

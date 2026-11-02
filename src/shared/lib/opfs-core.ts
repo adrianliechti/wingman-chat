@@ -1,4 +1,5 @@
 import { contentToBlob } from "./fileContent";
+import { forgetBackup } from "./rememberedBackup";
 import { inferContentTypeFromPath } from "./fileTypes";
 import { stopPersistence, withPersistenceLock } from "./persistence";
 import { decodeDataURL, readAsDataURL } from "./utils";
@@ -383,6 +384,7 @@ export async function deleteDirectory(path: string): Promise<void> {
  */
 export async function clearAll(): Promise<void> {
   storageReset = true;
+  await forgetBackup();
   await stopPersistence();
   await Promise.allSettled(activeWrites);
   const root = await getRoot();

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -86,6 +87,26 @@ func event(id, frame string) string {
 	return fmt.Sprintf(`{"id":%q,"frame":%q}`, id, frame)
 }
 
+func protectedTestKey(note string) string {
+	key := map[string]any{
+		"version": 2, "kid": 1, "pinProtected": true,
+		"wrappedDek": base64.StdEncoding.EncodeToString(make([]byte, 48)),
+		"nonce":      base64.StdEncoding.EncodeToString(make([]byte, 12)),
+		"kdf":        map[string]any{"name": "pbkdf2-sha256", "salt": base64.StdEncoding.EncodeToString(make([]byte, 16)), "iter": 600000},
+		"note":       note,
+	}
+	data, _ := json.Marshal(key)
+	return string(data)
+}
+
+func protectedTestServer(t *testing.T) *httptest.Server {
+	srv := newTestServer(t)
+	for _, user := range []string{"alice", "bob"} {
+		wantStatus(t, do(t, srv, user, "PUT", "/v1/keystore", protectedTestKey("initial"), map[string]string{"If-None-Match": "*"}), http.StatusNoContent)
+	}
+	return srv
+}
+
 func TestRequireUser(t *testing.T) {
 	srv := newTestServer(t)
 
@@ -121,21 +142,21 @@ func TestIdentityNormalization(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Padded and trimmed header values must land in the same store.
-	res := do(t, srv, "  alice  ", "PUT", "/v1/keystore", `{"v":1}`, map[string]string{"If-None-Match": "*"})
+	res := do(t, srv, "  alice  ", "PUT", "/v1/keystore", protectedTestKey("one"), map[string]string{"If-None-Match": "*"})
 	wantStatus(t, res, http.StatusNoContent)
 	res = do(t, srv, "alice", "GET", "/v1/keystore", "", nil)
 	wantStatus(t, res, http.StatusOK)
 
 	// A whitespace-only user header falls back to the email for storage,
 	// never to the raw whitespace string.
-	res = do(t, srv, "   ", "PUT", "/v1/keystore", `{"v":2}`, map[string]string{
+	res = do(t, srv, "   ", "PUT", "/v1/keystore", protectedTestKey("two"), map[string]string{
 		"If-None-Match":     "*",
 		"X-Forwarded-Email": "bob@example.com",
 	})
 	wantStatus(t, res, http.StatusNoContent)
 	res = do(t, srv, "bob@example.com", "GET", "/v1/keystore", "", nil)
 	wantStatus(t, res, http.StatusOK)
-	if body := readBody(t, res); body != `{"v":2}` {
+	if body := readBody(t, res); body != protectedTestKey("two") {
 		t.Fatalf("email-fallback keystore mismatch: %s", body)
 	}
 	// A different email with the same whitespace user must NOT see it.
@@ -149,7 +170,7 @@ func TestKeystoreLifecycle(t *testing.T) {
 	res := do(t, srv, "alice", "GET", "/v1/keystore", "", nil)
 	wantStatus(t, res, http.StatusNotFound)
 
-	res = do(t, srv, "alice", "PUT", "/v1/keystore", `{"version":1}`, map[string]string{"If-None-Match": "*"})
+	res = do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("one"), map[string]string{"If-None-Match": "*"})
 	wantStatus(t, res, http.StatusNoContent)
 	etag := strings.Trim(res.Header.Get("ETag"), `"`)
 	if etag == "" {
@@ -157,26 +178,26 @@ func TestKeystoreLifecycle(t *testing.T) {
 	}
 
 	// create-only again → conflict
-	res = do(t, srv, "alice", "PUT", "/v1/keystore", `{"version":2}`, map[string]string{"If-None-Match": "*"})
+	res = do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("two"), map[string]string{"If-None-Match": "*"})
 	wantStatus(t, res, http.StatusPreconditionFailed)
 
 	// CAS with a stale etag → conflict
-	res = do(t, srv, "alice", "PUT", "/v1/keystore", `{"version":2}`, map[string]string{"If-Match": `"bogus"`})
+	res = do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("two"), map[string]string{"If-Match": `"bogus"`})
 	wantStatus(t, res, http.StatusPreconditionFailed)
 
 	// CAS with the current etag → accepted
-	res = do(t, srv, "alice", "PUT", "/v1/keystore", `{"version":2}`, map[string]string{"If-Match": `"` + etag + `"`})
+	res = do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("two"), map[string]string{"If-Match": `"` + etag + `"`})
 	wantStatus(t, res, http.StatusNoContent)
 
 	res = do(t, srv, "alice", "GET", "/v1/keystore", "", nil)
 	wantStatus(t, res, http.StatusOK)
-	if body := readBody(t, res); body != `{"version":2}` {
+	if body := readBody(t, res); body != protectedTestKey("two") {
 		t.Fatalf("unexpected keystore body: %s", body)
 	}
 }
 
 func TestAppendAndReadEvents(t *testing.T) {
-	srv := newTestServer(t)
+	srv := protectedTestServer(t)
 	chatID := "11111111-1111-1111-1111-111111111111"
 
 	out := appendEvents(t, srv, "alice", chatID, 0, event("e1", "ZnJhbWUx"), event("e2", "ZnJhbWUy"))
@@ -211,7 +232,7 @@ func TestAppendAndReadEvents(t *testing.T) {
 }
 
 func TestAppendDedup(t *testing.T) {
-	srv := newTestServer(t)
+	srv := protectedTestServer(t)
 	chatID := "22222222-2222-2222-2222-222222222222"
 
 	appendEvents(t, srv, "alice", chatID, 0, event("e1", "ZnJhbWUx"))
@@ -227,7 +248,7 @@ func TestAppendDedup(t *testing.T) {
 }
 
 func TestListChats(t *testing.T) {
-	srv := newTestServer(t)
+	srv := protectedTestServer(t)
 	chatID := "33333333-3333-3333-3333-333333333333"
 
 	res := do(t, srv, "alice", "GET", "/v1/chats", "", nil)
@@ -249,7 +270,7 @@ func TestListChats(t *testing.T) {
 }
 
 func TestCompact(t *testing.T) {
-	srv := newTestServer(t)
+	srv := protectedTestServer(t)
 	chatID := "44444444-4444-4444-4444-444444444444"
 
 	appendEvents(t, srv, "alice", chatID, 0, event("e1", "YQ=="), event("e2", "Yg=="), event("e3", "Yw=="))
@@ -273,7 +294,7 @@ func TestCompact(t *testing.T) {
 }
 
 func TestDeleteChat(t *testing.T) {
-	srv := newTestServer(t)
+	srv := protectedTestServer(t)
 	chatID := "55555555-5555-5555-5555-555555555555"
 
 	appendEvents(t, srv, "alice", chatID, 0, event("e1", "YQ=="))
@@ -288,7 +309,7 @@ func TestDeleteChat(t *testing.T) {
 }
 
 func TestBlobLifecycle(t *testing.T) {
-	srv := newTestServer(t)
+	srv := protectedTestServer(t)
 	blobID := "66666666-6666-6666-6666-666666666666"
 
 	res := do(t, srv, "alice", "HEAD", "/v1/blobs/"+blobID, "", nil)
@@ -316,7 +337,7 @@ func TestBlobLifecycle(t *testing.T) {
 }
 
 func TestUserIsolation(t *testing.T) {
-	srv := newTestServer(t)
+	srv := protectedTestServer(t)
 	chatID := "77777777-7777-7777-7777-777777777777"
 	blobID := "88888888-8888-8888-8888-888888888888"
 
@@ -337,7 +358,7 @@ func TestUserIsolation(t *testing.T) {
 }
 
 func TestFileLifecycle(t *testing.T) {
-	srv := newTestServer(t)
+	srv := protectedTestServer(t)
 	fileID := strings.Repeat("a", 64)
 
 	res := do(t, srv, "alice", "GET", "/v1/files", "", nil)
@@ -396,11 +417,31 @@ func TestFileLifecycle(t *testing.T) {
 }
 
 func TestFrameTooLarge(t *testing.T) {
-	srv := newTestServer(t)
+	srv := protectedTestServer(t)
 	chatID := "99999999-9999-9999-9999-999999999999"
 
 	frame := strings.Repeat("A", store.MaxFrameBytes+1)
 	res := do(t, srv, "alice", "POST", "/v1/chats/"+chatID+"/events", event("e1", frame),
 		map[string]string{"X-Expected-Seq": "0"})
 	wantStatus(t, res, http.StatusRequestEntityTooLarge)
+}
+
+func TestBackupsRequireProtection(t *testing.T) {
+	srv := newTestServer(t)
+	for _, body := range []string{`{"version":2,"kid":1,"pinProtected":false,"dek":"raw"}`, `{"pinProtected":true}`, `{"passkeyProtected":true}`, `{}`, `invalid`} {
+		wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", body, nil), http.StatusBadRequest)
+	}
+	for _, request := range []struct{ method, path string }{
+		{"PUT", "/v1/files/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
+		{"PUT", "/v1/blobs/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"},
+		{"POST", "/v1/chats/cccccccc-cccc-cccc-cccc-cccccccccccc/events"},
+		{"GET", "/v1/chats"}, {"GET", "/v1/files"},
+	} {
+		wantStatus(t, do(t, srv, "alice", request.method, request.path, "payload", nil), http.StatusForbidden)
+	}
+	res := do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("protected"), map[string]string{"If-None-Match": "*"})
+	wantStatus(t, res, http.StatusNoContent)
+	// An older client cannot turn a protected account back into plaintext mode.
+	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", `{"version":2,"kid":1,"pinProtected":false,"dek":"raw"}`, map[string]string{"If-Match": res.Header.Get("ETag")}), http.StatusBadRequest)
+	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files", "", nil), http.StatusOK)
 }

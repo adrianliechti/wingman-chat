@@ -1,4 +1,4 @@
-import { readLocalChat, readLocalMirror, stashPendingTarget } from "@/shared/lib/chatSync";
+import { readLocalChat, readLocalMirror, stashPendingTarget, stashPendingDeletion } from "@/shared/lib/chatSync";
 import * as storeSession from "@/shared/lib/storeSession";
 import type { Chat } from "@/shared/types/chat";
 import { chatEntry } from "./chatStorage";
@@ -9,7 +9,7 @@ export const syncedChatStorage = {
   load: (id: string) => readLocalChat(id, false),
   store: async (chat: Chat): Promise<void> => {
     const session = await storeSession.initSession();
-    if (session.status !== "ready") return stashPendingTarget(chat);
+    if (session.status !== "ready" && session.status !== "upload-only") return stashPendingTarget(chat);
     try {
       await session.sync.saveChat(chat);
     } catch {
@@ -17,7 +17,9 @@ export const syncedChatStorage = {
     }
   },
   remove: async (id: string): Promise<void> => {
-    const session = await storeSession.whenReady();
+    const current = await storeSession.initSession();
+    if (current.status === "setup") return stashPendingDeletion(id, current.userId);
+    const session = await storeSession.whenUploading();
     await session.sync.deleteChat(id);
   },
 };

@@ -3,10 +3,19 @@ import * as storeSession from "@/shared/lib/storeSession";
 import type { SyncActivity } from "@/shared/lib/chatSync";
 import type { FileSyncActivity } from "@/shared/lib/fileSync";
 
-export type SessionStatus = "disabled" | "initializing" | "locked" | "ready" | "error";
+export type SessionStatus = "disabled" | "initializing" | "setup" | "locked" | "upload-only" | "ready" | "error";
 
 /** One word the UI can trust: is everything on the server or not. */
-export type SyncHealth = "disabled" | "connecting" | "locked" | "error" | "syncing" | "pending" | "synced";
+export type SyncHealth =
+  | "setup"
+  | "disabled"
+  | "connecting"
+  | "locked"
+  | "error"
+  | "syncing"
+  | "pending"
+  | "upload-only"
+  | "synced";
 
 export interface SyncStatus {
   session: SessionStatus;
@@ -15,6 +24,8 @@ export interface SyncStatus {
   lastSyncAt: string | null;
   lastError: string | null;
   pinProtected: boolean;
+  passkeyProtected: boolean;
+  remembered: boolean;
 }
 
 function computeHealth(session: SessionStatus, chat: SyncActivity | null, files: FileSyncActivity | null): SyncHealth {
@@ -23,6 +34,8 @@ function computeHealth(session: SessionStatus, chat: SyncActivity | null, files:
       return "disabled";
     case "initializing":
       return "connecting";
+    case "setup":
+      return "setup";
     case "locked":
       return "locked";
     case "error":
@@ -31,12 +44,15 @@ function computeHealth(session: SessionStatus, chat: SyncActivity | null, files:
   if (chat?.lastError || files?.lastError) return "error";
   if (chat?.syncing || files?.syncing) return "syncing";
   if ((chat?.pendingCount ?? 0) + (files?.pendingCount ?? 0) > 0) return "pending";
-  return "synced";
+  return session === "upload-only" ? "upload-only" : "synced";
 }
 
 export function useSyncStatus(): SyncStatus {
   const [session, setSession] = useState<SessionStatus>(() => storeSession.getSession().status);
+  const [remembered, setRemembered] = useState(false);
   const [pinProtected, setPinProtected] = useState(false);
+  const [passkeyProtected, setPasskeyProtected] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
   const [chat, setChat] = useState<SyncActivity | null>(null);
   const [files, setFiles] = useState<FileSyncActivity | null>(null);
 
@@ -47,10 +63,13 @@ export function useSyncStatus(): SyncStatus {
     let unsubFiles: (() => void) | undefined;
     const unsub = storeSession.subscribeSession((s) => {
       setSession(s.status);
-      if (s.status === "ready" || s.status === "locked") {
+      setRemembered(s.status === "ready" && s.remembered);
+      setInitError(s.status === "error" ? (s.error instanceof Error ? s.error.message : String(s.error)) : null);
+      if (s.status === "setup" || s.status === "ready" || s.status === "locked" || s.status === "upload-only") {
         setPinProtected(s.keystore.keystore.pinProtected === true);
+        setPasskeyProtected(s.keystore.keystore.passkeyProtected === true);
       }
-      if (s.status === "ready") {
+      if (s.status === "ready" || s.status === "upload-only") {
         unsubChat?.();
         unsubFiles?.();
         unsubChat = s.sync.subscribeActivity(setChat);
@@ -75,7 +94,9 @@ export function useSyncStatus(): SyncStatus {
     health: computeHealth(session, chat, files),
     pendingCount: (chat?.pendingCount ?? 0) + (files?.pendingCount ?? 0),
     lastSyncAt,
-    lastError: files?.lastError ?? chat?.lastError ?? null,
+    lastError: initError ?? files?.lastError ?? chat?.lastError ?? null,
     pinProtected,
+    passkeyProtected,
+    remembered,
   };
 }

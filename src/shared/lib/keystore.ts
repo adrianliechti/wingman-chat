@@ -2,20 +2,31 @@
  * Keystore management.
  *
  * The keystore is a small JSON blob stored on the server that holds the
- * user's DEK in one of two shapes:
+ * user's DEK PIN-wrapped or passkey-wrapped. Plain keys are supported only
+ * in memory during setup and when upgrading old unprotected server records:
  *
  *   { version: 2, kid: 1, pinProtected: false, dek: "<base64 raw key>" }
  *   { version: 2, kid: 1, pinProtected: true,  wrappedDek, nonce, kdf }
  *
  * `kid` names the key inside every frame envelope. The server treats
  * this body as opaque. CAS via If-Match prevents concurrent stomp; the
- * server keeps `keystore.prev.json` as a one-version backup against
- * immediate user regret.
+ * server discards obsolete keystore copies when protection changes.
  */
 
 import * as api from "./storeClient";
+import { readJson, writeJson } from "./opfs-core";
+import { generateBackupKeys, importBackupPublicKey, importBackupPrivateKey } from "./backupCrypto";
+
+interface BackupEnvelope {
+  publicKey: string;
+  encryptedPrivateKey: string;
+}
+import { createPasskeyEnvelope, unlockPasskeyEnvelope, type PasskeyEnvelope } from "./passkey";
 import {
   type DEK,
+  type UploadKey,
+  encryptBlob,
+  decryptBlob,
   fromBase64,
   generateDEK,
   type KdfParams,
@@ -25,23 +36,44 @@ import {
 } from "./crypto";
 
 export interface PlainKeystore {
+  backup?: BackupEnvelope;
   version: 2;
   /** Key id stamped into frame envelopes. */
   kid: number;
   pinProtected: false;
+  passkeyProtected?: false;
   dek: string; // base64 32 bytes
 }
 
 export interface ProtectedKeystore {
+  backup?: BackupEnvelope;
   version: 2;
   kid: number;
   pinProtected: true;
+  passkeyProtected?: false;
   wrappedDek: string;
   nonce: string;
   kdf: KdfParams;
 }
 
-export type Keystore = PlainKeystore | ProtectedKeystore;
+export interface PasskeyKeystore {
+  backup?: BackupEnvelope;
+  version: 2;
+  kid: number;
+  pinProtected: false;
+  passkeyProtected: true;
+  passkey: PasskeyEnvelope;
+}
+
+export type Keystore = PlainKeystore | ProtectedKeystore | PasskeyKeystore;
+
+export function isPasskeyProtected(k: Keystore): k is PasskeyKeystore {
+  return k.passkeyProtected === true;
+}
+
+export function isProtected(k: Keystore): boolean {
+  return isPinProtected(k) || isPasskeyProtected(k);
+}
 
 export interface KeystoreState {
   keystore: Keystore;
@@ -72,40 +104,23 @@ export async function loadKeystore(): Promise<KeystoreState | null> {
   return { keystore, etag: res.etag };
 }
 
-/**
- * Create the initial keystore on the server if it doesn't already exist.
- * Generates a fresh plaintext DEK. Returns the new keystore + the DEK.
- *
- * If a keystore was created concurrently (another tab), the function
- * re-fetches and returns the existing state — the caller should treat
- * this as a no-op and use the returned state as-is.
- */
-export async function bootstrapKeystore(): Promise<{ state: KeystoreState; dek: DEK; created: boolean }> {
+/** Prepare a key only in memory. Nothing is uploaded until protection is chosen. */
+export async function prepareSetup(): Promise<{ state: KeystoreState; dek: DEK }> {
   const dek = await generateDEK();
-  const body = JSON.stringify(plainFromDek(dek));
+  return { state: { keystore: plainFromDek(dek), etag: "" }, dek };
+}
 
-  try {
-    const etag = await api.putKeystore(body, { ifNoneMatch: "*" });
-    return { state: { keystore: JSON.parse(body), etag }, dek, created: true };
-  } catch (err) {
-    if (err instanceof api.ServerError && err.status === 412) {
-      const existing = await loadKeystore();
-      if (!existing) throw new Error("keystore race: 412 but no keystore present");
-      if (existing.keystore.pinProtected) {
-        // Cannot return a DEK because we don't have the PIN. The caller
-        // must handle this by prompting for the PIN separately.
-        throw new Error("keystore exists and is PIN-protected");
-      }
-      return { state: existing, dek: dekFromPlain(existing.keystore), created: false };
-    }
-    throw err;
-  }
+async function saveProtected(state: KeystoreState, ks: Keystore): Promise<KeystoreState> {
+  if (!isProtected(ks)) throw new Error("Backups require a PIN or passkey.");
+  const etag = await api.putKeystore(JSON.stringify(ks), state.etag ? { ifMatch: state.etag } : { ifNoneMatch: "*" });
+  return { keystore: ks, etag };
 }
 
 /**
  * Unwrap the DEK from a PIN-protected keystore.
  */
 export async function unlockWithPin(state: KeystoreState, pin: string, userId: string): Promise<DEK> {
+  if (isPasskeyProtected(state.keystore)) throw new Error("Use your passkey to unlock sync.");
   if (!isPinProtected(state.keystore)) {
     return dekFromPlain(state.keystore);
   }
@@ -117,11 +132,16 @@ export async function unlockWithPin(state: KeystoreState, pin: string, userId: s
  * current state (so we can use If-Match) and the current DEK.
  */
 export async function setPin(state: KeystoreState, dek: DEK, pin: string, userId: string): Promise<KeystoreState> {
+  if (pin.length < 4 || pin.length > 32) throw new Error("PIN must be between 4 and 32 characters.");
   const wrapped = await wrapDEKWithPin(dek, pin, userId);
-  const ks: ProtectedKeystore = { version: 2, kid: dek.kid, pinProtected: true, ...wrapped };
-  const body = JSON.stringify(ks);
-  const etag = await api.putKeystore(body, { ifMatch: state.etag });
-  return { keystore: ks, etag };
+  const ks: ProtectedKeystore = {
+    version: 2,
+    kid: dek.kid,
+    pinProtected: true,
+    backup: state.keystore.backup,
+    ...wrapped,
+  };
+  return saveProtected(state, ks);
 }
 
 /**
@@ -137,18 +157,79 @@ export async function changePin(
   return setPin(state, dek, newPin, userId);
 }
 
-/**
- * Replace the keystore with a plaintext-DEK version. Requires the
- * current PIN to unlock first.
- */
-export async function removePin(
+/** Replace PIN/plain protection only after passkey enrollment and verification succeed. */
+export async function setPasskey(state: KeystoreState, dek: DEK, userId: string): Promise<KeystoreState> {
+  const passkey = await createPasskeyEnvelope(dek, userId);
+  const ks: PasskeyKeystore = {
+    version: 2,
+    kid: dek.kid,
+    pinProtected: false,
+    passkeyProtected: true,
+    backup: state.keystore.backup,
+    passkey,
+  };
+  return saveProtected(state, ks);
+}
+
+export async function unlockWithPasskey(state: KeystoreState, userId: string): Promise<DEK> {
+  if (!isPasskeyProtected(state.keystore)) throw new Error("Sync is not passkey-protected.");
+  return unlockPasskeyEnvelope(state.keystore.passkey, userId, state.keystore.kid);
+}
+
+/** Upgrade once while unlocked, preserving old symmetric history and its protected key. */
+export async function enableBackupUploads(
   state: KeystoreState,
-  pin: string,
+  dek: DEK,
   userId: string,
 ): Promise<{ state: KeystoreState; dek: DEK }> {
-  const dek = await unlockWithPin(state, pin, userId);
-  const ks = plainFromDek(dek);
-  const body = JSON.stringify(ks);
-  const etag = await api.putKeystore(body, { ifMatch: state.etag });
-  return { state: { keystore: ks, etag }, dek };
+  if (!isProtected(state.keystore)) throw new Error("Backups require a PIN or passkey.");
+  // Seal only with the root key, never recursively with the backup public key.
+  const root = { raw: dek.raw, kid: dek.kid };
+  let current = state;
+  if (!current.keystore.backup) {
+    const pair = await generateBackupKeys();
+    const privateBytes = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey));
+    const encryptedPrivateKey = toBase64(await encryptBlob(root, privateBytes, userId, `backup-private:${dek.kid}`));
+    privateBytes.fill(0);
+    const backup = {
+      publicKey: toBase64(new Uint8Array(await crypto.subtle.exportKey("spki", pair.publicKey))),
+      encryptedPrivateKey,
+    };
+    const ks = { ...current.keystore, backup };
+    const etag = await api.putKeystore(JSON.stringify(ks), { ifMatch: current.etag });
+    current = { keystore: ks, etag };
+  }
+  const envelope = current.keystore.backup!;
+  const publicKey = await importBackupPublicKey(fromBase64(envelope.publicKey));
+  const privateBytes = await decryptBlob(
+    root,
+    fromBase64(envelope.encryptedPrivateKey),
+    userId,
+    `backup-private:${dek.kid}`,
+  );
+  const privateKey = await importBackupPrivateKey(privateBytes);
+  privateBytes.fill(0);
+  // Detect a mismatched public/private pair before permitting uploads.
+  const probe = crypto.getRandomValues(new Uint8Array(32));
+  const wrapped = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, publicKey, probe);
+  const unwrapped = new Uint8Array(await crypto.subtle.decrypt({ name: "RSA-OAEP" }, privateKey, wrapped));
+  if (!unwrapped.every((byte, index) => byte === probe[index])) throw new Error("Backup key pair does not match.");
+  await writeJson("_sync/upload-key.json", { userId, kid: dek.kid, publicKey: envelope.publicKey });
+  return { state: current, dek: { ...root, backup: { publicKey, privateKey } } };
+}
+
+export async function uploadKey(state: KeystoreState, userId: string): Promise<UploadKey | null> {
+  const trusted = await readJson<{ userId: string; kid: number; publicKey: string }>("_sync/upload-key.json");
+  if (
+    !isProtected(state.keystore) ||
+    !state.keystore.backup ||
+    trusted?.userId !== userId ||
+    trusted.kid !== state.keystore.kid ||
+    trusted.publicKey !== state.keystore.backup.publicKey
+  )
+    return null;
+  return {
+    kid: state.keystore.kid,
+    backup: { publicKey: await importBackupPublicKey(fromBase64(state.keystore.backup.publicKey)) },
+  };
 }

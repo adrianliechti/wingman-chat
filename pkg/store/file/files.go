@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/adrianliechti/wingman-chat/pkg/store"
@@ -42,10 +41,6 @@ func (p *Provider) fileManifestPath(userID string) string {
 	return filepath.Join(p.filesDir(userID), "index.json")
 }
 
-func (p *Provider) fileLock(userID string) *sync.Mutex {
-	return p.lockFor("files:" + userID)
-}
-
 func (p *Provider) loadFileManifest(userID string) (map[string]fileManifestEntry, error) {
 	data, err := os.ReadFile(p.fileManifestPath(userID))
 	if errors.Is(err, os.ErrNotExist) {
@@ -70,10 +65,12 @@ func (p *Provider) saveFileManifest(userID string, m map[string]fileManifestEntr
 	return writeAtomic(p.fileManifestPath(userID), data)
 }
 
-func (p *Provider) ListFiles(_ context.Context, userID string) ([]store.FileMeta, error) {
-	lock := p.fileLock(userID)
-	lock.Lock()
-	defer lock.Unlock()
+func (p *Provider) ListFiles(ctx context.Context, userID string) ([]store.FileMeta, error) {
+	unlock, err := p.lock(ctx, "files:"+userID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 
 	manifest, err := p.loadFileManifest(userID)
 	if err != nil {
@@ -88,15 +85,17 @@ func (p *Provider) ListFiles(_ context.Context, userID string) ([]store.FileMeta
 	return out, nil
 }
 
-func (p *Provider) GetFile(_ context.Context, userID, fileID string) (io.ReadCloser, string, error) {
+func (p *Provider) GetFile(ctx context.Context, userID, fileID string) (io.ReadCloser, string, error) {
 	if err := validateID(fileID); err != nil {
 		return nil, "", err
 	}
 
-	lock := p.fileLock(userID)
-	lock.Lock()
+	unlock, err := p.lock(ctx, "files:"+userID)
+	if err != nil {
+		return nil, "", err
+	}
+	defer unlock()
 	manifest, err := p.loadFileManifest(userID)
-	lock.Unlock()
 	if err != nil {
 		return nil, "", err
 	}
@@ -116,14 +115,16 @@ func (p *Provider) GetFile(_ context.Context, userID, fileID string) (io.ReadClo
 	return f, entry.ETag, nil
 }
 
-func (p *Provider) PutFile(_ context.Context, userID, fileID string, r io.Reader, ifMatch string) (string, error) {
+func (p *Provider) PutFile(ctx context.Context, userID, fileID string, r io.Reader, ifMatch string) (string, error) {
 	if err := validateID(fileID); err != nil {
 		return "", err
 	}
 
-	lock := p.fileLock(userID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := p.lock(ctx, "files:"+userID)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 
 	manifest, err := p.loadFileManifest(userID)
 	if err != nil {
@@ -179,14 +180,16 @@ func (p *Provider) PutFile(_ context.Context, userID, fileID string, r io.Reader
 	return etag, nil
 }
 
-func (p *Provider) DeleteFile(_ context.Context, userID, fileID string) error {
+func (p *Provider) DeleteFile(ctx context.Context, userID, fileID string) error {
 	if err := validateID(fileID); err != nil {
 		return err
 	}
 
-	lock := p.fileLock(userID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := p.lock(ctx, "files:"+userID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	manifest, err := p.loadFileManifest(userID)
 	if err != nil {

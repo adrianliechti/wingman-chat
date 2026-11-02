@@ -16,6 +16,8 @@
  * doesn't need to hit OPFS to compute the diff.
  */
 
+import { isChatBackupPaused, requireChatBackupReady, BackupPausedError } from "./chatBackupActivity";
+import { isBackupSessionCurrent, withBackupStorage } from "./backupLifecycle";
 import { normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
 import type { Chat } from "@/shared/types/chat";
 import {
@@ -29,7 +31,16 @@ import {
   replayLog,
 } from "./chatLog";
 import * as api from "./storeClient";
-import { type DEK, decryptBlob, decryptEvent, encryptBlob, encryptEvent, hashFrame, ZERO_HASH } from "./crypto";
+import {
+  type StoreKey,
+  canRestore,
+  decryptBlob,
+  decryptEvent,
+  encryptBlob,
+  encryptEvent,
+  hashFrame,
+  ZERO_HASH,
+} from "./crypto";
 import {
   collectChatBlobIds,
   extractChatBlobs,
@@ -84,6 +95,21 @@ const targetPath = (chatId: string) => `chats/${chatId}/target.json`;
  *  the server store is enabled on a deployment that has local data. */
 const opfsOnlyChatPath = (chatId: string) => `chats/${chatId}/chat.json`;
 
+/** Preserve local snapshots and attachments, but start the next backup from seq 0. */
+export async function resetLocalBackupState(): Promise<void> {
+  for (const id of await listDirectories("chats")) {
+    const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
+    const history = await readText(historyPath(id));
+    const stored =
+      target ??
+      (history ? replayLog(id, decodeLines(history)).chat : null) ??
+      (await readJson<StoredChat | LegacyStoredChat>(opfsOnlyChatPath(id)));
+    if (stored) await writeJson(targetPath(id), normalizeStoredChat(stored));
+    await deleteFile(historyPath(id));
+  }
+  await deleteDirectory(SYNC_DIR);
+}
+
 /** Read the local mirror without a DEK — logs and pending targets are
  *  plaintext locally; the PIN only protects the server copies. Lets the
  *  UI show chats while the session is still locked. */
@@ -111,16 +137,49 @@ export async function readLocalMirror(hydrateBlobs = true): Promise<Chat[]> {
 /** Persist a chat as a pending target without a session — used while the
  *  store session is locked or errored, so edits survive the tab. The next
  *  ChatSync hydration picks the target up and flushes it. */
-export async function stashPendingTarget(chat: Chat): Promise<void> {
+export function stashPendingTarget(chat: Chat): Promise<void> {
+  return withBackupStorage(() => stashPendingTargetUnlocked(chat));
+}
+
+async function stashPendingTargetUnlocked(chat: Chat): Promise<void> {
   const stored = await extractChatBlobs(chat);
   await writeJson(targetPath(chat.id), stored);
+}
+
+/** Keep local deletion usable before backup protection has been configured. */
+export function stashPendingDeletion(chatId: string, userId: string): Promise<void> {
+  return withBackupStorage(() => stashPendingDeletionUnlocked(chatId, userId));
+}
+
+async function stashPendingDeletionUnlocked(chatId: string, userId: string): Promise<void> {
+  const previous = await loadState();
+  if (previous && previous.userId !== userId) {
+    await deleteDirectory(`chats/${chatId}`);
+    return;
+  }
+  const state = previous ?? { userId, heads: {}, lastFrameHash: {} };
+  const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
+  const history = await readText(historyPath(chatId));
+  const stored =
+    target ??
+    (history ? replayLog(chatId, decodeLines(history)).chat : null) ??
+    (await readJson<StoredChat | LegacyStoredChat>(opfsOnlyChatPath(chatId)));
+  const blobIds = stored ? collectChatBlobIds(normalizeStoredChat(stored)) : [];
+  state.pendingDeletes = [
+    ...(state.pendingDeletes ?? []).filter((entry) => entry.id !== chatId),
+    { id: chatId, blobIds },
+  ];
+  delete state.heads[chatId];
+  delete state.lastFrameHash[chatId];
+  await saveState(state);
+  await deleteDirectory(`chats/${chatId}`);
 }
 
 // ChatSync ---------------------------------------------------------------
 
 export interface ChatSyncOptions {
   userId: string;
-  dek: DEK;
+  dek: StoreKey;
 }
 
 export interface SyncActivity {
@@ -140,13 +199,13 @@ export class ChatSync {
   private needsNativeSnapshot = new Set<string>();
   private flushing = false;
   private readonly userId: string;
-  private readonly dek: DEK;
+  private dek: StoreKey;
 
   private activity: SyncActivity = { syncing: false, pendingCount: 0, lastSyncAt: null, lastError: null };
   private activityListeners = new Set<(a: SyncActivity) => void>();
   private remoteChangeListeners = new Set<(chats: Chat[]) => void>();
 
-  constructor(userId: string, dek: DEK, initialState?: SyncState) {
+  constructor(userId: string, dek: StoreKey, initialState?: SyncState) {
     this.userId = userId;
     this.dek = dek;
     this.state = initialState ?? { userId, heads: {}, lastFrameHash: {} };
@@ -161,6 +220,11 @@ export class ChatSync {
     const sync = new ChatSync(opts.userId, opts.dek, state);
     await sync.hydrateFromOpfs();
     return sync;
+  }
+
+  /** Grant restore access for this page without replacing engines with writes in flight. */
+  setKey(dek: StoreKey): void {
+    this.dek = dek;
   }
 
   // public API ----------------------------------------------------------
@@ -190,7 +254,12 @@ export class ChatSync {
    *  the materialized chat list (lastSynced wins over pending targets
    *  only for chats with no pending edits). Concurrent calls share one
    *  in-flight pull — interleaved pulls would double-apply events. */
-  async pull(): Promise<Chat[]> {
+  pull(): Promise<Chat[]> {
+    return withBackupStorage(() => (isBackupSessionCurrent() ? this.pullUnlocked() : Promise.resolve([])));
+  }
+
+  private async pullUnlocked(): Promise<Chat[]> {
+    if (!canRestore(this.dek)) throw new Error("Unlock with your PIN or passkey to restore server data.");
     if (this.pullInFlight) return this.pullInFlight;
     this.pullInFlight = (async () => {
       this.setActivity({ syncing: true });
@@ -262,18 +331,30 @@ export class ChatSync {
 
   /** Persist a chat as a delta: local mirror first (offline-safe), then
    *  flush. Idempotent on retry. */
-  async saveChat(chat: Chat): Promise<void> {
+  saveChat(chat: Chat): Promise<void> {
+    return withBackupStorage(() =>
+      isBackupSessionCurrent() ? this.saveChatUnlocked(chat) : stashPendingTargetUnlocked(chat),
+    );
+  }
+
+  private async saveChatUnlocked(chat: Chat): Promise<void> {
     const stored = await extractChatBlobs(chat);
     this.pendingTargets.set(chat.id, stored);
     this.setActivity({});
     await writeJson(targetPath(chat.id), stored);
-    void this.flushPending();
+    if (!isChatBackupPaused(chat.id)) void this.flushPending();
   }
 
   /** Delete a chat: drop local state immediately, journal the server-side
    *  deletion so it retries until confirmed. Other devices learn of the
    *  deletion from the chat listing. */
-  async deleteChat(chatId: string): Promise<void> {
+  deleteChat(chatId: string): Promise<void> {
+    return withBackupStorage(() =>
+      isBackupSessionCurrent() ? this.deleteChatUnlocked(chatId) : stashPendingDeletionUnlocked(chatId, this.userId),
+    );
+  }
+
+  private async deleteChatUnlocked(chatId: string): Promise<void> {
     // Blob ids are unique per attachment (never shared across chats), so
     // the server copies can go with the chat. Collect before dropping state.
     const blobIds = new Set<string>();
@@ -297,7 +378,13 @@ export class ChatSync {
   }
 
   /** Replay any journaled deletions and pending targets through the server. */
-  async flushPending(): Promise<void> {
+  flushPending(): Promise<void> {
+    return withBackupStorage(async () => {
+      if (isBackupSessionCurrent()) await this.flushPendingUnlocked();
+    });
+  }
+
+  private async flushPendingUnlocked(): Promise<void> {
     if (this.flushing) return;
     this.flushing = true;
     this.setActivity({ syncing: true });
@@ -305,6 +392,7 @@ export class ChatSync {
     try {
       // snapshot: successful deletes rewrite state.pendingDeletes mid-loop
       for (const del of Array.from(this.state.pendingDeletes ?? [])) {
+        if (isChatBackupPaused(del.id)) continue;
         if (await this.pushDelete(del)) {
           this.state.pendingDeletes = (this.state.pendingDeletes ?? []).filter((d) => d.id !== del.id);
           await saveState(this.state);
@@ -316,6 +404,7 @@ export class ChatSync {
       // snapshot: flushChat mutates pendingTargets while we iterate.
       // Keep going past failures — one poisoned chat must not block the rest.
       for (const chatId of Array.from(this.pendingTargets.keys())) {
+        if (isChatBackupPaused(chatId)) continue;
         if (!(await this.flushChat(chatId))) failed = true;
       }
     } finally {
@@ -326,7 +415,11 @@ export class ChatSync {
     }
 
     // Work that arrived mid-flush was skipped by the re-entrancy guard.
-    if (!failed && (this.pendingTargets.size > 0 || (this.state.pendingDeletes?.length ?? 0) > 0)) {
+    if (
+      !failed &&
+      ([...this.pendingTargets.keys()].some((id) => !isChatBackupPaused(id)) ||
+        this.state.pendingDeletes?.some((entry) => !isChatBackupPaused(entry.id)))
+    ) {
       void this.flushPending();
     }
   }
@@ -374,12 +467,16 @@ export class ChatSync {
 
   private async pushDelete(del: { id: string; blobIds: string[] }): Promise<boolean> {
     try {
+      if (!canRestore(this.dek)) throw new Error("Unlock restore before deleting a server backup.");
+      requireChatBackupReady(del.id);
       await api.deleteChat(del.id);
       for (const blobId of del.blobIds) {
+        requireChatBackupReady(del.id);
         await api.deleteBlob(blobId);
       }
       return true;
     } catch (err) {
+      if (err instanceof BackupPausedError) return false;
       this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
       console.warn(`chatSync: server delete failed for ${del.id}`, err);
       return false;
@@ -402,11 +499,13 @@ export class ChatSync {
 
   private async uploadMissingBlobs(chatId: string, stored: StoredChat): Promise<void> {
     for (const blobId of collectChatBlobIds(stored)) {
+      requireChatBackupReady(chatId);
       if (await api.headBlob(blobId)) continue;
       const blob = await getChatBlob(chatId, blobId);
       if (!blob) continue;
       const plain = new Uint8Array(await blob.arrayBuffer());
       const cipher = await encryptBlob(this.dek, plain, this.userId, blobId);
+      requireChatBackupReady(chatId);
       await api.putBlob(blobId, cipher);
     }
   }
@@ -433,8 +532,10 @@ export class ChatSync {
       // Attachments must exist on the server before the entries that
       // reference them.
       await this.uploadMissingBlobs(chatId, target);
+      if (isChatBackupPaused(chatId)) return false;
       await this.postEntries(chatId, entries);
     } catch (err) {
+      if (err instanceof BackupPausedError) return false;
       this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
       if (err instanceof PostConflictAfterRetry) return false;
       console.warn(`chatSync.flushChat(${chatId}): post failed`, err);
@@ -442,7 +543,7 @@ export class ChatSync {
     }
 
     await this.clearPendingTarget(chatId, target);
-    void this.maybeCompact(chatId);
+    await this.maybeCompactInner(chatId);
     return true;
   }
 
@@ -485,9 +586,13 @@ export class ChatSync {
         prevHash = await hashFrame(frame);
       }
 
+      requireChatBackupReady(chatId);
       const res = await api.appendEvents(chatId, expectedSeq, events);
 
       if (res === null) {
+        requireChatBackupReady(chatId);
+        if (!canRestore(this.dek))
+          throw new Error("Another device changed this chat. Unlock restore to reconcile before uploading.");
         // 409 — pull, then retry once with a freshly re-diff'd payload
         // computed against the new baseline. Inner variant: we already
         // hold this chat's lock.
@@ -531,10 +636,6 @@ export class ChatSync {
 
   /** If the log has grown past the threshold, replace it with a single
    *  init-led snapshot and ask the server to drop the prefix. */
-  private maybeCompact(chatId: string): Promise<void> {
-    return this.withChat(chatId, () => this.maybeCompactInner(chatId));
-  }
-
   private async maybeCompactInner(chatId: string): Promise<void> {
     const count = this.state.entriesSinceCompact?.[chatId] ?? 0;
     if (count < COMPACT_THRESHOLD) return;
@@ -551,6 +652,7 @@ export class ChatSync {
     try {
       posted = await this.postEntries(chatId, entries);
     } catch (err) {
+      if (err instanceof BackupPausedError) return;
       console.warn(`chatSync.maybeCompact(${chatId}): post failed`, err);
       return;
     }
@@ -562,8 +664,10 @@ export class ChatSync {
     if (compactBefore < 2) return; // nothing to drop
 
     try {
+      requireChatBackupReady(chatId);
       await api.compactChat(chatId, compactBefore);
     } catch (err) {
+      if (err instanceof BackupPausedError) return;
       console.warn(`chatSync.maybeCompact(${chatId}): server compact failed`, err);
       return;
     }
@@ -691,7 +795,8 @@ async function wipeLocalMirror(): Promise<void> {
     /* empty */
   }
   try {
-    await deleteDirectory(SYNC_DIR);
+    // File sync owns its user marker and must see it to clear the old workspace.
+    await deleteFile(STATE_FILE);
   } catch {
     /* empty */
   }
