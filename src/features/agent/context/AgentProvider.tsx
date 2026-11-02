@@ -147,6 +147,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     <AgentContext
       value={{
         agents,
+        isLoaded,
         currentAgent,
         createAgent,
         updateAgent,

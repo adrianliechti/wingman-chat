@@ -10,7 +10,7 @@ GlobalWorkerOptions.workerSrc = workerUrl;
 // for JBIG2), ICC color profiles, predefined CMaps, and standard fonts at runtime by
 // exact filename. Scanned PDFs in particular rely on the wasm decoders, so without
 // these URLs their pages render blank or garbled. The folders are served verbatim
-// from /pdfjs/* by the pdfjsAssetsPlugin in vite.config.ts.
+// from /pdfjs/* by the pdfjsAssetsPlugin in scripts/pdfjs-assets.ts.
 const pdfAssetBase = `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}pdfjs/`;
 
 /** Shared pdf.js asset URLs to pass into getDocument(). */

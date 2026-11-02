@@ -5,14 +5,18 @@ import { executeScript } from "@/features/artifacts/lib/executeScript";
 import type { CodeExecutionResult } from "@/features/tools/lib/interpreterProtocol";
 import type { ScriptLanguage } from "@/features/tools/lib/scriptLanguage";
 import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
-import { CodeEditor } from "./CodeEditor";
+import type { TextSelectionSnapshot } from "@/shared/ui/selection/useTextSelection";
+import { DraftSourceEditor } from "./SourceEditor";
+import { useTextDraft, type FileEditing } from "./useTextDraft";
 
 export interface ExecutionEditorProps {
   content: string;
   onRunReady?: (handler: (() => Promise<void>) | null) => void;
   onRunningChange?: (isRunning: boolean) => void;
-  /** Receives the code view whose text selection the host watches. */
-  onSelectionRoot?: (element: HTMLElement | null) => void;
+  /** How the file is saved; without it the editor is read-only. */
+  editing?: FileEditing;
+  /** Sends an instruction about the selected code to the conversation. */
+  onAsk?: (instruction: string, selection: TextSelectionSnapshot) => void;
 }
 
 export function ExecutionEditor({
@@ -20,9 +24,12 @@ export function ExecutionEditor({
   language,
   onRunReady,
   onRunningChange,
-  onSelectionRoot,
+  editing,
+  onAsk,
 }: ExecutionEditorProps & { language: ScriptLanguage }) {
   const { fs } = useArtifacts();
+  const draft = useTextDraft(content, editing);
+  const code = draft.text;
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<CodeExecutionResult | null>(null);
   const running = useRef<AbortController | null>(null);
@@ -37,13 +44,14 @@ export function ExecutionEditor({
 
   const handleRun = useCallback(async () => {
     if (!fs || running.current) return;
+    // Runs what is on screen, saved or not.
     const controller = new AbortController();
     running.current = controller;
     setIsRunning(true);
     setResult(null);
     const result = await executeScript({
       fs,
-      args: { code: content, language },
+      args: { code, language },
       context: { signal: controller.signal, chatId: fs.chatId },
     });
     // Unmount/navigation cancels both execution and committing its snapshot.
@@ -51,7 +59,7 @@ export function ExecutionEditor({
     running.current = null;
     setResult(result);
     setIsRunning(false);
-  }, [content, fs, language]);
+  }, [code, fs, language]);
 
   useEffect(() => {
     onRunReady?.(handleRun);
@@ -67,12 +75,12 @@ export function ExecutionEditor({
     <div className="h-full flex flex-col overflow-hidden">
       {!result ? (
         <div className="flex-1 overflow-hidden">
-          <CodeEditor content={content} language={language} onSelectionRoot={onSelectionRoot} />
+          <DraftSourceEditor draft={draft} language={language} label="Script source" onAsk={onAsk} />
         </div>
       ) : (
         <ResizablePanelGroup orientation="vertical" className="flex-1 min-h-0">
           <ResizablePanel defaultSize={75} minSize={20} className="overflow-hidden">
-            <CodeEditor content={content} language={language} onSelectionRoot={onSelectionRoot} />
+            <DraftSourceEditor draft={draft} language={language} label="Script source" onAsk={onAsk} />
           </ResizablePanel>
           <ResizablePanel
             defaultSize={25}

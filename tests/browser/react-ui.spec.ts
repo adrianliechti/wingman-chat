@@ -1,6 +1,8 @@
 import { expect, test as base, type Page } from "@playwright/test";
 import { mcpToolName } from "../../src/features/settings/lib/mcpToolNames";
 
+const AGENT_TOOL_NAME = mcpToolName("internet", "@agent");
+
 const test = base.extend({
   context: async ({ browserName, context, playwright, baseURL, viewport }, use, info) => {
     if (browserName !== "webkit") return use(context);
@@ -368,12 +370,33 @@ test("activity labels vary across responses and stay stable while composing", as
   expect(labels.size).toBeGreaterThan(1);
 });
 
+test("Stop clears subagent loading activity and keeps it stopped after reload", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("Delegate this task");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().tools)).toContain("agent");
+  await page.evaluate(() => window.reactUiE2E.callTool("agent", { prompt: "Find evidence" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  const card = page.locator('[class~="group/subagent"]');
+  await expect(card.locator("summary .animate-spin")).toHaveCount(1);
+  await page.getByRole("button", { name: "Stop generating (Esc)", exact: true }).click();
+  await expect(card.locator("summary")).toContainText("Stopped");
+  await expect(card.locator(".animate-spin")).toHaveCount(0);
+  await page.evaluate(() => window.reactUiE2E.finish("Late child reply"));
+  await expect(page.getByText("Late child reply", { exact: true })).toHaveCount(0);
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.reload();
+  await expect(card.locator("summary")).toContainText("Stopped");
+  await expect(card.locator(".animate-spin")).toHaveCount(0);
+});
+
 for (const feature of [
   { name: "web_research", label: "Deep research" },
   { name: "web_search", label: "Web Search" },
   { name: "web_fetch", label: "Web Fetch" },
 ]) {
-  test(`MCP ${feature.name} approval shows input before sending and remains usable on a narrow screen`, async ({
+  test(`approved research can use ${feature.name} without another prompt and remains usable on a narrow screen`, async ({
     page,
   }, info) => {
     const errors: string[] = [];
@@ -394,7 +417,6 @@ for (const feature of [
               query: "Coverage and reliability",
               max_chars: 4096,
             };
-    const details = feature.name === "web_research" ? [instructions] : (args.queries ?? [args.url!]);
     const originalViewport = page.viewportSize()!;
     page.on("pageerror", (error) => errors.push(error.message));
     await page.route("**/fixture-research-mcp", async (route) => {
@@ -434,21 +456,31 @@ for (const feature of [
       }
       await route.fulfill({ json: { jsonrpc: "2.0", id: request.id, result } });
     });
+    const discovery = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/fixture-research-mcp") &&
+        response.request().method() === "POST" &&
+        response.request().postDataJSON()?.method === "tools/list",
+    );
     await open(page, "?seed&research");
+    await discovery;
+    await expect(page.getByRole("button", { name: "Fixture", exact: true })).toBeVisible();
     const input = page.getByRole("textbox", { name: "Chat message input" });
-    await input.fill("Research this topic");
+    await input.fill("Research this topic for CLIENT_SECRET");
     await input.press("Enter");
-    await expect
-      .poll(() => page.evaluate(() => window.reactUiE2E.state().tools))
-      .toContain(mcpToolName("internet", feature.name));
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().tools)).toContain(AGENT_TOOL_NAME);
+    expect(await page.evaluate(() => window.reactUiE2E.state().tools)).not.toContain(
+      mcpToolName("internet", feature.name),
+    );
     await page.evaluate(({ name, args }) => window.reactUiE2E.callTool(name, args), {
-      name: mcpToolName("internet", feature.name),
-      args,
+      name: AGENT_TOOL_NAME,
+      args: { prompt: instructions },
     });
     const requests = page.getByLabel("Agent requests");
-    await expect(requests.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
+    const approve = requests.getByRole("button", { name: "Allow", exact: true });
+    await expect(approve).toBeVisible();
     await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
-    await expect(requests.getByRole("heading", { name: `Allow ${feature.label}?`, exact: true })).toBeVisible();
+    await expect(requests.getByRole("heading", { name: "Allow Web Search?", exact: true })).toBeVisible();
     await expect(page.locator("footer").getByLabel("Agent requests")).toHaveCount(0);
     expect(
       await requests.evaluate(
@@ -456,18 +488,16 @@ for (const feature of [
           element.getBoundingClientRect().top >= element.previousElementSibling!.getBoundingClientRect().bottom,
       ),
     ).toBe(true);
-    for (const item of details) await expect(requests.getByText(item, { exact: true })).toHaveCount(1);
-    // Only the request itself is shown; options stay in the tool row.
-    for (const option of ["max_chars", "Max chars", "max_results", "Allowed domains", "Coverage and reliability"])
-      await expect(requests).not.toContainText(option);
+    await expect(requests.getByLabel("Prompt shared with Web Search")).toHaveText(instructions);
+    await expect(requests.getByRole("textbox")).toHaveCount(0);
     await expect(requests.locator("pre, details")).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("approval.png") });
     await page.setViewportSize({ width: 390, height: 750 });
-    const label = page.getByText(feature.label, { exact: true }).first();
+    const label = requests.getByRole("heading", { name: "Allow Web Search?" });
     await expect(label).toBeVisible();
     expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await expect(requests.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
+    await expect(approve).toBeVisible();
     await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
     for (const name of ["Allow", "Decline", "Cancel"]) {
       const button = requests.getByRole("button", { name, exact: true });
@@ -484,15 +514,27 @@ for (const feature of [
     await page.screenshot({ path: info.outputPath("approval-narrow.png") });
     await page.setViewportSize(originalViewport);
     expect(remoteCalls).toBe(0);
-    await requests.getByRole("button", { name: "Allow", exact: true }).click();
+    await approve.click();
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    const card = page.locator('[class~="group/subagent"]');
+    await expect(card).not.toHaveAttribute("open");
+    await card.locator("summary").click();
+    expect(remoteCalls).toBe(0);
+    expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).not.toContain("CLIENT_SECRET");
+    expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).not.toContain("Question 119");
+    await page.evaluate(({ name, args }) => window.reactUiE2E.callTool(name, args), {
+      name: mcpToolName("internet", feature.name),
+      args,
+    });
     await expect(page.getByText("Searching sources", { exact: true })).toBeVisible();
     expect(remoteCalls).toBe(1);
-    expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    await expect(requests).toHaveCount(0);
     await page.evaluate(() => window.reactUiE2E.researchProgress(2, "Reading sources", 4));
     await expect(page.getByText("Reading sources · 50%", { exact: true })).toBeVisible();
     await page.screenshot({ path: info.outputPath("progress.png") });
     await page.evaluate(() => window.reactUiE2E.finishResearch());
-    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
     await expect(page.getByText("Reading sources · 50%", { exact: true })).toHaveCount(0);
     const result = page.getByRole("button", { name: feature.label, exact: false });
     await expect(result).toBeVisible();
@@ -503,6 +545,8 @@ for (const feature of [
     await page.setViewportSize({ width: 390, height: 750 });
     await expect(result).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.evaluate(() => window.reactUiE2E.finish("Public report with sources"));
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(4);
     await page.evaluate(() => window.reactUiE2E.finish("Here is the answer"));
     await expect(page.locator('[data-role="assistant"]').last()).toContainText("Here is the answer");
     await expect(requests).toHaveCount(0);
@@ -598,6 +642,194 @@ test("compiled chat keeps stream DOM stable, measures the composer and updates v
   expect(errors).toEqual([]);
 });
 
+for (const { label, title, hash, repeatedHeading, absolute } of [
+  { label: "unique heading", title: "TypeScript", hash: "typescript", repeatedHeading: false, absolute: false },
+  { label: "repeated heading", title: "TypeScript", hash: "typescript", repeatedHeading: true, absolute: false },
+  {
+    label: "punctuation and full URL",
+    title: "Shell & config",
+    hash: "shell--config",
+    repeatedHeading: true,
+    absolute: true,
+  },
+]) {
+  test(`chat fragment links land below the top bar in their own reply (${label})`, async ({ page }) => {
+    await open(page);
+    const input = page.getByRole("textbox", { name: "Chat message input" });
+    await input.fill("First question");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    await page.evaluate(
+      (text) => window.reactUiE2E.finish(text),
+      repeatedHeading ? `## ${title}\n\nEarlier reply.` : "Earlier reply.",
+    );
+    await expect(input).toBeEnabled();
+    await input.fill("Give me the full document");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    const href = `${absolute ? page.url().split("#")[0] : ""}#${hash}`;
+    let source =
+      `[Jump to details](${href})\n\n` +
+      "Background paragraph.\n\n".repeat(50) +
+      `## ${title}\n\n` +
+      "Supporting paragraph.\n\n".repeat(40) +
+      "End of initial chunk.\n\n";
+    await page.evaluate((text) => window.reactUiE2E.stream(text), source);
+    const reply = page.locator('[data-role="assistant"]').last();
+    const heading = reply.getByRole("heading", { name: title, exact: true });
+    await expect(heading).toHaveCount(1);
+    // Let the first received chunk finish its reveal before clicking; the response
+    // remains live, and the next chunk below verifies that navigation stays anchored.
+    await expect(reply).toContainText("End of initial chunk.");
+    const route = page.url();
+    await reply.getByRole("link", { name: "Jump to details" }).click();
+    const gap = () =>
+      heading.evaluate(
+        (element) =>
+          element.getBoundingClientRect().top -
+          document.querySelector("[data-app-topbar]")!.getBoundingClientRect().bottom,
+      );
+    await expect(heading).toBeInViewport();
+    await expect.poll(gap, { timeout: 5000 }).toBeGreaterThanOrEqual(20);
+    await expect.poll(gap).toBeLessThan(80);
+    // Streaming and a resized bar must preserve the selected passage.
+    source += "More streamed text.\n\n".repeat(20);
+    await page.evaluate((text) => window.reactUiE2E.stream(text), source);
+    await expect(reply).toContainText("More streamed text.");
+    await page.locator("[data-app-topbar]").evaluate((element) => {
+      (element as HTMLElement).style.minHeight = "100px";
+    });
+    await expect.poll(gap).toBeGreaterThanOrEqual(20);
+    await expect.poll(gap).toBeLessThan(80);
+    await page.evaluate((text) => window.reactUiE2E.finish(text), source);
+    await expect(input).toBeEnabled();
+    await expect.poll(gap).toBeGreaterThanOrEqual(20);
+    expect(page.url()).toBe(route);
+    // The normal reading gesture still releases the target.
+    await heading.hover();
+    await page.mouse.wheel(0, 450);
+    await expect(heading).not.toBeInViewport();
+    await page.getByRole("button", { name: "Latest", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
+  });
+}
+
+test("search opens the matching passage, highlights it and allows returning to latest", async ({ page }, info) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page, "?search");
+  await page.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Search chats", exact: true }).click();
+  const search = page.getByRole("textbox", { name: "Search chats", exact: true });
+  await search.fill("violet");
+  const result = page.getByRole("button", { name: "Planning notes", exact: true });
+  await expect(result.locator("mark")).toHaveText("violet");
+  await expect(result).toContainText("delivery marker");
+  expect(
+    await result
+      .locator('[id^="search-excerpt-"]')
+      .evaluate((element) => element.getBoundingClientRect().height / parseFloat(getComputedStyle(element).lineHeight)),
+  ).toBeLessThanOrEqual(3);
+  const titleWidth = await result
+    .locator("span")
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().width);
+  await result.hover();
+  expect(
+    await result
+      .locator("span")
+      .first()
+      .evaluate((element) => element.getBoundingClientRect().width),
+  ).toBe(titleWidth);
+  const menu = await page.getByRole("button", { name: "Chat options for Planning notes" }).boundingBox();
+  const title = await result.locator("span").first().boundingBox();
+  expect(Math.abs(menu!.y + menu!.height / 2 - title!.y - title!.height / 2)).toBeLessThan(3);
+  await result.click();
+  await expect(page).toHaveURL(/\/chat\/search-history\/search-answer$/);
+  const passage = page.locator('[data-message-id="search-answer"]').getByText("violet beacon", { exact: true });
+  await expect(passage).toBeInViewport();
+  const gapBelowBar = () =>
+    passage.evaluate(
+      (element) =>
+        element.getBoundingClientRect().top -
+        document.querySelector("[data-app-topbar]")!.getBoundingClientRect().bottom,
+    );
+  await expect.poll(gapBelowBar).toBeGreaterThanOrEqual(20);
+  await expect
+    .poll(() =>
+      page.evaluate(() => Array.from(CSS.highlights.get("chat-search") ?? [], (range) => (range as Range).toString())),
+    )
+    .toContain("violet");
+  await page.getByRole("button", { name: "Latest", exact: true }).click();
+  await expect(passage).not.toBeInViewport();
+  // Reopening the same result must jump again, even though its URL is unchanged.
+  await result.click();
+  await expect(passage).toBeInViewport();
+  await page.reload();
+  await expect(passage).toBeInViewport();
+  // A human message can be targeted too, within the already open conversation.
+  const searchButton = page.getByRole("button", { name: "Search chats", exact: true });
+  if ((await searchButton.boundingBox())!.x < 0) {
+    await page.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
+  }
+  await searchButton.click();
+  await search.fill("copper compass");
+  await expect(result.locator("mark")).toHaveText("copper compass");
+  await result.click();
+  await expect(page.locator('[data-message-id="search-followup"]')).toBeInViewport();
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-message-id="search-followup"]')
+        .evaluate(
+          (element) =>
+            element.getBoundingClientRect().top -
+            document.querySelector("[data-app-topbar]")!.getBoundingClientRect().bottom,
+        ),
+    )
+    .toBeGreaterThanOrEqual(20);
+  await page.screenshot({ path: info.outputPath("search-result.png") });
+  // Title-only hits retain ordinary chat navigation and clear the previous highlight.
+  await search.fill("violet");
+  await page.getByRole("button", { name: "Violet archive", exact: true }).click();
+  await expect(page).toHaveURL(/\/chat\/search-title$/);
+  await expect.poll(() => page.evaluate(() => CSS.highlights.has("chat-search"))).toBe(false);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/chat\/search-history\/search-followup$/);
+  await expect(page.locator('[data-message-id="search-followup"]')).toBeInViewport();
+  await expect
+    .poll(() =>
+      page.evaluate(() => Array.from(CSS.highlights.get("chat-search") ?? [], (range) => (range as Range).toString())),
+    )
+    .toContain("copper compass");
+  // A copied URL opens its message without relying on the original search state.
+  await page.goto("/chat/search-history/search-prompt", { waitUntil: "domcontentloaded" });
+  await expect(page.locator('[data-message-id="search-prompt"]')).toBeInViewport();
+  expect(errors).toEqual([]);
+});
+
+test("search targets stay below a resized top bar on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, "?search");
+  await page.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Search chats", exact: true }).click();
+  await page.getByRole("textbox", { name: "Search chats", exact: true }).fill("copper compass");
+  await page.getByRole("button", { name: "Planning notes", exact: true }).click();
+  const message = page.locator('[data-message-id="search-followup"]');
+  await expect(message).toBeInViewport();
+  const gap = () =>
+    message.evaluate(
+      (element) =>
+        element.getBoundingClientRect().top -
+        document.querySelector("[data-app-topbar]")!.getBoundingClientRect().bottom,
+    );
+  await expect.poll(gap).toBeGreaterThanOrEqual(20);
+  await page.locator("[data-app-topbar]").evaluate((element) => {
+    (element as HTMLElement).style.minHeight = "100px";
+  });
+  await expect.poll(gap).toBeGreaterThanOrEqual(20);
+});
+
 test("hi then long Markdown keeps the start readable; Latest follows until the reader scrolls up", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -690,4 +922,145 @@ test("hi then long Markdown keeps the start readable; Latest follows until the r
   await input.press("Enter");
   await expect.poll(promptTop).toBeCloseTo(72, 0);
   expect(errors).toEqual([]);
+});
+
+test("composer skill picker loads disabled skills with resources on follow-ups and after reload", async ({ page }) => {
+  await open(page, "?composer");
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  const suggestions = page.getByRole("listbox", { name: "Skill suggestions" });
+  await input.fill("/");
+  await expect(suggestions.getByRole("option")).toHaveCount(3);
+  await expect(suggestions.getByRole("option", { name: /draft-response/ })).toBeVisible();
+  await expect(suggestions.getByRole("option", { name: /support:escalate/ })).toBeVisible();
+  await expect(suggestions.getByRole("option", { name: /html-artifacts/ })).toHaveCount(0);
+  await input.press("Escape");
+  await expect(suggestions).toHaveCount(0);
+  await expect(input).toHaveValue("/");
+  expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(0);
+
+  await input.fill("Please /draft then reply");
+  for (let i = 0; i < " then reply".length; i++) await input.press("ArrowLeft");
+  expect(
+    await input.evaluate((el: HTMLTextAreaElement) => ({
+      start: el.selectionStart,
+      end: el.selectionEnd,
+      focused: document.activeElement === el,
+    })),
+  ).toEqual({ start: 13, end: 13, focused: true });
+  await expect(suggestions.getByRole("option", { name: /draft-response/ })).toBeVisible();
+  await input.press("Tab");
+  await expect(input).toHaveValue("Please  then reply");
+  await expect(page.getByRole("button", { name: "Remove skill draft-response" })).toBeVisible();
+  await page.getByRole("button", { name: "Remove skill draft-response" }).click();
+
+  await input.fill("/draft");
+  await input.dispatchEvent("keydown", { key: "Enter", code: "Enter", isComposing: true });
+  expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(0);
+  await expect(suggestions).toBeVisible();
+  await input.press("Enter");
+  await expect(input).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Remove skill draft-response" })).toBeVisible();
+  expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(0);
+  await input.fill("Please reply");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  const state = await page.evaluate(() => window.reactUiE2E.state());
+  expect(JSON.stringify(state.input.at(-1))).toContain("load_skill");
+  expect(state.instructions).not.toContain("Follow the customer response template.");
+  expect(await page.evaluate(() => localStorage.getItem("app_skills"))).toBeNull();
+  await page.evaluate(() => window.reactUiE2E.callTool("load_skill", { name: "draft-response" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Follow the customer response template.",
+  );
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "references/response.md",
+  );
+  await page.evaluate(() => window.reactUiE2E.finish("Reply ready"));
+  await expect(page.getByText("Reply ready", { exact: true })).toBeVisible();
+  await expect(page.getByTitle("Selected skill")).toHaveText("draft-response");
+  await input.fill("Check the reply against the checklist");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
+  await page.evaluate(() =>
+    window.reactUiE2E.callTool("read_skill_resource", { skill: "draft-response", path: "references/response.md" }),
+  );
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(4);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Follow the customer response template.",
+  );
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Response checklist: acknowledge, explain, resolve.",
+  );
+  await page.evaluate(() => window.reactUiE2E.finish("Checklist complete"));
+  await expect(page.getByText("Checklist complete", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.reactUiE2E.flush());
+  const id = new URL(page.url()).pathname.split("/").pop();
+  await page.goto(`/tests/browser/fixtures/react-ui.html?composer&chat=${id}`);
+  await input.fill("Use that checklist again");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  await page.evaluate(() =>
+    window.reactUiE2E.callTool("read_skill_resource", { skill: "draft-response", path: "references/response.md" }),
+  );
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Response checklist: acknowledge, explain, resolve.",
+  );
+  await page.evaluate(() =>
+    window.reactUiE2E.callTool("execute_script", { path: "/skills/draft-response/scripts/check.js" }),
+  );
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Selected skill script ran",
+  );
+  await page.evaluate(() => window.reactUiE2E.finish("Review complete"));
+  await expect(page.getByText("Review complete", { exact: true })).toBeVisible();
+  await page.getByTitle("Edit message", { exact: true }).first().click();
+  await page.getByRole("button", { name: "Remove skill draft-response" }).click();
+  await page.getByTitle("Save & Submit", { exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(4);
+  expect(await page.evaluate(() => window.reactUiE2E.state().instructions)).not.toContain("draft-response");
+  await expect(page.getByTitle("Selected skill")).toHaveCount(0);
+});
+
+test("composer can send only a plugin skill without enabling the plugin", async ({ page }) => {
+  await open(page, "?composer");
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("/support");
+  await page.getByRole("option", { name: /support:escalate/ }).click();
+  await expect(input).toHaveValue("");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  await page.evaluate(() => window.reactUiE2E.callTool("load_skill", { name: "support:escalate" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain(
+    "Follow the escalation procedure.",
+  );
+  expect(await page.evaluate(() => localStorage.getItem("app_tools"))).not.toContain("plugin:support");
+});
+
+test("composer can send an attachment without typed text", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await expect(input).toBeVisible();
+  await page
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles({
+      name: "attachment-only.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("A document sent without a caption."),
+    });
+  const send = page.getByRole("button", { name: "Send message", exact: true });
+  await expect(input).toHaveValue("");
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input.at(-1)))).toContain(
+    "/attachment-only.txt",
+  );
+  await page.evaluate(() => window.reactUiE2E.finish("Document received"));
+  await expect(page.getByText("Document received", { exact: true })).toBeVisible();
+  await expect(send).toHaveCount(0);
 });

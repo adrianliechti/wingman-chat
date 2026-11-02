@@ -9,13 +9,24 @@ import {
   useInteractions,
 } from "@floating-ui/react";
 import { CornerDownLeft, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/shared/lib/cn";
 import type { TextSelectionSnapshot } from "./useTextSelection";
 
+/** A one-click action offered before the edit control, such as a formatting toggle. */
+export interface SelectionAction {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  onRun: () => void;
+}
+
 interface SelectionActionPopoverProps {
   selection: TextSelectionSnapshot | null;
-  onSubmit: (instruction: string, selection: TextSelectionSnapshot) => void;
+  /** Formatting and similar actions applied to the selection directly. */
+  actions?: SelectionAction[];
+  /** Sends an instruction about the selection; without it only `actions` are offered. */
+  onSubmit?: (instruction: string, selection: TextSelectionSnapshot) => void;
   /** Called when the control is closed without sending. */
   onDismiss: () => void;
   /**
@@ -33,7 +44,13 @@ const surface =
  * a one-line instruction input. The snapshot is latched when the pill opens,
  * so focusing the input (which collapses the document selection) keeps it.
  */
-export function SelectionActionPopover({ selection, onSubmit, onDismiss, pressDocument }: SelectionActionPopoverProps) {
+export function SelectionActionPopover({
+  selection,
+  actions,
+  onSubmit,
+  onDismiss,
+  pressDocument,
+}: SelectionActionPopoverProps) {
   const [latched, setLatched] = useState<TextSelectionSnapshot | null>(null);
   const [instruction, setInstruction] = useState("");
   const active = latched ?? selection;
@@ -85,11 +102,11 @@ export function SelectionActionPopover({ selection, onSubmit, onDismiss, pressDo
     });
   }, [active, refs]);
 
-  if (!open || !active) return null;
+  if (!open || !active || (!onSubmit && !actions?.length)) return null;
 
   const submit = () => {
     const text = instruction.trim();
-    if (!text || !latched) return;
+    if (!text || !latched || !onSubmit) return;
     onSubmit(text, latched);
     setLatched(null);
     setInstruction("");
@@ -132,17 +149,38 @@ export function SelectionActionPopover({ selection, onSubmit, onDismiss, pressDo
             </button>
           </form>
         ) : (
-          <button
-            type="button"
-            // Keep the document selection: a default mousedown would collapse it.
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => selection && setLatched(selection)}
-            aria-label="Edit selection"
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-          >
-            <Sparkles size={12} className="text-violet-500" />
-            Edit
-          </button>
+          <div className="flex items-center gap-0.5">
+            {actions?.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                // Keep the selection: a default mousedown would collapse it or move focus.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={action.onRun}
+                aria-label={action.label}
+                title={action.label}
+                className="p-1.5 rounded-md text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+              >
+                {action.icon}
+              </button>
+            ))}
+            {actions?.length && onSubmit ? (
+              <span aria-hidden className="mx-0.5 h-4 w-px bg-neutral-200 dark:bg-neutral-700" />
+            ) : null}
+            {onSubmit && (
+              <button
+                type="button"
+                // Keep the document selection: a default mousedown would collapse it.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => selection && setLatched(selection)}
+                aria-label="Ask AI about selection"
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+              >
+                <Sparkles size={12} className="text-violet-500" />
+                Ask AI
+              </button>
+            )}
+          </div>
         )}
       </div>
     </FloatingPortal>

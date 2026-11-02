@@ -60,12 +60,19 @@ describe("emoji", () => {
   it("expands shortcodes and wraps every emoji sequence exactly once", () => {
     expect(spans(":smile: ok :nope:")).toEqual(["😄"]);
     expect(html(":nope:")).toBe("<p>:nope:</p>");
-    const emojis = ["😀", "❤️", "☀️", "🗺️", "👩🏽‍💻", "🏳️‍🌈", "🇨🇭", "1️⃣", "❤️‍🔥"];
+    const emojis = ["😀", "☀️", "🗺️", "👩🏽‍💻", "🏳️‍🌈", "🇨🇭", "1️⃣", "💔", "❤️‍🔥", "❤️‍🩹", "👩‍❤️‍👩"];
     expect(spans(`Hello ${emojis.join(" ")}`)).toEqual(emojis.map((value) => value.replaceAll("\uFE0F", "")));
     expect(spans("**😀** [🏁](https://x.org)")).toEqual(["😀", "🏁"]);
+    expect(html(":heart: **💚** [🩵](https://x.org) ❤")).toBe(
+      '<p><span class="emoji-swatch emoji-swatch-heart emoji-swatch-red">❤️</span> <strong><span class="emoji-swatch emoji-swatch-heart emoji-swatch-green">💚</span></strong> <a href="https://x.org"><span class="emoji-swatch emoji-swatch-heart emoji-swatch-light-blue">🩵</span></a> <span class="emoji-swatch emoji-swatch-heart emoji-swatch-red">❤</span></p>',
+    );
   });
 
   it("keeps code untouched and keeps selectors in native mode", () => {
+    const code = html(":smile: `:heart: ❤️`\n\n```text\n💚 🩷\n```");
+    expect(code).toContain("<code>:heart: ❤️</code>");
+    expect(code).toContain("💚 🩷");
+    expect(code).not.toContain("emoji-swatch");
     expect(spans(":smile: `:smile: 😀`\n\n```text\n:smile: 😀\n```")).toEqual(["😄"]);
     const native = renderHtml("❤️ ☀️", { extensions: markdownExtensions("native") });
     expect([...native.matchAll(/<span class="noto-emoji">([^<]*)<\/span>/g)].map((m) => m[1])).toEqual(["❤️", "☀️"]);

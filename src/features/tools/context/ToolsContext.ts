@@ -1,6 +1,6 @@
 import { createContext } from "react";
 import type { McpAppOptions, McpAppData } from "@/features/settings/lib/mcpAppSession";
-import type { SkillSources } from "@/features/skills/lib/skillsProvider";
+import type { SkillSources, SkillsToolProvider } from "@/features/skills/lib/skillsProvider";
 import type { ToolResultPart, UIResourcePart } from "@tanstack/ai";
 import type { ProviderState, ToolProvider } from "@/shared/types/chat";
 
@@ -18,6 +18,8 @@ export interface ToolsContextValue {
   /** Which sources the global Skills tool exposes (personal and/or catalog). */
   skillSources: SkillSources;
   setSkillSources: (sources: SkillSources) => void;
+  /** Extend automatic skills with this conversation's explicit selections. */
+  getSkillsProvider: (names: readonly string[]) => SkillsToolProvider | null;
   companionAvailable: boolean;
   companionEnabled: boolean;
   toggleCompanion: () => void;

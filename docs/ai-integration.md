@@ -28,7 +28,7 @@ frontend.
   `\( \)` math, `:shortcode:` emoji, Noto emoji spans) lives in
   `src/shared/lib/markdownExtensions.ts` as synchronous extensions; the
   streaming profile keeps unfinished constructs stable while a reply arrives.
-  KaTeX and Shiki stay lazy and outside the parser.
+  KaTeX and TanStack Highlight stay lazy and outside the parser.
 - `@tanstack/react-query` owns remote inventories: the model catalog, MCP
   availability and the skill template index. One shared `QueryClient`
   (`src/shared/lib/queryClient.ts`) serves hooks and helper calls alike, so
@@ -52,6 +52,23 @@ calls create their own thread ids. Compaction summaries use
 `<conversation-thread-id>:compaction`, separate from the history they summarize.
 
 ## Markdown compatibility
+
+Code blocks and source editor mirrors share a lazy `@tanstack/highlight@1.2.0`
+registry with all 79 shipped definitions (including plaintext). Unknown languages
+and sources over 30,000 characters stay readable as plain text. React renders
+`tokenize()` output directly, preserving source whitespace and escaping code as
+text. The built-in Markdown highlighter callback is unnecessary because our
+components own the code-block wrapper and preview controls. Theme changes use
+CSS variables, with GitHub Light and One Dark Pro; they do not retokenize code.
+There is no Shiki runtime or dependency. Markdown block editing only mutes the
+structural markers identified by Highlight; it no longer uses TextMate scopes
+to dim individual inline delimiters and link destinations.
+
+This follows Highlight's [custom-renderer API](https://tanstack.com/highlight/latest/docs/guides/output-and-css)
+and [theme API](https://tanstack.com/highlight/latest/docs/guides/themes).
+The [Markdown adapter](https://tanstack.com/markdown/latest/docs/guides/syntax-highlighting)
+is for the default Markdown-owned wrapper. Highlight is a documentation
+highlighter, so syntax coloring is less detailed than an editor grammar.
 
 TanStack remains the sole Markdown parser. Its [documented syntax scope](https://github.com/TanStack/markdown#readme)
 is a subset of CommonMark/GFM, so this migration does not claim complete parity
@@ -339,10 +356,12 @@ are validated again after resume and retain the typed `{ answered, answers }`
 result contract. Completed tool messages show readable answer summaries using
 the original question and option labels, including after reload. Skip retains
 the existing `{ answered: false, action: "decline" }` contract.
-Configured image and research confirmations use `needsApproval`, including
-approvals on research's synthetic subagent tool. Server and client share the same
-input schema so a saved approval remains bound after reload. Approval happens
-before image generation or starting research; the tool does not prompt again.
+Image confirmations and per-prompt agent tools use native approval. An MCP server
+configured with `approval: { mode: "delegated" }` is exposed to chat as one isolated agent
+tool; its card shows the read-only `prompt`, and declining lets the model propose
+another. Approval happens before starting the child; the server tools inside it require no further approval.
+Per-prompt agents use the same persistence as other native approvals. Pending approvals
+are restored on reload, and an approved prompt remains approved when its continuation resumes.
 Legacy MCP transport elicitation and realtime still use the small live-callback
 bridge because those requests cannot be resumed by replaying the tool.
 
@@ -446,9 +465,10 @@ for input. They inherit selected capabilities, attachment preparation, workspace
 access, and cancellation. Their artifact mutations
 reach parent verification. Realtime's `agent` tool uses the same one-shot runner
 and returns the final text because the voice protocol has no nested chat cards.
-Web research uses the same `defineAgent` path with its search/fetch tools and a
-content-guard middleware. It receives the model-written brief and its own resumed
-work, keeping unrelated parent history out of research requests. Search and fetch
+Per-prompt MCP agents, such as web research, use the same `defineAgent` path with
+the server's tools. They receive the human-approved prompt and their own results.
+Prompt-only children do not inherit parent history, tool-context callbacks, shared middleware,
+attachment preparation, memory or profile context. Search and fetch
 progress use native child parts during execution and ordinary child messages in
 storage and the UI, replacing the separate research runner
 and manually maintained parent status. Realtime delivers native assistant messages with tool-call/result parts and UI resources
@@ -721,7 +741,7 @@ Provider requests carry an explicitly injected `traceparent` to connect gateway
 spans to the browser operation. Classification scores include the opaque chat ID
 as `gen_ai.conversation.id` so Insights can calculate classified prompts per
 conversation. Chat IDs are not included in model-usage metrics or provider request
-headers. MCP tool spans carry `wingman.mcp.server.id` and `mcp.tool.name`.
+headers. MCP tool spans carry `wingman.mcp.server.id` and `gen_ai.tool.name`.
 
 The Go telemetry proxy stamps `wingman.telemetry.source=chat` on resource
 attributes and removes client-supplied `service.peer.name`. Insights recognizes

@@ -5,6 +5,7 @@
  */
 
 import { rasterizeSvg } from "@/shared/lib/svg";
+import { queryDuckDbWorkspace } from "@/features/artifacts/lib/duckdbWorkspace";
 import type { WorkerToMainMessage } from "./interpreterProtocol";
 import { runLlm } from "./llmCommand";
 import { runOcr } from "./ocrCommand";
@@ -41,12 +42,10 @@ export function dispatchBridgeRpc(message: WorkerToMainMessage, options: BridgeR
     case "svg-rasterize-request":
       return rasterizeSvg(message.svg, { width: message.width, height: message.height, signal: options.signal });
     case "duckdb-query-request": {
-      // SQL over the run's workspace; DuckDB and the mount load on first use.
+      // The workspace helper is shared; DuckDbRuntime loads the engine on first use.
       const chatId = options.context?.chatId;
       if (!chatId) return Promise.reject(new Error("sql: no workspace for this run"));
-      return import("@/features/artifacts/lib/duckdbWorkspace").then(({ queryDuckDbWorkspace }) =>
-        queryDuckDbWorkspace(chatId, message.sql, message.params, options.signal),
-      );
+      return queryDuckDbWorkspace(chatId, message.sql, message.params, options.signal);
     }
     default:
       return Promise.reject(new Error(`Unsupported bridge request: ${(message as { type: string }).type}`));

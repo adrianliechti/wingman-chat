@@ -10,6 +10,7 @@ import { finalText, toolResultMetadata, userMessage } from "@/shared/lib/message
 import { captureRequestContext, injectRequestContext } from "@/shared/lib/requestContext";
 import { artifactDelta, artifactDeltaFromMeta } from "@/shared/types/artifact";
 import type { Tool } from "@/shared/types/chat";
+import type { AgentIdentity } from "@/shared/types/telemetry";
 
 export function createSubagentTool(
   model: string,
@@ -36,16 +37,26 @@ export function createAgentTool(
   name: string,
   description: string,
   spec: NonNullable<Tool["subagent"]>,
-  options: { client?: Client; needsApproval?: boolean } = {},
+  options: { client?: Client; title?: string; approval?: "prompt"; agentIdentity?: AgentIdentity } = {},
 ): Tool {
+  const isolated = spec.inheritHistory === false;
+  const agentIdentity: AgentIdentity = options.agentIdentity ?? {
+    id: `builtin:${name}`,
+    name: options.title ?? name,
+    kind: "builtin",
+  };
   return {
     name,
+    telemetry: { agent: agentIdentity },
+    title: options.title,
     subagent: spec,
     description,
-    needsApproval: options.needsApproval,
+    needsApproval: !!options.approval,
+    approval: options.approval,
     inputSchema: z.strictObject({
       prompt: z
         .string()
+        .trim()
         .min(1)
         .describe(
           "A clear, self-contained task description for the agent. Include the task goal, constraints, and expected result.",
@@ -57,14 +68,15 @@ export function createAgentTool(
       parentSignal?.throwIfAborted();
       const base = typeof args.prompt === "string" ? args.prompt.trim() : "";
       const prompt = base ? (spec.brief?.(args) ?? base).trim() : "";
-      if (!prompt) {
-        return [{ type: "text", content: "Error: prompt is required" }];
-      }
+      if (!prompt) return [{ type: "text", content: "Error: prompt is required" }];
       const model = spec.model ?? ctx?.model;
-      if (options.needsApproval) {
+      if (options.approval) {
         if (!ctx?.elicit)
           return [{ type: "text", content: "This task requires confirmation, which is unavailable in this context." }];
-        const answer = await ctx.elicit({ message: `${description}\n\n${prompt}` });
+        const answer = await ctx.elicit({
+          message: `${description}\n\n${prompt}`,
+          approval: { kind: options.approval, tool: options.title ?? name, input: { prompt } },
+        });
         parentSignal?.throwIfAborted();
         if (answer.action !== "accept") return [{ type: "text", content: "Cancelled by user." }];
       }
@@ -73,7 +85,7 @@ export function createAgentTool(
         const timeout = spec.timeoutMs ? AbortSignal.timeout(spec.timeoutMs) : undefined;
         const signal = timeout && parentSignal ? AbortSignal.any([parentSignal, timeout]) : (timeout ?? parentSignal);
         signal?.throwIfAborted();
-        const direct = await spec.direct?.(args, { ...ctx, model, signal });
+        const direct = await spec.direct?.({ ...args, prompt }, { ...(isolated ? {} : ctx), model, signal });
         signal?.throwIfAborted();
         if (direct !== undefined) return [{ type: "text", content: direct }];
         if (!model) return [{ type: "text", content: "No model is available for this task." }];
@@ -86,18 +98,22 @@ export function createAgentTool(
           spec.tools,
           {
             agentName: name,
+            agentIdentity,
+            threadId: ctx?.chatId,
             middleware: spec.middleware,
             parentContext: ctx?.agentContext,
-            context: { ...ctx?.invocationContext, subagentRunId: crypto.randomUUID() },
+            context: { ...(isolated ? {} : ctx?.invocationContext), subagentRunId: crypto.randomUUID() },
             options: { signal },
             ...(spec.maxIterations ? { agentLoopStrategy: maxIterations(spec.maxIterations) } : {}),
-            createToolContext: () => ({
-              model,
-              chatId: ctx?.chatId,
-              content: ctx?.content?.bind(ctx),
-              elicit: ctx?.elicit?.bind(ctx),
-              onElicitationComplete: ctx?.onElicitationComplete?.bind(ctx),
-            }),
+            createToolContext: isolated
+              ? undefined
+              : () => ({
+                  model,
+                  chatId: ctx?.chatId,
+                  content: ctx?.content?.bind(ctx),
+                  elicit: ctx?.elicit?.bind(ctx),
+                  onElicitationComplete: ctx?.onElicitationComplete?.bind(ctx),
+                }),
             prepareMessages: (messages) => injectRequestContext(messages, requestContext),
           },
         );

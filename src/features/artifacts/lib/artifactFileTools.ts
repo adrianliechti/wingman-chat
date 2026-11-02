@@ -8,6 +8,32 @@ import type { ArtifactWorkspaceAccess, FileSystemManager } from "./fs";
 export class ArtifactReadWriteManager {
   private readonly conversations = new Map<string, Map<string, string | undefined>>();
   private readonly children = new WeakMap<AgentRunContext, Map<string, Map<string, string | undefined>>>();
+  private readonly listeners = new Set<(chatId: string) => void>();
+
+  /** Notifies `listener` with the chat id whenever the assistant reads or writes a file. */
+  subscribe(listener: (chatId: string) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private observed(chatId: string) {
+    for (const listener of this.listeners) listener(chatId);
+  }
+
+  /**
+   * Files the conversation's assistant read or wrote that changed afterwards
+   * without it: edited or restored by the user, re-uploaded, or written by a
+   * page through the bridge. Its earlier reads of them are out of date.
+   */
+  async changedSinceObserved(fs: FileSystemManager): Promise<string[]> {
+    const seen = this.conversations.get(fs.chatId);
+    if (!seen) return [];
+    const changed: string[] = [];
+    for (const [path, revision] of seen) {
+      if ((await fs.getRevision(path)) !== revision) changed.push(path);
+    }
+    return changed.sort();
+  }
 
   private session(chatId: string, context?: ToolContext): Map<string, string | undefined> {
     // Child observations live only as long as their existing invocation object.
@@ -43,6 +69,7 @@ export class ArtifactReadWriteManager {
       // observe that canonical state instead of trusting the pre-write revision.
       seen.set(mutation.path, mutation.operation === "delete" ? undefined : await this.revision(access, mutation.path));
     }
+    this.observed(chatId);
   }
 
   createTools(getFs: (context?: ToolContext) => FileSystemManager | null, options: FileToolsOptions): Tool[] {
@@ -70,8 +97,10 @@ export class ArtifactReadWriteManager {
             source.read = async (path) => {
               const file = await read(path);
               const normalized = normalizeArtifactPath(path);
-              if (normalized)
+              if (normalized) {
                 seen.set(normalized, file ? await artifactRevision(file.content, file.contentType) : undefined);
+                this.observed(fs.chatId);
+              }
               return file;
             };
           }

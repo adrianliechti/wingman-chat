@@ -14,9 +14,18 @@ import { outputText } from "@/shared/lib/messages";
 import { toolPreviewList } from "@/shared/lib/toolPreview";
 import { validateElicitationForm } from "./elicitationForm";
 
+const FORM_MAX_QUESTIONS = 3;
+const CAROUSEL_MAX_QUESTIONS = 10;
+
 export const questionsInputSchema = z
   .strictObject({
     message: z.string().describe("Optional short explanation of why the answers matter.").optional(),
+    layout: z
+      .enum(["form", "carousel"])
+      .describe(
+        `"form" (default) shows up to ${FORM_MAX_QUESTIONS} questions together. Use "carousel" only when more than ${FORM_MAX_QUESTIONS} questions are truly needed (up to ${CAROUSEL_MAX_QUESTIONS}): the user answers one at a time and reviews all answers before submitting.`,
+      )
+      .optional(),
     questions: z
       .array(
         z.strictObject({
@@ -59,10 +68,19 @@ export const questionsInputSchema = z
         }),
       )
       .min(1)
-      .max(3)
-      .describe("Ask 1–3 related questions together, preferably just one."),
+      .max(CAROUSEL_MAX_QUESTIONS)
+      .describe(
+        // JSON Schema cannot express the per-layout limit, so maxItems is the carousel cap and this states the rest.
+        `Ask 1–${FORM_MAX_QUESTIONS} related questions together, preferably just one. Only with layout "carousel" may this hold more than ${FORM_MAX_QUESTIONS} (up to ${CAROUSEL_MAX_QUESTIONS}); otherwise more than ${FORM_MAX_QUESTIONS} is rejected.`,
+      ),
   })
-  .superRefine(({ questions }, ctx) => {
+  .superRefine(({ questions, layout }, ctx) => {
+    if (layout !== "carousel" && questions.length > FORM_MAX_QUESTIONS)
+      ctx.addIssue({
+        code: "custom",
+        path: ["questions"],
+        message: `Ask at most ${FORM_MAX_QUESTIONS} questions at once, or set layout to "carousel" for up to ${CAROUSEL_MAX_QUESTIONS}.`,
+      });
     const ids = new Set<string>();
     questions.forEach((q, index) => {
       const issue = (message: string) => ctx.addIssue({ code: "custom", path: ["questions", index], message });
@@ -112,7 +130,12 @@ export function questionRequest(input: QuestionsInput): FormElicitation {
   return {
     message: input.message?.trim() || "",
     requestedSchema: { type: "object", properties, ...(required.length ? { required } : {}) },
-    presentation: { kind: "questions", fieldOrder: input.questions.map((q) => q.id), fields },
+    presentation: {
+      kind: "questions",
+      fieldOrder: input.questions.map((q) => q.id),
+      fields,
+      ...(input.layout === "carousel" ? { layout: "carousel" as const } : {}),
+    },
   };
 }
 
@@ -159,7 +182,7 @@ const escapeMarkdown = (value: string) => value.replace(/[\r\n]+/g, " ").replace
 export const ASK_QUESTIONS_TOOL: Tool = {
   name: "ask_questions",
   description:
-    "Ask 1–3 concise questions for missing information that materially changes the result. Prefer 2–4 choices with short tradeoff descriptions and, when useful, a recommended option. Users can write their own answer unless choices must be fixed. Recommendations are never preselected. Combine related questions, make routine decisions yourself, and proceed when the request is clear. Returns typed answers or a skipped/cancelled result.",
+    'Ask 1–3 concise questions for missing information that materially changes the result. Prefer 2–4 choices with short tradeoff descriptions and, when useful, a recommended option. Users can write their own answer unless choices must be fixed. Recommendations are never preselected. Combine related questions, make routine decisions yourself, and proceed when the request is clear. If more than 3 questions are truly required, set layout to "carousel" (up to 10): the user answers one at a time and reviews everything before submitting. Returns typed answers or a skipped/cancelled result.',
   inputSchema: questionsInputSchema,
   display: {
     header: (args, state) => {

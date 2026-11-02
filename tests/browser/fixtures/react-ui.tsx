@@ -6,6 +6,8 @@ import { PanelShell } from "../../../src/features/chat/components/PanelShell";
 import { storeChat } from "../../../src/features/chat/lib/chatStorage";
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
+import { saveSkill } from "../../../src/shared/lib/opfs";
+import { savePlugin } from "../../../src/features/plugins/lib/opfs-plugins";
 import type { ModelMessage, UIMessage } from "@tanstack/ai";
 import { assistantMessage, userMessage } from "../../../src/shared/lib/messages";
 import "../../../src/index.css";
@@ -78,6 +80,32 @@ if (parameters.has("panels")) {
 } else {
   const config = await loadConfig();
   if (!config) throw new Error("Missing fixture config");
+  if (parameters.has("composer")) {
+    await saveSkill({
+      id: "draft-response",
+      name: "draft-response",
+      description: "Draft a customer reply",
+      content: "Follow the customer response template.",
+      resources: [
+        { path: "references/response.md", content: "Response checklist: acknowledge, explain, resolve." },
+        { path: "scripts/check.js", content: '#!/usr/bin/env node\nconsole.log("Selected skill script ran");' },
+      ],
+    });
+    await saveSkill({
+      id: "customer-research",
+      name: "customer-research",
+      description: "Research a customer",
+      content: "Gather customer context.",
+    });
+    await savePlugin({
+      id: "support",
+      hubUrl: "https://example.test",
+      installedAt: "2026-01-01",
+      skills: [
+        { name: "escalate", description: "Escalate a support case", content: "Follow the escalation procedure." },
+      ],
+    });
+  }
   const model = {
     id: "fixture",
     name: "Fixture",
@@ -91,7 +119,7 @@ if (parameters.has("panels")) {
         name: "Web Search",
         description: "Access up-to-date information",
         url: new URL("/fixture-research-mcp", location.origin).href,
-        needsApproval: true,
+        approval: { mode: "delegated" },
       },
     ];
     // Keep the actual SDK + HTTP stream parser in the fixture, with a tool result
@@ -170,7 +198,46 @@ if (parameters.has("panels")) {
       });
     }
   }
-  history.replaceState(null, "", parameters.has("seed") ? "/chat/history-119" : "/chat");
+  if (parameters.has("search")) {
+    await storeChat({
+      id: "search-history",
+      title: "Planning notes",
+      created: new Date(),
+      updated: new Date(),
+      model,
+      messages: [
+        userMessage("Outline the plan", { id: "search-prompt" }),
+        assistantMessage(
+          `${"Background context.\n\n".repeat(50)}The delivery marker is **violet beacon** for this release.\n\n${"Supporting detail.\n\n".repeat(50)}`,
+          { id: "search-answer" },
+        ),
+        userMessage("Follow the copper compass", { id: "search-followup" }),
+        assistantMessage(
+          [
+            { type: "tool-call", id: "search-tool-1", name: "lookup", arguments: "{}", state: "complete" },
+            { type: "tool-result", toolCallId: "search-tool-1", content: "Found", state: "complete" },
+            { type: "tool-call", id: "search-tool-2", name: "lookup", arguments: "{}", state: "complete" },
+            { type: "tool-result", toolCallId: "search-tool-2", content: "Found", state: "complete" },
+          ],
+          { id: "search-tools" },
+        ),
+        assistantMessage("Later discussion.\n\n".repeat(50), { id: "search-latest" }),
+      ],
+    });
+    await storeChat({
+      id: "search-title",
+      title: "Violet archive",
+      created: new Date(),
+      updated: new Date(),
+      model,
+      messages: [userMessage("An unrelated question"), assistantMessage("An unrelated answer")],
+    });
+  }
+  history.replaceState(
+    null,
+    "",
+    parameters.has("seed") ? "/chat/history-119" : parameters.has("chat") ? `/chat/${parameters.get("chat")}` : "/chat",
+  );
   const { default: App } = await import("../../../src/App");
   root.render(
     <StrictMode>

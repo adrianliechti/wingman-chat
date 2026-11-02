@@ -2,6 +2,7 @@ import { Send, X } from "lucide-react";
 import type { TextPart } from "@tanstack/ai";
 import type { MediaPart } from "@/shared/lib/messages";
 import { ChatInputAttachments } from "./ChatInputAttachments";
+import { SelectedSkills } from "./SkillAutocomplete";
 
 type ChatMessageEditorProps = {
   editContent: string;
@@ -11,6 +12,8 @@ type ChatMessageEditorProps = {
   onRemoveAdditionalText: (index: number) => void;
   editMediaContent: MediaPart[];
   onRemoveMedia: (index: number) => void;
+  skillNames: string[];
+  onRemoveSkill: (name: string) => void;
   onCancel: () => void;
   onConfirm: () => void;
 };
@@ -23,6 +26,8 @@ export function ChatMessageEditor({
   onRemoveAdditionalText,
   editMediaContent,
   onRemoveMedia,
+  skillNames,
+  onRemoveSkill,
   onCancel,
   onConfirm,
 }: ChatMessageEditorProps) {
@@ -30,6 +35,7 @@ export function ChatMessageEditor({
     <>
       <div className="rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 wrap-break-words overflow-x-auto self-stretch">
         <div className="flex flex-col gap-2">
+          <SelectedSkills names={skillNames} onRemove={onRemoveSkill} />
           <textarea
             autoFocus
             value={editContent}

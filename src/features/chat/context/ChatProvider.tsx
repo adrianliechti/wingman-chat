@@ -15,6 +15,9 @@ import { useApp } from "@/shell/hooks/useApp";
 import { type ChatContextType } from "./ChatContext";
 
 import { ChatContextProviders } from "./ChatContextProviders";
+import { ComposerDraftProvider, useComposerDraftStore } from "./ComposerDraftProvider";
+import { composerDraftKey } from "../lib/composerDrafts";
+import { useProjects } from "@/features/projects/context/ProjectsContext";
 
 // A stored effort override only while the model still offers it, so a config
 // change never sends a level the model no longer supports.
@@ -38,6 +41,16 @@ interface ChatProviderProps {
 }
 
 export function ChatProvider({ children }: ChatProviderProps) {
+  return (
+    <ComposerDraftProvider>
+      <ChatProviderBody>{children}</ChatProviderBody>
+    </ComposerDraftProvider>
+  );
+}
+
+function ChatProviderBody({ children }: ChatProviderProps) {
+  const drafts = useComposerDraftStore();
+  const { projects, selectedProjectId, selectProject, isLoaded: projectsLoaded } = useProjects();
   const { models, selectedModel, setSelectedModel } = useModels();
   const [chatId, setChatId] = useState<string | null>(null);
   // A draft already has its native thread identity; saving its first message
@@ -54,13 +67,50 @@ export function ChatProvider({ children }: ChatProviderProps) {
     searchChats,
     selectedChat: chat,
   } = useChats(chatId);
+  const projectId = chatId ? chat?.projectId : selectedProjectId;
+  const project = projects.find((p) => p.id === projectId) ?? null;
+  const loadedChatId = chat?.id;
+  const loadedProjectId = chat?.projectId;
+  useEffect(() => {
+    if (loadedChatId && projectsLoaded)
+      selectProject(projects.some((p) => p.id === loadedProjectId) ? loadedProjectId! : null);
+  }, [loadedChatId, loadedProjectId, projects, projectsLoaded, selectProject]);
   const {
     isAvailable: artifactsEnabled,
     setFileSystem: setArtifactsFileSystem,
     setEditRequestHandler,
   } = useArtifacts();
   const { closeApp } = useApp();
-  const { currentAgent } = useAgents();
+  const { currentAgent, agents, setCurrentAgent, isLoaded: agentsLoaded = true } = useAgents();
+  const agentOwner = useRef<{ id: string; previous: string | null; restoring?: string | null } | null>(null);
+  const savedAgentId = chat?.agentId;
+  const currentAgentId = currentAgent?.id ?? null;
+  useEffect(() => {
+    if (!loadedChatId) {
+      agentOwner.current = null;
+      return;
+    }
+    if (!agentsLoaded || !setCurrentAgent) return;
+    if (agentOwner.current?.id !== loadedChatId) {
+      agentOwner.current = { id: loadedChatId, previous: currentAgentId };
+      if (savedAgentId !== undefined && savedAgentId !== currentAgentId) {
+        const agent = agents.find((a) => a.id === savedAgentId) ?? null;
+        agentOwner.current.restoring = agent?.id ?? null;
+        agentOwner.current.previous = agent?.id ?? null;
+        setCurrentAgent(agent);
+        return;
+      }
+    }
+    const owner = agentOwner.current;
+    if (owner.restoring !== undefined) {
+      if (owner.restoring !== currentAgentId) return;
+      owner.restoring = undefined;
+    }
+    if (owner.previous !== currentAgentId) {
+      owner.previous = currentAgentId;
+      updateChat(loadedChatId, () => ({ agentId: currentAgentId }), { preserveDates: true });
+    }
+  }, [loadedChatId, savedAgentId, currentAgentId, agentsLoaded, agents, setCurrentAgent, updateChat]);
   // Updated together with every setChatId so async work sees the selection immediately.
   const chatIdRef = useRef<string | null>(null);
   const selectionVersionRef = useRef(0);
@@ -116,7 +166,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     middleware: chatMiddleware,
     runtimeContext: chatRuntimeContext,
     memory: chatMemory,
-  } = useChatContext("chat", model, models);
+  } = useChatContext("chat", model, models, project);
 
   useEffect(() => {
     setInterpreterModel(model?.id ?? null);
@@ -144,12 +194,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const createChat = useCallback(async () => {
     const version = ++selectionVersionRef.current;
     const newChat = await createChatHook();
+    updateChat(newChat.id, () => ({ projectId: project?.id, agentId: currentAgentId }));
     if (version === selectionVersionRef.current) {
       chatIdRef.current = newChat.id;
       setChatId(newChat.id);
     }
     return newChat;
-  }, [createChatHook]);
+  }, [createChatHook, project, currentAgentId, updateChat]);
 
   const selectChat = useCallback(
     (id: string | null) => {
@@ -178,6 +229,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const deleteChat = useCallback(
     (id: string) => {
       deleteChatHook(id);
+      drafts.remove(composerDraftKey(id));
       if (chatId === id) {
         selectionVersionRef.current++;
         chatIdRef.current = null;
@@ -185,7 +237,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setChatId(null);
       }
     },
-    [deleteChatHook, chatId],
+    [deleteChatHook, chatId, drafts],
   );
 
   const setModel = useCallback(
@@ -234,20 +286,24 @@ export function ChatProvider({ children }: ChatProviderProps) {
     if (!model) {
       throw new Error("no model selected");
     }
+    if (!projectsLoaded) throw new Error("Projects are still loading");
 
     const existingId = chatIdRef.current;
     const selectionVersion = selectionVersionRef.current;
     let chatItem = existingId ? await loadChat(existingId) : undefined;
     if (!chatItem) {
-      chatItem = await createChatOnce(() => createChatHook(draftId));
-      chatItem = { ...chatItem, model };
+      chatItem = await createChatOnce(async () => {
+        const created = await createChatHook(draftId);
+        await drafts.transfer(composerDraftKey(null, selectedProjectId), composerDraftKey(created.id));
+        updateChat(created.id, () => ({ model, projectId: project?.id, agentId: currentAgentId }));
+        return { ...created, model, projectId: project?.id, agentId: currentAgentId };
+      });
       // Saving a new chat can outlast navigation. The caller still owns its
       // new workspace, but must not replace the user's newer selection.
       if (selectionVersion === selectionVersionRef.current) {
         chatIdRef.current = chatItem.id;
         setChatId(chatItem.id);
       }
-      updateChat(chatItem.id, () => ({ model }));
     }
 
     const fsForChat = fsRef.current?.chatId === chatItem.id ? fsRef.current : new FileSystemManager(chatItem.id);
@@ -260,7 +316,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     return { id: chatItem.id, chat: chatItem, fs: fsForChat };
-  }, [model, createChatHook, createChatOnce, draftId, updateChat, loadChat, artifactsEnabled, setArtifactsFileSystem]);
+  }, [
+    model,
+    createChatHook,
+    createChatOnce,
+    draftId,
+    updateChat,
+    loadChat,
+    artifactsEnabled,
+    setArtifactsFileSystem,
+    projectsLoaded,
+    project,
+    selectedProjectId,
+    drafts,
+    currentAgentId,
+  ]);
 
   // Public alias for features (drawer, terminal, attachment sends) that need a
   // filesystem before the user's first message — same creation path as sending.

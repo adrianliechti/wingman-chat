@@ -95,6 +95,7 @@ describe("model endpoint detection", () => {
     ["claude-opus-5-5", "completer"],
     ["gpt-6-astra", "completer"],
     ["gpt-6.1-sol", "completer"],
+    ["gpt-6.1-terra", "completer"],
     ["gpt-6-sol", "completer"],
     ["gpt-6-luna", "completer"],
     ["budget-chat", "completer"],
@@ -135,6 +136,7 @@ describe("model output budgets", () => {
   it.each([
     ["openai/gpt-6-astra", 64_000],
     ["gpt-6.1-sol", 64_000],
+    ["gpt-6.1-terra", 64_000],
     ["gpt-6-sol", 64_000],
     ["gpt-6-luna", 64_000],
     ["gpt-5.6-terra", 64_000],
@@ -252,6 +254,21 @@ describe("reasoning effort levels", () => {
     },
   );
 
+  it.each(["gpt-6.1-terra", "openai/gpt-6.1-terra", "openai.gpt-6-1-terra", "gpt-6.1-terra-2026-10-26"])(
+    "recognizes %s with disabled reasoning and the documented output capacity",
+    (id) => {
+      const [model] = configureModels([{ id, name: "GPT-6.1 Terra" }], []);
+      expect(model).toMatchObject({
+        supportedEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
+        defaultEffort: "medium",
+        maxOutputTokens: 128_000,
+      });
+      expect(minimalEffort(model)).toBe("none");
+      expect(outputTokenAllowance(model.maxOutputTokens, 256_000)).toBe(128_000);
+      expect(compactThreshold(id)).toBe(272_000);
+    },
+  );
+
   it("distinguishes Gemini revisions and never invents effort settings for non-chat or future models", () => {
     expect(supportedEfforts("gemini-4-argon")).toEqual(["low", "medium", "high"]);
     expect(defaultEffort("gemini-4-argon")).toBe("medium");
@@ -268,8 +285,10 @@ describe("reasoning effort levels", () => {
       "gpt-7",
       "gpt-5.99",
       "gpt-6.1-sol-pro",
+      "gpt-6.1-terra-pro",
       "gpt-6.1-luna",
       "gpt-6.2-sol",
+      "gpt-6.2-terra",
       "claude-opus-8",
       "qwen3-embedding-8b",
       "o3-pro",

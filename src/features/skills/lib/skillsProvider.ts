@@ -1,15 +1,16 @@
-import type { Tool as NativeTool } from "@tanstack/ai";
+import type { ChatMiddleware, Tool as NativeTool } from "@tanstack/ai";
 import { createLoadSkillTool, createResourceTool, renderCatalog, withSkills } from "@tanstack/ai-skills";
 import { FileCode2, ScrollText, Sparkles } from "lucide-react";
 import type { ParsedSkill } from "@/features/skills/lib/skillParser";
 import { loadSkillResource, type SkillTemplate } from "@/features/skills/lib/templates";
 import skillsPrompt from "@/features/skills/prompts/skills.txt?raw";
 import type { ArtifactFiles } from "@/features/tools/lib/interpreterProtocol";
-import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { artifactLanguage } from "@/shared/lib/fileTypes";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
 import { toolPreviewResource, toolPreviewText } from "@/shared/lib/toolPreview";
-import { createSkillSource } from "./skillSource";
+import { createSkillSource, skillName } from "./skillSource";
+import { annotateToolCall } from "@/shared/lib/otel";
+import { trace } from "@opentelemetry/api";
 
 /** Provider id for the app's single skills tool. */
 export const SKILLS_PROVIDER_ID = "skills";
@@ -31,6 +32,7 @@ export interface SkillSources {
 export interface SkillEntry {
   name: string;
   description: string;
+  source?: "builtin" | "personal" | "plugin";
   /** Owning plugin id, when the skill comes from an installed plugin. */
   plugin?: string;
   /** Optional environment requirements (agentskills `compatibility` frontmatter). */
@@ -56,6 +58,7 @@ export function builtinTemplateEntries(
     .map((t) => ({
       name: t.name,
       description: t.description,
+      source: "builtin" as const,
       compatibility: t.compatibility,
       resources: t.resources,
       loadContent: async () => {
@@ -73,6 +76,7 @@ export function parsedSkillEntry(skill: ParsedSkill, plugin?: string): SkillEntr
   return {
     name: skill.name,
     description: skill.description,
+    source: plugin ? "plugin" : "personal",
     ...(plugin ? { plugin } : {}),
     compatibility: skill.compatibility,
     resources: resources.length ? resources.map((r) => r.path) : undefined,
@@ -95,17 +99,46 @@ export interface SkillsProviderMeta {
   description: string;
 }
 
+export interface SkillsToolProvider extends ToolProvider {
+  /** Resource loader bound to this provider's exact skill selection. */
+  loadFiles: () => Promise<ArtifactFiles>;
+}
+
 /** Shared chat/voice tools backed by TanStack's portable skills API. */
-export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProviderMeta): ToolProvider | null {
-  if (entries.length === 0) {
-    setSkillResourceResolver(meta.id, null);
-    return null;
-  }
+export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProviderMeta): SkillsToolProvider | null {
+  if (entries.length === 0) return null;
 
   const source = createSkillSource(entries);
   const skills = source.catalog;
+  const identities = new Map(entries.map((entry) => [skillName(entry), entry]));
+  const attributes = (name: unknown, resourcePath?: unknown) => {
+    const entry = typeof name === "string" ? identities.get(name) : undefined;
+    if (!entry) return {};
+    return {
+      "gen_ai.skill.name": skillName(entry),
+      ...(typeof resourcePath === "string" && entry.resources?.includes(resourcePath)
+        ? { "gen_ai.skill.resource.name": resourcePath }
+        : {}),
+      "wingman.skill.source": entry.source ?? (entry.plugin ? "plugin" : "unknown"),
+      ...(entry.plugin ? { "wingman.plugin.id": entry.plugin } : {}),
+    };
+  };
+  const nativeSkills = withSkills(source, { maxCatalogTokens: Infinity });
+  const skillsMiddleware: ChatMiddleware = {
+    ...nativeSkills,
+    onBeforeToolCall: async (ctx, call) => {
+      const decision = await nativeSkills.onBeforeToolCall?.(ctx, call);
+      // The native middleware owns load_skill; resource tools use the execution wrapper below.
+      if (call.toolName === "load_skill") {
+        const args = call.args;
+        if (args && typeof args === "object" && "name" in args)
+          annotateToolCall(ctx, call.toolCallId, attributes(args.name));
+      }
+      return decision;
+    },
+  };
   const hasResources = entries.some((entry) => entry.resources?.length && entry.loadResource);
-  const resourceTools = hasResources ? [displaySkillTool(createResourceTool(source))] : [];
+  const resourceTools = hasResources ? [displaySkillTool(createResourceTool(source), attributes)] : [];
   const instructions = [
     skillsPrompt,
     hasResources
@@ -115,40 +148,38 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
     .filter(Boolean)
     .join("\n\n");
 
-  // The user/agent selection owns these mounts. Native source checks also guard
-  // interpreter reads, and qualified names keep plugin resources from colliding.
-  setSkillResourceResolver(
-    meta.id,
-    hasResources
-      ? async () => {
-          const files: ArtifactFiles = {};
-          for (const skill of skills) {
-            for (const path of await source.listResources(skill.name)) {
-              const content = await source.readResource(skill.name, path).catch(() => null);
-              if (content !== null) files[`/skills/${skill.name}/${path}`] = { content };
-            }
-          }
-          return files;
-        }
-      : null,
-  );
-
   return {
     ...meta,
+    loadFiles: async () => {
+      const files: ArtifactFiles = {};
+      for (const skill of skills) {
+        for (const path of await source.listResources(skill.name)) {
+          const content = await source.readResource(skill.name, path).catch(() => null);
+          if (content !== null) files[`/skills/${skill.name}/${path}`] = { content };
+        }
+      }
+      return files;
+    },
     icon: Sparkles,
     instructions: `${instructions}\n\n${renderCatalog(skills, "openai")}`,
     // Realtime has no chat middleware. Each tools request gets its own native
     // activation set, so independent voice sessions cannot suppress each other.
     get tools() {
-      return [displaySkillTool(createLoadSkillTool({ source, skills, activated: new Set() })), ...resourceTools];
+      return [
+        displaySkillTool(createLoadSkillTool({ source, skills, activated: new Set() }), attributes),
+        ...resourceTools,
+      ];
     },
     // Selection owns catalog size; keep every selected skill available.
-    chat: { tools: resourceTools, instructions, middleware: [withSkills(source, { maxCatalogTokens: Infinity })] },
+    chat: { tools: resourceTools, instructions, middleware: [skillsMiddleware] },
   };
 }
 
 /** Keep native schemas and results; adapt model guidance and the workspace's display/storage boundary. */
-function displaySkillTool(tool: NativeTool): Tool {
+function displaySkillTool(
+  tool: NativeTool,
+  attributes: (name: unknown, resourcePath?: unknown) => Record<string, string>,
+): Tool {
   const resource = tool.name === "read_skill_resource";
   return {
     name: tool.name,
@@ -157,6 +188,11 @@ function displaySkillTool(tool: NativeTool): Tool {
       : tool.description,
     inputSchema: tool.inputSchema!,
     execute: async (args, execution) => {
+      const parent = execution?.context?.agentContext;
+      if (parent)
+        trace
+          .getSpan(parent)
+          ?.setAttributes(attributes(resource ? args.skill : args.name, resource ? args.path : undefined));
       return [{ type: "text", content: JSON.stringify(await tool.execute!(args, execution)) }];
     },
     display: {

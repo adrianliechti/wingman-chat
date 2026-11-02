@@ -10,14 +10,26 @@ conversations, retrieval over your own files, and a library of reusable skills.
 ### Chat
 
 - **Multi-model chat** with configurable models, system instructions, and per-model defaults.
-- **Rich Markdown rendering** — TanStack Markdown with GitHub-style tables, task lists and footnotes, syntax highlighting (Shiki), math (KaTeX),
+- **Rich Markdown rendering** — TanStack Markdown with GitHub-style tables, task lists and footnotes, syntax highlighting (TanStack Highlight), math (KaTeX),
   Mermaid diagrams, emoji, and tables.
 - **Inline UI** — replies can embed small interactive interfaces (what-if calculators, filtered
   tables, charts, option buttons) as a validated JSON component tree with reactive state. See
   [docs/inline-ui.md](docs/inline-ui.md).
 - **Conversation management** with optional retention, automatic summarization, and history
   optimization.
+- **Chat search** shows matching excerpts and opens the first matching message with highlighted text.
+  Message links use `/chat/<chatId>/<messageId>` and retain their target across reloads;
+  title-only matches open the conversation normally.
+- **Projects** group chats with shared instructions and files. Move existing chats between projects,
+  choose an agent per conversation, and save an artifact to a project's file library for reuse.
+- **Composer drafts** retain unsent text and attachments across navigation and reloads, including
+  separate new-chat drafts for each project. Restore a sent message to the composer to reuse it.
 - **Attachments & vision** — drop in images and documents; PDF/Office files are extracted to text.
+  Attachments can be sent without accompanying text.
+- **Skill autocomplete** — type `/` to select personal or installed-plugin skills for a request, even when
+  automatic use is disabled. Studio skills stay available automatically and are hidden from this picker.
+  Selected skills use the normal loader and remain available with their bundled resources on follow-up turns.
+  Use arrow keys to navigate, Enter or Tab to select, and Escape to dismiss.
 - **Screen capture** to share what you're looking at with the model.
 
 ### Tools & Agents
@@ -255,12 +267,17 @@ PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
 ```
 
 Keep `vite-plus`, its core package and the `vite` alias at the same version, and
-pin Vitest to the version bundled with Vite+. Babel stays on 7 until React Compiler
-supports Babel 8; `npm run check:react-compiler` verifies that compatibility.
+pin Vitest to the version bundled with Vite+. React Compiler runs through the
+experimental native `oxc-transform-react` integration in `@vitejs/plugin-react`,
+targeting React 19. Keep the compiler version within the plugin's supported peer range.
+`npm run check:react-compiler` verifies memoization in the main render paths,
+defaulted props, and the `use no memo` opt-out.
 The `vite` and `vitest` overrides keep dependencies on that shared toolchain;
 local and Docker installs use `npm ci` with normal peer-dependency resolution.
 The Chevrotain override updates its pinned `lodash-es` dependency to a patched release.
 The `guarded-fetch` override keeps its pinned Undici dependency on a patched 7.x release.
+
+The Go server uses `go.yaml.in/yaml/v4`, pinned to `v4.0.0-rc.6` while v4 is in release candidate status.
 
 ### Docker
 
@@ -374,6 +391,26 @@ backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools
 `backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
 `extractor.yaml`, `renderer.yaml`, `repository.yaml`.
 
+In `drives.yaml`, the OBO `auth` fields (`issuer`, `client_id`, `client_secret`, and
+`scope`) support `$VAR` and `${VAR}` references to the Go server's environment:
+
+```yaml
+- id: onedrive
+  name: OneDrive
+  type: onedrive
+  auth:
+    issuer: https://login.microsoftonline.com/${AZURE_TENANT_ID}/v2.0
+    client_id: ${AZURE_CLIENT_ID}
+    client_secret: ${AZURE_CLIENT_SECRET}
+    scope: https://graph.microsoft.com/.default
+```
+
+Expansion uses Go's `os.ExpandEnv` after YAML parsing. Unset variables become empty
+strings; environment values are inserted once, preserving quotes, newlines, and
+dollar signs. An empty scope defaults to `https://graph.microsoft.com/.default`.
+Auth values stay on the server and are excluded from `/config.json`. Restart the
+server after changing these environment variables.
+
 Web search, page fetch, and research are gateway MCP tools. Replace `internet.yaml`
 and `INTERNET_*` settings with an entry in `tools.yaml`:
 
@@ -382,17 +419,32 @@ and `INTERNET_*` settings with an entry in `tools.yaml`:
   name: Web Search
   description: Access up-to-date information
   url: /api/v1/mcp/research
-  needsApproval: true
+  approval:
+    mode: delegated
 # Optionally expose the gateway's separate search/fetch server:
 # - id: web
 #   name: Web
-#   needsApproval: true
+#   approval:
+#     mode: individual
 ```
 
-`needsApproval: true` pauses each tool call in chat before any arguments are sent
-and shows the input for approval. Declining sends no tool request. Server-requested
-MCP elicitation remains supported independently. Calls originating in an MCP app
-are blocked for servers requiring approval; use chat to approve those calls.
+`approval.mode` controls what the user approves for each MCP entry, in `tools.yaml`,
+`tools` in `public/config.json`, or each server in a plugin's `mcp.json`:
+
+- `none` (the default when `approval` is omitted) calls tools without approval.
+- `individual` pauses each tool call before its arguments are sent. Declining sends no request.
+- `delegated` asks once per task. Chat reaches the server only through an isolated
+  agent; the user reviews its self-contained prompt. The agent receives
+  only the approved prompt and the server's results, and its tool calls need no further
+  approval. More private context requires a new approved prompt. Stop ends the
+  invocation. Prompt approvals use normal chat persistence and remain valid across
+  reloads for the same invocation. Voice mode, which calls tools directly, keeps per-call approval.
+
+Calls originating in an MCP app are blocked for servers requiring approval.
+Server-requested elicitation remains separate; isolated agents do not inherit the
+parent chat's live elicitation callbacks. Use an object such as
+`"approval": { "mode": "delegated" }` in JSON. The former `needsApproval` flag and
+string-valued `approval` settings are no longer supported.
 
 The `internet` provider retains the primary Web Search feature: globe icon, readable
 research instructions and results, and an approval request that shows exactly what
@@ -401,8 +453,8 @@ will be sent. Existing saved `internet` selections continue to work.
 Every MCP tool call requests progress. Running rows show server messages and a
 percentage when a total is supplied; servers without notifications retain the
 normal activity indicator. Tool calls allow up to 15 minutes and can be stopped.
-Search options, research orchestration, summarization, and content guards now
-belong to the gateway, whose tool schemas and instructions are discovered over MCP.
+The gateway supplies retrieval tools, summarization and content guards. Chat owns
+the reviewed prompt and isolated agent lifecycle.
 See [MCP progress](https://modelcontextprotocol.io/specification/2025-03-26/basic/utilities/progress)
 and [TanStack tool approval](https://tanstack.com/ai/latest/docs/tools/tool-approval).
 

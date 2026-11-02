@@ -22,7 +22,7 @@ import {
   type UIMessage,
 } from "@tanstack/ai";
 import type { AgentRunContext, MessageError, MessageUsage, Tool, ToolContext } from "../types/chat";
-import type { AgentContext } from "../types/telemetry";
+import type { AgentContext, AgentIdentity } from "../types/telemetry";
 import type { Client, ClientRequestOptions } from "./client";
 import { followAbortSignal } from "./abortSignals";
 import {
@@ -62,6 +62,9 @@ interface ToolCall {
 
 /** Per-turn hooks the caller can supply. All optional. */
 export interface RunHooks {
+  agentIdentity?: AgentIdentity;
+  /** Saved conversation ID for telemetry; native children derive their own thread IDs. */
+  conversationId?: string;
   /** Provider-owned native extensions, scoped by TanStack to this invocation. */
   middleware?: ChatMiddleware[];
   /** App policies instantiated for this run and each native child, with that run's cancellation. */
@@ -251,6 +254,27 @@ function withoutAbandonedCalls(messages: UIMessage[]): UIMessage[] {
   });
 }
 
+function withSubagentApprovals(messages: UIMessage[], tools: Tool[]): UIMessage[] {
+  const approvals = new Set(approvalTools(tools).map((tool) => tool.name));
+  return mapMessages(messages, (message) => {
+    const started = new Set(
+      message.parts.flatMap((part) => (part.type === "subagent" ? [part.subagent.parentToolCallId] : [])),
+    );
+    return {
+      ...message,
+      parts: message.parts.map((part) =>
+        part.type === "tool-call" && approvals.has(part.name) && started.has(part.id)
+          ? {
+              ...part,
+              state: "approval-responded",
+              approval: { id: part.approval?.id ?? part.id, needsApproval: true, approved: true },
+            }
+          : part,
+      ),
+    };
+  });
+}
+
 /** Browser-local connection stream. chat() owns every model/tool iteration. */
 export async function* streamRun(
   client: Client,
@@ -277,7 +301,11 @@ export async function* streamRun(
 
   try {
     abortController.signal.throwIfAborted();
-    const telemetry = aiTelemetry(hooks.agentName ?? "chat", hooks.parentContext);
+    const telemetry = aiTelemetry(hooks.agentName ?? "chat", hooks.parentContext, {
+      conversationId: hooks.conversationId ?? hooks.threadId,
+      agent: hooks.agentIdentity,
+      tools,
+    });
     const adapter = client.textAdapter(model, abortController.signal, telemetry.requestContext);
     let terminal: RunFinishedEvent | undefined;
     let failure: Error | undefined;
@@ -429,6 +457,7 @@ export async function* streamRun(
                 yield { type: EventType.RUN_FINISHED, runId: ctx.runId, threadId: ctx.threadId, result: direct };
               })();
             }
+            const isolated = spec.inheritHistory === false;
             const history = sidecar.apply(
               ctx.messages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
             );
@@ -439,7 +468,7 @@ export async function* streamRun(
               client,
               childModel,
               spec.instructions,
-              spec.inheritHistory === false
+              isolated
                 ? [
                     userMessage(prompt, { id: `${ctx.subagentRunId}-prompt` }),
                     // Native resume includes the parent prefix and the child's
@@ -451,21 +480,23 @@ export async function* streamRun(
               {
                 sidecar,
                 middleware: spec.middleware,
-                sharedMiddleware: hooks.sharedMiddleware,
+                sharedMiddleware: isolated ? undefined : hooks.sharedMiddleware,
                 agentName: tool.name,
+                agentIdentity: tool.telemetry?.agent,
+                conversationId: hooks.conversationId ?? hooks.threadId,
                 runId: ctx.runId,
                 threadId: ctx.threadId,
                 parentRunId: ctx.parentRunId,
                 subagentRunId: ctx.subagentRunId,
                 resume: ctx.resume,
-                context: { ...invocation, subagentRunId: ctx.subagentRunId },
+                context: { ...(isolated ? {} : invocation), subagentRunId: ctx.subagentRunId },
                 options: { signal },
                 ...(spec.maxIterations ? { agentLoopStrategy: maxIterations(spec.maxIterations) } : {}),
                 parentContext: telemetry.toolContext(childCalls.get(ctx.subagentRunId) ?? ctx.subagentRunId),
-                createToolContext: hooks.createToolContext,
+                createToolContext: isolated ? undefined : hooks.createToolContext,
                 onToolMeta: hooks.onToolMeta,
                 prepareMessages: async (messages, signal) =>
-                  hooks.prepareMessages && spec.inheritHistory !== false
+                  hooks.prepareMessages && !isolated
                     ? injectRequestContext(await hooks.prepareMessages(messages, signal), `Delegated task: ${prompt}`)
                     : injectRequestContext(messages, context),
                 onComplete: (result) => {
@@ -488,7 +519,7 @@ export async function* streamRun(
     });
     const stream = chat({
       adapter,
-      messages: hooks.resume?.length ? messages : withoutAbandonedCalls(messages),
+      messages: hooks.resume?.length ? withSubagentApprovals(messages, tools) : withoutAbandonedCalls(messages),
       systemPrompts: [instructions],
       tools: nativeTools,
       ...(agents.length ? { subagents: { agents } } : {}),

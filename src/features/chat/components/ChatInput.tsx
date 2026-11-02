@@ -22,6 +22,7 @@ import { useChatActions, useChatList, useChatModel, useChatRunState } from "@/fe
 import { chatAcceptString, useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
 import { getConfiguredModel, getSavedModel } from "@/features/chat/hooks/useModels";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
+import { useSkillAutocomplete } from "@/features/chat/hooks/useSkillAutocomplete";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { useTranscription } from "@/features/voice/hooks/useTranscription";
@@ -36,7 +37,7 @@ import { modelPresetIndex, resolveModelPresets } from "@/shared/lib/modelPresets
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
 import type { ContentPart } from "@tanstack/ai";
-import { mediaFromDataUrl, text, userMessage, type MediaPart } from "@/shared/lib/messages";
+import { mediaFromDataUrl, skillRefPart, text, userMessage, type MediaPart } from "@/shared/lib/messages";
 import type { ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -46,7 +47,11 @@ import { Tooltip } from "@/shared/ui/Tooltip";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { ChatInputAddMenu } from "./ChatInputAddMenu";
 import { ChatInputAttachments } from "./ChatInputAttachments";
+import { useComposerDraft } from "../context/ComposerDraftProvider";
+import { composerDraftKey } from "../lib/composerDrafts";
+import { useProjects } from "@/features/projects/context/ProjectsContext";
 import { formatArtifactReference } from "./chatMessageUtils";
+import { SkillAutocomplete, SelectedSkills } from "./SkillAutocomplete";
 
 async function captureScreenAttachment(
   captureFrame: () => Promise<Blob | null>,
@@ -67,6 +72,13 @@ async function captureScreenAttachment(
 }
 
 export function ChatInput() {
+  const { chatId } = useChatList();
+  const { selectedProjectId, isLoaded } = useProjects();
+  const draftKey = composerDraftKey(chatId, selectedProjectId);
+  return <ChatInputBody key={draftKey} draftKey={draftKey} projectsLoaded={isLoaded} />;
+}
+
+function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; projectsLoaded: boolean }) {
   const config = getConfig();
 
   const { sendMessage, stopStreaming, removeQueuedMessage } = useChatActions();
@@ -128,7 +140,22 @@ export function ChatInput() {
     }
   }, [isRealtimeViaToggle, voiceAvailable, isListening, startVoice]);
 
-  const [content, setContent] = useState("");
+  const {
+    draft,
+    loaded: savedDraftLoaded,
+    error: draftError,
+    sending: submitting,
+    update: updateDraft,
+    store: draftStore,
+  } = useComposerDraft(draftKey);
+  const draftLoaded = savedDraftLoaded && projectsLoaded;
+  const content = draft.content;
+  const setContent = useCallback<React.Dispatch<React.SetStateAction<string>>>(
+    (edit) => {
+      updateDraft((d) => ({ ...d, content: typeof edit === "function" ? edit(d.content) : edit }));
+    },
+    [updateDraft],
+  );
   const [transcribingContent, setTranscribingContent] = useState(false);
   const [voiceTextInput, setVoiceTextInput] = useState("");
 
@@ -149,9 +176,9 @@ export function ChatInput() {
     setExtractingAttachments,
     setPendingFiles,
     handleFiles,
-    clearAttachments,
     removeAttachment,
   } = useFileAttachments({
+    draftKey,
     visionFiles: config.vision?.files ?? [],
     artifactsAvailable,
     visionMaxFileSize: config.vision?.maxFileSize,
@@ -165,6 +192,22 @@ export function ChatInput() {
   const contentInputRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const profileName = profile?.name;
+  const setSelectedSkills = useCallback(
+    (skills: string[]) => {
+      updateDraft((draft) => ({ ...draft, skills }));
+    },
+    [updateDraft],
+  );
+  const completion = useSkillAutocomplete({
+    content,
+    setContent,
+    input: contentInputRef,
+    selections: draft.skills ?? [],
+    setSelections: setSelectedSkills,
+    enabled: !isRealtimeSelected && draftLoaded && !submitting,
+  });
+  const hasPrompt =
+    !!content.trim() || completion.selections.length > 0 || attachments.length > 0 || pendingFiles.length > 0;
 
   const randomPlaceholder = useMemo(() => {
     const personalizedVariations = [
@@ -287,57 +330,83 @@ export function ChatInput() {
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-      if (chatLoading || chatError || interruptState?.interrupts.length) return;
+      if (
+        !draftLoaded ||
+        draftStore.get(draftKey).sending ||
+        extractingAttachments.size ||
+        chatLoading ||
+        chatError ||
+        interruptState?.interrupts.length
+      )
+        return;
 
-      if (content.trim()) {
-        let finalAttachments: ContentPart[] = [...attachments];
-        let screenCaptureFile: File | null = null;
-
-        if (isContinuousCaptureActive) {
-          const capture = await captureScreenAttachment(captureFrame);
-          if (capture) {
-            finalAttachments = [capture.content, ...finalAttachments];
-            if (artifactsAvailable) screenCaptureFile = capture.file;
-          }
-        }
-
-        const messageParts: ContentPart[] = [text(content), ...finalAttachments];
-
-        // Persist pending files (and original images) to the workspace at send.
-        const toArtifacts = (list: File[]) =>
-          Promise.all(
-            list.map(async (file) => {
-              try {
-                return await processUploadedFile(file);
-              } catch (error) {
-                console.error(`Failed to process attachment ${file.name}:`, error);
-                return [];
-              }
-            }),
-          ).then((results) => results.flat());
-
-        const fileArtifacts = await toArtifacts(pendingFiles);
-        const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
-        const screenCaptureArtifacts = screenCaptureFile ? await toArtifacts([screenCaptureFile]) : [];
-        const artifacts = [...fileArtifacts, ...imageArtifacts, ...screenCaptureArtifacts];
-
-        // Reference every persisted attachment by its workspace path so the
-        // model can read/edit it by name. Images are also shown inline (vision),
-        // but the inline copy carries no filename — without this the model can't
-        // name the file it's looking at. The redundant chip is suppressed in the
-        // UI (see ChatUserMessage) since the image already renders inline.
-        const referencedPaths = artifacts.map((f) => f.path);
-        if (referencedPaths.length > 0) {
-          messageParts.push(text(formatArtifactReference(referencedPaths)));
-        }
-
-        const message = userMessage(messageParts);
-
-        void sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined).catch((error) =>
-          notify.error("Message failed", error),
+      if (hasPrompt) {
+        const unavailable = completion.selections.find(
+          (name) => !completion.skills.some((skill) => skill.name === name),
         );
-        setContent("");
-        clearAttachments();
+        if (unavailable) {
+          notify.error("Selected skill is unavailable", `Remove or reselect /${unavailable}.`);
+          return;
+        }
+        draftStore.setSending(draftKey, true);
+        try {
+          let finalAttachments: ContentPart[] = [...attachments];
+          let screenCaptureFile: File | null = null;
+
+          if (isContinuousCaptureActive) {
+            const capture = await captureScreenAttachment(captureFrame);
+            if (capture) {
+              finalAttachments = [capture.content, ...finalAttachments];
+              if (artifactsAvailable) screenCaptureFile = capture.file;
+            }
+          }
+
+          const messageParts: ContentPart[] = [text(content), ...finalAttachments];
+          messageParts.push(...completion.selections.map(skillRefPart));
+
+          // Persist pending files (and original images) to the workspace at send.
+          const toArtifacts = (list: File[]) =>
+            Promise.all(
+              list.map(async (file) => {
+                return processUploadedFile(file);
+              }),
+            ).then((results) => results.flat());
+
+          const fileArtifacts = await toArtifacts(pendingFiles);
+          const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
+          const screenCaptureArtifacts = screenCaptureFile ? await toArtifacts([screenCaptureFile]) : [];
+          const artifacts = [...fileArtifacts, ...imageArtifacts, ...screenCaptureArtifacts];
+
+          // Reference every persisted attachment by its workspace path so the
+          // model can read/edit it by name. Images are also shown inline (vision),
+          // but the inline copy carries no filename — without this the model can't
+          // name the file it's looking at. The redundant chip is suppressed in the
+          // UI (see ChatUserMessage) since the image already renders inline.
+          const referencedPaths = artifacts.map((f) => f.path);
+          if (referencedPaths.length > 0) {
+            messageParts.push(text(formatArtifactReference(referencedPaths)));
+          }
+
+          const message = userMessage(messageParts);
+
+          void sendMessage(
+            message,
+            undefined,
+            artifacts.length > 0 ? artifacts : undefined,
+            undefined,
+            (acceptedChatId) => {
+              draftStore.finishSending(draft);
+              draftStore.clearIfUnchanged(draftKey, draft);
+              draftStore.clearIfUnchanged(composerDraftKey(acceptedChatId), draft);
+            },
+          ).catch((error) => {
+            draftStore.finishSending(draft);
+            notify.error("Message failed", error);
+          });
+        } catch (error) {
+          draftStore.finishSending(draft);
+          notify.error("Message failed", error);
+        }
       }
     },
     [
@@ -352,7 +421,13 @@ export function ChatInput() {
       chatLoading,
       chatError,
       interruptState,
-      clearAttachments,
+      draftLoaded,
+      completion,
+      hasPrompt,
+      extractingAttachments.size,
+      draftStore,
+      draftKey,
+      draft,
     ],
   );
 
@@ -438,12 +513,15 @@ export function ChatInput() {
     [setPendingFiles],
   );
 
-  const handleContentChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
+  const handleContentChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
-  }, []);
+    completion.changed(e.target);
+  };
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+      if (completion.onKeyDown(e)) return;
       if (e.key === "Escape" && isResponding) {
         e.preventDefault();
         stopStreaming();
@@ -454,7 +532,7 @@ export function ChatInput() {
         void handleSubmit(e as unknown as FormEvent);
       }
     },
-    [handleSubmit, isResponding, stopStreaming],
+    [handleSubmit, isResponding, stopStreaming, completion],
   );
 
   const handleTranscriptionClick = useCallback(async () => {
@@ -482,6 +560,14 @@ export function ChatInput() {
 
   return (
     <>
+      {draftError && (
+        <p role="alert" className="mb-2 text-sm text-red-600">
+          Couldn’t load this draft.{" "}
+          <button type="button" className="underline" onClick={() => void draftStore.load(draftKey).catch(() => {})}>
+            Retry
+          </button>
+        </p>
+      )}
       {queuedSends.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2" aria-label="Queued messages">
           {queuedSends.map((item) => {
@@ -549,6 +635,13 @@ export function ChatInput() {
             </div>
           )}
 
+          {!isRealtimeSelected && (
+            <SelectedSkills
+              names={completion.selections}
+              onRemove={completion.remove}
+              disabled={!draftLoaded || submitting}
+            />
+          )}
           <div className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}>
             {isRealtimeSelected ? (
               <textarea
@@ -578,7 +671,18 @@ export function ChatInput() {
                   inputMode="text"
                   enterKeyHint="send"
                   onChange={handleContentChange}
+                  disabled={!draftLoaded || submitting}
                   onKeyDown={handleKeyDown}
+                  onSelect={(e) => completion.syncCaret(e.currentTarget)}
+                  onFocus={() => completion.setFocused(true)}
+                  onBlur={() => completion.setFocused(false)}
+                  aria-autocomplete="list"
+                  aria-controls={completion.open ? completion.listId : undefined}
+                  aria-activedescendant={
+                    completion.open && completion.options.length
+                      ? `${completion.listId}-${completion.activeIndex}`
+                      : undefined
+                  }
                   onPaste={async (e) => {
                     e.preventDefault();
 
@@ -975,11 +1079,18 @@ export function ChatInput() {
                 </>
               ) : isResponding || interruptState?.interrupts.length ? (
                 <div className="flex items-center">
-                  {content.trim() && (
+                  {hasPrompt && (
                     <button
                       className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                       type="submit"
-                      disabled={chatLoading || !!chatError || !!interruptState?.interrupts.length}
+                      disabled={
+                        !draftLoaded ||
+                        submitting ||
+                        extractingAttachments.size > 0 ||
+                        chatLoading ||
+                        !!chatError ||
+                        !!interruptState?.interrupts.length
+                      }
                       aria-label={
                         interruptState?.interrupts.length ? "Answer the pending request to continue" : "Send message"
                       }
@@ -1037,11 +1148,13 @@ export function ChatInput() {
                         </button>
                       </Tooltip>
                     ))}
-                  {isTranscribing || transcribingContent ? null : content.trim() ? (
+                  {isTranscribing || transcribingContent ? null : hasPrompt ? (
                     <button
                       className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                       type="submit"
-                      disabled={chatLoading || !!chatError}
+                      disabled={
+                        !draftLoaded || submitting || extractingAttachments.size > 0 || chatLoading || !!chatError
+                      }
                       aria-label="Send message"
                     >
                       <Send size={16} />
@@ -1083,6 +1196,7 @@ export function ChatInput() {
         </div>
       </form>
 
+      <SkillAutocomplete completion={completion} input={contentInputRef} />
       {activeDrive && (
         <DrivePicker
           isOpen={!!activeDrive}

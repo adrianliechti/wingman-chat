@@ -42,6 +42,35 @@ describe("structured question validation", () => {
   });
 });
 
+describe("carousel layout", () => {
+  const many = Array.from({ length: 5 }, (_, i) => ({ id: `q${i}`, label: `Question ${i}?`, type: "text" }));
+
+  it("rejects more than three questions unless the carousel layout is requested", () => {
+    expect(questionsInputSchema.safeParse({ questions: many }).success).toBe(false);
+    expect(questionsInputSchema.safeParse({ layout: "form", questions: many }).success).toBe(false);
+    expect(questionsInputSchema.safeParse({ layout: "carousel", questions: many }).success).toBe(true);
+    expect(questionsInputSchema.safeParse({ layout: "carousel", questions: many.slice(0, 2) }).success).toBe(true);
+    // execute() returns the first issue to the model, so it must say how to recover.
+    expect(questionsInputSchema.safeParse({ questions: many }).error?.issues[0].message).toBe(
+      'Ask at most 3 questions at once, or set layout to "carousel" for up to 10.',
+    );
+  });
+
+  it("caps the carousel at ten questions", () => {
+    const eleven = Array.from({ length: 11 }, (_, i) => ({ id: `q${i}`, label: `Question ${i}?`, type: "text" }));
+    expect(questionsInputSchema.safeParse({ layout: "carousel", questions: eleven }).success).toBe(false);
+  });
+
+  it("passes the layout to the form only when requested", () => {
+    expect(
+      questionRequest(questionsInputSchema.parse({ layout: "carousel", questions: many })).presentation?.layout,
+    ).toBe("carousel");
+    expect(questionRequest(questionsInputSchema.parse({ questions: many.slice(0, 2) })).presentation?.layout).toBe(
+      undefined,
+    );
+  });
+});
+
 const input = {
   message: "Help shape the result.",
   questions: [
@@ -88,7 +117,8 @@ it("keeps presentation hints separate from schema restrictions and never presele
 it("exports a usable JSON schema and limits the number of questions", () => {
   expect(z.toJSONSchema(questionsInputSchema)).toMatchObject({
     type: "object",
-    properties: { questions: { maxItems: 3 } },
+    // The schema allows the carousel maximum; plain forms are capped at 3 by validation.
+    properties: { questions: { maxItems: 10 }, layout: { enum: ["form", "carousel"] } },
   });
   expect(
     questionsInputSchema.safeParse({

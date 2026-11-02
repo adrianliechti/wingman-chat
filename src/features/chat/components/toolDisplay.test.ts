@@ -1,4 +1,5 @@
 import { DISCOVERY_TOOL_NAME } from "@tanstack/ai";
+import { FolderOpen } from "lucide-react";
 import { describe, expect, it } from "vitest";
 import { createFileTools, type WritableFileSource } from "@/shared/lib/file-tools";
 import { ASK_QUESTIONS_TOOL } from "@/features/chat/lib/questionsTool";
@@ -25,6 +26,16 @@ const source: WritableFileSource = {
   move: async () => false,
 };
 const tools = createFileTools(source, { namespace: "artifacts" });
+it.each(["project_read", "project_grep", "project_glob", "project_copy"])(
+  "keeps a project icon for saved %s calls without an active provider",
+  (name) => {
+    for (const state of [{}, { running: true }, { error: true }]) {
+      const header = resolveToolHeader(undefined, name, '{"path":"/report.txt","pattern":"revenue"}', state);
+      expect(header.Icon).toBe(FolderOpen);
+      expect(header.label.toLowerCase()).toContain("project");
+    }
+  },
+);
 const tool = (operation: string) => tools.find((item) => item.name === `artifacts_${operation}`)!;
 
 it("resolves provider questions before the built-in fallback, preserving their display and approval definition", () => {

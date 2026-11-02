@@ -5,12 +5,56 @@ import { inlineSkill, withSkills } from "@tanstack/ai-skills";
 import type { ToolContext } from "@/shared/types/chat";
 import { assistantMessage, mediaFromDataUrl, text } from "@/shared/lib/messages";
 import { testClient } from "@/shared/lib/test-support/ai";
-import { createSubagentTool } from "./subagent";
+import { createAgentTool, createSubagentTool } from "./subagent";
 
 const state = vi.hoisted(() => ({ complete: vi.fn() }));
 vi.mock("@/shared/config", () => ({ getConfig: () => ({ client: testClient(state.complete) }) }));
 
 describe("subagent invocation identity", () => {
+  it("runs the approved brief without exposing parent callbacks in direct isolated execution", async () => {
+    const content = vi.fn(() => []);
+    const elicit = vi.fn().mockResolvedValue({ action: "accept", content: {} });
+    let child: ToolContext | undefined;
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(toolCallMessage([{ id: "inspect", name: "inspect", arguments: "{}" }]))
+      .mockResolvedValueOnce(assistantMessage("Public findings"));
+    const tool = createAgentTool(
+      "research",
+      "Research",
+      {
+        model: "model",
+        inheritHistory: false,
+        instructions: "Static research instructions",
+        tools: [
+          {
+            name: "inspect",
+            description: "Inspect",
+            inputSchema: z.strictObject({}),
+            execute: async (_args, execution) => {
+              child = execution?.context;
+              return [{ type: "text", content: "Public evidence" }];
+            },
+          },
+        ],
+      },
+      { client: testClient(complete), approval: "prompt" },
+    );
+    await tool.execute(
+      { prompt: "Approved public brief" },
+      { context: { content, elicit, chatId: "PRIVATE_CHAT" }, emitCustomEvent() {} },
+    );
+    expect(elicit).toHaveBeenCalledOnce();
+    expect(complete).toHaveBeenCalledTimes(2);
+    for (const [request] of complete.mock.calls) {
+      expect(JSON.stringify(request.messages)).toContain("Approved public brief");
+    }
+    expect(child).not.toHaveProperty("content");
+    expect(child).not.toHaveProperty("elicit");
+    expect(child?.chatId).toBeUndefined();
+    expect(content).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     state.complete.mockReset();
     state.complete.mockResolvedValueOnce(toolCallMessage([{ id: "inspect-call", name: "inspect", arguments: "{}" }]));

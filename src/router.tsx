@@ -73,6 +73,12 @@ const chatIdRoute = createRoute({
   component: ChatPage,
 });
 
+const chatMessageRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/chat/$chatId/$messageId",
+  component: ChatPage,
+});
+
 const translateRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/translate",
@@ -100,7 +106,7 @@ const oauthCallbackRoute = createRoute({
 
 // Build route tree
 const routeTree = rootRoute.addChildren([
-  appLayoutRoute.addChildren([indexRoute, chatRoute, chatIdRoute, translateRoute, canvasRoute]),
+  appLayoutRoute.addChildren([indexRoute, chatRoute, chatIdRoute, chatMessageRoute, translateRoute, canvasRoute]),
   oauthLayoutRoute.addChildren([oauthCallbackRoute]),
 ]);
 

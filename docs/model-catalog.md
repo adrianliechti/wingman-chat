@@ -101,6 +101,12 @@ own supported efforts instead of inheriting a vendor profile.
   for tool calling, with a 128,000-token output capacity (reviewed September 30,
   2026). The existing 272,000-token compaction budget stays below its higher
   long-input pricing tier.
+- [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra)
+  (reviewed October 26, 2026): none, low, medium (default), high, xhigh, max;
+  no minimal. Tool calling requires the Responses API. It has a 1,050,000-token
+  context window and 128,000-token output capacity. Wingman uses its existing
+  272,000-token compaction budget at the long-input pricing boundary and offers
+  a medium-effort slider preset when the backend exposes the model.
 - [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) and
   [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna): none, low,
   medium, high, xhigh, max; medium default. Both use the Responses API for tool
@@ -204,12 +210,13 @@ configured; such an override cannot be clamped until the deployment supplies a
 capacity.
 
 Examples of documented capacities (reviewed September 23, 2026; Haiku 5.5 added
-October 8, 2026):
+October 8, 2026; GPT-6.1 Terra added October 26, 2026):
 
 | Model                                                                                                                            | Capacity | Default chat budget |
 | -------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
 | [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)                                                         | 128,000  | 64,000              |
 | [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)                                                         | 128,000  | 64,000              |
+| [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra)                                                     | 128,000  | 64,000              |
 | [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol)                                                             | 128,000  | 64,000              |
 | [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)                                                           | 128,000  | 64,000              |
 | [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5)                                                                     | 128,000  | 64,000              |

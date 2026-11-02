@@ -2,7 +2,6 @@ import type { ChatMiddleware, UIMessage } from "@tanstack/ai";
 import type { RunSidecar } from "@/shared/lib/agent";
 import { isUserPrompt, toolResultMetadata } from "@/shared/lib/messages";
 import { artifactDeltaFromMeta, updateArtifactPaths } from "@/shared/types/artifact";
-import { verifyArtifacts } from "./artifact-verifier";
 import type { FileSystemManager } from "./fs";
 
 /** Verification feeds the next native model turn; repairs are ordinary tool calls. */
@@ -41,6 +40,8 @@ export function artifactVerification(
         feedback = "";
         if (paths.size) {
           try {
+            const { verifyArtifacts } = await import("./artifact-verifier");
+            ctx.signal?.throwIfAborted();
             const checks = await verifyArtifacts(fs, paths, ctx.signal);
             ctx.signal?.throwIfAborted();
             const findings = checks.filter((item) => item.status !== "pass");

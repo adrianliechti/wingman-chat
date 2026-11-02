@@ -16,6 +16,7 @@ import { loadConfig } from "../../../src/shared/config";
 import { DuckDbRuntime } from "../../../src/shared/lib/duckdb";
 import type { File } from "../../../src/shared/types/file";
 import { AppContext, type AppContextType } from "../../../src/shell/context/AppContext";
+import { AppToaster } from "../../../src/shell/components/AppToaster";
 import { ThemeProvider } from "../../../src/shell/context/ThemeProvider";
 import { isContentPart, type ContentPart } from "@tanstack/ai";
 import type { Tool } from "../../../src/shared/types/chat";
@@ -172,6 +173,7 @@ createRoot(document.getElementById("root")!).render(
               <ArtifactsProvider>
                 <ChatProvider>
                   <Fixture />
+                  <AppToaster />
                 </ChatProvider>
               </ArtifactsProvider>
             </AppContext>

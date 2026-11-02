@@ -192,7 +192,7 @@ function patchNetwork(): void {
 
     if (isRemote(url)) throw new TypeError(NETWORK_DISABLED);
     // data:/blob: URLs never hit the network — serve them with the native fetch.
-    if (isLocalScheme(url) && nativeFetch) return nativeFetch(input as RequestInfo, init as RequestInit);
+    if (isLocalScheme(url) && nativeFetch) return nativeFetch(url, init as RequestInit);
 
     const key = normalizePath(url);
     const entry = key ? currentVfs?.get(key) : undefined;

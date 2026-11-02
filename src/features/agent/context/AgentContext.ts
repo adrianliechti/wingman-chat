@@ -4,6 +4,7 @@ import type { RepositoryFile } from "@/features/repository/types/repository";
 
 export interface AgentContextType {
   agents: Agent[];
+  isLoaded?: boolean;
   currentAgent: Agent | null;
   createAgent: (name: string, initialData?: Partial<Omit<Agent, "id" | "name">>) => Promise<Agent>;
   updateAgent: (id: string, updates: Partial<Omit<Agent, "id">>) => void;

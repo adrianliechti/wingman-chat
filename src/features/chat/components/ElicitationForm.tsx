@@ -58,24 +58,101 @@ export function ElicitationForm({
   const fields = [...new Set([...fieldOrder, ...Object.keys(schema.properties)])]
     .filter((name) => Object.hasOwn(schema.properties, name))
     .map((name) => [name, schema.properties[name]] as const);
+  const carousel = questions && elicitation.presentation?.layout === "carousel" && fields.length > 1;
+  // step === fields.length is the review step.
+  const [step, setStep] = useState(0);
+  // Set when the person jumped here from the review step, so finishing the edit returns to it.
+  const [fromReview, setFromReview] = useState(false);
+  const reviewing = carousel && step === fields.length;
+  const go = (to: number) => {
+    setStep(to);
+    if (to === fields.length) setFromReview(false);
+  };
+  const advance = () => go(fromReview ? fields.length : step + 1);
+  const shownStep = useRef(0);
+  // Hidden questions drop out of the accessibility tree, so move focus (and the announcement) with the step.
+  useEffect(() => {
+    if (!carousel || shownStep.current === step) return;
+    shownStep.current = step;
+    if (focusError.current) return;
+    if (reviewing) {
+      const title = document.getElementById(`${id}-title`);
+      title?.setAttribute("tabindex", "-1");
+      title?.focus();
+      return;
+    }
+    const scope = form.current?.querySelector(`[data-step="${step}"]`);
+    const target =
+      scope?.querySelector<HTMLElement>("input:checked") ??
+      scope?.querySelector<HTMLElement>("input, textarea, select");
+    target?.focus();
+  }, [step]);
   useEffect(() => {
     if (focusError.current) {
       form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
       focusError.current = false;
     }
   }, [errors]);
+
+  const clearError = (name: string) =>
+    setErrors((current) => {
+      if (!Object.hasOwn(current, name)) return current;
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
+  // Validates only the question on screen, so later questions never block moving forward.
+  const goNext = () => {
+    const [name, field] = fields[step];
+    const result = validateElicitationForm(
+      { ...schema, properties: { [name]: field }, required: schema.required?.filter((key) => key === name) },
+      values,
+    );
+    focusError.current = !!result.errors;
+    // Only this question's error is replaced; errors held for other questions stay.
+    setErrors((current) => {
+      const { [name]: _replaced, ...others } = current;
+      return { ...others, ...result.errors };
+    });
+    if (!result.errors) advance();
+  };
+  const answerText = (name: string, field: ElicitationPrimitiveSchema): string | undefined => {
+    const value = values[name];
+    const options = elicitation.presentation?.fields[name]?.options;
+    const label = (item: string) => options?.find((option) => option.value === item)?.label ?? item;
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (Array.isArray(value)) return value.length ? value.map(label).join(", ") : undefined;
+    if (typeof value === "string" && value.trim()) {
+      return isSingleSelectSchema(field) && !options
+        ? (getSingleSelectOptions(field).find((option) => option.value === value)?.label ?? value)
+        : label(value.trim());
+    }
+    return undefined;
+  };
   return (
     <form
       ref={form}
       noValidate
       aria-labelledby={`${id}-title`}
       className={requestCardClass}
+      onKeyDown={(event) => {
+        if (carousel && event.key === "Enter" && event.repeat && event.target instanceof HTMLInputElement)
+          event.preventDefault();
+      }}
       onSubmit={(event) => {
         event.preventDefault();
+        if (carousel && !reviewing) {
+          goNext();
+          return;
+        }
         const result = validateElicitationForm(schema, values);
         focusError.current = !!result.errors;
         setErrors(result.errors ?? {});
-        if (!result.errors) onResolve({ action: "accept", content: result.content });
+        if (result.errors) {
+          // Take the person back to the first question that needs attention.
+          const first = fields.findIndex(([name]) => result.errors && Object.hasOwn(result.errors, name));
+          if (carousel && first >= 0) go(first);
+        } else onResolve({ action: "accept", content: result.content });
       }}
     >
       <div className={requestBodyClass}>
@@ -83,13 +160,45 @@ export function ElicitationForm({
           id={`${id}-title`}
           source={questions ? undefined : (elicitation.source ?? getToolDisplayName(toolName))}
           title={
-            questions
-              ? fields.length === 1
-                ? "A quick question"
-                : "A few quick questions"
-              : "A few details to continue"
+            carousel
+              ? reviewing
+                ? "Review your answers"
+                : `Question ${step + 1} of ${fields.length}`
+              : questions
+                ? fields.length === 1
+                  ? "A quick question"
+                  : "A few quick questions"
+                : "A few details to continue"
           }
         />
+        {carousel && (
+          <div
+            className="flex gap-1"
+            role="progressbar"
+            aria-label="Progress"
+            aria-valuemin={1}
+            aria-valuemax={fields.length}
+            aria-valuenow={Math.min(step + 1, fields.length)}
+            aria-valuetext={reviewing ? "Review your answers" : `Question ${step + 1} of ${fields.length}`}
+          >
+            {Array.from({ length: fields.length + 1 }, (_, index) => (
+              <span
+                key={index}
+                className={cn(
+                  "h-1 flex-1 rounded-full",
+                  index <= step ? "bg-neutral-500 dark:bg-neutral-300" : "bg-neutral-200 dark:bg-neutral-700",
+                )}
+              />
+            ))}
+          </div>
+        )}
+        {carousel && (
+          <p className="sr-only" role="status">
+            {reviewing
+              ? "Review your answers"
+              : `Question ${step + 1} of ${fields.length}: ${fields[step][1].title || startCase(fields[step][0])}`}
+          </p>
+        )}
         {elicitation.message && (
           <div className="text-xs text-neutral-500 dark:text-neutral-400">
             <Markdown compact>{elicitation.message}</Markdown>
@@ -97,35 +206,88 @@ export function ElicitationForm({
         )}
         <div className="space-y-5">
           {fields.map(([name, field], index) => (
-            <ElicitationField
-              key={name}
-              id={`${id}-${index}`}
-              label={field.title || startCase(name)}
-              schema={field}
-              presentation={elicitation.presentation?.fields[name]}
-              question={questions}
-              required={schema.required?.includes(name) ?? false}
-              value={values[name]}
-              error={Object.hasOwn(errors, name) ? errors[name] : undefined}
-              onChange={(value) => {
-                setValues((current) => ({ ...current, [name]: value }));
-                setErrors((current) => {
-                  if (!Object.hasOwn(current, name)) return current;
-                  const next = { ...current };
-                  delete next[name];
-                  return next;
-                });
-              }}
-            />
+            // Hidden rather than unmounted, so typed text survives Back/Next.
+            <div key={name} data-step={index} hidden={!!carousel && step !== index}>
+              <ElicitationField
+                id={`${id}-${index}`}
+                label={field.title || startCase(name)}
+                schema={field}
+                presentation={elicitation.presentation?.fields[name]}
+                question={questions}
+                required={schema.required?.includes(name) ?? false}
+                value={values[name]}
+                error={Object.hasOwn(errors, name) ? errors[name] : undefined}
+                onChange={(value) => {
+                  setValues((current) => ({ ...current, [name]: value }));
+                  clearError(name);
+                }}
+                // Picking a single option (not typing a custom answer) moves on by itself.
+                onPick={carousel && index === step ? advance : undefined}
+              />
+            </div>
           ))}
+          {reviewing && (
+            <ul className="space-y-3">
+              {fields.map(([name, field], index) => {
+                const answer = answerText(name, field);
+                return (
+                  <li key={name} className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400">{field.title || startCase(name)}</p>
+                      <p
+                        className={cn(
+                          "text-sm break-words",
+                          answer ? "text-neutral-800 dark:text-neutral-200" : "text-neutral-400 italic",
+                        )}
+                      >
+                        {answer ?? "Skipped"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className={quietButton}
+                      aria-label={`Edit answer for ${field.title || startCase(name)}`}
+                      onClick={() => {
+                        setFromReview(true);
+                        setStep(index);
+                      }}
+                    >
+                      Edit
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       </div>
       <div className={requestActionsClass}>
-        <button type="submit" className={primaryRequestButtonClass}>
-          {questions ? "Continue" : "Submit"}
+        <button
+          // A fresh node per phase, so a quick second click on "Review" cannot land on "Submit".
+          key={carousel ? (reviewing ? "submit" : "next") : "continue"}
+          type="submit"
+          className={cn(primaryRequestButtonClass, carousel && "min-w-20")}
+          // Ignore the repeat of a double-click or a held Enter; it would skip a question or the review.
+          onClick={(event) => carousel && event.detail > 1 && event.preventDefault()}
+          onKeyDown={(event) => carousel && event.repeat && event.preventDefault()}
+        >
+          {carousel
+            ? reviewing
+              ? "Submit"
+              : step === fields.length - 1 || fromReview
+                ? "Review"
+                : "Next"
+            : questions
+              ? "Continue"
+              : "Submit"}
         </button>
+        {carousel && (
+          <button type="button" className={requestButtonClass} disabled={step === 0} onClick={() => go(step - 1)}>
+            Back
+          </button>
+        )}
         <button type="button" className={requestButtonClass} onClick={() => onResolve({ action: "decline" })}>
-          {questions ? "Skip" : "Decline"}
+          {carousel ? "Skip all" : questions ? "Skip" : "Decline"}
         </button>
         {!questions && (
           <button type="button" className={quietRequestButtonClass} onClick={() => onResolve({ action: "cancel" })}>
@@ -147,6 +309,7 @@ function ElicitationField({
   value,
   error,
   onChange,
+  onPick,
 }: {
   id: string;
   label: string;
@@ -157,6 +320,8 @@ function ElicitationField({
   value: ElicitationDraftValue;
   error?: string;
   onChange: (value: ElicitationDraftValue) => void;
+  /** Called after a single option is clicked or tapped (never for keys, typed text or multi-select). */
+  onPick?: () => void;
 }) {
   const describedBy =
     [schema.description && `${id}-description`, error && `${id}-error`].filter(Boolean).join(" ") || undefined;
@@ -210,6 +375,7 @@ function ElicitationField({
           required={required}
           value={boolean ? (typeof value === "boolean" ? String(value) : "") : value}
           onChange={(next) => onChange(boolean ? (next === "" ? undefined : next === "true") : next)}
+          onPick={onPick}
           validation={validation}
         />
         {errorMessage}
@@ -265,6 +431,7 @@ function QuestionChoices({
   required,
   value,
   onChange,
+  onPick,
   validation,
 }: {
   id: string;
@@ -277,10 +444,14 @@ function QuestionChoices({
   required: boolean;
   value: ElicitationDraftValue;
   onChange: (value: ElicitationDraftValue) => void;
+  onPick?: () => void;
   validation: { "aria-invalid": boolean; "aria-describedby"?: string; "aria-errormessage"?: string };
 }) {
   const [customMode, setCustomMode] = useState(false);
   const [customText, setCustomText] = useState("");
+  // Only a real mouse/touch press may auto-advance: arrow keys also "select" a radio, and
+  // advancing then would hide the group before the later options can be reached.
+  const pressed = useRef(false);
   const selected = Array.isArray(value) ? value.filter((v) => options.some((option) => option.value === v)) : [];
   const combine = (selected: string[], custom: string) => [
     ...new Set([...selected, ...(custom.trim() ? [custom.trim()] : [])]),
@@ -306,7 +477,11 @@ function QuestionChoices({
           ))}
         </select>
       ) : (
-        <div className={cn("grid gap-2", horizontal && "grid-cols-2")}>
+        <div
+          className={cn("grid gap-2", horizontal && "grid-cols-2")}
+          onMouseDown={(event) => (pressed.current = event.detail === 1)}
+          onKeyDown={() => (pressed.current = false)}
+        >
           {options.map((option, index) => (
             <ChoiceControl
               key={option.value}
@@ -322,9 +497,20 @@ function QuestionChoices({
                   .join(" ") || undefined
               }
               aria-required={!multiple && required}
+              onClick={(event) => {
+                if (onPick && event.detail > 1) {
+                  event.preventDefault();
+                  return;
+                }
+                // Also fires for a re-click on the selected option, which has no change event.
+                if (!multiple && pressed.current) onPick?.();
+                pressed.current = false;
+              }}
               checked={multiple ? selected.includes(option.value) : !customMode && value === option.value}
               className="w-full items-start has-focus-visible:ring-2 has-focus-visible:ring-neutral-400/40 [&>input]:mt-0.5"
               onChange={(event) => {
+                // React also queues change for a cancelled radio/checkbox click.
+                if (event.nativeEvent.defaultPrevented) return;
                 if (multiple)
                   onChange(
                     combine(

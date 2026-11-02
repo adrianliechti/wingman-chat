@@ -418,6 +418,28 @@ describe("coordinated artifact tools", () => {
     expect(executor.mock.calls[1][0].path).toBeUndefined();
   });
 
+  it("uses this run's skill resources even when another chat changes the automatic mounts", async () => {
+    const path = "/skills/manual/scripts/check.py";
+    setSkillResourceResolver("fs-test-skills", async () => ({ [path]: { content: "other chat" } }));
+    const executor = vi.fn<SandboxExecutor>(async (request) => ({ success: true, output: request.code }));
+    const result = await executeArtifactCode({
+      fs: new FileSystemManager("manual-skills"),
+      executor,
+      args: { path },
+      extension: "py",
+      context: { skillFiles: async () => ({ [path]: { content: "this chat" } }) },
+    });
+    expect(result.output).toBe("this chat");
+    const withoutSkills = await executeArtifactCode({
+      fs: new FileSystemManager("no-skills"),
+      executor,
+      args: { path },
+      extension: "py",
+      context: { skillFiles: async () => ({}) },
+    });
+    expect(withoutSkills.success).toBe(false);
+  });
+
   it("rejects a stale batch without changing any target, then accepts a reread and own subsequent edits", async () => {
     const fs = new FileSystemManager("freshness");
     const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
@@ -438,6 +460,26 @@ describe("coordinated artifact tools", () => {
     expect(files.get("/a.txt")?.content).toBe("A externally changed");
     await invoke("artifacts_edit", { edits: [{ path: "/a.txt", old_string: "A", new_string: "again" }] });
     expect(files.get("/a.txt")?.content).toBe("again externally changed");
+  });
+
+  it("reports files that changed after the assistant read them until it reads them again", async () => {
+    const fs = new FileSystemManager("changed-since");
+    const manager = new ArtifactReadWriteManager();
+    const notified: string[] = [];
+    manager.subscribe((chatId) => notified.push(chatId));
+    const tools = manager.createTools(() => fs, { namespace: "artifacts" });
+    const read = (path: string) =>
+      tools.find((tool) => tool.name === "artifacts_read")!.execute({ path }, { context: {}, emitCustomEvent() {} });
+    expect(await manager.changedSinceObserved(fs)).toEqual([]);
+
+    await read("/a.txt");
+    await read("/b.txt");
+    expect(notified).toEqual(["changed-since", "changed-since"]);
+    await fs.createFile("/a.txt", "alpha edited", undefined, { origin: { actor: "user", reason: "edit" } });
+    expect(await manager.changedSinceObserved(fs)).toEqual(["/a.txt"]);
+
+    await read("/a.txt");
+    expect(await manager.changedSinceObserved(fs)).toEqual([]);
   });
 
   it("keeps delayed tool calls in the originating chat after navigation, including draft-chat calls", async () => {

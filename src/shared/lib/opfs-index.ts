@@ -3,7 +3,7 @@ import { parseSkillFile } from "@/features/skills/lib/skillParser";
 import { type IndexEntry, listDirectories, listFiles, readJson, readText, writeJson } from "./opfs-core";
 import { withPersistenceLock } from "./persistence";
 
-export const STORAGE_COLLECTIONS = ["agents", "chats", "images", "skills"] as const;
+export const STORAGE_COLLECTIONS = ["agents", "chats", "images", "skills", "projects"] as const;
 
 /** Collections whose listing can be derived from their folders. */
 const REBUILDABLE_COLLECTIONS: readonly string[] = [...STORAGE_COLLECTIONS, "plugins"];
@@ -91,6 +91,19 @@ export async function scanFolderIndex(collection: string, previous: IndexEntry[]
         }
         if (!meta) continue;
         entries.set(id, { id, title: meta.name, updated: prior?.updated ?? epoch });
+      } else if (collection === "projects") {
+        const record = await readRecord<{ name: string; created: string; updated: string }>(`${path}/project.json`);
+        if (!record.ok) {
+          if (prior) entries.set(id, prior);
+          continue;
+        }
+        if (!record.value) continue;
+        entries.set(id, {
+          id,
+          title: record.value.name,
+          created: record.value.created,
+          updated: record.value.updated || epoch,
+        });
       } else if (collection === "skills") {
         const md = await readText(`${path}/SKILL.md`);
         if (!md || !parseSkillFile(md).success) continue;
@@ -125,6 +138,7 @@ export async function scanFolderIndex(collection: string, previous: IndexEntry[]
           title: meta.title,
           customTitle: meta.customTitle,
           customIndex: meta.customIndex,
+          projectId: meta.projectId,
           created: meta.created,
           updated: meta.updated || meta.created || prior?.updated || epoch,
         });
@@ -146,6 +160,7 @@ export async function scanFolderIndex(collection: string, previous: IndexEntry[]
           title: meta.title,
           customTitle: meta.customTitle,
           customIndex: meta.customIndex,
+          projectId: meta.projectId,
           created: meta.created,
           updated: meta.updated || meta.created || epoch,
         });

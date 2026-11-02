@@ -1,4 +1,8 @@
-import { useMemo } from "react";
+import { useContext, useMemo } from "react";
+import { useProjects } from "@/features/projects/context/ProjectsContext";
+import { createProjectTools, projectInstructions } from "@/features/projects/lib/projectTools";
+import type { Project } from "@/features/projects/lib/projects";
+import { ChatConversationContext } from "../context/ChatContext";
 import type { ChatMiddleware } from "@tanstack/ai";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { getMemoryManager, type MemoryManager } from "@/features/agent/lib/memoryManager";
@@ -18,18 +22,23 @@ import { ASK_QUESTIONS_TOOL } from "../lib/questionsTool";
 import { useImageTool } from "./useImageTool";
 
 export interface ChatContext {
-  tools: () => Tool[];
-  instructions: () => string;
+  tools: (skills?: ToolProvider | null) => Tool[];
+  instructions: (skills?: ToolProvider | null) => string;
   runtimeContext: () => string;
   memory: () => MemoryManager | undefined;
-  middleware: () => ChatMiddleware[];
+  middleware: (skills?: ToolProvider | null) => ChatMiddleware[];
 }
 
 export function useChatContext(
   mode: "voice" | "chat" = "chat",
   model?: Model | null,
   models: Model[] = [],
+  projectOverride?: Project | null,
 ): ChatContext {
+  const { projects } = useProjects();
+  const conversation = useContext(ChatConversationContext);
+  const project =
+    projectOverride === undefined ? projects.find((p) => p.id === conversation?.chat?.projectId) : projectOverride;
   const { generateInstructions } = useProfile();
   const { providers, coreProviders, getProviderState } = useToolsContext();
 
@@ -42,9 +51,10 @@ export function useChatContext(
   const { currentAgent } = useAgents();
 
   const context = useMemo<ChatContext>(() => {
-    const getFilteredProviders = () => {
+    const getFilteredProviders = (skills?: ToolProvider | null) => {
       // Start with base providers (includes agent repo, skills, bridges, and conditionally enabled built-in tools)
       let filteredProviders = providers.filter((p: ToolProvider) => getProviderState(p.id) === ProviderState.Connected);
+      if (skills) filteredProviders = [...filteredProviders.filter((p) => p.id !== skills.id), skills];
 
       // Add the artifacts provider whenever the feature is available (the
       // provider is null otherwise). It may already be present if explicitly
@@ -77,6 +87,13 @@ export function useChatContext(
       // Core providers (e.g. Skill Builder) are always available and exempt from
       // model tool allow/deny lists, so append them after all filtering.
       filteredProviders = [...filteredProviders, ...coreProviders];
+      if (project)
+        filteredProviders.push({
+          id: "project",
+          name: project.name,
+          instructions: projectInstructions(project),
+          tools: createProjectTools(project, !!artifactsProvider),
+        });
 
       return filteredProviders;
     };
@@ -97,9 +114,9 @@ export function useChatContext(
 
     return {
       memory,
-      middleware: () => (mode === "chat" ? chatMiddleware(getFilteredProviders()) : []),
-      tools: () => {
-        const filteredProviders = getFilteredProviders();
+      middleware: (skills) => (mode === "chat" ? chatMiddleware(getFilteredProviders(skills)) : []),
+      tools: (skills) => {
+        const filteredProviders = getFilteredProviders(skills);
 
         // Extract tools from filtered providers
         const toolsArrays = filteredProviders.map(
@@ -150,8 +167,8 @@ export function useChatContext(
         ];
       },
 
-      instructions: () => {
-        const filteredProviders = getFilteredProviders();
+      instructions: (skills) => {
+        const filteredProviders = getFilteredProviders(skills);
         const profileInstructions = generateInstructions();
 
         const instructionsList: string[] = [];
@@ -209,6 +226,7 @@ export function useChatContext(
     artifactsProvider,
     imageTool,
     currentAgent,
+    project,
   ]);
 
   return context;

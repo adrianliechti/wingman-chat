@@ -54,7 +54,10 @@ export function useMcpClients(servers: readonly McpServerDefinition[], desired: 
         definition.description,
         definition.headers,
         definition.icon,
-        definition.needsApproval,
+        definition.approval,
+        definition.source === "plugin" && definition.ownerId?.startsWith("plugin:")
+          ? definition.ownerId.slice("plugin:".length)
+          : undefined,
       );
       const entry: Entry = { definition, client, state: ProviderState.Disconnected };
       entries.current.set(id, entry);

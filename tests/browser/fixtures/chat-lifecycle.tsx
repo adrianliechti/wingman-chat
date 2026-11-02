@@ -196,7 +196,7 @@ function Fixture() {
     },
     readHeld: () => !!releaseRead,
     releaseRead: () => releaseRead?.(),
-    search: async (query: string) => [...(await chat.searchChats(query, new AbortController().signal))],
+    search: async (query: string) => [...(await chat.searchChats(query, new AbortController().signal)).keys()],
     ask: (id: string) => {
       void chat
         .requestElicitation(id, "fixture", { message: id, requestedSchema: { type: "object", properties: {} } })
@@ -275,7 +275,7 @@ const mcpServers: McpServerDefinition[] = new URLSearchParams(location.search).h
         name: "Web Search",
         description: "Access up-to-date information",
         url: new URL("/fixture-mcp", location.origin).href,
-        needsApproval: true,
+        approval: { mode: "individual" },
       },
     ]
   : [];

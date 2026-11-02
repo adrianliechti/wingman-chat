@@ -5,7 +5,7 @@ export interface TextSelectionSnapshot {
   text: string;
   /** First line box of the selection, in the top-level viewport's coordinates. */
   rect: { top: number; left: number; width: number; height: number };
-  /** 1-based lines when the root renders one `span.line` per source line (code views). */
+  /** 1-based source lines, when the view knows them (source editors). */
   lines?: { start: number; end: number };
 }
 
@@ -50,24 +50,6 @@ function isFormControl(element: Element | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || (element as HTMLElement).isContentEditable;
 }
 
-/** Map a range onto shiki's `span.line` elements when the root renders code. */
-function lineRange(container: Element | null, range: Range): TextSelectionSnapshot["lines"] {
-  const lines = container?.querySelectorAll("code > span.line");
-  if (!lines?.length) return undefined;
-  const indexOf = (node: Node) => {
-    const element = node instanceof Element ? node : node.parentElement;
-    const line = element?.closest("span.line");
-    return line ? Array.prototype.indexOf.call(lines, line) : -1;
-  };
-  const start = indexOf(range.startContainer);
-  if (start < 0) return undefined;
-  let end = indexOf(range.endContainer);
-  if (end < 0) end = start;
-  // A selection that stops at the very start of the next line does not include it.
-  if (end > start && range.endOffset === 0) end -= 1;
-  return { start: start + 1, end: Math.max(start, end) + 1 };
-}
-
 function snapshot(context: SelectionContext): TextSelectionSnapshot | null {
   const selection = context.win.getSelection();
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
@@ -87,11 +69,7 @@ function snapshot(context: SelectionContext): TextSelectionSnapshot | null {
     top += frame.top;
     left += frame.left;
   }
-  return {
-    text,
-    rect: { top, left, width: rect.width, height: rect.height },
-    lines: lineRange(context.container, range),
-  };
+  return { text, rect: { top, left, width: rect.width, height: rect.height } };
 }
 
 /**
