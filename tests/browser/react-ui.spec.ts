@@ -346,6 +346,24 @@ test("Canvas generates into the filmstrip, develops on the GPU and keeps the rec
   await expect(exposure).toBeEnabled();
   await expect(stage).toBeVisible();
 
+  // Crop mode shows the whole picture with a frame; Done applies the crop.
+  const size = () => stage.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]);
+  await page.getByRole("tab", { name: "Crop" }).click();
+  await expect(page.getByRole("button", { name: "Move crop" })).toBeVisible();
+  await page.getByRole("radio", { name: "1:1", exact: true }).click();
+  await expect.poll(size).toEqual([384, 256]);
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(size).toEqual([256, 256]);
+  await page.keyboard.press("c");
+  await page.getByRole("button", { name: "Rotate right" }).click();
+  await expect.poll(size).toEqual([256, 384]);
+  await page.keyboard.press("Escape");
+  await expect.poll(size).toEqual([256, 256]);
+  await page.getByRole("tab", { name: "Crop" }).click();
+  await page.getByRole("button", { name: "Reset crop and rotation" }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(size).toEqual([384, 256]);
+
   await page.getByRole("button", { name: "Show original" }).click();
   await expect(page.getByText("Original", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Export" }).click();

@@ -125,6 +125,53 @@ export function fitAspect(crop: Crop, ratio: number): Crop {
 }
 
 /**
+ * Turn the picture a quarter turn (+1 clockwise, -1 counter-clockwise). The
+ * crop is re-expressed in the turned canvas so the framing only rotates.
+ */
+export function rotateGeometry(geometry: Geometry, direction: 1 | -1): Geometry {
+  const c = cropBounds(geometry.crop);
+  const cropped = geometry.crop.width > 0 && geometry.crop.height > 0;
+  const crop =
+    direction > 0
+      ? { x: 1 - c.y - c.height, y: c.x, width: c.height, height: c.width }
+      : { x: c.y, y: 1 - c.x - c.width, width: c.height, height: c.width };
+  return {
+    ...geometry,
+    rotation: (geometry.rotation + direction + 4) % 4,
+    flipH: geometry.flipV,
+    flipV: geometry.flipH,
+    crop: cropped ? { ...crop, x: Math.max(0, crop.x), y: Math.max(0, crop.y) } : NO_CROP,
+  };
+}
+
+/** Mirror the picture; the crop mirrors with it and the straighten angle flips sign. */
+export function flipGeometry(geometry: Geometry, axis: "horizontal" | "vertical"): Geometry {
+  const c = cropBounds(geometry.crop);
+  const cropped = geometry.crop.width > 0 && geometry.crop.height > 0;
+  if (axis === "horizontal") {
+    return {
+      ...geometry,
+      flipH: !geometry.flipH,
+      angle: -geometry.angle,
+      crop: cropped ? { ...c, x: Math.max(0, 1 - c.x - c.width) } : NO_CROP,
+    };
+  }
+  return {
+    ...geometry,
+    flipV: !geometry.flipV,
+    angle: -geometry.angle,
+    crop: cropped ? { ...c, y: Math.max(0, 1 - c.y - c.height) } : NO_CROP,
+  };
+}
+
+/** Width / height of the crop in canvas pixels. */
+export function cropPixelRatio(geometry: Geometry, width: number, height: number): number {
+  const [cw, ch] = canvasSize(geometry, width, height);
+  const c = cropBounds(geometry.crop);
+  return (c.width * cw) / (c.height * ch);
+}
+
+/**
  * The largest centered crop with the given canvas-space ratio (0 keeps the
  * current ratio) that stays inside a canvas straightened by `angle` degrees.
  * `ratio` is width / height of the crop in canvas pixels; the canvas is

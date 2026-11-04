@@ -1,8 +1,21 @@
-import { Download, Eye, Palette, PanelRight, PlusIcon, Redo2, RotateCcw, Sparkles, Sun, Undo2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Crop,
+  Download,
+  Eye,
+  Palette,
+  PanelRight,
+  PlusIcon,
+  Redo2,
+  RotateCcw,
+  Sparkles,
+  Sun,
+  Undo2,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEditor } from "../hooks/useEditor";
 import { useRenderer } from "../hooks/useRenderer";
 import { EXPORT_FORMATS, exportFilename, type ExportFormat, renderExport } from "../lib/exportImage";
+import { canvasSize, GEOMETRY, isDefaultGeometry, NO_CROP } from "../lib/geometry";
 import { type Adjustments, recipeEquals, resetDevelop } from "../lib/recipe";
 import type { Image } from "../types/canvas";
 import { cn } from "@/shared/lib/cn";
@@ -11,7 +24,9 @@ import { decodeDataURL, downloadBlob } from "@/shared/lib/utils";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { Inspector, InspectorAction, type InspectorTab, type InspectorTabMeta } from "./Inspector";
+import { CropOverlay } from "./overlays/CropOverlay";
 import { ColorPanel } from "./panels/ColorPanel";
+import { type AspectPreset, CropPanel, presetRatio } from "./panels/CropPanel";
 import { EffectsPanel } from "./panels/EffectsPanel";
 import { LightPanel } from "./panels/LightPanel";
 import { Stage } from "./Stage";
@@ -20,6 +35,7 @@ const TABS: InspectorTabMeta[] = [
   { id: "light", label: "Light", icon: <Sun size={16} /> },
   { id: "color", label: "Color", icon: <Palette size={16} /> },
   { id: "effects", label: "Effects", icon: <Sparkles size={16} /> },
+  { id: "crop", label: "Crop", icon: <Crop size={16} /> },
 ];
 
 export const NAV_BUTTON_CLASS =
@@ -57,12 +73,22 @@ export function Editor({ image, updateImage, compact, onNew }: EditorProps) {
   const [compare, setCompare] = useState(false);
   const [holdOriginal, setHoldOriginal] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [aspect, setAspect] = useState<{ preset: AspectPreset; swapped: boolean }>({ preset: "free", swapped: false });
   const showOriginal = compare || holdOriginal;
   const editable = renderer.status === "ready";
+  const cropping = tab === "crop" && panelOpen;
+
+  // Crop mode shows the whole (turned, straightened) picture with the frame on top.
+  const displayed = useMemo<Adjustments>(
+    () => (cropping ? { ...editor.recipe, geometry: { ...editor.recipe.geometry, crop: NO_CROP } } : editor.recipe),
+    [cropping, editor.recipe],
+  );
+  const source: [number, number] = [renderer.size.width || image.width || 3, renderer.size.height || image.height || 2];
+  const [cw, ch] = canvasSize(editor.recipe.geometry, source[0], source[1]);
 
   useEffect(() => {
-    renderer.draw(editor.recipe, { original: showOriginal });
-  }, [renderer, editor.recipe, showOriginal]);
+    renderer.draw(displayed, { original: showOriginal });
+  }, [renderer, displayed, showOriginal]);
 
   const exportAs = useCallback(
     (format: ExportFormat) => {
@@ -73,6 +99,11 @@ export function Editor({ image, updateImage, compact, onNew }: EditorProps) {
     },
     [image, editor.recipe],
   );
+
+  const openTab = useCallback((next: InspectorTab) => {
+    setTab(next);
+    setPanelOpen(true);
+  }, []);
 
   useEffect(() => {
     setRightActions(
@@ -124,7 +155,8 @@ export function Editor({ image, updateImage, compact, onNew }: EditorProps) {
     return () => setRightActions(null);
   }, [setRightActions, onNew, compare, editable, exporting, exportAs, panelOpen]);
 
-  // Shortcuts: ⌘Z / ⇧⌘Z for the recipe, hold "\" to peek at the original.
+  // Shortcuts: ⌘Z / ⇧⌘Z for the recipe, hold "\" to peek at the original,
+  // C toggles crop mode and Escape leaves it.
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) return;
@@ -135,6 +167,12 @@ export function Editor({ image, updateImage, compact, onNew }: EditorProps) {
       } else if (event.key === "\\" && !event.repeat) {
         event.preventDefault();
         setHoldOriginal(true);
+      } else if (event.key.toLowerCase() === "c" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        if (cropping) setTab("light");
+        else openTab("crop");
+      } else if (event.key === "Escape" && cropping) {
+        setTab("light");
       }
     };
     const up = (event: KeyboardEvent) => {
@@ -149,7 +187,7 @@ export function Editor({ image, updateImage, compact, onNew }: EditorProps) {
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
     };
-  }, [editor]);
+  }, [editor, cropping, openTab]);
 
   const actions = (
     <>
@@ -159,13 +197,26 @@ export function Editor({ image, updateImage, compact, onNew }: EditorProps) {
       <InspectorAction label="Redo" onClick={editor.redo} disabled={!editor.canRedo}>
         <Redo2 size={14} />
       </InspectorAction>
-      <InspectorAction
-        label="Reset adjustments"
-        onClick={() => editor.apply(resetDevelop(editor.recipe))}
-        disabled={recipeEquals(editor.recipe, resetDevelop(editor.recipe))}
-      >
-        <RotateCcw size={14} />
-      </InspectorAction>
+      {tab === "crop" ? (
+        <InspectorAction
+          label="Reset crop and rotation"
+          onClick={() => {
+            setAspect({ preset: "free", swapped: false });
+            editor.apply((recipe) => ({ ...recipe, geometry: GEOMETRY }));
+          }}
+          disabled={isDefaultGeometry(editor.recipe.geometry)}
+        >
+          <RotateCcw size={14} />
+        </InspectorAction>
+      ) : (
+        <InspectorAction
+          label="Reset adjustments"
+          onClick={() => editor.apply(resetDevelop(editor.recipe))}
+          disabled={recipeEquals(editor.recipe, resetDevelop(editor.recipe))}
+        >
+          <RotateCcw size={14} />
+        </InspectorAction>
+      )}
     </>
   );
 
@@ -174,17 +225,37 @@ export function Editor({ image, updateImage, compact, onNew }: EditorProps) {
       <Stage
         canvasRef={canvasRef}
         renderer={renderer}
-        recipe={editor.recipe}
+        recipe={displayed}
         fallbackSrc={image.data}
         alt={image.title || image.prompt || "Image"}
-        badge={showOriginal ? "Original" : undefined}
+        badge={showOriginal ? "Original" : cropping ? "Crop" : undefined}
         className="p-4"
-      />
+      >
+        {cropping && editable && (
+          <CropOverlay
+            crop={editor.recipe.geometry.crop}
+            ratio={presetRatio(aspect.preset, aspect.swapped, cw, ch)}
+            onChange={(crop) => editor.change((recipe) => ({ ...recipe, geometry: { ...recipe.geometry, crop } }))}
+            onCommit={editor.commit}
+          />
+        )}
+      </Stage>
       {panelOpen && (
         <Inspector tabs={TABS} tab={tab} onTab={setTab} compact={compact} actions={actions}>
           {tab === "light" && <LightPanel editor={editor} disabled={!editable} />}
           {tab === "color" && <ColorPanel editor={editor} disabled={!editable} />}
           {tab === "effects" && <EffectsPanel editor={editor} disabled={!editable} />}
+          {tab === "crop" && (
+            <CropPanel
+              editor={editor}
+              source={source}
+              preset={aspect.preset}
+              swapped={aspect.swapped}
+              onPreset={(preset, swapped) => setAspect({ preset, swapped })}
+              onDone={() => setTab("light")}
+              disabled={!editable}
+            />
+          )}
         </Inspector>
       )}
     </div>
