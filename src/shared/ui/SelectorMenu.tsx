@@ -11,7 +11,7 @@ interface SelectorMenuProps {
   label: string;
   options: SelectorMenuOption[];
   onSelect: (value: string) => void;
-  anchor?: "bottom" | "bottom start";
+  anchor?: "bottom" | "bottom start" | "top" | "top start";
   variant?: "pill" | "text";
   scrollable?: boolean;
 }

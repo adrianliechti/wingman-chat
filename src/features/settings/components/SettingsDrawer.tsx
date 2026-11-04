@@ -114,6 +114,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     agents: false,
     profile: false,
     images: false,
+    translations: false,
     skills: false,
     plugins: false,
     projects: false,
@@ -277,7 +278,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     if (
       !(await confirm({
         title: "Rebuild indexes?",
-        message: "This rescans chats, agents, images, and skills. It may take a moment.",
+        message: "This rescans chats, agents, images, translations, and skills. It may take a moment.",
       }))
     ) {
       return;
@@ -288,7 +289,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
       const result = await rebuildAllIndexes();
       notify.success(
         "Indexes rebuilt",
-        `${result.chats} chats, ${result.projects} projects, ${result.agents} agents, ${result.images} images, ${result.skills} skills.`,
+        `${result.chats} chats, ${result.projects} projects, ${result.agents} agents, ${result.images} images, ${result.translations} translations, ${result.skills} skills.`,
       );
       await loadStorageInfo();
     } catch (error) {
@@ -305,6 +306,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
       ...(backupSelection.agents ? ["agents"] : []),
       ...(backupSelection.profile ? ["profile.json"] : []),
       ...(backupSelection.images ? ["images"] : []),
+      ...(backupSelection.translations ? ["translations"] : []),
       ...(backupSelection.skills ? ["skills"] : []),
       ...(backupSelection.plugins ? ["plugins"] : []),
     ];
@@ -366,10 +368,14 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   const chatStorageSize = storageSizeFor("chats/");
   const agentStorageSize = storageSizeFor("agents/");
   const imageStorageSize = storageSizeFor("images/");
+  const translationStorageSize = storageSizeFor("translations/");
   const skillStorageSize = storageSizeFor("skills/");
   const pluginStorageSize = storageSizeFor("plugins/");
   const imageCount = storageInfo.entries.filter(
     (entry) => entry.path.startsWith("images/") && entry.path.endsWith("/metadata.json"),
+  ).length;
+  const translationCount = storageInfo.entries.filter(
+    (entry) => entry.path.startsWith("translations/") && entry.path.endsWith("/metadata.json"),
   ).length;
   const skillCount = storageInfo.entries.filter(
     (entry) => entry.path.startsWith("skills/") && entry.path.endsWith("/SKILL.md"),
@@ -857,6 +863,30 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                     <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
                                       <span className="flex items-baseline gap-2">
                                         <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                                          Translations
+                                        </span>
+                                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                          {translationCount} translation{translationCount === 1 ? "" : "s"}
+                                        </span>
+                                      </span>
+                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                        {storageInfo.isLoading ? "…" : formatBytes(translationStorageSize)}
+                                      </span>
+                                      <input
+                                        type="checkbox"
+                                        checked={backupSelection.translations}
+                                        onChange={(event) =>
+                                          setBackupSelection((selection) => ({
+                                            ...selection,
+                                            translations: event.target.checked,
+                                          }))
+                                        }
+                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
+                                      />
+                                    </label>
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
+                                      <span className="flex items-baseline gap-2">
+                                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
                                           Skills
                                         </span>
                                         <span className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -914,6 +944,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                         !backupSelection.agents &&
                                         !backupSelection.profile &&
                                         !backupSelection.images &&
+                                        !backupSelection.translations &&
                                         !backupSelection.skills &&
                                         !backupSelection.plugins)
                                     }

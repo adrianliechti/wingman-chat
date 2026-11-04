@@ -961,18 +961,30 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
   it("preserves replacement tokens in custom rewrite instructions", async () => {
     const instruction = "Keep the regex replacement tokens $&, $`, $', and $$ verbatim.";
     fetchMock.mockResolvedValueOnce(finished(response([textItem('{"rewrittenText":"Rewritten"}')])));
-    expect(await new Client().rewriteText("model", "Original", "en", undefined, undefined, instruction)).toBe(
+    expect(await new Client().rewriteText("model", "Original", { lang: "en", instruction, source: "$1 & $2" })).toBe(
       "Rewritten",
     );
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(request.instructions).toContain(instruction);
-    expect(request.instructions).not.toContain("{finalInstructions}");
+    expect(request.instructions).toContain("<source>\n$1 & $2\n</source>");
+    expect(request.instructions).toContain("translation into English");
+    expect(request.instructions).not.toContain("{instructions}");
   });
 
   it("preserves regional spelling returned by the rewrite model", async () => {
     const rewrittenText = "Die Straße führt zum großen Gebäude.";
     fetchMock.mockResolvedValueOnce(finished(response([textItem(JSON.stringify({ rewrittenText }))])));
-    expect(await new Client().rewriteText("model", "Eine Straße", "de-DE")).toBe(rewrittenText);
+    expect(await new Client().rewriteText("model", "Eine Straße", { lang: "de-DE", formality: "formal" })).toBe(
+      rewrittenText,
+    );
+    const request = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(request.instructions).toContain("German (Germany)");
+    expect(request.instructions).toContain("polite form of address");
+  });
+
+  it("returns the text untouched when no revision is requested", async () => {
+    expect(await new Client().rewriteText("model", "Unchanged", { lang: "de" })).toBe("Unchanged");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("stops an in-flight stream on cancellation", async () => {

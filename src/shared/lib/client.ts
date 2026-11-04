@@ -6,7 +6,7 @@ import { z } from "zod";
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
 import instructionsRewriteSelection from "@/features/chat/prompts/rewrite-selection.txt?raw";
-import instructionsRewriteText from "@/features/chat/prompts/rewrite-text.txt?raw";
+import instructionsRewriteText from "@/features/translate/prompts/rewrite-text.txt?raw";
 import instructionsTitleChat from "@/features/chat/prompts/chat-title.txt?raw";
 import { sanitizeForClassification } from "@/features/chat/lib/chatHistory";
 import {
@@ -101,6 +101,59 @@ export interface ImageRenderOptions {
 export interface ClientRequestOptions {
   signal?: AbortSignal;
   parentContext?: AgentContext;
+}
+
+export interface RewriteOptions {
+  /** Target language code; the model is told its name. */
+  lang?: string;
+  /** "formal" | "informal": the register of address. */
+  formality?: string;
+  /** "plain" | "professional" | "natural" | "technical". */
+  style?: string;
+  /** Free instruction; overrides the presets where they conflict. */
+  instruction?: string;
+  /** The untranslated original, as a fidelity reference. */
+  source?: string;
+}
+
+// Each option says what to change and what to leave alone, so a formality and a
+// style combine without conflicting and never justify adding content.
+const FORMALITY_INSTRUCTIONS: Record<string, string> = {
+  formal:
+    "Formal register: use the polite form of address where {language} has one (for example Sie, vous, usted, Lei, formal Japanese), full forms instead of contractions, no slang; courteous without being stiff.",
+  informal:
+    "Informal register: use the familiar form of address where {language} has one (for example du, tu, tú), contractions and everyday wording; relaxed but still correct.",
+};
+
+const STYLE_INSTRUCTIONS: Record<string, string> = {
+  plain:
+    "Plain language: short sentences, common words, one idea per sentence, active voice; spell out jargon and abbreviations; keep every fact.",
+  professional:
+    "Professional writing: precise, courteous and concise, with the standard phrasing of business correspondence in {language}; no colloquialisms, no filler.",
+  natural:
+    "Idiomatic: make it read as if written by a native speaker of {language}; restructure sentences that still follow the source language's word order or idioms.",
+  technical:
+    "Technical and legal precision: keep terminology, sentence structure and formatting exactly; prefer literal wording over paraphrase and translate each term consistently.",
+};
+
+/** English name of a language tag ("de-CH" → "German (Switzerland)"); the tag itself when unknown. */
+function languageLabel(code: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "language" }).of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+/** A gateway endpoint answered with an error status; `status` lets callers react to specific ones. */
+export class HttpError extends Error {
+  readonly status: number;
+
+  constructor(path: string, status: number, detail = "") {
+    super(`${path} failed with status ${status}${detail ? `: ${detail}` : ""}`);
+    this.name = "HttpError";
+    this.status = status;
+  }
 }
 
 export interface ParseOptions extends ClientRequestOptions {
@@ -383,12 +436,18 @@ export class Client {
     return { vector, model: resolvedModel };
   }
 
+  /**
+   * Translate text or a file. A file comes back as a translated document of the
+   * same type, or as text when `accept` asks for `text/plain` (translators that
+   * only read documents answer 406 to a document request; see `HttpError`).
+   */
   async translate(
     model: string,
     lang: string,
     input: string | Blob,
-    requestOptions: ClientRequestOptions = {},
+    requestOptions: ClientRequestOptions & { accept?: string } = {},
   ): Promise<string | Blob> {
+    const { accept, ...options } = requestOptions;
     const data = new FormData();
     // An empty model lets the platform pick its default translator.
     if (model) data.append("model", model);
@@ -397,9 +456,10 @@ export class Client {
 
     if (input instanceof Blob) {
       data.append("file", input);
-      headers.Accept = input.type || "application/octet-stream";
+      headers.Accept = accept ?? (input.type || "application/octet-stream");
     } else {
       data.append("text", input);
+      if (accept) headers.Accept = accept;
     }
 
     return this.postRaw<string | Blob>(
@@ -413,48 +473,43 @@ export class Client {
         return resp.blob();
       },
       headers,
-      90_000,
-      requestOptions,
+      // Whole documents take longer than a paragraph of text.
+      input instanceof Blob ? 300_000 : 90_000,
+      options,
     );
   }
 
+  /**
+   * Revise translated text: a formality (register of address), a style, and/or
+   * a free instruction. `source` is the untranslated original, given to the
+   * model as a fidelity reference only. Nothing requested returns the text as is.
+   */
   async rewriteText(
     model: string,
     text: string,
-    lang?: string,
-    tone?: string,
-    style?: string,
-    userPrompt?: string,
+    options: RewriteOptions = {},
     requestOptions: ClientRequestOptions = {},
   ): Promise<string> {
     requestOptions.signal?.throwIfAborted();
     if (!text.trim()) return text;
-
-    const tones: Record<string, string> = {
-      enthusiastic: "Use an enthusiastic and energetic tone.",
-      friendly: "Use a warm and friendly tone.",
-      confident: "Use a confident and assertive tone.",
-      diplomatic: "Use a diplomatic and tactful tone.",
-    };
-    const styles: Record<string, string> = {
-      simple: "Use simple and clear language.",
-      business: "Use professional business language.",
-      academic: "Use formal academic language.",
-      casual: "Use casual and informal language.",
-    };
-
-    const parts = [tone && tones[tone], style && styles[style]].filter(Boolean);
-    if (userPrompt?.trim()) parts.push(`Custom instruction: ${userPrompt.trim()}`);
-    const finalInstructions = parts.length > 0 ? parts.join(" ") : "Maintain the original tone and style";
-    const languageInstruction = lang
-      ? `Ensure the text is in ${lang} language${lang !== "en" ? ", translating if necessary" : ""}.`
-      : "Maintain the original language of the text.";
+    const language = options.lang ? languageLabel(options.lang) : "the text's language";
+    const parts = [
+      options.formality && FORMALITY_INSTRUCTIONS[options.formality]?.replaceAll("{language}", language),
+      options.style && STYLE_INSTRUCTIONS[options.style]?.replaceAll("{language}", language),
+      options.instruction?.trim() &&
+        `Instruction from the user, which takes precedence where it conflicts with the above: ${options.instruction.trim()}`,
+    ].filter((part): part is string => !!part);
+    if (parts.length === 0) return text;
+    const reference = options.source?.trim()
+      ? `The source text it translates, for fidelity only; do not translate it again:\n<source>\n${options.source.trim()}\n</source>`
+      : "No source text is available; judge fidelity from the translation itself.";
 
     const result = await this.parse(
       model,
       instructionsRewriteText
-        .replace("{languageInstruction}", () => languageInstruction)
-        .replace("{finalInstructions}", () => finalInstructions),
+        .replaceAll("{language}", () => language)
+        .replace("{reference}", () => reference)
+        .replace("{instructions}", () => parts.map((part) => `- ${part}`).join("\n")),
       text,
       z.object({ rewrittenText: z.string() }).strict(),
       "rewrite_text",
@@ -661,7 +716,7 @@ export class Client {
       if (!resp.ok) {
         const detail = await readErrorBody(resp);
         signal.throwIfAborted();
-        throw new Error(`${path} failed with status ${resp.status}${detail ? `: ${detail}` : ""}`);
+        throw new HttpError(path, resp.status, detail);
       }
       // Fetch resolves at headers. Keep cancellation and the deadline connected
       // until the body has finished, including failed response bodies.
