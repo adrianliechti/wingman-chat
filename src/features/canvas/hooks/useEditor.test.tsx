@@ -21,8 +21,8 @@ const image: Image = {
   recipe: DEFAULTS,
 };
 
-function Harness() {
-  editor = useEditor(image, update);
+function Harness({ source = image }: { source?: Image }) {
+  editor = useEditor(source, update);
   return null;
 }
 
@@ -95,4 +95,54 @@ it("undoes an unfinished edit and invalidates redo after a new committed change"
   expect(editor.recipe.exposure).toBe(3);
   await act(async () => editor.undo());
   expect(editor.recipe.exposure).toBe(1);
+});
+
+it("starts a fresh undo history when a new pixel version replaces the source", async () => {
+  await act(async () => editor.apply({ exposure: 1.5 }));
+  const publishOldRecipe = update.mock.calls.at(-1)![1];
+  // Identical bytes can still be a new version (e.g. an identity crop flattened).
+  const flattened: Image = { ...image, versions: [{ id: "flattened", kind: "flatten", created: "2026-01-01" }] };
+  expect(publishOldRecipe(flattened)).toBe(flattened);
+  await act(async () =>
+    root.render(
+      <StrictMode>
+        <Harness source={flattened} />
+      </StrictMode>,
+    ),
+  );
+  expect(editor.recipe).toEqual(DEFAULTS);
+  expect(editor.canUndo).toBe(false);
+  await act(async () => editor.undo());
+  expect(editor.recipe).toEqual(DEFAULTS);
+  await act(async () => editor.apply({ exposure: 0.5 }));
+  await act(async () => editor.undo());
+  expect(editor.recipe.exposure).toBe(0);
+});
+
+it("restores settings on the same pixel version without publishing the old recipe back", async () => {
+  await act(async () => editor.apply({ exposure: 1.5 }));
+  const edited: Image = { ...image, recipe: editor.recipe };
+  // The collection echoes our own edit without resetting its undo history.
+  await act(async () =>
+    root.render(
+      <StrictMode>
+        <Harness source={edited} />
+      </StrictMode>,
+    ),
+  );
+  expect(editor.canUndo).toBe(true);
+  update.mockClear();
+  await act(async () =>
+    root.render(
+      <StrictMode>
+        <Harness source={image} />
+      </StrictMode>,
+    ),
+  );
+  expect(editor.recipe).toEqual(DEFAULTS);
+  expect(editor.canUndo).toBe(false);
+  expect(update).not.toHaveBeenCalled();
+  await act(async () => editor.apply({ exposure: 0.5 }));
+  expect(update).toHaveBeenCalledTimes(1);
+  expect(update.mock.calls[0][1](image).recipe.exposure).toBe(0.5);
 });

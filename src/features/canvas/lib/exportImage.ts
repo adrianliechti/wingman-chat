@@ -21,7 +21,7 @@ function createCanvas(width = 1, height = 1): HTMLCanvasElement | OffscreenCanva
 }
 
 /** Color-manage into the shader's sRGB working space, optionally downscaling. */
-async function bitmapViaCanvas(full: ImageBitmap, width: number, height: number): Promise<ImageBitmap> {
+function bitmapViaCanvas(full: ImageBitmap, width: number, height: number): HTMLCanvasElement | OffscreenCanvas {
   const canvas = createCanvas(width, height);
   const context = canvas.getContext("2d", { colorSpace: "srgb" }) as
     | OffscreenCanvasRenderingContext2D
@@ -30,7 +30,7 @@ async function bitmapViaCanvas(full: ImageBitmap, width: number, height: number)
   if (!context) throw new Error("Could not prepare the image");
   context.imageSmoothingQuality = "high";
   context.drawImage(full, 0, 0, width, height);
-  return createImageBitmap(canvas, { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+  return canvas;
 }
 
 /**
@@ -64,13 +64,19 @@ async function decodeFull(blob: Blob): Promise<ImageBitmap> {
 
 /** Decode to straight-alpha sRGB, optionally limiting the longest edge. */
 export async function decodeBitmap(blob: Blob, maxEdge?: number): Promise<ImageBitmap> {
+  const canvas = await decodeCanvas(blob, maxEdge);
+  return createImageBitmap(canvas, { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+}
+
+/** sRGB canvas for encoding/edit guides; draw the decoder's associated alpha directly. */
+export async function decodeCanvas(blob: Blob, maxEdge?: number): Promise<HTMLCanvasElement | OffscreenCanvas> {
   const full = await decodeFull(blob);
   try {
     // ImageBitmap can retain its embedded profile (notably in WebKit), while
     // WebGL bitmap uploads ignore UNPACK_COLORSPACE_CONVERSION_WEBGL. Explicit
     // canvas conversion makes JPEG/PNG profiles agree with normal image display.
     const scale = maxEdge && maxEdge > 0 ? Math.min(1, maxEdge / Math.max(full.width, full.height)) : 1;
-    return await bitmapViaCanvas(
+    return bitmapViaCanvas(
       full,
       Math.max(1, Math.round(full.width * scale)),
       Math.max(1, Math.round(full.height * scale)),
@@ -95,9 +101,9 @@ export async function renderExport(
   source: Blob,
   recipe: Adjustments,
   format: ExportFormat,
-  { quality = 0.92 }: { quality?: number } = {},
+  { quality = 0.92, maxEdge }: { quality?: number; maxEdge?: number } = {},
 ): Promise<Blob> {
-  const bitmap = await decodeBitmap(source);
+  const bitmap = await decodeBitmap(source, maxEdge);
   const canvas = createCanvas();
   let renderer: ImageRenderer | undefined;
   try {

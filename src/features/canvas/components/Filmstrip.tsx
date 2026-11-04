@@ -1,4 +1,4 @@
-import { AlertCircle, PlusIcon, RotateCw, X } from "lucide-react";
+import { AlertCircle, FolderOpen, Loader2, PlusIcon, RotateCw, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import type { Image } from "../types/canvas";
 import { cn } from "@/shared/lib/cn";
@@ -22,9 +22,15 @@ interface FilmstripProps {
   onDismissPending: (id: string) => void;
   onRetryPending: (id: string) => void;
   onNew: () => void;
+  onOpenPhoto: () => void;
+  /** Photos are being decoded and stored; the open tile shows a spinner. */
+  importing?: boolean;
 }
 
 const tileAspect = (width?: number, height?: number) => (width && height ? `${width} / ${height}` : "1 / 1");
+
+const ADD_TILE_CLASS =
+  "flex size-16 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-neutral-300 text-neutral-400 transition-colors hover:border-neutral-400 hover:text-neutral-600 disabled:cursor-progress disabled:opacity-60 dark:border-neutral-600 dark:text-neutral-500 dark:hover:border-neutral-500 dark:hover:text-neutral-300";
 
 export function Filmstrip({
   images,
@@ -35,6 +41,8 @@ export function Filmstrip({
   onDismissPending,
   onRetryPending,
   onNew,
+  onOpenPhoto,
+  importing = false,
 }: FilmstripProps) {
   const strip = useRef<HTMLDivElement>(null);
 
@@ -52,14 +60,18 @@ export function Filmstrip({
       aria-label="Images"
       className="flex h-24 shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden border-t border-neutral-200/70 bg-white/50 px-3 backdrop-blur-xl dark:border-neutral-800/70 dark:bg-neutral-900/50"
     >
+      <button type="button" onClick={onNew} title="New image" aria-label="New image" className={ADD_TILE_CLASS}>
+        <PlusIcon size={20} />
+      </button>
       <button
         type="button"
-        onClick={onNew}
-        title="New image"
-        aria-label="New image"
-        className="flex size-16 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-neutral-300 text-neutral-400 transition-colors hover:border-neutral-400 hover:text-neutral-600 dark:border-neutral-600 dark:text-neutral-500 dark:hover:border-neutral-500 dark:hover:text-neutral-300"
+        onClick={onOpenPhoto}
+        disabled={importing}
+        title="Open photo"
+        aria-label="Open photo"
+        className={ADD_TILE_CLASS}
       >
-        <PlusIcon size={20} />
+        {importing ? <Loader2 size={20} className="animate-spin" /> : <FolderOpen size={20} />}
       </button>
 
       {pending.map((item) => {

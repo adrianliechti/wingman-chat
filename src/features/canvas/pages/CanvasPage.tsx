@@ -320,6 +320,7 @@ export function CanvasPage() {
                 key={selectedImage.id}
                 image={selectedImage}
                 updateImage={updateImage}
+                model={selectedModel}
                 compact={compact}
                 onNew={openCreate}
               />
@@ -341,6 +342,8 @@ export function CanvasPage() {
               onDismissPending={dismissPending}
               onRetryPending={retryPending}
               onNew={openCreate}
+              onOpenPhoto={openPhotoPicker}
+              importing={importing}
             />
           </>
         )}

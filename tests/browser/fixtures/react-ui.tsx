@@ -20,7 +20,7 @@ const state = {
   tools: [] as string[],
   instructions: "",
   input: [] as ModelMessage[],
-  renders: [] as { model: string; prompt: string; options?: unknown }[],
+  renders: [] as { model: string; prompt: string; options?: unknown; images?: number; mask?: number; markup?: number }[],
 };
 let stream = (_text: string) => {};
 let think = (_text: string) => {};
@@ -166,8 +166,17 @@ if (parameters.has("panels")) {
     // synthetic gradient in place of the gateway's image.
     const renderer = { id: "gpt-image-1", name: "Painter", type: "renderer" as const };
     config.client.listModels = async () => [model, renderer];
-    config.client.generateImage = async (rendererModel, prompt, _images, options) => {
-      state.renders.push({ model: rendererModel, prompt, options });
+    config.client.generateImage = async (rendererModel, prompt, images, options) => {
+      // Blobs don't serialize across page.evaluate; record their sizes instead.
+      const { mask, markup, ...rest } = options ?? {};
+      state.renders.push({
+        model: rendererModel,
+        prompt,
+        options: rest,
+        ...(images?.length ? { images: images.length } : {}),
+        ...(mask ? { mask: mask.size } : {}),
+        ...(markup ? { markup: markup.size } : {}),
+      });
       const [width, height] =
         options?.aspectRatio === "3:2" ? [384, 256] : options?.aspectRatio === "2:3" ? [256, 384] : [256, 256];
       const canvas = new OffscreenCanvas(width, height);
@@ -287,7 +296,7 @@ declare global {
         tools: string[];
         instructions: string;
         input: ModelMessage[];
-        renders: { model: string; prompt: string; options?: unknown }[];
+        renders: { model: string; prompt: string; options?: unknown; images?: number; mask?: number; markup?: number }[];
       };
       stream(text: string): void;
       think(text: string): void;

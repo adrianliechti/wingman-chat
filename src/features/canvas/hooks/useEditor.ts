@@ -20,6 +20,8 @@ export interface EditorHandle {
 }
 
 interface History {
+  source: string;
+  version: string | undefined;
   recipe: Adjustments;
   undo: Adjustments[];
   redo: Adjustments[];
@@ -40,17 +42,49 @@ export function useEditor(
   image: Image,
   updateImage: (id: string, updater: (image: Image) => Image) => void,
 ): EditorHandle {
-  const [history, setHistory] = useState<History>({ recipe: image.recipe, undo: [], redo: [], base: null });
+  const version = image.versions.at(-1)?.id;
+  const [history, setHistory] = useState<History>({
+    source: image.data,
+    version,
+    recipe: image.recipe,
+    undo: [],
+    redo: [],
+    base: null,
+  });
+  // Undo steps belong to one set of source pixels. In particular, a recipe
+  // baked by Flatten must never be reapplied to the newly baked pixels.
+  if (history.source !== image.data || history.version !== version) {
+    setHistory({ source: image.data, version, recipe: image.recipe, undo: [], redo: [], base: null });
+  }
   const stored = useRef(image.recipe);
+  const syncing = useRef(false);
   const { recipe } = history;
+
+  // Restoring the current pixel version can replace just its recipe. Local
+  // publishes already match `stored`; external restores start a fresh history.
+  useEffect(() => {
+    if (recipeEquals(stored.current, image.recipe)) return;
+    stored.current = image.recipe;
+    syncing.current = true;
+    setHistory({ source: image.data, version, recipe: image.recipe, undo: [], redo: [], base: null });
+  }, [image.recipe, image.data, version]);
 
   // Publish each edit to the collection before another image can be selected.
   // A second debounce here would discard edits when this keyed editor unmounts.
   useEffect(() => {
+    if (syncing.current) {
+      syncing.current = false;
+      return;
+    }
+    if (history.source !== image.data || history.version !== version) return;
     if (recipeEquals(stored.current, recipe)) return;
     stored.current = recipe;
-    updateImage(image.id, (current) => ({ ...current, recipe }));
-  }, [recipe, image.id, updateImage]);
+    updateImage(image.id, (current) =>
+      current.data === history.source && current.versions.at(-1)?.id === history.version
+        ? { ...current, recipe }
+        : current,
+    );
+  }, [recipe, image.id, image.data, history.source, history.version, version, updateImage]);
 
   const change = useCallback((patch: RecipePatch) => {
     // The first change of a drag remembers where it started; commit() turns
@@ -89,7 +123,13 @@ export function useEditor(
       }
       const previous = current.undo.at(-1);
       if (!previous) return current;
-      return { recipe: previous, undo: current.undo.slice(0, -1), redo: [...current.redo, current.recipe], base: null };
+      return {
+        ...current,
+        recipe: previous,
+        undo: current.undo.slice(0, -1),
+        redo: [...current.redo, current.recipe],
+        base: null,
+      };
     });
   }, []);
 
@@ -98,7 +138,13 @@ export function useEditor(
       if (current.base && !recipeEquals(current.base, current.recipe)) return current;
       const next = current.redo.at(-1);
       if (!next) return current;
-      return { recipe: next, undo: [...current.undo, current.recipe], redo: current.redo.slice(0, -1), base: null };
+      return {
+        ...current,
+        recipe: next,
+        undo: [...current.undo, current.recipe],
+        redo: current.redo.slice(0, -1),
+        base: null,
+      };
     });
   }, []);
 

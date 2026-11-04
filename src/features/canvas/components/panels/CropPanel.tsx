@@ -1,4 +1,5 @@
 import { ArrowLeftRight, FlipHorizontal2, FlipVertical2, RotateCcw, RotateCw } from "lucide-react";
+import { useEffect } from "react";
 import type { EditorHandle } from "../../hooks/useEditor";
 import {
   canvasSize,
@@ -57,6 +58,18 @@ export function CropPanel({ editor, source, preset, swapped, onPreset, onDone, d
   const geometry = editor.recipe.geometry;
   const [cw, ch] = canvasSize(geometry, source[0], source[1]);
   const setGeometry = (next: Geometry) => editor.apply((recipe) => ({ ...recipe, geometry: next }));
+
+  // A turn swaps the frame's ratio; Undo and Reset can also restore a different
+  // frame. Keep the lock consistent so the next drag cannot unexpectedly reshape it.
+  useEffect(() => {
+    if (preset === "free") return;
+    const crop = cropBounds(geometry.crop);
+    const actual = crop.width / crop.height;
+    const matches = (ratio: number) => Math.abs(actual - ratio) < 1e-6;
+    if (matches(presetRatio(preset, swapped, cw, ch))) return;
+    if (matches(presetRatio(preset, !swapped, cw, ch))) onPreset(preset, !swapped);
+    else onPreset("free", false);
+  }, [geometry.crop, preset, swapped, cw, ch, onPreset]);
 
   const choosePreset = (next: AspectPreset, nextSwapped: boolean) => {
     onPreset(next, nextSwapped);
@@ -191,7 +204,10 @@ export function CropPanel({ editor, source, preset, swapped, onPreset, onDone, d
             type="button"
             className={BUTTON}
             disabled={disabled || (!geometry.crop.width && !geometry.crop.height)}
-            onClick={() => setGeometry({ ...geometry, crop: NO_CROP })}
+            onClick={() => {
+              onPreset("free", false);
+              setGeometry({ ...geometry, crop: NO_CROP });
+            }}
           >
             Reset crop
           </button>

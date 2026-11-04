@@ -88,6 +88,8 @@ async function writeImage(image: Image): Promise<void> {
         : new Blob([image.data], { type: "image/png" });
       await opfs.writeBlob(`${imagePath}/image.png`, blob);
       contentType = blob.type || "image/png";
+      // A restored version is current again; its archived copy is redundant.
+      await opfs.deleteFile(`${imagePath}/versions/${nextId}.png`).catch(() => {});
     }
 
     const meta: StoredImageMeta = {

@@ -87,6 +87,14 @@ export interface ImageRenderOptions {
   background?: "transparent" | "opaque";
   /** Desired output format; negotiated via the `Accept` header, not a form field. */
   format?: "png" | "jpeg" | "webp";
+  /**
+   * Edit guide for the first image: a PNG of the same size whose fully
+   * transparent pixels mark where the image may change. Models without
+   * native inpainting get it emulated by the backend.
+   */
+  mask?: Blob;
+  /** Transparent PNG with annotations (arrows, circles, notes) drawn over the first image. */
+  markup?: Blob;
 }
 
 /** Trace and cancellation context shared by every cancellable client request. */
@@ -532,6 +540,8 @@ export class Client {
     images?.forEach((blob, i) => {
       data.append("file", blob, `image_${i}.${mime.getExtension(blob.type) || "image"}`);
     });
+    if (options?.mask) data.append("mask", options.mask, "mask.png");
+    if (options?.markup) data.append("markup", options.markup, "markup.png");
     if (options?.aspectRatio) data.append("aspect_ratio", options.aspectRatio);
     if (options?.quality) data.append("quality", options.quality);
     if (options?.resolution) data.append("resolution", options.resolution);

@@ -12,6 +12,8 @@ export interface ImageVersion {
   prompt?: string;
   model?: string;
   created: string;
+  /** Adjustments at this version's creation; live edits belong to Image.recipe. */
+  recipe?: Adjustments;
 }
 
 export interface Image {
