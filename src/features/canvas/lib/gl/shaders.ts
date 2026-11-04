@@ -1,7 +1,7 @@
 // GLSL ES 3.00 sources for the develop pipeline. Textures hold sRGB-encoded
-// 8-bit pixels (row 0 = image top); the develop pass decodes to linear light,
-// edits, and encodes again. Tone and color math follows Aperture's
-// adjustments.wgsl and RapidRAW's shader.wgsl (contrast curve, vibrance, HSL).
+// pixels (row 0 = image top); the develop pass decodes to linear light,
+// edits, and stores premultiplied, encoded RGB. Intermediate targets use half
+// floats when available. Inspired by Aperture and RapidRAW's luminance edits.
 
 // One triangle covering clip space; the buffer holds (-1,-1) (3,-1) (-1,3).
 export const VERTEX = /* glsl */ `#version 300 es
@@ -25,6 +25,22 @@ vec3 encode(vec3 c) {
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
 }
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+vec3 withLuma(vec3 rgb, float target) {
+  float l = luma(rgb);
+  return l > 1.0e-7 ? rgb * (target / l) : vec3(target);
+}
+// Fit chroma around the neutral axis instead of clipping RGB channels
+// independently (which changes hue and destroys colored highlight detail).
+vec3 gamutMap(vec3 rgb) {
+  float l = clamp(luma(rgb), 0.0, 1.0);
+  vec3 chroma = rgb - vec3(luma(rgb));
+  float scale = 1.0;
+  for (int i = 0; i < 3; i++) {
+    if (chroma[i] > 0.0) scale = min(scale, (1.0 - l) / chroma[i]);
+    else if (chroma[i] < 0.0) scale = min(scale, -l / chroma[i]);
+  }
+  return clamp(vec3(l) + chroma * scale, 0.0, 1.0);
+}
 vec3 rgb2hsv(vec3 c) {
   vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
   vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
@@ -64,13 +80,33 @@ float bandInfluence(float hue, float center) {
 
 vec3 applyContrast(vec3 rgb, float con) {
   if (con == 0.0) return rgb;
-  vec3 safe = max(rgb, vec3(0.0));
-  vec3 p = clamp(pow(safe, vec3(1.0 / 2.2)), 0.0, 1.0);
+  float l = luma(rgb);
+  if (l <= 0.0 || l >= 1.0) return rgb;
+  float p = encode(vec3(l)).r;
   float s = pow(2.0, con * 1.25);
-  vec3 hi = 1.0 - 0.5 * pow(2.0 * (1.0 - p), vec3(s));
-  vec3 lo = 0.5 * pow(2.0 * p, vec3(s));
-  vec3 curved = pow(mix(hi, lo, step(p, vec3(0.5))), vec3(2.2));
-  return mix(curved, rgb, smoothstep(vec3(1.0), vec3(1.01), safe));
+  float curved = p < 0.5 ? 0.5 * pow(2.0 * p, s) : 1.0 - 0.5 * pow(2.0 * (1.0 - p), s);
+  return withLuma(rgb, decode(vec3(curved)).r);
+}
+
+// Both branches have positive derivatives and meet the untouched range with
+// slope 1. Sequential curves keep ramps ordered even at combined extremes.
+float upperTone(float l, float pivot, float amount, float strength) {
+  float x = max(l - pivot, 0.0);
+  if (amount < 0.0) return min(l, pivot) + x / (1.0 - amount * strength * x);
+  return l + amount * strength * x * x;
+}
+vec3 applyTone(vec3 rgb) {
+  float l = luma(rgb);
+  float x = clamp(l / 0.5, 0.0, 1.0);
+  float shadows = u_light.w / 100.0;
+  float strength = shadows > 0.0 ? 2.0 : 0.85;
+  float target = l + 0.5 * shadows * strength * x * (1.0 - x) * (1.0 - x);
+  target = upperTone(target, 0.18, u_light.z / 100.0, 1.5);
+  target = upperTone(target, 0.6, u_tone.x / 100.0, 2.5);
+  rgb = withLuma(rgb, target);
+  float black = u_tone.y * 0.00045 * (1.0 - smoothstep(0.0, 0.25, target));
+  // A luminance offset avoids clipping individual channels on a black cut.
+  return black > 0.0 ? rgb + black : withLuma(rgb, max(0.0, target + black));
 }
 
 vec3 applyCreativeColor(vec3 rgb, float sat, float vib) {
@@ -89,7 +125,11 @@ vec3 applyCreativeColor(vec3 rgb, float sat, float vib) {
     vibFactor = vib * smoothstep(0.05, 0.75, hsv.y);
   }
   float m = max(1.0 + sat, 0.0) * max(1.0 + vibFactor, 0.0);
-  return max(mix(vec3(l), safe, m), vec3(0.0));
+  // Keep luminance and hue when increased chroma reaches the RGB boundary.
+  vec3 result = mix(vec3(l), safe, m);
+  float low = min(result.r, min(result.g, result.b));
+  if (low < 0.0) result = mix(vec3(l), result, l / (l - low));
+  return result;
 }
 
 vec3 applyMixer(vec3 rgb) {
@@ -156,13 +196,7 @@ void main() {
     exposure + temperature * 0.006 + tint * 0.0015,
     exposure - tint * 0.003,
     exposure - temperature * 0.006 + tint * 0.0015));
-  float l = luma(rgb);
-  float gain = exp2(
-    u_light.w * 0.015 * (1.0 - smoothstep(0.0, 0.5, l)) +
-    u_light.z * 0.01 * smoothstep(0.18, 1.0, l) +
-    u_tone.x * 0.012 * smoothstep(0.6, 1.2, l));
-  float black = u_tone.y * 0.00045 * (1.0 - smoothstep(0.0, 0.25, l));
-  rgb = max(vec3(0.0), rgb * gain + black);
+  rgb = applyTone(rgb);
   rgb = applyContrast(rgb, u_light.y);
   if (u_color.z > 0.5) {
     rgb = toGray(rgb);
@@ -170,7 +204,7 @@ void main() {
     rgb = applyCreativeColor(rgb, u_color.y, u_color.x);
     if (u_color.w > 0.5) rgb = applyMixer(rgb);
   }
-  fragColor = vec4(clamp(encode(rgb), 0.0, 1.0), src.a);
+  fragColor = vec4(encode(rgb) * src.a, src.a);
 }
 `;
 
@@ -180,17 +214,24 @@ in vec2 v_uv;
 out vec4 fragColor;
 uniform sampler2D u_input;
 uniform vec2 u_direction;
+uniform vec2 u_blurSize;
 ${COMMON}
 void main() {
-  vec2 size = vec2(textureSize(u_input, 0));
-  float stepPx = max(1.0, min(size.x, size.y) * 0.004);
-  float w[5] = float[5](0.2270270270, 0.1945945946, 0.1216216216, 0.0540540541, 0.0162162162);
-  vec3 rgb = texture(u_input, v_uv).rgb * w[0];
-  for (int i = 1; i < 5; i++) {
-    vec2 o = u_direction * float(i) * stepPx / size;
-    rgb += (texture(u_input, v_uv + o).rgb + texture(u_input, v_uv - o).rgb) * w[i];
+  // Dense Gaussian taps on a mip-filtered, bounded-size image: sparse taps
+  // several source pixels apart produce repeated edges on full-size exports.
+  float sigma = max(0.5, min(u_blurSize.x, u_blurSize.y) * 0.008);
+  float radius = ceil(3.0 * sigma);
+  vec4 sum = vec4(0.0);
+  float total = 0.0;
+  for (int i = -25; i <= 25; i++) {
+    if (abs(float(i)) > radius) continue;
+    float weight = exp(-0.5 * float(i * i) / (sigma * sigma));
+    vec2 offset = u_direction * float(i) / u_blurSize;
+    sum += texture(u_input, v_uv + offset) * weight;
+    total += weight;
   }
-  fragColor = vec4(vec3(luma(rgb)), 1.0);
+  // Carry coverage through both passes. Hidden RGB must not create a halo.
+  fragColor = vec4(vec3(luma(sum.rgb)), sum.a) / total;
 }
 `;
 
@@ -209,6 +250,23 @@ uniform vec4 u_compare;
 // matte color and whether to flatten alpha onto it
 uniform vec4 u_matte;
 ${COMMON}
+// Source uploads are straight alpha. Interpolate associated color for compare
+// too, so rotated transparent edges match the developed image.
+vec4 originalAt(vec2 uv) {
+  ivec2 size = textureSize(u_original, 0);
+  vec2 pixel = uv * vec2(size) - 0.5;
+  ivec2 base = ivec2(floor(pixel));
+  vec2 f = fract(pixel);
+  vec4 result = vec4(0.0);
+  for (int y = 0; y < 2; y++) {
+    for (int x = 0; x < 2; x++) {
+      vec4 value = texelFetch(u_original, clamp(base + ivec2(x, y), ivec2(0), size - 1), 0);
+      float weight = (x == 0 ? 1.0 - f.x : f.x) * (y == 0 ? 1.0 - f.y : f.y);
+      result += vec4(value.rgb * value.a, value.a) * weight;
+    }
+  }
+  return result;
+}
 void main() {
   vec3 q = u_matrix * vec3(v_uv, 1.0);
   vec2 suv = q.xy / q.z;
@@ -217,24 +275,32 @@ void main() {
     return;
   }
   bool original = u_compare.x > 0.5 || v_uv.x < u_compare.y;
-  vec4 src = original ? texture(u_original, suv) : texture(u_rendered, suv);
-  vec3 rgb = src.rgb;
+  vec4 src = original ? originalAt(suv) : texture(u_rendered, suv);
+  vec3 rgb = src.a > 1.0e-7 ? src.rgb / src.a : vec3(0.0);
   if (!original) {
     if (u_effects.w > 0.5 && u_effects.x != 0.0) {
-      float base = texture(u_blurred, suv).r;
+      vec4 blurred = texture(u_blurred, suv);
+      float base = blurred.a > 1.0e-7 ? blurred.r / blurred.a : luma(rgb);
       float l = luma(rgb);
-      rgb = clamp(rgb + (l - base) * u_effects.x * 0.015 * 4.0 * l * (1.0 - l), 0.0, 1.0);
+      float detail = l - base;
+      // Protect strong edges and extreme tones; scale luminance instead of
+      // adding gray to every channel (which desaturates colored texture).
+      float edgeGate = exp(-0.5 * detail * detail / (0.12 * 0.12));
+      float gate = 4.0 * clamp(l, 0.0, 1.0) * (1.0 - clamp(l, 0.0, 1.0));
+      rgb = withLuma(rgb, max(0.0, l + detail * u_effects.x * 0.012 * gate * edgeGate));
     }
     if (u_effects.y > 0.0) {
       float transmission = max(0.2, 1.0 - u_effects.y * 0.008 * min(rgb.r, min(rgb.g, rgb.b)));
-      rgb = clamp(1.0 + (rgb - 1.0) / transmission, 0.0, 1.0);
+      rgb = 1.0 + (rgb - 1.0) / transmission;
     } else if (u_effects.y < 0.0) {
       rgb = mix(rgb, vec3(1.0), -u_effects.y * 0.0035);
     }
+    rgb = decode(rgb);
     vec2 delta = (v_uv - 0.5) * 2.0;
     float amount = abs(u_effects.z) * 0.01 * smoothstep(0.2, 1.6, dot(delta, delta));
     if (u_effects.z < 0.0) rgb *= exp2(-amount * 2.0);
     else rgb = mix(rgb, vec3(1.0), amount);
+    rgb = encode(gamutMap(rgb));
   }
   if (u_matte.a > 0.5) {
     fragColor = vec4(mix(u_matte.rgb, rgb, src.a), 1.0);

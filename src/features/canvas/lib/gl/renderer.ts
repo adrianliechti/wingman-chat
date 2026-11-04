@@ -76,12 +76,13 @@ function link(gl: WebGL2RenderingContext, vertex: WebGLShader, fragmentSource: s
   return { program, uniforms };
 }
 
-/** RGBA8 texture, filled from `image` or left blank as a render target. */
+/** Source RGBA8 or a render target (half float when the driver supports it). */
 function createTexture(
   gl: WebGL2RenderingContext,
   width: number,
   height: number,
   image: RenderSource | null = null,
+  floating = false,
 ): WebGLTexture {
   const texture = gl.createTexture();
   if (!texture) throw new Error("Could not create texture");
@@ -91,7 +92,18 @@ function createTexture(
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   if (image) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, image);
-  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  else
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      floating ? gl.RGBA16F : gl.RGBA8,
+      width,
+      height,
+      0,
+      gl.RGBA,
+      floating ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE,
+      null,
+    );
   const error = gl.getError();
   if (error !== gl.NO_ERROR) {
     gl.deleteTexture(texture);
@@ -100,13 +112,22 @@ function createTexture(
   return texture;
 }
 
-function createTarget(gl: WebGL2RenderingContext, width: number, height: number): Target {
-  const texture = createTexture(gl, width, height);
+function createTarget(gl: WebGL2RenderingContext, width: number, height: number, floating: boolean): Target {
+  const texture = createTexture(gl, width, height, null, floating);
   const framebuffer = gl.createFramebuffer();
-  if (!framebuffer) throw new Error("Could not create framebuffer");
+  if (!framebuffer) {
+    gl.deleteTexture(texture);
+    throw new Error("Could not create framebuffer");
+  }
   gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+  const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (!complete) {
+    gl.deleteFramebuffer(framebuffer);
+    gl.deleteTexture(texture);
+    throw new Error(`Could not allocate a ${width}×${height} render target`);
+  }
   return { texture, framebuffer };
 }
 
@@ -124,6 +145,7 @@ function columnMajor(m: number[]): Float32Array {
 export class ImageRenderer {
   readonly canvas: RenderCanvas;
   private readonly gl: WebGL2RenderingContext;
+  private readonly floating: boolean;
   private readonly vertex: WebGLShader;
   private readonly develop: Program;
   private readonly blur: Program;
@@ -155,6 +177,7 @@ export class ImageRenderer {
     if (!gl) throw new Error("WebGL2 is not available");
     this.canvas = canvas;
     this.gl = gl;
+    this.floating = !!gl.getExtension("EXT_color_buffer_float");
     this.onLost = options.onContextLost;
     if ("addEventListener" in canvas) canvas.addEventListener("webglcontextlost", this.lostListener);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -171,7 +194,7 @@ export class ImageRenderer {
       "u_color",
       "u_mixer",
     ]);
-    this.blur = link(gl, this.vertex, BLUR_FRAGMENT, ["u_flip", "u_input", "u_direction"]);
+    this.blur = link(gl, this.vertex, BLUR_FRAGMENT, ["u_flip", "u_input", "u_direction", "u_blurSize"]);
     this.finish = link(gl, this.vertex, FINISH_FRAGMENT, [
       "u_flip",
       "u_rendered",
@@ -210,14 +233,24 @@ export class ImageRenderer {
   setSource(image: RenderSource): void {
     if (this.disposed) return;
     const gl = this.gl;
-    const width = image.width;
-    const height = image.height;
+    const width = "naturalWidth" in image ? image.naturalWidth : image.width;
+    const height = "naturalHeight" in image ? image.naturalHeight : image.height;
+    const limit = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
+    if (width < 1 || height < 1 || width > limit || height > limit) {
+      throw new Error(`The ${width}×${height} image exceeds this device's texture limit (${limit} pixels per edge)`);
+    }
+    const source = createTexture(gl, width, height, image);
+    let rendered: Target;
+    try {
+      rendered = createTarget(gl, width, height, this.floating);
+    } catch (error) {
+      gl.deleteTexture(source);
+      throw error;
+    }
     this.releaseTargets();
     if (this.source) gl.deleteTexture(this.source);
-    this.source = createTexture(gl, width, height, image);
-    this.rendered = createTarget(gl, width, height);
-    this.blurX = createTarget(gl, width, height);
-    this.blurY = createTarget(gl, width, height);
+    this.source = source;
+    this.rendered = rendered;
     this.width = width;
     this.height = height;
   }
@@ -225,9 +258,10 @@ export class ImageRenderer {
   /** Render `recipe` to the canvas; returns the output size in pixels. */
   draw(recipe: Adjustments, options: DrawOptions = {}): { width: number; height: number } {
     const gl = this.gl;
-    if (this.disposed || !this.source || !this.rendered || !this.blurX || !this.blurY) {
+    if (this.disposed || !this.source || !this.rendered) {
       return { width: 0, height: 0 };
     }
+    if (gl.isContextLost()) throw new Error("The graphics context was lost");
     const [width, height] = outputSize(recipe.geometry, this.width, this.height);
     if (this.canvas.width !== width) this.canvas.width = width;
     if (this.canvas.height !== height) this.canvas.height = height;
@@ -267,8 +301,21 @@ export class ImageRenderer {
     // Clarity needs a blurred luminance copy of the developed image.
     const useBlur = recipe.clarity !== 0;
     if (useBlur) {
+      // Blur at a bounded resolution, with mip-filtered downsampling. The
+      // normalized radius stays the same in previews and full-size exports.
+      const scale = Math.min(1, 1024 / Math.max(this.width, this.height));
+      const bw = Math.max(1, Math.round(this.width * scale));
+      const bh = Math.max(1, Math.round(this.height * scale));
+      this.blurX ??= createTarget(gl, bw, bh, this.floating);
+      this.blurY ??= createTarget(gl, bw, bh, this.floating);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      this.bindTexture(0, this.rendered.texture, null);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.viewport(0, 0, bw, bh);
       gl.useProgram(this.blur.program);
       gl.uniform1f(this.blur.uniforms.u_flip, 0);
+      gl.uniform2f(this.blur.uniforms.u_blurSize, bw, bh);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurX.framebuffer);
       this.bindTexture(0, this.rendered.texture, this.blur.uniforms.u_input);
       gl.uniform2f(this.blur.uniforms.u_direction, 1, 0);
@@ -278,6 +325,10 @@ export class ImageRenderer {
       gl.uniform2f(this.blur.uniforms.u_direction, 0, 1);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
+    // Geometry should sample the current developed pixels, never stale mips
+    // left over from an earlier draw with clarity enabled.
+    gl.bindTexture(gl.TEXTURE_2D, this.rendered.texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 
     // Finish: geometry, effects, compare, matte — straight to the canvas.
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -285,7 +336,7 @@ export class ImageRenderer {
     gl.useProgram(this.finish.program);
     gl.uniform1f(this.finish.uniforms.u_flip, 1);
     this.bindTexture(0, this.rendered.texture, this.finish.uniforms.u_rendered);
-    this.bindTexture(1, this.blurY.texture, this.finish.uniforms.u_blurred);
+    this.bindTexture(1, this.blurY?.texture ?? this.rendered.texture, this.finish.uniforms.u_blurred);
     this.bindTexture(2, this.source, this.finish.uniforms.u_original);
     gl.uniformMatrix3fv(
       this.finish.uniforms.u_matrix,

@@ -285,9 +285,9 @@ test("Canvas generates into the filmstrip, develops on the GPU and keeps the rec
   ]);
   await expect(page.getByRole("option", { name: prompt })).toHaveAttribute("aria-selected", "true");
   // The 3:2 request became a 384×256 image rendered at that size.
-  await expect.poll(() => stage.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height])).toEqual([
-    384, 256,
-  ]);
+  await expect
+    .poll(() => stage.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]))
+    .toEqual([384, 256]);
 
   // The develop pipeline must actually change pixels: render the same source
   // through the export path with and without an exposure cut.
@@ -325,6 +325,27 @@ test("Canvas generates into the filmstrip, develops on the GPU and keeps the rec
   await page.getByRole("button", { name: "Redo", exact: true }).click();
   await expect(exposure).toHaveValue("1.5");
 
+  await page.getByRole("button", { name: "Reset adjustments" }).click();
+  await expect(exposure).toHaveValue("0");
+  await expect(page.getByRole("button", { name: "Reset adjustments" })).toBeDisabled();
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(exposure).toHaveValue("1.5");
+
+  // A GPU reset must wait for restoration and then rebuild on the same canvas.
+  await stage.evaluate(
+    (canvas: HTMLCanvasElement) =>
+      new Promise<void>((resolve) => {
+        const extension = canvas.getContext("webgl2")!.getExtension("WEBGL_lose_context")!;
+        canvas.addEventListener("webglcontextlost", () => setTimeout(() => extension.restoreContext(), 100), {
+          once: true,
+        });
+        canvas.addEventListener("webglcontextrestored", () => resolve(), { once: true });
+        extension.loseContext();
+      }),
+  );
+  await expect(exposure).toBeEnabled();
+  await expect(stage).toBeVisible();
+
   await page.getByRole("button", { name: "Show original" }).click();
   await expect(page.getByText("Original", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Export" }).click();
@@ -339,6 +360,34 @@ test("Canvas generates into the filmstrip, develops on the GPU and keeps the rec
   await page.reload();
   await expect(page.locator(`canvas[aria-label="${prompt}"]`)).toBeVisible();
   await expect(page.getByRole("slider", { name: "Exposure", exact: true })).toHaveValue("1.5");
+});
+
+test("Canvas keeps a live adjustment when switching photos immediately", async ({ page }) => {
+  await open(page, "?canvas");
+  const png = await page.evaluate(async () => {
+    const canvas = new OffscreenCanvas(16, 16);
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#807060";
+    context.fillRect(0, 0, 16, 16);
+    return Array.from(new Uint8Array(await (await canvas.convertToBlob()).arrayBuffer()));
+  });
+  const first = `First-${Date.now()}`;
+  const second = `Second-${Date.now()}`;
+  await page
+    .getByLabel("Photos to open")
+    .setInputFiles(
+      [first, second].map((name) => ({ name: `${name}.png`, mimeType: "image/png", buffer: Buffer.from(png) })),
+    );
+  await expect(page.getByRole("option", { name: second })).toHaveAttribute("aria-selected", "true");
+  const value = page.getByRole("spinbutton", { name: "Exposure value" });
+  await expect(value).toBeEnabled();
+  await value.fill("1.75");
+  await page.getByRole("button", { name: first, exact: true }).click();
+  await page.getByRole("button", { name: second, exact: true }).click();
+  await expect(value).toHaveValue("1.75");
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.reload();
+  await expect(value).toHaveValue("1.75");
 });
 
 test("Activity retains drafts, stops hidden effects and portals, and leaves persistent iframes alive", async ({

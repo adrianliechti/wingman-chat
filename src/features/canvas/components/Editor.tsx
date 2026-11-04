@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useEditor } from "../hooks/useEditor";
 import { useRenderer } from "../hooks/useRenderer";
 import { EXPORT_FORMATS, exportFilename, type ExportFormat, renderExport } from "../lib/exportImage";
-import { type Adjustments, isDefaultRecipe, resetDevelop } from "../lib/recipe";
+import { type Adjustments, recipeEquals, resetDevelop } from "../lib/recipe";
 import type { Image } from "../types/canvas";
 import { cn } from "@/shared/lib/cn";
 import { notify } from "@/shared/lib/notify";
@@ -140,12 +140,14 @@ export function Editor({ image, updateImage, compact, onNew }: EditorProps) {
     const up = (event: KeyboardEvent) => {
       if (event.key === "\\") setHoldOriginal(false);
     };
+    const blur = () => setHoldOriginal(false);
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
-    window.addEventListener("blur", () => setHoldOriginal(false));
+    window.addEventListener("blur", blur);
     return () => {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
     };
   }, [editor]);
 
@@ -160,7 +162,7 @@ export function Editor({ image, updateImage, compact, onNew }: EditorProps) {
       <InspectorAction
         label="Reset adjustments"
         onClick={() => editor.apply(resetDevelop(editor.recipe))}
-        disabled={isDefaultRecipe(resetDevelop(editor.recipe))}
+        disabled={recipeEquals(editor.recipe, resetDevelop(editor.recipe))}
       >
         <RotateCcw size={14} />
       </InspectorAction>

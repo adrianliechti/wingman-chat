@@ -1,4 +1,4 @@
-import { useCallback, useId, useRef } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
 import { cn } from "@/shared/lib/cn";
 
 interface AdjustmentSliderProps {
@@ -48,10 +48,23 @@ export function AdjustmentSlider({
   const origin = ((reset - min) / (max - min)) * 100;
   const digits = decimals(step);
 
-  const commit = useCallback(() => {
-    dragging.current = false;
-    onCommit?.();
-  }, [onCommit]);
+  const commit = useCallback(
+    function finishDrag() {
+      dragging.current = false;
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+      onCommit?.();
+    },
+    [onCommit],
+  );
+
+  useEffect(
+    () => () => {
+      window.removeEventListener("pointerup", commit);
+      window.removeEventListener("pointercancel", commit);
+    },
+    [commit],
+  );
 
   // Range inputs drag internally, so the release may land outside the element:
   // listen on the window for the one pointerup that ends this drag.
@@ -130,6 +143,7 @@ export function AdjustmentSlider({
           disabled={disabled}
           onChange={(event) => onChange(event.target.valueAsNumber)}
           onPointerDown={startDrag}
+          onBlur={commit}
           onKeyUp={() => onCommit?.()}
           onDoubleClick={() => {
             if (disabled) return;

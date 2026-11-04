@@ -21,12 +21,21 @@ async function prepare(
   data: string,
   maxEdge: number,
   onLost: () => void,
-): Promise<ImageRenderer> {
+  cancelled: () => boolean,
+): Promise<ImageRenderer | null> {
   const bitmap = await decodeBitmap(decodeDataURL(data), maxEdge);
-  const renderer = new ImageRenderer(canvas, { onContextLost: onLost });
-  renderer.setSource(bitmap);
-  bitmap.close();
-  return renderer;
+  let renderer: ImageRenderer | undefined;
+  try {
+    if (cancelled()) return null;
+    renderer = new ImageRenderer(canvas, { onContextLost: onLost });
+    renderer.setSource(bitmap);
+    return renderer;
+  } catch (error) {
+    renderer?.destroy();
+    throw error;
+  } finally {
+    bitmap.close();
+  }
 }
 
 /**
@@ -51,7 +60,12 @@ export function useRenderer(
     frame.current = 0;
     const request = pending.current;
     if (!request || !renderer.current) return;
-    renderer.current.draw(request.recipe, request.options);
+    try {
+      renderer.current.draw(request.recipe, request.options);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+      setStatus("error");
+    }
   }, []);
 
   const draw = useCallback(
@@ -74,22 +88,35 @@ export function useRenderer(
       return;
     }
     let disposed = false;
+    let lost = false;
+    let lostTimer: ReturnType<typeof setTimeout> | undefined;
     setStatus("loading");
     setError(null);
-    // A lost context (GPU reset, tab eviction) is rebuilt once from the data URL.
+    // getContext() returns the same lost context until the browser restores it.
+    // Rebuild resources only after webglcontextrestored, keeping the canvas mounted.
+    const onRestored = () => {
+      if (disposed) return;
+      clearTimeout(lostTimer);
+      setAttempt((count) => count + 1);
+    };
+    canvas.addEventListener("webglcontextrestored", onRestored);
     const onLost = () => {
       if (disposed) return;
+      lost = true;
+      if (frame.current) cancelAnimationFrame(frame.current);
+      frame.current = 0;
       renderer.current?.destroy();
       renderer.current = null;
-      setAttempt((count) => (count < 1 ? count + 1 : count));
-      if (attempt >= 1) {
+      setStatus("loading");
+      lostTimer = setTimeout(() => {
         setError("The graphics context was lost");
         setStatus("error");
-      }
+      }, 5000);
     };
-    prepare(canvas, data, maxEdge, onLost)
+    prepare(canvas, data, maxEdge, onLost, () => disposed || lost)
       .then((created) => {
-        if (disposed) {
+        if (!created) return;
+        if (disposed || lost) {
           created.destroy();
           return;
         }
@@ -106,6 +133,8 @@ export function useRenderer(
       });
     return () => {
       disposed = true;
+      clearTimeout(lostTimer);
+      canvas.removeEventListener("webglcontextrestored", onRestored);
       if (frame.current) cancelAnimationFrame(frame.current);
       frame.current = 0;
       renderer.current?.destroy();

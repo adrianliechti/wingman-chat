@@ -71,16 +71,19 @@ export function Stage({ canvasRef, renderer, recipe, fallbackSrc, alt, badge, ch
         className={cn("relative overflow-hidden rounded-lg shadow-xl shadow-black/10", CHECKER)}
         style={{ width, height }}
       >
-        {showFallback ? (
+        {showFallback && (
           <img src={fallbackSrc} alt={alt} className="block size-full object-contain" draggable={false} />
-        ) : (
-          <canvas
-            ref={canvasRef}
-            role="img"
-            aria-label={alt}
-            className={cn("block size-full transition-opacity duration-200", busy ? "opacity-0" : "opacity-100")}
-          />
         )}
+        <canvas
+          ref={canvasRef}
+          role="img"
+          aria-label={alt}
+          className={cn(
+            "size-full transition-opacity duration-200",
+            showFallback ? "hidden" : "block",
+            busy ? "opacity-0" : "opacity-100",
+          )}
+        />
         {busy && !showFallback && (
           <img
             src={fallbackSrc}

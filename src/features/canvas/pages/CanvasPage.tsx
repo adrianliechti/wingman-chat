@@ -283,7 +283,7 @@ export function CanvasPage() {
               </div>
               <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Create or edit an image</h1>
               <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                Generate from a prompt, or open a photo to adjust light and color, crop it, and retouch with AI.
+                Generate from a prompt, or open a photo to adjust light, color, and effects.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
                 <button
@@ -361,6 +361,7 @@ export function CanvasPage() {
 
       <input
         ref={fileInputRef}
+        aria-label="Photos to open"
         type="file"
         accept="image/*"
         multiple

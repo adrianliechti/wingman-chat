@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { type Adjustments, isDefaultRecipe, recipeEquals } from "../lib/recipe";
 import type { Image } from "../types/canvas";
 
-const PERSIST_DELAY_MS = 300;
-
 export type RecipePatch = Partial<Adjustments> | ((recipe: Adjustments) => Adjustments);
 
 export interface EditorHandle {
@@ -25,6 +23,7 @@ interface History {
   recipe: Adjustments;
   undo: Adjustments[];
   redo: Adjustments[];
+  base: Adjustments | null;
 }
 
 function patched(recipe: Adjustments, patch: RecipePatch): Adjustments {
@@ -33,7 +32,7 @@ function patched(recipe: Adjustments, patch: RecipePatch): Adjustments {
 
 /**
  * Recipe state for one image: live edits, an undo/redo stack of committed
- * steps, and debounced persistence through `updateImage`. Mount it keyed by
+ * steps, and persistence through `updateImage` (the collection debounces disk writes). Mount it keyed by
  * image id so switching images starts from that image's stored recipe. State
  * updaters are pure so StrictMode's double invocation can't corrupt the stacks.
  */
@@ -41,43 +40,38 @@ export function useEditor(
   image: Image,
   updateImage: (id: string, updater: (image: Image) => Image) => void,
 ): EditorHandle {
-  const [history, setHistory] = useState<History>({ recipe: image.recipe, undo: [], redo: [] });
-  const latest = useRef(history.recipe);
-  const base = useRef<Adjustments | null>(null);
+  const [history, setHistory] = useState<History>({ recipe: image.recipe, undo: [], redo: [], base: null });
   const stored = useRef(image.recipe);
   const { recipe } = history;
 
-  useEffect(() => {
-    latest.current = recipe;
-  }, [recipe]);
-
-  // Persist shortly after the last change; the pixels are untouched so this is
-  // a small metadata write.
+  // Publish each edit to the collection before another image can be selected.
+  // A second debounce here would discard edits when this keyed editor unmounts.
   useEffect(() => {
     if (recipeEquals(stored.current, recipe)) return;
-    const timer = setTimeout(() => {
-      stored.current = recipe;
-      updateImage(image.id, (current) => ({ ...current, recipe }));
-    }, PERSIST_DELAY_MS);
-    return () => clearTimeout(timer);
+    stored.current = recipe;
+    updateImage(image.id, (current) => ({ ...current, recipe }));
   }, [recipe, image.id, updateImage]);
 
   const change = useCallback((patch: RecipePatch) => {
     // The first change of a drag remembers where it started; commit() turns
     // that into the undo step.
-    if (!base.current) base.current = latest.current;
-    setHistory((current) => ({ ...current, recipe: patched(current.recipe, patch) }));
+    setHistory((current) => ({
+      ...current,
+      base: current.base ?? current.recipe,
+      recipe: patched(current.recipe, patch),
+    }));
   }, []);
 
   const commit = useCallback(() => {
-    const from = base.current;
-    base.current = null;
-    if (!from) return;
-    setHistory((current) =>
-      recipeEquals(from, current.recipe)
-        ? current
-        : { recipe: current.recipe, undo: [...current.undo, from], redo: [] },
-    );
+    setHistory((current) => {
+      if (!current.base) return current;
+      return {
+        ...current,
+        base: null,
+        undo: recipeEquals(current.base, current.recipe) ? current.undo : [...current.undo, current.base],
+        redo: recipeEquals(current.base, current.recipe) ? current.redo : [],
+      };
+    });
   }, []);
 
   const apply = useCallback(
@@ -89,20 +83,22 @@ export function useEditor(
   );
 
   const undo = useCallback(() => {
-    base.current = null;
     setHistory((current) => {
+      if (current.base && !recipeEquals(current.base, current.recipe)) {
+        return { ...current, recipe: current.base, base: null, redo: [current.recipe] };
+      }
       const previous = current.undo.at(-1);
       if (!previous) return current;
-      return { recipe: previous, undo: current.undo.slice(0, -1), redo: [...current.redo, current.recipe] };
+      return { recipe: previous, undo: current.undo.slice(0, -1), redo: [...current.redo, current.recipe], base: null };
     });
   }, []);
 
   const redo = useCallback(() => {
-    base.current = null;
     setHistory((current) => {
+      if (current.base && !recipeEquals(current.base, current.recipe)) return current;
       const next = current.redo.at(-1);
       if (!next) return current;
-      return { recipe: next, undo: [...current.undo, current.recipe], redo: current.redo.slice(0, -1) };
+      return { recipe: next, undo: [...current.undo, current.recipe], redo: current.redo.slice(0, -1), base: null };
     });
   }, []);
 
@@ -113,8 +109,8 @@ export function useEditor(
     apply,
     undo,
     redo,
-    canUndo: history.undo.length > 0,
-    canRedo: history.redo.length > 0,
+    canUndo: history.undo.length > 0 || (history.base !== null && !recipeEquals(history.base, recipe)),
+    canRedo: history.redo.length > 0 && (history.base === null || recipeEquals(history.base, recipe)),
     isDefault: isDefaultRecipe(recipe),
   };
 }

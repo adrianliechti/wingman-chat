@@ -20,14 +20,17 @@ function createCanvas(width = 1, height = 1): HTMLCanvasElement | OffscreenCanva
   return canvas;
 }
 
-/** Downscale through a 2D canvas, for browsers without `createImageBitmap` resize options. */
-async function resizeViaCanvas(full: ImageBitmap, width: number, height: number): Promise<ImageBitmap> {
+/** Color-manage into the shader's sRGB working space, optionally downscaling. */
+async function bitmapViaCanvas(full: ImageBitmap, width: number, height: number): Promise<ImageBitmap> {
   const canvas = createCanvas(width, height);
-  const context = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
-  if (!context) throw new Error("Could not resize the preview");
+  const context = canvas.getContext("2d", { colorSpace: "srgb" }) as
+    | OffscreenCanvasRenderingContext2D
+    | CanvasRenderingContext2D
+    | null;
+  if (!context) throw new Error("Could not prepare the image");
   context.imageSmoothingQuality = "high";
   context.drawImage(full, 0, 0, width, height);
-  return createImageBitmap(canvas);
+  return createImageBitmap(canvas, { premultiplyAlpha: "none", colorSpaceConversion: "none" });
 }
 
 /**
@@ -59,28 +62,22 @@ async function decodeFull(blob: Blob): Promise<ImageBitmap> {
   }
 }
 
-/** Decode `blob`, optionally downscaled so the longest edge is at most `maxEdge`. */
+/** Decode to straight-alpha sRGB, optionally limiting the longest edge. */
 export async function decodeBitmap(blob: Blob, maxEdge?: number): Promise<ImageBitmap> {
   const full = await decodeFull(blob);
-  if (!maxEdge) return full;
-  const edge = Math.max(full.width, full.height);
-  if (edge <= maxEdge) return full;
-  const scale = maxEdge / edge;
-  const width = Math.max(1, Math.round(full.width * scale));
-  const height = Math.max(1, Math.round(full.height * scale));
-  let resized: ImageBitmap;
   try {
-    resized = await createImageBitmap(full, { resizeWidth: width, resizeHeight: height, resizeQuality: "high" });
-    // Some engines accept the options and return the original size anyway.
-    if (resized.width !== width || resized.height !== height) {
-      resized.close();
-      resized = await resizeViaCanvas(full, width, height);
-    }
-  } catch {
-    resized = await resizeViaCanvas(full, width, height);
+    // ImageBitmap can retain its embedded profile (notably in WebKit), while
+    // WebGL bitmap uploads ignore UNPACK_COLORSPACE_CONVERSION_WEBGL. Explicit
+    // canvas conversion makes JPEG/PNG profiles agree with normal image display.
+    const scale = maxEdge && maxEdge > 0 ? Math.min(1, maxEdge / Math.max(full.width, full.height)) : 1;
+    return await bitmapViaCanvas(
+      full,
+      Math.max(1, Math.round(full.width * scale)),
+      Math.max(1, Math.round(full.height * scale)),
+    );
+  } finally {
+    full.close();
   }
-  full.close();
-  return resized;
 }
 
 function toBlob(canvas: HTMLCanvasElement | OffscreenCanvas, type: string, quality: number): Promise<Blob> {
@@ -102,13 +99,19 @@ export async function renderExport(
 ): Promise<Blob> {
   const bitmap = await decodeBitmap(source);
   const canvas = createCanvas();
-  const renderer = new ImageRenderer(canvas, { preserveDrawingBuffer: true });
+  let renderer: ImageRenderer | undefined;
   try {
+    renderer = new ImageRenderer(canvas, { preserveDrawingBuffer: true });
     renderer.setSource(bitmap);
     renderer.draw(recipe, { matte: format === "jpeg" ? [1, 1, 1] : null });
-    return await toBlob(canvas, `image/${format}`, quality);
+    const blob = await toBlob(canvas, `image/${format}`, quality);
+    // Canvas encoders silently return PNG for unsupported MIME types.
+    if (blob.type !== `image/${format}`) {
+      throw new Error(`This browser cannot export ${format.toUpperCase()}. Choose PNG or JPEG.`);
+    }
+    return blob;
   } finally {
-    renderer.destroy({ loseContext: true });
+    renderer?.destroy({ loseContext: true });
     bitmap.close();
   }
 }
