@@ -14,7 +14,14 @@ import "../../../src/index.css";
 
 const parameters = new URLSearchParams(location.search);
 const root = createRoot(document.getElementById("root")!);
-const state = { effects: 0, calls: 0, tools: [] as string[], instructions: "", input: [] as ModelMessage[] };
+const state = {
+  effects: 0,
+  calls: 0,
+  tools: [] as string[],
+  instructions: "",
+  input: [] as ModelMessage[],
+  renders: [] as { model: string; prompt: string; options?: unknown }[],
+};
 let stream = (_text: string) => {};
 let think = (_text: string) => {};
 let finish = (_text: string) => {};
@@ -154,6 +161,25 @@ if (parameters.has("panels")) {
     };
   }
   config.client.listModels = async () => [model];
+  if (parameters.has("canvas")) {
+    // A renderer with known capabilities (aspect tiles, quality tiers) and a
+    // synthetic gradient in place of the gateway's image.
+    const renderer = { id: "gpt-image-1", name: "Painter", type: "renderer" as const };
+    config.client.listModels = async () => [model, renderer];
+    config.client.generateImage = async (rendererModel, prompt, _images, options) => {
+      state.renders.push({ model: rendererModel, prompt, options });
+      const [width, height] =
+        options?.aspectRatio === "3:2" ? [384, 256] : options?.aspectRatio === "2:3" ? [256, 384] : [256, 256];
+      const canvas = new OffscreenCanvas(width, height);
+      const context = canvas.getContext("2d")!;
+      const gradient = context.createLinearGradient(0, 0, width, height);
+      gradient.addColorStop(0, "#1d4ed8");
+      gradient.addColorStop(1, "#f97316");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, width, height);
+      return canvas.convertToBlob({ type: "image/png" });
+    };
+  }
   config.client.generateTitle = async () => "Fixture";
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
   const provider = testClient(
@@ -236,7 +262,13 @@ if (parameters.has("panels")) {
   history.replaceState(
     null,
     "",
-    parameters.has("seed") ? "/chat/history-119" : parameters.has("chat") ? `/chat/${parameters.get("chat")}` : "/chat",
+    parameters.has("seed")
+      ? "/chat/history-119"
+      : parameters.has("chat")
+        ? `/chat/${parameters.get("chat")}`
+        : parameters.has("canvas")
+          ? "/canvas"
+          : "/chat",
   );
   const { default: App } = await import("../../../src/App");
   root.render(
@@ -249,7 +281,14 @@ if (parameters.has("panels")) {
 declare global {
   interface Window {
     reactUiE2E: {
-      state(): { effects: number; calls: number; tools: string[]; instructions: string; input: ModelMessage[] };
+      state(): {
+        effects: number;
+        calls: number;
+        tools: string[];
+        instructions: string;
+        input: ModelMessage[];
+        renders: { model: string; prompt: string; options?: unknown }[];
+      };
       stream(text: string): void;
       think(text: string): void;
       finish(text: string): void;

@@ -57,6 +57,10 @@ const targets = [
   ["src/features/chat/components/ChatMessageAttachments.tsx", "ChatMessageAttachments"],
   ["src/features/chat/components/PanelShell.tsx", "PanelShell"],
   ["src/shell/AppLayout.tsx", "AppLayout"],
+  ["src/features/canvas/pages/CanvasPage.tsx", "CanvasPage"],
+  ["src/features/canvas/components/Editor.tsx", "Editor"],
+  ["src/features/canvas/components/CreateImageDialog.tsx", "CreateImageDialog"],
+  ["src/features/canvas/components/AdjustmentSlider.tsx", "AdjustmentSlider"],
 ];
 let failed = false;
 const programs = new Map();

@@ -258,10 +258,87 @@ test("Canvas loads optional image styles from the shared design reference", asyn
   });
   await open(page);
   await page.getByRole("link", { name: "Canvas", exact: true }).click();
-  await page.getByRole("button", { name: "Style", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Watercolor", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Watercolor", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "New image" }).first().click();
+  await page.getByRole("button", { name: "All styles", exact: true }).click();
+  const watercolor = page.getByRole("button", { name: "Watercolor", exact: true });
+  await watercolor.click();
+  await expect(watercolor).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Style · Watercolor")).toBeVisible();
   expect(loaded).toEqual(["/skills/studio/canvas-design/references/image-styles.md"]);
+});
+
+test("Canvas generates into the filmstrip, develops on the GPU and keeps the recipe", async ({ page }) => {
+  // WebKit runs in a persistent profile, so earlier images may still be in the
+  // library: open the dialog from whichever "New image" button is shown and
+  // use a prompt unique to this run.
+  const prompt = `A fox in the snow ${Date.now()}`;
+  await open(page, "?canvas");
+  await page.getByRole("button", { name: "New image" }).first().click();
+  await page.getByRole("textbox", { name: "Prompt" }).fill(prompt);
+  await page.getByRole("radio", { name: "3:2", exact: true }).click();
+  await page.getByRole("button", { name: "Generate" }).click();
+
+  const stage = page.locator(`canvas[aria-label="${prompt}"]`);
+  await expect(stage).toBeVisible();
+  expect(await page.evaluate(() => window.reactUiE2E.state().renders)).toEqual([
+    { model: "gpt-image-1", prompt, options: { aspectRatio: "3:2", quality: "medium" } },
+  ]);
+  await expect(page.getByRole("option", { name: prompt })).toHaveAttribute("aria-selected", "true");
+  // The 3:2 request became a 384×256 image rendered at that size.
+  await expect.poll(() => stage.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height])).toEqual([
+    384, 256,
+  ]);
+
+  // The develop pipeline must actually change pixels: render the same source
+  // through the export path with and without an exposure cut.
+  const brightness = await page.evaluate(async (alt) => {
+    // Served by the dev server; variables keep TypeScript from resolving the paths here.
+    const exportModule = "/src/features/canvas/lib/exportImage.ts";
+    const recipeModule = "/src/features/canvas/lib/recipe.ts";
+    const { renderExport } = (await import(exportModule)) as typeof import("../../src/features/canvas/lib/exportImage");
+    const { DEFAULTS } = (await import(recipeModule)) as typeof import("../../src/features/canvas/lib/recipe");
+    const thumbnail = document.querySelector<HTMLImageElement>(`img[alt="${alt}"]`)!;
+    const source = await (await fetch(thumbnail.src)).blob();
+    const mean = async (recipe: typeof DEFAULTS) => {
+      const bitmap = await createImageBitmap(await renderExport(source, recipe, "png"));
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const context = canvas.getContext("2d")!;
+      context.drawImage(bitmap, 0, 0);
+      const data = context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) sum += data[i] + data[i + 1] + data[i + 2];
+      return sum / (data.length / 4) / 3;
+    };
+    return [await mean(DEFAULTS), await mean({ ...DEFAULTS, exposure: -3 }), await mean({ ...DEFAULTS, exposure: 2 })];
+  }, prompt);
+  expect(brightness[0]).toBeGreaterThan(60);
+  expect(brightness[1]).toBeLessThan(brightness[0] * 0.5);
+  expect(brightness[2]).toBeGreaterThan(brightness[0] * 1.2);
+
+  const exposure = page.getByRole("slider", { name: "Exposure", exact: true });
+  const value = page.getByRole("spinbutton", { name: "Exposure value" });
+  await value.fill("1.5");
+  await value.press("Enter");
+  await expect(exposure).toHaveValue("1.5");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(exposure).toHaveValue("0");
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await expect(exposure).toHaveValue("1.5");
+
+  await page.getByRole("button", { name: "Show original" }).click();
+  await expect(page.getByText("Original", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Export" }).click();
+  await expect(page.getByRole("menuitem", { name: /^PNG/ })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: /^JPEG/ })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: /^WebP/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // The recipe persists with the image (debounced, then flushed) and survives a reload.
+  await page.waitForTimeout(500);
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.reload();
+  await expect(page.locator(`canvas[aria-label="${prompt}"]`)).toBeVisible();
+  await expect(page.getByRole("slider", { name: "Exposure", exact: true })).toHaveValue("1.5");
 });
 
 test("Activity retains drafts, stops hidden effects and portals, and leaves persistent iframes alive", async ({
