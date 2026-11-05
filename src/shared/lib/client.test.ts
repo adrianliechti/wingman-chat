@@ -340,6 +340,20 @@ describe("raw request lifetime", () => {
     expect(new Uint8Array(await rendered.arrayBuffer())).toEqual(new Uint8Array([1, 2]));
     expect(vi.getTimerCount()).toBe(0);
   });
+  it("sends edit guides as the backend's mask and markup files", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([3]), { headers: { "content-type": "image/png" } }));
+    const image = new Blob([new Uint8Array([9])], { type: "image/jpeg" });
+    const mask = new Blob([new Uint8Array([8])], { type: "image/png" });
+    const markup = new Blob([new Uint8Array([7])], { type: "image/png" });
+    await new Client().generateImage("model", "Remove the sign", [image], { mask, markup, background: "transparent" });
+    const body = fetchMock.mock.calls.at(-1)![1].body as FormData;
+    expect(body.get("input")).toBe("Remove the sign");
+    expect((body.get("file") as File).name).toBe("image_0.jpg");
+    expect((body.get("mask") as File).name).toBe("mask.png");
+    expect((body.get("markup") as File).name).toBe("markup.png");
+    expect(body.get("background")).toBe("transparent");
+    expect(body.get("aspect_ratio")).toBeNull();
+  });
 
   function stalledBody(status = 200) {
     fetchMock.mockImplementationOnce(

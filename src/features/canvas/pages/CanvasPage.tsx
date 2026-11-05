@@ -1,17 +1,23 @@
-import { Download, ImagePlus, Info, Loader2, PlusIcon, X } from "lucide-react";
+import { FolderOpen, ImagePlus, Info, Loader2, PlusIcon, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CanvasInput } from "@/features/canvas/components/CanvasInput";
+import { CreateImageDialog, type GenerationRequest } from "@/features/canvas/components/CreateImageDialog";
+import { Editor, NAV_BUTTON_CLASS } from "@/features/canvas/components/Editor";
+import { Filmstrip, type PendingGeneration } from "@/features/canvas/components/Filmstrip";
 import { useImageStyles } from "@/features/canvas/hooks/useImageStyles";
-import { useImages } from "@/features/canvas/hooks/useImages";
+import { newVersion, useImages } from "@/features/canvas/hooks/useImages";
 import { useRendererModels } from "@/features/canvas/hooks/useRendererModels";
+import { fileTitle, imageDimensions, imageFiles } from "@/features/canvas/lib/images";
+import { aspectRatioValue } from "@/features/canvas/lib/rendererOptions";
+import type { Image } from "@/features/canvas/types/canvas";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
+import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
-import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
+import { confirm } from "@/shared/lib/confirm";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
-import { decodeDataURL, downloadFromUrl, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
-import type { ImageBackground, ImageQuality, ImageResolution, Model } from "@/shared/types/chat";
-import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { notify } from "@/shared/lib/notify";
+import { readAsDataURL } from "@/shared/lib/utils";
+import type { Model } from "@/shared/types/chat";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 
 function CanvasBackground() {
@@ -19,13 +25,9 @@ function CanvasBackground() {
   return (
     <div
       aria-hidden="true"
-      className="absolute inset-0 pointer-events-none overflow-hidden"
-      style={{
-        WebkitMaskImage: mask,
-        maskImage: mask,
-      }}
+      className="pointer-events-none absolute inset-0 overflow-hidden"
+      style={{ WebkitMaskImage: mask, maskImage: mask }}
     >
-      {/* Light mode dots */}
       <div
         className="absolute inset-0 dark:hidden"
         style={{
@@ -33,7 +35,6 @@ function CanvasBackground() {
           backgroundSize: "22px 22px",
         }}
       />
-      {/* Dark mode dots */}
       <div
         className="absolute inset-0 hidden dark:block"
         style={{
@@ -56,506 +57,377 @@ function loadDisclaimer() {
   }
 }
 
-// Memoized disclaimer component to avoid re-computing on every render
-const Disclaimer = () => {
-  const disclaimer = useMemo(() => loadDisclaimer(), []);
+interface PendingItem extends PendingGeneration {
+  request: GenerationRequest;
+}
 
-  if (!disclaimer) return null;
+type CreateImage = ReturnType<typeof useImages>["createImage"];
 
-  return (
-    <div className="mb-6 mx-auto max-w-2xl">
-      <div className="flex items-start justify-center gap-2 px-4 py-3">
-        <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-        <div className="text-xs text-neutral-600 dark:text-neutral-400 text-left">{disclaimer}</div>
-      </div>
-    </div>
-  );
-};
+/** Run one generation; reports back through the callbacks so the page stays declarative. */
+async function runGeneration(
+  request: GenerationRequest,
+  createImage: CreateImage,
+  onDone: (image: Image) => void,
+  onError: (message: string) => void,
+) {
+  try {
+    const client = getConfig().client;
+    const blob = await client.generateImage(request.model.id, request.prompt, request.references, {
+      aspectRatio: request.selection.aspect ?? undefined,
+      quality: request.selection.quality ?? undefined,
+      resolution: request.selection.resolution ?? undefined,
+      background: request.selection.background ?? undefined,
+    });
+    const [data, size] = await Promise.all([readAsDataURL(blob), imageDimensions(blob)]);
+    const image = await createImage({
+      prompt: request.prompt,
+      model: request.model.id,
+      data,
+      ...size,
+      versions: [newVersion("generated", request.prompt, request.model.id)],
+    });
+    onDone(image);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    onError(message);
+  }
+}
+
+/** Store dropped, pasted or picked photos as editable images. */
+async function importPhotos(files: File[], createImage: CreateImage): Promise<Image | null> {
+  let last: Image | null = null;
+  for (const file of files) {
+    try {
+      const [data, size] = await Promise.all([readAsDataURL(file), imageDimensions(file)]);
+      last = await createImage({
+        title: fileTitle(file.name),
+        prompt: "",
+        model: "",
+        data,
+        ...size,
+        versions: [newVersion("upload")],
+      });
+    } catch (error) {
+      notify.error(`Couldn't open ${file.name}`, error);
+    }
+  }
+  return last;
+}
 
 export function CanvasPage() {
   const config = getConfig();
   const { setRightActions } = useNavigation();
-  const { images, createImage, deleteImage } = useImages();
-
-  const [prompt, setPrompt] = useState("");
-  const [referenceImages, setReferenceImages] = useState<{ blob: Blob; dataUrl: string }[]>([]);
-  const [isGenerating, setIsGenerating] = useState(false);
-
+  const compact = !useBreakpoint("md");
+  const { images, isLoaded, createImage, updateImage, deleteImage } = useImages();
   const models = useRendererModels();
-  const { styles: imageStyles, prompts: stylePrompts } = useImageStyles();
-  const [selectedModel, setSelectedModel] = useState<Model | null>(null);
-  const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
-  const [selectedAspect, setSelectedAspect] = useState<string | null>(null);
-  // Canvas images are crafted and kept, so default to medium (the production
-  // baseline); the chat create_image tool defaults to low for casual asks. Users
-  // can still pick low/high/Auto from the submenu.
-  const [selectedQuality, setSelectedQuality] = useState<ImageQuality | null>("medium");
-  const [selectedResolution, setSelectedResolution] = useState<ImageResolution | null>(null);
-  const [selectedBackground, setSelectedBackground] = useState<ImageBackground | null>(null);
-  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
+  const { styles, prompts: stylePrompts } = useImageStyles();
+  const disclaimer = useMemo(() => loadDisclaimer(), []);
 
+  const [selectedModel, setSelectedModel] = useState<Model | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingItem[]>([]);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
-  const [isFetchingDrive, setIsFetchingDrive] = useState(false);
 
-  // Pick an initial model once the list loads: the configured renderer, else the
-  // first available.
+  // Pick an initial model once the list loads: the configured renderer, else the first.
   useEffect(() => {
     if (selectedModel || models.length === 0) return;
-    const configured = models.find((m) => m.id === config.renderer?.model);
+    const configured = models.find((model) => model.id === config.renderer?.model);
     setSelectedModel(configured ?? models[0]);
   }, [models, selectedModel, config.renderer?.model]);
 
-  // Drop any aspect/quality/background selection the chosen model doesn't support,
-  // so we never send it an option it can't honor.
-  useEffect(() => {
-    if (!selectedModel) return;
-    if (selectedAspect && !selectedModel.supportedAspectRatios?.includes(selectedAspect)) setSelectedAspect(null);
-    if (selectedQuality && !selectedModel.supportedQualities?.includes(selectedQuality)) setSelectedQuality(null);
-    if (selectedResolution && !selectedModel.supportedResolutions?.includes(selectedResolution)) {
-      setSelectedResolution(null);
-    }
-    if (selectedBackground && !selectedModel.supportedBackgrounds?.includes(selectedBackground)) {
-      setSelectedBackground(null);
-    }
-  }, [selectedModel, selectedAspect, selectedQuality, selectedResolution, selectedBackground]);
+  const selectedImage = useMemo(
+    () => (selectedId ? (images.find((image) => image.id === selectedId) ?? null) : null),
+    [images, selectedId],
+  );
+  const selectedPending = useMemo(
+    () => (selectedId ? (pending.find((item) => item.id === selectedId) ?? null) : null),
+    [pending, selectedId],
+  );
 
-  const handleReset = useCallback(() => {
-    setPrompt("");
-    setReferenceImages([]);
-    setSelectedStyle(null);
-    setSelectedImageId(null);
+  // Keep a sensible selection: the newest image when nothing (or something
+  // deleted) is selected, and nothing once the library is empty.
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (selectedImage || selectedPending) return;
+    setSelectedId(images[0]?.id ?? pending[0]?.id ?? null);
+  }, [isLoaded, images, pending, selectedImage, selectedPending]);
+
+  const openPhotos = useCallback(
+    (files: File[]) => {
+      const accepted = imageFiles(files);
+      if (!accepted.length) return;
+      setImporting(true);
+      void importPhotos(accepted, createImage)
+        .then((image) => {
+          if (image) setSelectedId(image.id);
+        })
+        .finally(() => setImporting(false));
+    },
+    [createImage],
+  );
+
+  const startGeneration = useCallback(
+    (request: GenerationRequest, retryId?: string) => {
+      const id = retryId ?? crypto.randomUUID();
+      const item: PendingItem = {
+        id,
+        prompt: request.text || request.prompt,
+        aspect: aspectRatioValue(request.selection.aspect),
+        status: "running",
+        request,
+      };
+      setPending((current) => [item, ...current.filter((existing) => existing.id !== id)]);
+      setSelectedId(id);
+      void runGeneration(
+        request,
+        createImage,
+        (image) => {
+          setPending((current) => current.filter((existing) => existing.id !== id));
+          setSelectedId((current) => (current === id || current === null ? image.id : current));
+        },
+        (message) => {
+          notify.error("Image generation failed", message);
+          setPending((current) =>
+            current.map((existing) =>
+              existing.id === id ? { ...existing, status: "error", error: message } : existing,
+            ),
+          );
+        },
+      );
+    },
+    [createImage],
+  );
+
+  const retryPending = useCallback(
+    (id: string) => {
+      const item = pending.find((existing) => existing.id === id);
+      if (item) startGeneration(item.request, id);
+    },
+    [pending, startGeneration],
+  );
+
+  const dismissPending = useCallback((id: string) => {
+    setPending((current) => current.filter((existing) => existing.id !== id));
   }, []);
 
-  // Set up navigation actions
+  const removeImage = useCallback(
+    async (id: string) => {
+      const image = images.find((existing) => existing.id === id);
+      const confirmed = await confirm({
+        title: "Delete this image?",
+        message: image?.title || image?.prompt || "The image and its adjustments will be removed.",
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (confirmed) deleteImage(id);
+    },
+    [images, deleteImage],
+  );
+
+  const openCreate = useCallback(() => setCreateOpen(true), []);
+  const openPhotoPicker = useCallback(() => fileInputRef.current?.click(), []);
+
+  // The editor owns the top-bar actions while an image is open.
   useEffect(() => {
+    if (selectedImage) return;
     setRightActions(
-      <button
-        type="button"
-        className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-        onClick={handleReset}
-        title="Clear"
-      >
+      <button type="button" className={NAV_BUTTON_CLASS} onClick={openCreate} title="New image" aria-label="New image">
         <PlusIcon size={20} />
       </button>,
     );
+    return () => setRightActions(null);
+  }, [selectedImage, setRightActions, openCreate]);
 
-    return () => {
-      setRightActions(null);
-    };
-  }, [setRightActions, handleReset]);
-
-  const handleImageUpload = useCallback(async (files: FileList | File[]) => {
-    const imageFiles = Array.from(files).filter((file) => file.type.startsWith("image/"));
-
-    for (const file of imageFiles) {
-      try {
-        const resizedBlob = await resizeImageBlob(file, 1024, 1024);
-        const dataUrl = await readAsDataURL(resizedBlob);
-
-        let added = false;
-        setReferenceImages((prev) => {
-          if (prev.length >= 4) {
-            return prev;
-          }
-          added = true;
-          return [...prev, { blob: resizedBlob, dataUrl }];
-        });
-        if (!added) {
-          break;
-        }
-      } catch (err) {
-        console.error("Failed to process image:", err);
-      }
-    }
-  }, []);
-
-  const handleDriveFiles = useCallback(
-    async (files: SelectedFile[]) => {
-      setIsFetchingDrive(true);
-      const maxBytes = config.vision?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES;
-      await Promise.all(files.map((f) => downloadDriveFile(f, maxBytes)))
-        .then(handleImageUpload)
-        .finally(() => setIsFetchingDrive(false));
-    },
-    [config.vision?.maxFileSize, handleImageUpload],
-  );
-
-  const removeReferenceImage = useCallback((index: number) => {
-    setReferenceImages((prev) => {
-      const newImages = [...prev];
-      newImages.splice(index, 1);
-      return newImages;
-    });
-  }, []);
-
-  const addAsReference = useCallback(
-    async (id: string) => {
-      if (referenceImages.length >= 4) {
-        return;
-      }
-
-      const generatedImage = images.find((img) => img.id === id);
-      if (!generatedImage) {
-        return;
-      }
-
-      try {
-        const blob = decodeDataURL(generatedImage.data);
-        const resizedBlob = await resizeImageBlob(blob, 1024, 1024);
-        const dataUrl = await readAsDataURL(resizedBlob);
-
-        setReferenceImages((prev) => {
-          if (prev.length >= 4) {
-            return prev;
-          }
-          return [...prev, { blob: resizedBlob, dataUrl }];
-        });
-      } catch (err) {
-        console.error("Failed to use image as reference:", err);
-      }
-    },
-    [images, referenceImages.length],
-  );
-
-  const handleDropFiles = useCallback(
-    (files: File[]) => {
-      const imageFiles = files.filter((f) => f.type.startsWith("image/"));
-      if (imageFiles.length > 0) {
-        void handleImageUpload(imageFiles);
-      }
-    },
-    [handleImageUpload],
-  );
-
-  const isDragging = useDropZone(containerRef, handleDropFiles);
-
-  const handleGenerate = async (overridePrompt?: string, sourceImageData?: string) => {
-    const activePrompt = overridePrompt ?? prompt;
-    if (!activePrompt.trim() && referenceImages.length === 0) {
-      return;
-    }
-
-    setIsGenerating(true);
-
-    // Capture and clear reference images
-    const currentRefImages = referenceImages;
-    setReferenceImages([]);
-
-    const model = selectedModel?.id || config.renderer?.model || "";
-
-    // Build the full prompt with style if selected. The style may no longer
-    // exist if the served skill changed under us, so guard the lookup.
-    const styleFragment = selectedStyle ? stylePrompts[selectedStyle] : undefined;
-    const fullPrompt = styleFragment
-      ? `${activePrompt}${activePrompt.trim() ? ", " : ""}${styleFragment}`
-      : activePrompt;
-    const imageOptions = {
-      aspectRatio: selectedAspect ?? undefined,
-      quality: selectedQuality ?? undefined,
-      resolution: selectedResolution ?? undefined,
-      background: selectedBackground ?? undefined,
-    };
-
-    try {
-      // Collect reference images: user-uploaded + optionally the source image for refinement
-      const refImages: Blob[] = currentRefImages.map((img) => img.blob);
-      if (sourceImageData) {
-        refImages.push(decodeDataURL(sourceImageData));
-      }
-
-      const resultBlob = await config.client.generateImage(model, fullPrompt, refImages, imageOptions);
-
-      // Convert to data URL for persistence and display
-      const dataUrl = await readAsDataURL(resultBlob);
-
-      // Add to persisted images via hook
-      const newImage = await createImage({
-        prompt: fullPrompt,
-        model: model,
-        data: dataUrl,
-      });
-
-      setSelectedImageId(newImage.id);
-      setPrompt("");
-    } catch (err) {
-      console.error("Image generation failed:", err);
-    }
-    setIsGenerating(false);
-  };
-
-  const handleDownload = (imageUrl: string) => {
-    downloadFromUrl(imageUrl, `generated-${Date.now()}.png`);
-  };
-
-  const handlePaste = useCallback(
-    async (e: React.ClipboardEvent) => {
-      const items = e.clipboardData.items;
-      const imageFiles: File[] = [];
-
-      for (const item of items) {
-        if (item.type.startsWith("image/")) {
-          const file = item.getAsFile();
-          if (file) {
-            imageFiles.push(file);
-          }
-        }
-      }
-
-      if (imageFiles.length > 0) {
-        e.preventDefault();
-        await handleImageUpload(imageFiles);
-      }
-    },
-    [handleImageUpload],
-  );
-
-  // Derive the selected image object
-  const selectedImage = useMemo(
-    () => (selectedImageId ? (images.find((img) => img.id === selectedImageId) ?? null) : null),
-    [images, selectedImageId],
-  );
-
-  // Auto-select first image if selected image was deleted
+  // Dropped or pasted photos open as new images.
+  const isDragging = useDropZone(containerRef, openPhotos);
   useEffect(() => {
-    if (selectedImageId && !selectedImage && images.length > 0) {
-      setSelectedImageId(images[0].id);
-    } else if (selectedImageId && images.length === 0) {
-      setSelectedImageId(null);
-    }
-  }, [images, selectedImageId, selectedImage]);
+    const onPaste = (event: ClipboardEvent) => {
+      if (createOpen) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && ["INPUT", "TEXTAREA"].includes(target.tagName)) return;
+      const files = imageFiles(event.clipboardData?.items ?? ([] as File[]));
+      if (files.length) {
+        event.preventDefault();
+        openPhotos(files);
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [createOpen, openPhotos]);
+
+  const empty = isLoaded && images.length === 0 && pending.length === 0;
 
   return (
-    <div className="h-full w-full flex flex-col overflow-hidden relative">
-      <main ref={containerRef} className="w-full grow overflow-hidden flex flex-col relative">
-        {/* Full-screen drop zone overlay */}
+    <div className="relative flex h-full w-full flex-col overflow-hidden pt-12 md:pt-14">
+      <main ref={containerRef} className="relative flex min-h-0 w-full grow flex-col overflow-hidden">
         {isDragging && (
-          <div className="absolute inset-0 flex items-center justify-center z-30 bg-slate-50/80 dark:bg-slate-900/40 backdrop-blur-sm">
-            <div className="relative bg-neutral-50/60 dark:bg-neutral-900/50 backdrop-blur-lg p-10 rounded-2xl shadow-xl border-2 border-dashed border-slate-400 dark:border-slate-500 flex flex-col items-center gap-5">
-              <ImagePlus size={64} className="text-neutral-400 dark:text-neutral-500" />
-              <span className="text-base font-medium text-neutral-500 dark:text-neutral-400 text-center">
-                Drop images as reference
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-neutral-50/80 backdrop-blur-sm dark:bg-neutral-950/60">
+            <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-neutral-400 bg-white/60 p-10 shadow-xl backdrop-blur-lg dark:border-neutral-500 dark:bg-neutral-900/60">
+              <ImagePlus size={56} className="text-neutral-400 dark:text-neutral-500" />
+              <span className="text-sm font-medium text-neutral-600 dark:text-neutral-300">
+                Drop photos to open them
               </span>
             </div>
           </div>
         )}
 
-        {/* Main content — centered on full page width */}
-        <div
-          className={cn(
-            "flex-1 flex flex-col items-center min-h-0 p-4 pt-8 md:pt-16 relative",
-            images.length > 0 && "md:px-24",
-          )}
-        >
-          {selectedImage ? (
-            /* Image viewer — centered in space above the refine input */
-            <div className="flex items-center justify-center flex-1 min-h-0 pb-44 md:pb-28 w-full">
-              {/* Inner wrapper sized to the image — loader and buttons anchor to this */}
-              <div className="relative rounded-2xl shadow-xl overflow-hidden">
-                <img
-                  src={selectedImage.data}
-                  alt={selectedImage.prompt || "Generated image"}
-                  className="block max-w-full max-h-[calc(100svh-22rem)] md:max-h-[calc(100vh-14rem)]"
-                />
-
-                {/* Loader overlay — covers only the image */}
-                {isGenerating && (
-                  <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/40 backdrop-blur-sm">
-                    <Loader2 size={36} className="animate-spin text-white/80" />
-                  </div>
-                )}
-
-                {/* Action buttons — always visible on touch, hover-reveal on desktop */}
-                <div className="absolute top-2 right-2 flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => addAsReference(selectedImage.id)}
-                    disabled={referenceImages.length >= 4}
-                    className="p-2 bg-black/40 hover:bg-black/60 backdrop-blur-lg text-white rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Use as reference"
-                  >
-                    <ImagePlus size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDownload(selectedImage.data)}
-                    className="p-2 bg-black/40 hover:bg-black/60 backdrop-blur-lg text-white rounded-lg transition-all"
-                    title="Download"
-                  >
-                    <Download size={16} />
-                  </button>
-                </div>
+        {empty ? (
+          <div className="relative flex flex-1 flex-col items-center justify-center gap-6 p-6 text-center">
+            <CanvasBackground />
+            <div className="relative flex max-w-md flex-col items-center gap-4">
+              <div className="rounded-2xl bg-white/70 p-4 text-neutral-500 shadow-sm ring-1 ring-black/5 dark:bg-neutral-900/70 dark:text-neutral-400 dark:ring-white/10">
+                <Sparkles size={28} />
               </div>
-            </div>
-          ) : (
-            /* Empty / prompt-only state */
-            <div className="flex flex-col items-center justify-center gap-5 w-full flex-1 relative">
-              <CanvasBackground />
-              <Disclaimer />
-
-              {isGenerating && (
-                <div className="relative w-64 h-64 md:w-72 md:h-72 rounded-2xl overflow-hidden bg-neutral-100 dark:bg-neutral-900 shadow-lg mb-2">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 size={32} className="animate-spin text-neutral-400 dark:text-neutral-500" />
-                  </div>
+              <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Create or edit an image</h1>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                Generate from a prompt, or open a photo to adjust light, color, and effects.
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={openCreate}
+                  autoFocus
+                  className="flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+                >
+                  <PlusIcon size={16} />
+                  New image
+                </button>
+                <button
+                  type="button"
+                  onClick={openPhotoPicker}
+                  disabled={importing}
+                  className="flex items-center gap-2 rounded-xl border border-neutral-300 bg-white/70 px-4 py-2 text-sm font-medium text-neutral-700 shadow-sm transition-colors hover:bg-white disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900/70 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                >
+                  {importing ? <Loader2 size={16} className="animate-spin" /> : <FolderOpen size={16} />}
+                  Open photo
+                </button>
+              </div>
+              {disclaimer && (
+                <div className="flex items-start gap-2 pt-2 text-left text-xs text-neutral-500 dark:text-neutral-400">
+                  <Info size={14} className="mt-0.5 shrink-0" />
+                  <div>{disclaimer}</div>
                 </div>
               )}
-
-              <CanvasInput
-                prompt={prompt}
-                onPromptChange={setPrompt}
-                onSubmit={() => handleGenerate()}
-                onPaste={handlePaste}
-                referenceImages={referenceImages}
-                onRemoveReferenceImage={removeReferenceImage}
-                onFileUploadClick={() => fileInputRef.current?.click()}
-                drives={config.drives}
-                onDriveSelect={setActiveDrive}
-                isLoadingFiles={isFetchingDrive}
-                models={models}
-                selectedModel={selectedModel}
-                onSelectModel={setSelectedModel}
-                styles={imageStyles}
-                selectedStyle={selectedStyle}
-                onSelectStyle={setSelectedStyle}
-                selectedAspect={selectedAspect}
-                onSelectAspect={setSelectedAspect}
-                selectedQuality={selectedQuality}
-                onSelectQuality={setSelectedQuality}
-                selectedResolution={selectedResolution}
-                onSelectResolution={setSelectedResolution}
-                selectedBackground={selectedBackground}
-                onSelectBackground={setSelectedBackground}
-                placeholder="Generate something new..."
-                disabled={isGenerating}
-                autoFocus
-                className="max-w-4xl"
-              />
             </div>
-          )}
-
-          {/* Refine input — floating bottom center overlay */}
-          {selectedImage && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-24 md:bottom-6 z-20 flex justify-center px-4">
-              <CanvasInput
-                prompt={prompt}
-                onPromptChange={setPrompt}
-                onSubmit={() => handleGenerate(undefined, selectedImage.data)}
-                onPaste={handlePaste}
-                referenceImages={referenceImages}
-                onRemoveReferenceImage={removeReferenceImage}
-                onFileUploadClick={() => fileInputRef.current?.click()}
-                drives={config.drives}
-                onDriveSelect={setActiveDrive}
-                isLoadingFiles={isFetchingDrive}
-                models={models}
-                selectedModel={selectedModel}
-                onSelectModel={setSelectedModel}
-                styles={imageStyles}
-                selectedStyle={selectedStyle}
-                onSelectStyle={setSelectedStyle}
-                selectedAspect={selectedAspect}
-                onSelectAspect={setSelectedAspect}
-                selectedQuality={selectedQuality}
-                onSelectQuality={setSelectedQuality}
-                selectedResolution={selectedResolution}
-                onSelectResolution={setSelectedResolution}
-                selectedBackground={selectedBackground}
-                onSelectBackground={setSelectedBackground}
-                placeholder="Refine the selected image..."
-                disabled={isGenerating}
-                className="pointer-events-auto max-w-4xl"
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Thumbnail grid overlay — bottom horizontal on mobile, right vertical on desktop */}
-        {images.length > 0 && (
-          <div className="absolute bottom-0 inset-x-0 md:bottom-0 md:inset-auto md:top-16 md:right-0 z-10 flex md:flex-col items-center gap-2 p-2 overflow-x-auto md:overflow-x-hidden md:overflow-y-auto scrollbar-none bg-white/50 dark:bg-neutral-950/50 md:bg-transparent dark:md:bg-transparent backdrop-blur-sm md:backdrop-blur-none">
-            {/* New generation tile */}
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedImageId(null);
-                setPrompt("");
-              }}
-              className={`size-16 md:size-20 rounded-xl border-2 border-dashed flex items-center justify-center transition-all shrink-0 ${
-                !selectedImageId
-                  ? "border-blue-400 dark:border-blue-500 text-blue-500 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-900/20"
-                  : "border-neutral-300 dark:border-neutral-600 text-neutral-400 dark:text-neutral-500 hover:border-neutral-400 dark:hover:border-neutral-500 hover:text-neutral-500 dark:hover:text-neutral-400 bg-white/60 dark:bg-neutral-900/60"
-              } backdrop-blur-lg`}
-              title="Generate new image"
-            >
-              <PlusIcon size={20} />
-            </button>
-
-            {/* Image thumbnails */}
-            {images.map((img) => {
-              const isActive = img.id === selectedImageId;
-              return (
-                <div
-                  key={img.id}
-                  className={`relative size-16 md:size-20 rounded-xl cursor-pointer group shrink-0 transition-all ${
-                    isActive
-                      ? "ring-2 ring-blue-500 dark:ring-blue-400 shadow-md"
-                      : "border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-500"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedImageId(img.id);
-                      setPrompt("");
-                    }}
-                    className="block size-full overflow-hidden rounded-xl"
-                    aria-pressed={isActive}
-                    title={img.prompt || "Select generated image"}
-                  >
-                    <img src={img.data} alt={img.prompt || "Generated image"} className="size-full object-cover" />
-                  </button>
-                  <button
-                    type="button"
-                    className="absolute top-0.5 right-0.5 z-10 size-4 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteImage(img.id);
-                    }}
-                  >
-                    <X size={8} />
-                  </button>
-                </div>
-              );
-            })}
           </div>
+        ) : (
+          <>
+            {selectedImage ? (
+              <Editor
+                key={selectedImage.id}
+                image={selectedImage}
+                updateImage={updateImage}
+                model={selectedModel}
+                compact={compact}
+                onNew={openCreate}
+              />
+            ) : (
+              <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+                {selectedPending ? (
+                  <GeneratingPlaceholder item={selectedPending} onRetry={retryPending} onDismiss={dismissPending} />
+                ) : (
+                  !isLoaded && <Loader2 size={24} className="animate-spin text-neutral-400" />
+                )}
+              </div>
+            )}
+            <Filmstrip
+              images={images}
+              pending={pending}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onDelete={(id) => void removeImage(id)}
+              onDismissPending={dismissPending}
+              onRetryPending={retryPending}
+              onNew={openCreate}
+              onOpenPhoto={openPhotoPicker}
+              importing={importing}
+            />
+          </>
         )}
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={(e) => {
-            if (e.target.files) {
-              void handleImageUpload(e.target.files);
-              e.target.value = "";
-            }
-          }}
-          className="hidden"
-        />
       </main>
 
-      {activeDrive && (
-        <DrivePicker
-          isOpen={!!activeDrive}
-          onClose={() => setActiveDrive(null)}
-          drive={activeDrive}
-          onFilesSelected={handleDriveFiles}
-          multiple
-          accept="image/*"
-        />
-      )}
+      <CreateImageDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        models={models}
+        model={selectedModel}
+        onSelectModel={setSelectedModel}
+        styles={styles}
+        stylePrompts={stylePrompts}
+        onGenerate={startGeneration}
+        onOpenPhoto={openPhotoPicker}
+        disclaimer={disclaimer}
+      />
+
+      <input
+        ref={fileInputRef}
+        aria-label="Photos to open"
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          if (event.target.files) openPhotos(Array.from(event.target.files));
+          event.target.value = "";
+        }}
+      />
+    </div>
+  );
+}
+
+function GeneratingPlaceholder({
+  item,
+  onRetry,
+  onDismiss,
+}: {
+  item: PendingItem;
+  onRetry: (id: string) => void;
+  onDismiss: (id: string) => void;
+}) {
+  const aspect = item.aspect ?? 1;
+  return (
+    <div className="flex max-h-full max-w-full flex-col items-center gap-4">
+      <div
+        className={cn(
+          "relative flex max-h-[60vh] w-[min(70vw,36rem)] items-center justify-center overflow-hidden rounded-2xl shadow-xl",
+          item.status === "running"
+            ? "animate-pulse bg-neutral-200 dark:bg-neutral-800"
+            : "bg-red-50 ring-1 ring-red-200 dark:bg-red-950/30 dark:ring-red-900",
+        )}
+        style={{ aspectRatio: aspect }}
+        role="status"
+        aria-label={item.status === "running" ? "Generating image" : "Generation failed"}
+      >
+        {item.status === "running" ? (
+          <Loader2 size={28} className="animate-spin text-neutral-400 dark:text-neutral-500" />
+        ) : (
+          <div className="flex flex-col items-center gap-3 p-6 text-center">
+            <p className="text-sm text-red-700 dark:text-red-300">{item.error || "Image generation failed"}</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => onRetry(item.id)}
+                className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white dark:bg-white dark:text-neutral-900"
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={() => onDismiss(item.id)}
+                className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:border-neutral-600 dark:text-neutral-200"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+      <p className="max-w-md truncate text-xs text-neutral-500 dark:text-neutral-400" title={item.prompt}>
+        {item.prompt}
+      </p>
     </div>
   );
 }
