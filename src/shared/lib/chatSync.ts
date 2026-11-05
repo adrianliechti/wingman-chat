@@ -27,7 +27,6 @@ import {
   diffChat,
   encodeLines,
   type LogEntry,
-  MAX_ENTRY_PLAINTEXT,
   replayLog,
 } from "./chatLog";
 import * as api from "./storeClient";
@@ -147,17 +146,18 @@ async function stashPendingTargetUnlocked(chat: Chat): Promise<void> {
 }
 
 /** Keep local deletion usable before backup protection has been configured. */
-export function stashPendingDeletion(chatId: string, userId: string): Promise<void> {
+export function stashPendingDeletion(chatId: string, userId?: string): Promise<void> {
   return withBackupStorage(() => stashPendingDeletionUnlocked(chatId, userId));
 }
 
-async function stashPendingDeletionUnlocked(chatId: string, userId: string): Promise<void> {
+async function stashPendingDeletionUnlocked(chatId: string, userId?: string): Promise<void> {
   const previous = await loadState();
-  if (previous && previous.userId !== userId) {
+  const owner = userId ?? previous?.userId;
+  if (!owner || (previous && previous.userId !== owner)) {
     await deleteDirectory(`chats/${chatId}`);
     return;
   }
-  const state = previous ?? { userId, heads: {}, lastFrameHash: {} };
+  const state = previous ?? { userId: owner, heads: {}, lastFrameHash: {} };
   const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
   const history = await readText(historyPath(chatId));
   const stored =
@@ -276,6 +276,7 @@ export class ChatSync {
   }
 
   private async pullInner(): Promise<Chat[]> {
+    const headsBeforeListing = { ...this.state.heads };
     const remote = await api.listChats();
     let changed = false;
 
@@ -293,18 +294,27 @@ export class ChatSync {
       }),
     );
 
-    // Drop chats deleted server-side.
+    // Apply remote deletions only to baselines that existed before this listing.
+    // A concurrent upload may have created or updated a chat since the request began.
     const remoteIds = new Set(remote.map((r) => r.id));
-    const localDirs = await listDirectories("chats");
-    for (const id of localDirs) {
-      if (!remoteIds.has(id) && this.state.heads[id] !== undefined) {
-        await deleteDirectory(`chats/${id}`);
+    for (const [id, head] of Object.entries(headsBeforeListing)) {
+      if (remoteIds.has(id)) continue;
+      await this.withChat(id, async () => {
+        if (this.state.heads[id] !== head) return;
+        if (this.pendingTargets.has(id)) {
+          // Keep offline edits and their attachments; the next upload starts
+          // a fresh log rather than diffing against the deleted server copy.
+          await deleteFile(historyPath(id));
+        } else {
+          await deleteDirectory(`chats/${id}`);
+        }
         this.lastSynced.delete(id);
-        this.pendingTargets.delete(id);
+        this.needsNativeSnapshot.delete(id);
         delete this.state.heads[id];
         delete this.state.lastFrameHash[id];
+        if (this.state.entriesSinceCompact) delete this.state.entriesSinceCompact[id];
         changed = true;
-      }
+      });
     }
 
     await saveState(this.state);
@@ -333,7 +343,9 @@ export class ChatSync {
    *  flush. Idempotent on retry. */
   saveChat(chat: Chat): Promise<void> {
     return withBackupStorage(() =>
-      isBackupSessionCurrent() ? this.saveChatUnlocked(chat) : stashPendingTargetUnlocked(chat),
+      isBackupSessionCurrent()
+        ? this.withChat(chat.id, () => this.saveChatUnlocked(chat))
+        : stashPendingTargetUnlocked(chat),
     );
   }
 
@@ -350,7 +362,9 @@ export class ChatSync {
    *  deletion from the chat listing. */
   deleteChat(chatId: string): Promise<void> {
     return withBackupStorage(() =>
-      isBackupSessionCurrent() ? this.deleteChatUnlocked(chatId) : stashPendingDeletionUnlocked(chatId, this.userId),
+      isBackupSessionCurrent()
+        ? this.withChat(chatId, () => this.deleteChatUnlocked(chatId))
+        : stashPendingDeletionUnlocked(chatId, this.userId),
     );
   }
 
@@ -436,6 +450,11 @@ export class ChatSync {
         if (local) {
           const stored = normalizeStoredChat(local);
           this.pendingTargets.set(id, stored);
+          // A crash may have removed history before the reset baseline was saved.
+          // Without a replayable log, this target must upload as a fresh snapshot.
+          delete this.state.heads[id];
+          delete this.state.lastFrameHash[id];
+          if (this.state.entriesSinceCompact) delete this.state.entriesSinceCompact[id];
           await writeJson(targetPath(id), stored);
           await deleteFile(opfsOnlyChatPath(id));
           continue;
@@ -561,14 +580,6 @@ export class ChatSync {
    *  Returns the posted seq range, or null when the retry re-diff came
    *  up empty. */
   private async postEntries(chatId: string, entries: LogEntry[]): Promise<{ firstSeq: number; newSeq: number } | null> {
-    // A single entry that cannot fit one frame can never be posted — fail
-    // fast with a readable error instead of hammering the server with 413s.
-    for (const e of entries) {
-      if (JSON.stringify(e).length > MAX_ENTRY_PLAINTEXT) {
-        throw new Error("a message is too large to sync (limit ~11 MB) — it stays on this device only");
-      }
-    }
-
     for (let attempt = 0; attempt < 2; attempt++) {
       const expectedSeq = this.state.heads[chatId] ?? 0;
       let prevHash = this.state.lastFrameHash[chatId] ?? ZERO_HASH;

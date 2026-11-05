@@ -17,9 +17,8 @@ export const syncedChatStorage = {
     }
   },
   remove: async (id: string): Promise<void> => {
-    const current = await storeSession.initSession();
-    if (current.status === "setup") return stashPendingDeletion(id, current.userId);
-    const session = await storeSession.whenUploading();
-    await session.sync.deleteChat(id);
+    const session = await storeSession.initSession();
+    if (session.status === "ready" || session.status === "upload-only") return session.sync.deleteChat(id);
+    await stashPendingDeletion(id, "userId" in session ? session.userId : undefined);
   },
 };

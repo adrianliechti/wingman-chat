@@ -309,11 +309,16 @@ export function SyncSection({
               }
               size={active && backupBytes !== null ? `≈ ${formatBytes(backupBytes)}` : undefined}
               description={
-                status === "setup"
-                  ? "Your data is saved only in this browser. Turn on backup to keep a copy online."
-                  : active
-                    ? `${syncSummary}${description ? ` · ${description}` : ""}`
-                    : description
+                status === "setup" ? (
+                  "Your data is saved only in this browser. Turn on backup to keep a copy online."
+                ) : active ? (
+                  <>
+                    <span className="block">{syncSummary}</span>
+                    {description && <span className="block">{description}</span>}
+                  </>
+                ) : (
+                  description
+                )
               }
               actions={
                 <>
@@ -595,7 +600,7 @@ interface BackupStatusRowProps {
   icon: ReactNode;
   title: string;
   size?: string;
-  description: string;
+  description: ReactNode;
   actions: ReactNode;
 }
 

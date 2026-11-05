@@ -28,8 +28,8 @@ var _ store.Provider = (*Provider)(nil)
 //	    keystore.json
 //	    keystore.prev.json    (obsolete sidecar removed on keystore update)
 //	    chats/{chatID}.jsonl
-//	    chats/{chatID}.head   (8-byte big-endian head seq)
-//	    chats/{chatID}.ids    (binary LRU of last 1000 event_ids)
+//	    chats/{chatID}.head   (committed seq, log size, recent event IDs)
+//	    chats/{chatID}.ids    (legacy dedup sidecar, migrated on write)
 //	    blobs/{blobID}
 type Provider struct {
 	root string
@@ -41,7 +41,7 @@ var uuidLike = regexp.MustCompile(`^[A-Za-z0-9_-]{8,128}$`)
 
 const (
 	dedupCapacity   = 1000
-	dedupRecordSize = 16 // sha1-truncated hash of eventID
+	dedupRecordSize = 16 // truncated SHA-256 hash of eventID
 )
 
 func New(root string) (*Provider, error) {
@@ -257,7 +257,7 @@ func (p *Provider) ListChats(_ context.Context, userID string) ([]store.ChatMeta
 			continue
 		}
 
-		head, _, _ := readHead(p.chatHeadPath(userID, chatID))
+		head, _, _, _ := readHead(p.chatHeadPath(userID, chatID))
 
 		out = append(out, store.ChatMeta{
 			ID:      chatID,
@@ -273,31 +273,36 @@ func (p *Provider) ListChats(_ context.Context, userID string) ([]store.ChatMeta
 	return out, nil
 }
 
-// The head file is the commit point for appends: 16 bytes big-endian
-// holding the committed seq and the committed log size. Log bytes beyond
-// the committed size are orphans from a batch that failed mid-write —
-// they are invisible to readers (seq > head) and truncated away before
-// the next append. Older 8-byte head files carry no size (-1 = unknown).
-func readHead(path string) (seq int64, size int64, err error) {
+// The head file is the commit point for appends: two big-endian int64s
+// (committed sequence and log size), followed by up to 1000 event ID hashes.
+// Keeping deduplication in the same atomic file prevents a crash from committing
+// frames without their IDs. Older 8/16-byte heads are migrated from the log.
+func readHead(path string) (seq int64, size int64, history []byte, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return 0, -1, err
+		return 0, -1, nil, err
 	}
 	if len(data) < 8 {
-		return 0, -1, nil
+		return 0, -1, nil, nil
 	}
 	seq = int64(binary.BigEndian.Uint64(data[:8]))
 	if len(data) < 16 {
-		return seq, -1, nil
+		return seq, -1, nil, nil
 	}
-	return seq, int64(binary.BigEndian.Uint64(data[8:16])), nil
+	if len(data) > 16 {
+		history = data[16:]
+	}
+	return seq, int64(binary.BigEndian.Uint64(data[8:16])), history, nil
 }
 
-func writeHead(path string, seq, size int64) error {
-	var buf [16]byte
+func writeHead(path string, seq, size int64, history []byte) error {
+	if len(history) > dedupCapacity*dedupRecordSize {
+		history = history[len(history)-dedupCapacity*dedupRecordSize:]
+	}
+	buf := make([]byte, 16, 16+len(history))
 	binary.BigEndian.PutUint64(buf[:8], uint64(seq))
 	binary.BigEndian.PutUint64(buf[8:], uint64(size))
-	return writeAtomic(path, buf[:])
+	return writeAtomic(path, append(buf, history...))
 }
 
 // truncatePartialLine removes a trailing line that lacks a final newline,
@@ -362,32 +367,69 @@ func eventIDDigest(id string) [dedupRecordSize]byte {
 	return out
 }
 
-// loadDedup returns the in-memory dedup set for a chat (recent eventIDs).
-func loadDedup(path string) (map[[dedupRecordSize]byte]struct{}, []byte, error) {
-	data, err := os.ReadFile(path)
+// Rebuild old dedup metadata from committed frames and legacy sidecars. The
+// old writer published sidecars only after their corresponding head commit.
+func rebuildDedup(path, legacyPath string, head int64) ([]byte, error) {
+	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return map[[dedupRecordSize]byte]struct{}{}, nil, nil
+		return nil, nil
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	set := make(map[[dedupRecordSize]byte]struct{}, len(data)/dedupRecordSize)
-
-	for i := 0; i+dedupRecordSize <= len(data); i += dedupRecordSize {
-		var rec [dedupRecordSize]byte
-		copy(rec[:], data[i:i+dedupRecordSize])
-		set[rec] = struct{}{}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), store.MaxFrameBytes+4*1024)
+	var history []byte
+	for scanner.Scan() {
+		var line frameLine
+		if json.Unmarshal(scanner.Bytes(), &line) != nil || line.Seq > head {
+			continue
+		}
+		digest := eventIDDigest(line.ID)
+		history = append(history, digest[:]...)
+		if len(history) > dedupCapacity*dedupRecordSize {
+			history = history[dedupRecordSize:]
+		}
 	}
-
-	return set, data, nil
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	// Old compaction retained IDs of removed frames in its sidecar. Seed
+	// those IDs, then prefer the log's newer committed IDs to repair a stale
+	// sidecar left by a crash between the old head and sidecar writes.
+	legacy, err := os.ReadFile(legacyPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	combined := append(legacy, history...)
+	seen := make(map[[dedupRecordSize]byte]bool)
+	var recent []byte
+	for i := len(combined) - dedupRecordSize; i >= 0 && len(recent) < dedupCapacity*dedupRecordSize; i -= dedupRecordSize {
+		var digest [dedupRecordSize]byte
+		copy(digest[:], combined[i:i+dedupRecordSize])
+		if !seen[digest] {
+			seen[digest] = true
+			recent = append(recent, digest[:]...)
+		}
+	}
+	// Restore chronological order for the next bounded head commit.
+	for i, j := 0, len(recent)-dedupRecordSize; i < j; i, j = i+dedupRecordSize, j-dedupRecordSize {
+		for k := 0; k < dedupRecordSize; k++ {
+			recent[i+k], recent[j+k] = recent[j+k], recent[i+k]
+		}
+	}
+	return recent, nil
 }
 
-func saveDedup(path string, history []byte) error {
-	if len(history) > dedupCapacity*dedupRecordSize {
-		history = history[len(history)-dedupCapacity*dedupRecordSize:]
+func dedupSet(history []byte) map[[dedupRecordSize]byte]struct{} {
+	set := make(map[[dedupRecordSize]byte]struct{}, len(history)/dedupRecordSize)
+	for i := 0; i+dedupRecordSize <= len(history); i += dedupRecordSize {
+		var record [dedupRecordSize]byte
+		copy(record[:], history[i:i+dedupRecordSize])
+		set[record] = struct{}{}
 	}
-	return writeAtomic(path, history)
+	return set
 }
 
 type frameLine struct {
@@ -424,9 +466,14 @@ func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expe
 	logPath := p.chatLogPath(userID, chatID)
 	headPath := p.chatHeadPath(userID, chatID)
 
-	head, committedSize, err := readHead(headPath)
+	head, committedSize, dedupHistory, err := readHead(headPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return store.AppendResult{}, err
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		// No commit point exists yet. Even complete lines left by a failed
+		// first append are uncommitted and must not survive its retry.
+		committedSize = 0
 	}
 
 	if expectedSeq != head {
@@ -445,11 +492,13 @@ func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expe
 		}
 	}
 
-	dedupPath := p.chatDedupPath(userID, chatID)
-	dedupSet, dedupHistory, err := loadDedup(dedupPath)
-	if err != nil {
-		return store.AppendResult{}, err
+	if dedupHistory == nil && head > 0 {
+		dedupHistory, err = rebuildDedup(logPath, p.chatDedupPath(userID, chatID), head)
+		if err != nil {
+			return store.AppendResult{}, err
+		}
 	}
+	seenIDs := dedupSet(dedupHistory)
 
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
@@ -481,7 +530,7 @@ func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expe
 
 	for i, evID := range eventIDs {
 		digest := eventIDDigest(evID)
-		if _, seen := dedupSet[digest]; seen {
+		if _, seen := seenIDs[digest]; seen {
 			deduped = append(deduped, evID)
 			continue
 		}
@@ -504,7 +553,7 @@ func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expe
 		}
 		size += int64(n)
 
-		dedupSet[digest] = struct{}{}
+		seenIDs[digest] = struct{}{}
 		dedupHistory = append(dedupHistory, digest[:]...)
 	}
 
@@ -512,11 +561,7 @@ func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expe
 		return store.AppendResult{}, err
 	}
 
-	if err := writeHead(headPath, seq, size); err != nil {
-		return store.AppendResult{}, err
-	}
-
-	if err := saveDedup(dedupPath, dedupHistory); err != nil {
+	if err := writeHead(headPath, seq, size, dedupHistory); err != nil {
 		return store.AppendResult{}, err
 	}
 
@@ -546,7 +591,7 @@ func (p *Provider) ReadEvents(ctx context.Context, userID, chatID string, fromSe
 
 	// Never stream past the committed head — bytes beyond it belong to a
 	// batch that failed before its commit and will be truncated away.
-	head, _, err := readHead(p.chatHeadPath(userID, chatID))
+	head, _, _, err := readHead(p.chatHeadPath(userID, chatID))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		f.Close()
 		return nil, err
@@ -619,9 +664,16 @@ func (p *Provider) CompactChat(ctx context.Context, userID, chatID string, befor
 	}
 	defer src.Close()
 
-	head, _, err := readHead(p.chatHeadPath(userID, chatID))
+	head, _, dedupHistory, err := readHead(p.chatHeadPath(userID, chatID))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
+	}
+
+	if dedupHistory == nil && head > 0 {
+		dedupHistory, err = rebuildDedup(logPath, p.chatDedupPath(userID, chatID), head)
+		if err != nil {
+			return err
+		}
 	}
 
 	tmp, err := os.CreateTemp(filepath.Dir(logPath), filepath.Base(logPath)+".*.tmp")
@@ -672,7 +724,7 @@ func (p *Provider) CompactChat(ctx context.Context, userID, chatID string, befor
 		os.Remove(tmpPath)
 		return err
 	}
-	return writeHead(p.chatHeadPath(userID, chatID), head, size)
+	return writeHead(p.chatHeadPath(userID, chatID), head, size, dedupHistory)
 }
 
 func (p *Provider) BlobExists(_ context.Context, userID, blobID string) (bool, error) {

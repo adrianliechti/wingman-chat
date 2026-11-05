@@ -61,6 +61,7 @@ export function decodeLines(text: string): LogEntry[] {
 /** Per-frame plaintext budget. Base64 + GCM overhead keeps the resulting
  *  frame comfortably under the server's 16 MiB MaxFrameBytes. */
 const MAX_FRAME_PLAINTEXT = 4 * 1024 * 1024;
+const encoder = new TextEncoder();
 
 /** Hard ceiling for a single entry: chunking cannot split one entry, and
  *  past this the encrypted frame would exceed the server's cap anyway. */
@@ -74,7 +75,10 @@ export function chunkEntries(entries: LogEntry[]): LogEntry[][] {
   let cur: LogEntry[] = [];
   let size = 0;
   for (const e of entries) {
-    const n = JSON.stringify(e).length + 1;
+    const n = encoder.encode(JSON.stringify(e)).byteLength + 1;
+    if (n > MAX_ENTRY_PLAINTEXT) {
+      throw new Error("a message is too large to sync (limit ~11 MB) — it stays on this device only");
+    }
     if (cur.length > 0 && size + n > MAX_FRAME_PLAINTEXT) {
       out.push(cur);
       cur = [];
@@ -273,7 +277,7 @@ export function diffChat(prev: StoredChat | null, next: StoredChat): LogEntry[] 
     // Special case: exactly one message changed at position i and the
     // rest match — emit a single replace, no truncate. Saves a line for
     // the common "regenerate last response" pattern.
-    if (prevTail === 1 && nextTail >= 1 && prev.messages.length - 1 === i && next.messages.length - 1 >= i) {
+    if (prevTail === 1 && nextTail >= 1) {
       out.push({ type: "replace", index: i, message: next.messages[i] });
       for (let j = i + 1; j < next.messages.length; j++) {
         out.push({ type: "message", ...next.messages[j] });
@@ -293,11 +297,5 @@ export function diffChat(prev: StoredChat | null, next: StoredChat): LogEntry[] 
 // Convenience -----------------------------------------------------------
 
 export function applyEntriesInPlace(chat: StoredChat | null, entries: LogEntry[], chatId: string): StoredChat | null {
-  const seed = chat ? { ...chat, messages: chat.messages.slice() } : null;
-  const { chat: result } = replayLog(chatId, [...(seed ? toReplayBaseline(seed) : []), ...entries]);
-  return result;
-}
-
-function toReplayBaseline(chat: StoredChat): LogEntry[] {
-  return diffChat(null, chat);
+  return replayLog(chatId, [...(chat ? diffChat(null, chat) : []), ...entries]).chat;
 }

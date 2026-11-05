@@ -21,12 +21,13 @@ import (
 // listing doesn't touch the content files.
 //
 //	{user}/files/index.json
-//	{user}/files/{fileID}
+//	{user}/files/{fileID}.{etag}
 
 type fileManifestEntry struct {
-	ETag    string    `json:"etag"`
-	Updated time.Time `json:"updated"`
-	Size    int64     `json:"size"`
+	ETag             string    `json:"etag"`
+	Updated          time.Time `json:"updated"`
+	Size             int64     `json:"size"`
+	ContentAddressed bool      `json:"contentAddressed,omitempty"`
 }
 
 func (p *Provider) filesDir(userID string) string {
@@ -35,6 +36,14 @@ func (p *Provider) filesDir(userID string) string {
 
 func (p *Provider) filePath(userID, fileID string) string {
 	return filepath.Join(p.filesDir(userID), fileID)
+}
+
+func (p *Provider) fileContentPath(userID, fileID string, entry fileManifestEntry) string {
+	path := p.filePath(userID, fileID)
+	if entry.ContentAddressed {
+		return path + "." + entry.ETag
+	}
+	return path // Existing manifests address the original, unversioned file.
 }
 
 func (p *Provider) fileManifestPath(userID string) string {
@@ -105,7 +114,7 @@ func (p *Provider) GetFile(ctx context.Context, userID, fileID string) (io.ReadC
 		return nil, "", store.ErrNotFound
 	}
 
-	f, err := os.Open(p.filePath(userID, fileID))
+	f, err := os.Open(p.fileContentPath(userID, fileID, entry))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, "", store.ErrNotFound
 	}
@@ -164,18 +173,33 @@ func (p *Provider) PutFile(ctx context.Context, userID, fileID string, r io.Read
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
-	if err == nil {
-		err = os.Rename(tmpPath, path)
-	}
 	if err != nil {
 		os.Remove(tmpPath)
 		return "", err
 	}
 
 	etag := hex.EncodeToString(hasher.Sum(nil))
-	manifest[fileID] = fileManifestEntry{ETag: etag, Updated: time.Now().UTC(), Size: size}
-	if err := p.saveFileManifest(userID, manifest); err != nil {
+	entry := fileManifestEntry{ETag: etag, Updated: time.Now().UTC(), Size: size, ContentAddressed: true}
+	newPath := p.fileContentPath(userID, fileID, entry)
+	if err := os.Rename(tmpPath, newPath); err != nil {
+		os.Remove(tmpPath)
 		return "", err
+	}
+	// The manifest is the commit point. Until it is published, readers keep
+	// opening the previous immutable object with its matching etag.
+	manifest[fileID] = entry
+	if err := p.saveFileManifest(userID, manifest); err != nil {
+		if !exists || newPath != p.fileContentPath(userID, fileID, current) {
+			os.Remove(newPath)
+		}
+		return "", err
+	}
+	if exists {
+		if oldPath := p.fileContentPath(userID, fileID, current); oldPath != newPath {
+			// Open readers retain their file descriptor after unlinking. A
+			// cleanup failure only leaves an unreferenced object for later.
+			os.Remove(oldPath)
+		}
 	}
 	return etag, nil
 }
@@ -196,13 +220,13 @@ func (p *Provider) DeleteFile(ctx context.Context, userID, fileID string) error 
 		return err
 	}
 
-	if err := os.Remove(p.filePath(userID, fileID)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-
-	if _, ok := manifest[fileID]; ok {
+	if entry, ok := manifest[fileID]; ok {
 		delete(manifest, fileID)
-		return p.saveFileManifest(userID, manifest)
+		if err := p.saveFileManifest(userID, manifest); err != nil {
+			return err
+		}
+		// Publish the deletion before reclaiming the now-unreferenced data.
+		os.Remove(p.fileContentPath(userID, fileID, entry))
 	}
 	return nil
 }

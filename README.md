@@ -311,6 +311,8 @@ docker run -it --rm -p 8000:8000 \
 # or: task run
 ```
 
+See [How backup works](docs/backup.md) for sync timing, storage, encryption, and recovery.
+
 To enable persistent server backups in the Alpine image, mount a writable volume:
 
 ```bash
