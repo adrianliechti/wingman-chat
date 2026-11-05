@@ -55,8 +55,29 @@ export async function rasterizeSvg(svg: string, options?: SvgRasterizeOptions): 
   }
 }
 
+/**
+ * Intrinsic size of an SVG document: numeric (or px) width and height on the
+ * root, else its viewBox. Undefined when the markup carries neither.
+ */
+export function svgSize(svg: string): { width: number; height: number } | undefined {
+  const root = svgRoot(svg);
+  const length = (name: string) => {
+    const match = /^\s*(\d+(?:\.\d+)?)\s*(?:px)?\s*$/.exec(root.getAttribute(name) ?? "");
+    return match ? Number(match[1]) : 0;
+  };
+  const [width, height] = [length("width"), length("height")];
+  return width && height ? { width, height } : viewBoxOf(root);
+}
+
 function viewBoxSize(svg: string): { width: number; height: number } | undefined {
-  const root = new DOMParser().parseFromString(svg, "image/svg+xml").documentElement;
+  return viewBoxOf(svgRoot(svg));
+}
+
+function svgRoot(svg: string): Element {
+  return new DOMParser().parseFromString(svg, "image/svg+xml").documentElement;
+}
+
+function viewBoxOf(root: Element): { width: number; height: number } | undefined {
   const viewBox = root
     .getAttribute("viewBox")
     ?.trim()

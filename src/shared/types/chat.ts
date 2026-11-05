@@ -16,6 +16,10 @@ export type ImageQuality = "low" | "medium" | "high" | "xhigh" | "max";
 export type ImageResolution = "512" | "1K" | "2K" | "4K";
 /** Image-generation background mode beyond the default "auto" (which is omitted). */
 export type ImageBackground = "opaque" | "transparent";
+/** Image-generation output beyond the default raster image: vector SVG or animated GIF. */
+export type ImageFormat = "svg" | "gif";
+/** How much an image model plans before rendering, separate from quality (GPT Image 2.6). */
+export type ImageComplexity = "low" | "medium" | "high";
 
 export type Model = {
   id: string;
@@ -64,6 +68,10 @@ export type Model = {
   supportedResolutions?: ImageResolution[];
   /** Background modes beyond the always-available "auto" default (opaque/transparent). */
   supportedBackgrounds?: ImageBackground[];
+  /** Output formats beyond the default raster image; text-to-image only (no reference images). */
+  supportedFormats?: ImageFormat[];
+  /** Planning levels before rendering, separate from quality. */
+  supportedComplexities?: ImageComplexity[];
 
   tools?: {
     enabled: string[];

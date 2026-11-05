@@ -1,5 +1,6 @@
 import { AlertCircle, FolderOpen, Loader2, PlusIcon, RotateCw, X } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { viewOnlyFormat } from "../lib/images";
 import type { Image } from "../types/canvas";
 import { cn } from "@/shared/lib/cn";
 
@@ -130,6 +131,7 @@ export function Filmstrip({
 
       {images.map((image) => {
         const active = image.id === selectedId;
+        const format = viewOnlyFormat(image.data);
         return (
           <div
             key={image.id}
@@ -157,6 +159,11 @@ export function Filmstrip({
                 draggable={false}
               />
             </button>
+            {format && (
+              <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[9px] leading-4 font-semibold text-white uppercase">
+                {format}
+              </span>
+            )}
             <button
               type="button"
               aria-label="Delete image"

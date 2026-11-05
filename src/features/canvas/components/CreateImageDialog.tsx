@@ -1,14 +1,18 @@
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from "@headlessui/react";
 import {
   ArrowRight,
+  Brain,
   ChevronDown,
   Expand,
+  FileImage,
+  Film,
   Gauge,
   HardDrive,
   ImagePlus,
   Layers,
   Loader2,
   Sparkles,
+  Timer,
   Upload,
   X,
 } from "lucide-react";
@@ -96,6 +100,8 @@ export function CreateImageDialog({
   // Keep only the levers the chosen model supports; the gateway ignores the rest anyway.
   const constrained = useMemo(() => constrainSelection(model, selection), [model, selection]);
   const aspects = supportedAspects(model);
+  // SVG and GIF are drawn from the prompt alone; references stay for PNG.
+  const textOnly = constrained.format !== null;
 
   const addReferences = useCallback(async (blobs: Blob[]) => {
     if (!blobs.length) return;
@@ -118,7 +124,7 @@ export function CreateImageDialog({
     [addReferences, config.vision?.maxFileSize],
   );
 
-  const canSubmit = !!model && (text.trim().length > 0 || references.length > 0);
+  const canSubmit = !!model && (text.trim().length > 0 || (!textOnly && references.length > 0));
 
   const submit = () => {
     if (!model || !canSubmit) return;
@@ -131,7 +137,7 @@ export function CreateImageDialog({
       style,
       model,
       selection: constrained,
-      references: references.map((reference) => reference.blob),
+      references: textOnly ? [] : references.map((reference) => reference.blob),
     });
     setText("");
     setReferences([]);
@@ -160,6 +166,10 @@ export function CreateImageDialog({
     quality: <Gauge size={14} />,
     resolution: <Expand size={14} />,
     background: <Layers size={14} />,
+    complexity: <Brain size={14} />,
+    format: <FileImage size={14} />,
+    frames: <Film size={14} />,
+    speed: <Timer size={14} />,
   });
 
   const chip = (item: ImageStyle) => {
@@ -231,7 +241,13 @@ export function CreateImageDialog({
                         aria-label="Prompt"
                         rows={3}
                         value={text}
-                        placeholder="Describe the image you want…"
+                        placeholder={
+                          constrained.format === "gif"
+                            ? "Describe the animation you want…"
+                            : constrained.format === "svg"
+                              ? "Describe the illustration you want…"
+                              : "Describe the image you want…"
+                        }
                         onChange={(event) => setText(event.target.value)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" && !event.shiftKey) {
@@ -248,68 +264,78 @@ export function CreateImageDialog({
                         }}
                         className="block w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-500"
                       />
-                      <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
-                        {references.map((reference, index) => (
-                          <div key={reference.dataUrl.slice(-32) + index} className="group relative size-12">
-                            <img
-                              src={reference.dataUrl}
-                              alt={`Reference ${index + 1}`}
-                              className="size-full rounded-lg object-cover ring-1 ring-black/10 dark:ring-white/10"
-                            />
-                            <button
-                              type="button"
-                              aria-label={`Remove reference ${index + 1}`}
-                              onClick={() => setReferences((current) => current.filter((_, i) => i !== index))}
-                              className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-neutral-800 text-white opacity-0 shadow transition-opacity group-hover:opacity-100 focus-visible:opacity-100 dark:bg-neutral-200 dark:text-neutral-900"
-                            >
-                              <X size={9} />
-                            </button>
-                          </div>
-                        ))}
-                        {loadingReferences && (
-                          <div className="flex size-12 items-center justify-center rounded-lg bg-neutral-200/60 dark:bg-neutral-700/60">
-                            <Loader2 size={14} className="animate-spin text-neutral-500" />
-                          </div>
-                        )}
-                        {references.length < MAX_REFERENCES &&
-                          (config.drives.length > 0 ? (
-                            <DropdownMenu
-                              anchor="bottom start"
-                              trigger={
-                                <MenuButton
-                                  title="Add reference image"
-                                  className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-white/5 dark:hover:text-neutral-200"
-                                >
-                                  <ImagePlus size={14} />
-                                  Reference
-                                </MenuButton>
-                              }
-                            >
-                              <DropdownMenuItem icon={<Upload size={15} />} onClick={() => fileInput.current?.click()}>
-                                Upload
-                              </DropdownMenuItem>
-                              {config.drives.map((drive) => (
-                                <DropdownMenuItem
-                                  key={drive.id}
-                                  icon={<HardDrive size={15} />}
-                                  onClick={() => setActiveDrive(drive)}
-                                >
-                                  {drive.name}
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenu>
-                          ) : (
-                            <button
-                              type="button"
-                              title="Add reference image"
-                              onClick={() => fileInput.current?.click()}
-                              className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-white/5 dark:hover:text-neutral-200"
-                            >
-                              <ImagePlus size={14} />
-                              Reference
-                            </button>
+                      {textOnly ? (
+                        <p className="px-4 pb-3 text-xs text-neutral-500 dark:text-neutral-400">
+                          {constrained.format === "gif" ? "GIFs" : "SVGs"} are generated from the prompt alone, without
+                          reference images.
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
+                          {references.map((reference, index) => (
+                            <div key={reference.dataUrl.slice(-32) + index} className="group relative size-12">
+                              <img
+                                src={reference.dataUrl}
+                                alt={`Reference ${index + 1}`}
+                                className="size-full rounded-lg object-cover ring-1 ring-black/10 dark:ring-white/10"
+                              />
+                              <button
+                                type="button"
+                                aria-label={`Remove reference ${index + 1}`}
+                                onClick={() => setReferences((current) => current.filter((_, i) => i !== index))}
+                                className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-neutral-800 text-white opacity-0 shadow transition-opacity group-hover:opacity-100 focus-visible:opacity-100 dark:bg-neutral-200 dark:text-neutral-900"
+                              >
+                                <X size={9} />
+                              </button>
+                            </div>
                           ))}
-                      </div>
+                          {loadingReferences && (
+                            <div className="flex size-12 items-center justify-center rounded-lg bg-neutral-200/60 dark:bg-neutral-700/60">
+                              <Loader2 size={14} className="animate-spin text-neutral-500" />
+                            </div>
+                          )}
+                          {references.length < MAX_REFERENCES &&
+                            (config.drives.length > 0 ? (
+                              <DropdownMenu
+                                anchor="bottom start"
+                                trigger={
+                                  <MenuButton
+                                    title="Add reference image"
+                                    className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-white/5 dark:hover:text-neutral-200"
+                                  >
+                                    <ImagePlus size={14} />
+                                    Reference
+                                  </MenuButton>
+                                }
+                              >
+                                <DropdownMenuItem
+                                  icon={<Upload size={15} />}
+                                  onClick={() => fileInput.current?.click()}
+                                >
+                                  Upload
+                                </DropdownMenuItem>
+                                {config.drives.map((drive) => (
+                                  <DropdownMenuItem
+                                    key={drive.id}
+                                    icon={<HardDrive size={15} />}
+                                    onClick={() => setActiveDrive(drive)}
+                                  >
+                                    {drive.name}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenu>
+                            ) : (
+                              <button
+                                type="button"
+                                title="Add reference image"
+                                onClick={() => fileInput.current?.click()}
+                                className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-white/5 dark:hover:text-neutral-200"
+                              >
+                                <ImagePlus size={14} />
+                                Reference
+                              </button>
+                            ))}
+                        </div>
+                      )}
                     </div>
 
                     {aspects.length > 0 && (
