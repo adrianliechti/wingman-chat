@@ -12,11 +12,12 @@ const config = vi.hoisted(() => ({
   client: { generateImage: vi.fn(async (..._args: unknown[]) => new Blob(["image"], { type: "image/png" })) },
   renderer: { model: "gpt-image-2" } as { model?: string; elicitation?: boolean },
   models: [] as Model[],
+  fs: null as { chatId?: string; ingestFiles: ReturnType<typeof vi.fn> } | null,
 }));
 vi.mock("@/shared/config", () => ({ getConfig: () => config }));
 // Stands in for the live catalog, which already applies config.models overrides.
 vi.mock("@/shared/hooks/useModelCatalog", () => ({ useModelCatalog: () => config.models }));
-vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({ useArtifacts: () => ({ fs: null }) }));
+vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({ useArtifacts: () => ({ fs: config.fs }) }));
 vi.mock("@/shared/lib/utils", async (original) => ({
   ...(await original<typeof import("@/shared/lib/utils")>()),
   readAsDataURL: async () => "data:image/png;base64,aW1hZ2U=",
@@ -25,6 +26,7 @@ vi.mock("@/shared/lib/utils", async (original) => ({
 beforeEach(() => {
   config.renderer = { model: "gpt-image-2" };
   config.models = [];
+  config.fs = null;
   config.client.generateImage.mockReset().mockResolvedValue(new Blob(["image"], { type: "image/png" }));
 });
 
@@ -194,4 +196,55 @@ it.each([true, false])("restores native image approval and does not prompt twice
   expect(elicit).not.toHaveBeenCalled();
   if (approved) expect(JSON.stringify(restored.store.value)).toContain('"value":"aW1hZ2U="');
   restored.ai.dispose();
+});
+
+it("offers SVG, GIF and complexity only for renderers that support them", () => {
+  expect(parameters().format).toBeUndefined();
+  expect(parameters().complexity).toBeUndefined();
+  expect(parameters().frame_count).toBeUndefined();
+  config.renderer = { model: "gpt-image-2.6-flare" };
+  const properties = parameters();
+  expect(properties.format.enum).toEqual(["png", "svg", "gif"]);
+  expect(properties.complexity.enum).toEqual(["low", "medium", "high"]);
+  expect(properties.frame_count).toBeDefined();
+  expect(properties.frame_duration_ms).toBeDefined();
+  config.models = [{ id: "gpt-image-2.6-flare", name: "Flare", supportedFormats: ["svg"] }];
+  expect(parameters().format.enum).toEqual(["png", "svg"]);
+  expect(parameters().frame_count).toBeUndefined();
+});
+
+it("renders animated GIFs text-to-image with frame controls and no background", async () => {
+  config.renderer = { model: "gpt-image-2.6-flare" };
+  await buildTool().execute(
+    {
+      prompt: "A jumping alpaca",
+      format: "gif",
+      complexity: "low",
+      frame_count: 12,
+      frame_duration_ms: 5000,
+      background: "transparent",
+    },
+    { context: { content: () => [mediaFromDataUrl("data:image/png;base64,cmVmZXJlbmNl")] }, emitCustomEvent() {} },
+  );
+  const [, , references, options] = config.client.generateImage.mock.calls.at(-1)!;
+  expect(references).toEqual([]);
+  expect(options).toEqual({ format: "gif", quality: "low", complexity: "low", frameCount: 12 });
+});
+
+it("rejects explicit reference images for SVG and GIF output", async () => {
+  config.renderer = { model: "gpt-image-2.6-sunburst" };
+  const result = await buildTool().execute({ prompt: "Vectorize", format: "svg", images: ["/logo.png"] });
+  expect(result).toEqual([{ type: "text", content: expect.stringContaining("SVG output can't use reference images") }]);
+  expect(config.client.generateImage).not.toHaveBeenCalled();
+});
+
+it("saves generated SVG to artifacts as markup", async () => {
+  config.renderer = { model: "gpt-image-2.6-sunburst" };
+  const ingestFiles = vi.fn(async (..._args: unknown[]) => ({ mutations: [], paths: ["/a-fox.svg"] }));
+  config.fs = { ingestFiles };
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+  config.client.generateImage.mockResolvedValueOnce(new Blob([svg], { type: "image/svg+xml" }));
+  await buildTool().execute({ prompt: "A fox", format: "svg" });
+  expect(config.client.generateImage.mock.calls.at(-1)?.[3]).toMatchObject({ format: "svg" });
+  expect(ingestFiles.mock.calls[0][0]).toEqual([{ path: "/a-fox.svg", content: svg, contentType: "image/svg+xml" }]);
 });

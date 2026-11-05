@@ -164,7 +164,10 @@ if (parameters.has("panels")) {
   if (parameters.has("canvas")) {
     // A renderer with known capabilities (aspect tiles, quality tiers) and a
     // synthetic gradient in place of the gateway's image.
-    const renderer = { id: "gpt-image-1", name: "Painter", type: "renderer" as const };
+    // `vector` swaps in GPT Image 2.6, which can also return SVG and GIF.
+    const renderer = parameters.has("vector")
+      ? { id: "gpt-image-2.6-flare", name: "Flare", type: "renderer" as const }
+      : { id: "gpt-image-1", name: "Painter", type: "renderer" as const };
     config.client.listModels = async () => [model, renderer];
     config.client.generateImage = async (rendererModel, prompt, images, options) => {
       // Blobs don't serialize across page.evaluate; record their sizes instead.
@@ -177,6 +180,17 @@ if (parameters.has("panels")) {
         ...(mask ? { mask: mask.size } : {}),
         ...(markup ? { markup: markup.size } : {}),
       });
+      if (options?.format === "svg") {
+        const svg =
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200"><rect width="300" height="200" fill="#1d4ed8"/></svg>';
+        return new Blob([svg], { type: "image/svg+xml" });
+      }
+      if (options?.format === "gif") {
+        const gif = Uint8Array.from(atob("R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="), (c) =>
+          c.charCodeAt(0),
+        );
+        return new Blob([gif], { type: "image/gif" });
+      }
       const [width, height] =
         options?.aspectRatio === "3:2" ? [384, 256] : options?.aspectRatio === "2:3" ? [256, 384] : [256, 256];
       const canvas = new OffscreenCanvas(width, height);

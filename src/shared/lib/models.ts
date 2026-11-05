@@ -1,5 +1,7 @@
 import type {
   ImageBackground,
+  ImageComplexity,
+  ImageFormat,
   ImageQuality,
   ImageResolution,
   Model,
@@ -196,6 +198,8 @@ export interface RendererCapabilities {
   aspectRatios?: string[];
   resolutions?: ImageResolution[];
   backgrounds?: ImageBackground[];
+  formats?: ImageFormat[];
+  complexities?: ImageComplexity[];
 }
 
 // A broad set of aspect ratios most image models can approximate; the backend
@@ -213,13 +217,19 @@ export function rendererCapabilities(id: string): RendererCapabilities {
   const lowerId = id.toLowerCase();
 
   // Image 2.5 adds higher quality tiers, custom sizes, and transparent output
-  // through the gateway for both Sunburst and Flare.
-  if (/\bgpt-?image-?2[.-]5-(?:sunburst|flare)(?=$|[/:]|-\d{4})/.test(lowerId)) {
+  // through the gateway for both Sunburst and Flare. Image 2.6 keeps those and
+  // adds a complexity lever plus SVG and animated GIF generation.
+  const sunburstFlare = /\bgpt-?image-?2[.-]([56])-(?:sunburst|flare)(?=$|[/:]|-\d{4})/.exec(lowerId);
+  if (sunburstFlare) {
     return {
       qualities: ["low", "medium", "high", "xhigh", "max"],
       aspectRatios: GENERIC_ASPECTS,
       resolutions: ["1K", "2K", "4K"],
       backgrounds: ["opaque", "transparent"],
+      ...(sunburstFlare[1] === "6" && {
+        formats: ["svg", "gif"] satisfies ImageFormat[],
+        complexities: ["low", "medium", "high"] satisfies ImageComplexity[],
+      }),
     };
   }
 
@@ -283,6 +293,8 @@ export function withRendererFallback(model: Model): Model {
     supportedAspectRatios: model.supportedAspectRatios ?? caps.aspectRatios,
     supportedResolutions: model.supportedResolutions ?? caps.resolutions,
     supportedBackgrounds: model.supportedBackgrounds ?? caps.backgrounds,
+    supportedFormats: model.supportedFormats ?? caps.formats,
+    supportedComplexities: model.supportedComplexities ?? caps.complexities,
   };
 }
 
