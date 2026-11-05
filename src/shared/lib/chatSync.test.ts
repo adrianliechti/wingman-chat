@@ -161,6 +161,26 @@ it("keeps local chat deletion available before backup protection setup", async (
   expect(api.deleteChat).not.toHaveBeenCalled();
 });
 
+it("journals offline deletions under the persisted owner when session initialization fails", async () => {
+  memory.put("chats/chat/chat.json", JSON.stringify(await extractChatBlobs(chat())));
+  await writeJson("_sync/state.json", { userId: "user", heads: { chat: 1 }, lastFrameHash: { chat: "hash" } });
+  await stashPendingDeletion("chat");
+  expect(await readLocalChat("chat")).toBeUndefined();
+  expect(await readJson("_sync/state.json")).toMatchObject({
+    userId: "user",
+    heads: {},
+    lastFrameHash: {},
+    pendingDeletes: [{ id: "chat" }],
+  });
+});
+
+it("deletes a never-synced local chat without inventing an account owner", async () => {
+  memory.put("chats/chat/chat.json", JSON.stringify(await extractChatBlobs(chat())));
+  await stashPendingDeletion("chat");
+  expect(await readLocalChat("chat")).toBeUndefined();
+  expect(await readJson("_sync/state.json")).toBeUndefined();
+});
+
 it("keeps streaming snapshots local and uploads only the final transcript after request completion", async () => {
   const sync = await ChatSync.create({ userId: "user", dek: await generateDEK() });
   const release = beginChatBackupPause("chat");
@@ -206,4 +226,141 @@ it("defers an upload if streaming starts while event encryption is still pending
   }
   await sync.flushPending();
   expect(api.appendEvents).toHaveBeenCalledOnce();
+});
+
+it("preserves offline edits and attachments when another device deletes the server chat", async () => {
+  const dek = await generateDEK();
+  const sync = await ChatSync.create({ userId: "user", dek });
+  await sync.saveChat(chat());
+  await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
+  memory.put("chats/chat/blobs/attachment.bin", "local attachment");
+  const release = beginChatBackupPause("chat");
+  try {
+    await sync.saveChat({ ...chat(), title: "offline edit" });
+    expect(await sync.pull()).toMatchObject([{ title: "offline edit" }]);
+    expect(await readText("chats/chat/history.jsonl")).toBeUndefined();
+    expect(await readText("chats/chat/blobs/attachment.bin")).toBe("local attachment");
+    expect(await readJson("_sync/state.json")).toMatchObject({ heads: {}, lastFrameHash: {} });
+  } finally {
+    await finishChatBackupPause(release);
+  }
+  // Pending data must also survive a reload before it reaches the server.
+  const fresh = await ChatSync.create({ userId: "user", dek });
+  vi.mocked(api.appendEvents).mockClear();
+  await fresh.flushPending();
+  expect(api.appendEvents).toHaveBeenCalledWith("chat", 0, expect.any(Array));
+  const posted = vi.mocked(api.appendEvents).mock.calls[0][2][0];
+  expect(await decryptEvent(dek, posted.frame, "user", "chat", 1)).toMatchObject({
+    body: [{ type: "init" }, { title: "offline edit" }, { type: "message" }],
+  });
+});
+
+it("applies remote deletion to an unchanged local chat without resurrecting it", async () => {
+  const sync = await ChatSync.create({ userId: "user", dek: await generateDEK() });
+  await sync.saveChat(chat());
+  await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
+  vi.mocked(api.appendEvents).mockClear();
+  expect(await sync.pull()).toEqual([]);
+  expect(await readLocalChat("chat")).toBeUndefined();
+  await sync.flushPending();
+  expect(api.appendEvents).not.toHaveBeenCalled();
+});
+
+it("recovers a pending target after a crash between history deletion and baseline persistence", async () => {
+  const value = { ...chat(), title: "durable offline edit" };
+  memory.put("chats/chat/target.json", JSON.stringify(await extractChatBlobs(value)));
+  await writeJson("_sync/state.json", {
+    userId: "user",
+    heads: { chat: 17 },
+    lastFrameHash: { chat: "deleted-server-frame" },
+    entriesSinceCompact: { chat: 100 },
+  });
+  const sync = await ChatSync.create({ userId: "user", dek: await generateDEK() });
+  await sync.flushPending();
+  expect(api.appendEvents).toHaveBeenCalledWith("chat", 0, expect.any(Array));
+  expect((await readLocalChat("chat", false))?.title).toBe("durable offline edit");
+});
+
+it("waits for a pending target to become durable before applying remote deletion", async () => {
+  // Browser backup operations hold shared reset locks and may run concurrently.
+  vi.stubGlobal("navigator", {
+    storage: { getDirectory: async () => memory.root },
+    locks: {
+      request: (_name: string, optionsOrCallback: unknown, callback?: () => Promise<unknown>) =>
+        callback ? callback() : (optionsOrCallback as () => Promise<unknown>)(),
+    },
+  });
+  const sync = await ChatSync.create({ userId: "user", dek: await generateDEK() });
+  await sync.saveChat(chat());
+  await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
+  const release = beginChatBackupPause("chat");
+  let unblockWrite!: () => void;
+  let writeStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    writeStarted = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    unblockWrite = resolve;
+  });
+  memory.beforeWrite = async (path) => {
+    if (path !== "chats/chat/target.json") return;
+    writeStarted();
+    await blocked;
+  };
+  try {
+    const saving = sync.saveChat({ ...chat(), title: "pending write" });
+    await started;
+    const pulling = sync.pull();
+    await vi.waitFor(() => expect(api.listChats).toHaveBeenCalledOnce());
+    // The old log remains until the replacement target commits.
+    expect(await readText("chats/chat/history.jsonl")).toBeDefined();
+    unblockWrite();
+    await saving;
+    expect(await pulling).toMatchObject([{ title: "pending write" }]);
+    expect(await readJson("chats/chat/target.json")).toMatchObject({ title: "pending write" });
+    expect(await readText("chats/chat/history.jsonl")).toBeUndefined();
+  } finally {
+    unblockWrite();
+    memory.beforeWrite = undefined;
+    await finishChatBackupPause(release);
+  }
+});
+
+it("finishes an active upload before deleting the chat without resurrecting its local mirror", async () => {
+  vi.stubGlobal("navigator", {
+    storage: { getDirectory: async () => memory.root },
+    locks: {
+      request: (_name: string, optionsOrCallback: unknown, callback?: () => Promise<unknown>) =>
+        callback ? callback() : (optionsOrCallback as () => Promise<unknown>)(),
+    },
+  });
+  let finishAppend!: () => void;
+  let appendStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    appendStarted = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    finishAppend = resolve;
+  });
+  vi.mocked(api.appendEvents).mockImplementationOnce(async (_id, seq, events) => {
+    appendStarted();
+    await blocked;
+    return { newSeq: seq + events.length };
+  });
+  const sync = await ChatSync.create({ userId: "user", dek: await generateDEK() });
+  await sync.saveChat(chat());
+  await started;
+  const deleting = sync.deleteChat("chat");
+  try {
+    expect(await readJson("chats/chat/target.json")).toBeDefined();
+    finishAppend();
+    await deleting;
+    await sync.flushPending();
+    await vi.waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith("chat"));
+    expect(await readLocalChat("chat")).toBeUndefined();
+    expect(await readLocalMirror(false)).toEqual([]);
+    expect(await readJson("_sync/state.json")).toMatchObject({ heads: {}, lastFrameHash: {} });
+  } finally {
+    finishAppend();
+  }
 });

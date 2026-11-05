@@ -126,6 +126,18 @@ describe("chunkEntries", () => {
     for (const c of chunks) expect(c.length).toBeGreaterThan(0);
   });
 
+  it("counts UTF-8 bytes when splitting non-ASCII messages", () => {
+    const entry = { type: "message", ...msg("界".repeat(400_000)) } as const;
+    // Each message contains the text twice (id + content): ~2.4 MiB in UTF-8.
+    const chunks = chunkEntries([entry, entry]);
+    expect(chunks).toEqual([[entry], [entry]]);
+  });
+
+  it("rejects a single entry whose UTF-8 encoding cannot fit the server frame cap", () => {
+    const entry = { type: "message", ...msg("界".repeat(2 * 1024 * 1024)) } as const;
+    expect(() => chunkEntries([entry])).toThrow(/too large to sync/);
+  });
+
   it("returns nothing for an empty batch", () => {
     expect(chunkEntries([])).toEqual([]);
   });

@@ -155,6 +155,89 @@ func TestDedup(t *testing.T) {
 	}
 }
 
+func TestDedupCommitsWithHead(t *testing.T) {
+	p := newTestProvider(t)
+	ctx := context.Background()
+	const chat = "33333333-2222-2222-2222-333333333333"
+	if _, err := p.AppendEvents(ctx, "alice", chat, 0, []string{"e1"}, [][]byte{[]byte("first")}); err != nil {
+		t.Fatal(err)
+	}
+	// A process can stop immediately after committing the head. Dedup must
+	// survive without a later sidecar write and retain IDs through compaction.
+	if err := os.Remove(p.chatDedupPath("alice", chat)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if _, err := p.AppendEvents(ctx, "alice", chat, 1, []string{"e2"}, [][]byte{[]byte("snapshot")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.CompactChat(ctx, "alice", chat, 2); err != nil {
+		t.Fatal(err)
+	}
+	res, err := p.AppendEvents(ctx, "alice", chat, 2, []string{"e1"}, [][]byte{[]byte("retry")})
+	if err != nil || res.NewSeq != 2 || len(res.Deduped) != 1 {
+		t.Fatalf("committed event lost deduplication: %+v %v", res, err)
+	}
+}
+
+func TestLegacyDedupRebuildUsesOnlyCommittedEvents(t *testing.T) {
+	p := newTestProvider(t)
+	ctx := context.Background()
+	const chat = "33333333-4444-4444-4444-333333333333"
+	if _, err := p.AppendEvents(ctx, "alice", chat, 0, []string{"committed"}, [][]byte{[]byte("first")}); err != nil {
+		t.Fatal(err)
+	}
+	// Recreate the old 16-byte head format with a stale/missing dedup sidecar.
+	headPath := p.chatHeadPath("alice", chat)
+	head, err := os.ReadFile(headPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(headPath, head[:16], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(p.chatLogPath("alice", chat), os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.WriteString("{\"seq\":2,\"id\":\"orphan\",\"frame\":\"uncommitted\"}\n")
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := p.AppendEvents(ctx, "alice", chat, 1, []string{"committed", "orphan"}, [][]byte{[]byte("duplicate"), []byte("real")})
+	if err != nil || res.NewSeq != 2 || len(res.Deduped) != 1 || res.Deduped[0] != "committed" {
+		t.Fatalf("legacy dedup included uncommitted events or missed committed events: %+v %v", res, err)
+	}
+}
+
+func TestLegacyDedupMigrationPreservesCompactedIDs(t *testing.T) {
+	p := newTestProvider(t)
+	ctx := context.Background()
+	const chat = "33333333-5555-5555-5555-333333333333"
+	if _, err := p.AppendEvents(ctx, "alice", chat, 0, []string{"removed", "retained"}, [][]byte{[]byte("old"), []byte("snapshot")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.CompactChat(ctx, "alice", chat, 2); err != nil {
+		t.Fatal(err)
+	}
+	headPath := p.chatHeadPath("alice", chat)
+	head, err := os.ReadFile(headPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Restore the old split commit layout after compaction.
+	if err := os.WriteFile(p.chatDedupPath("alice", chat), head[16:], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(headPath, head[:16], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res, err := p.AppendEvents(ctx, "alice", chat, 2, []string{"removed"}, [][]byte{[]byte("retry")})
+	if err != nil || res.NewSeq != 2 || len(res.Deduped) != 1 {
+		t.Fatalf("migration lost compacted event ID: %+v %v", res, err)
+	}
+}
+
 func TestConcurrentAppend(t *testing.T) {
 	p := newTestProvider(t)
 	ctx := context.Background()
@@ -440,6 +523,35 @@ func TestOrphanLineRecovery(t *testing.T) {
 	out := string(buf)
 	if strings.Contains(out, "GHOST") || !strings.Contains(out, "REAL2") || strings.Count(out, `"seq":2`) != 1 {
 		t.Fatalf("orphan not replaced cleanly: %s", out)
+	}
+}
+
+func TestFirstAppendOrphanRecovery(t *testing.T) {
+	p := newTestProvider(t)
+	ctx := context.Background()
+	const chat = "aaaaaaaa-2222-2222-2222-222222222222"
+	if err := ensureDir(p.chatsDir("alice")); err != nil {
+		t.Fatal(err)
+	}
+	// The initial append wrote a complete line, then crashed before its
+	// first head commit. Retrying must replace it rather than reuse seq 1.
+	if err := os.WriteFile(p.chatLogPath("alice", chat), []byte("{\"seq\":1,\"id\":\"orphan\",\"frame\":\"GHOST\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.AppendEvents(ctx, "alice", chat, 0, []string{"retry"}, [][]byte{[]byte("REAL")}); err != nil {
+		t.Fatal(err)
+	}
+	r, err := p.ReadEvents(ctx, "alice", chat, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	body, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "GHOST") || !strings.Contains(string(body), "REAL") || strings.Count(string(body), "\n") != 1 {
+		t.Fatalf("uncommitted first append survived retry: %s", body)
 	}
 }
 

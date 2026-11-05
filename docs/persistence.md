@@ -211,6 +211,9 @@ offer “Unlock backup”. Clearing browser site data requires a fresh unlock.
 Upload conflicts and server deletions wait for an unlocked restore; an upload-only
 browser never downloads ciphertext to reconcile a conflict or overwrites a newer
 remote version. Ordinary new uploads and pending local changes continue normally.
+When an unlocked browser finds a remotely deleted chat, it removes an unchanged
+local copy. Pending local edits and their attachments survive and upload as a
+fresh chat log, matching file sync's preference for preserving unsynced work.
 
 Existing version 2 symmetric history stays readable with the protected root key.
 An unlocked session provisions the backup key pair once without replacing old
@@ -292,6 +295,11 @@ processes sharing the same store root. Readers open consistent
 file/header snapshots under the same locks, then release them before streaming.
 Lock waits respect request cancellation; process exit releases its locks. Never
 unlink the real lock sidecars while any backend process might be using the store.
+File manifests publish immutable ciphertext generations, so a failed metadata
+write leaves the previous bytes and ETag intact. Chat heads atomically commit
+the sequence, log size, and recent event IDs together. Existing unversioned
+files and older chat heads migrate when written. Stop older backend versions
+before upgrading; they cannot read the new file generations.
 
 Settings → Backup & Restore → Reset backups permanently deletes the signed-in
 account's server keystore, chat logs, attachments, and workspace backups. It works
