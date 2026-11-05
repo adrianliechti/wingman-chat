@@ -3,10 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CreateImageDialog, type GenerationRequest } from "@/features/canvas/components/CreateImageDialog";
 import { Editor, NAV_BUTTON_CLASS } from "@/features/canvas/components/Editor";
 import { Filmstrip, type PendingGeneration } from "@/features/canvas/components/Filmstrip";
+import { Viewer } from "@/features/canvas/components/Viewer";
 import { useImageStyles } from "@/features/canvas/hooks/useImageStyles";
 import { newVersion, useImages } from "@/features/canvas/hooks/useImages";
 import { useRendererModels } from "@/features/canvas/hooks/useRendererModels";
-import { fileTitle, imageDimensions, imageFiles } from "@/features/canvas/lib/images";
+import { fileTitle, imageDimensions, imageFiles, viewOnlyFormat } from "@/features/canvas/lib/images";
 import { aspectRatioValue } from "@/features/canvas/lib/rendererOptions";
 import type { Image } from "@/features/canvas/types/canvas";
 import { getConfig } from "@/shared/config";
@@ -77,6 +78,10 @@ async function runGeneration(
       quality: request.selection.quality ?? undefined,
       resolution: request.selection.resolution ?? undefined,
       background: request.selection.background ?? undefined,
+      complexity: request.selection.complexity ?? undefined,
+      format: request.selection.format ?? undefined,
+      frameCount: request.selection.frameCount ?? undefined,
+      frameDurationMs: request.selection.frameDurationMs ?? undefined,
     });
     const [data, size] = await Promise.all([readAsDataURL(blob), imageDimensions(blob)]);
     const image = await createImage({
@@ -315,7 +320,9 @@ export function CanvasPage() {
           </div>
         ) : (
           <>
-            {selectedImage ? (
+            {selectedImage && viewOnlyFormat(selectedImage.data) ? (
+              <Viewer key={selectedImage.id} image={selectedImage} onNew={openCreate} />
+            ) : selectedImage ? (
               <Editor
                 key={selectedImage.id}
                 image={selectedImage}

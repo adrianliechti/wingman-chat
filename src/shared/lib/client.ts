@@ -16,7 +16,14 @@ import {
 } from "@/features/chat/lib/classificationQuestions";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
 import type { UIMessage } from "@tanstack/ai";
-import type { ImageQuality, Model, ModelType, ReasoningEffort } from "@/shared/types/chat";
+import type {
+  ImageComplexity,
+  ImageFormat,
+  ImageQuality,
+  Model,
+  ModelType,
+  ReasoningEffort,
+} from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
 import { type Embedding, validateEmbeddingVector } from "./embeddings";
 import { modelFromAPI, modelMaxOutputTokens, outputTokenAllowance } from "./models";
@@ -85,8 +92,17 @@ export interface ImageRenderOptions {
   resolution?: "512" | "1K" | "2K" | "4K";
   /** Background handling (only honored by models that support it). */
   background?: "transparent" | "opaque";
-  /** Desired output format; negotiated via the `Accept` header, not a form field. */
-  format?: "png" | "jpeg" | "webp";
+  /**
+   * Desired output format; negotiated via the `Accept` header, not a form field.
+   * SVG and GIF are text-to-image only — the backend rejects them with images.
+   */
+  format?: "png" | "jpeg" | "webp" | ImageFormat;
+  /** How much the model plans before rendering (separate from quality). */
+  complexity?: ImageComplexity;
+  /** Animated GIF frame count; GIF output only. */
+  frameCount?: number;
+  /** Animated GIF time per frame in milliseconds; GIF output only. */
+  frameDurationMs?: number;
   /**
    * Edit guide for the first image: a PNG of the same size whose fully
    * transparent pixels mark where the image may change. Models without
@@ -546,8 +562,11 @@ export class Client {
     if (options?.quality) data.append("quality", options.quality);
     if (options?.resolution) data.append("resolution", options.resolution);
     if (options?.background) data.append("background", options.background);
+    if (options?.complexity) data.append("complexity", options.complexity);
+    if (options?.frameCount !== undefined) data.append("frame_count", String(options.frameCount));
+    if (options?.frameDurationMs !== undefined) data.append("frame_duration_ms", String(options.frameDurationMs));
     // Output format is negotiated via Accept, not a form field (see /v1/render).
-    const headers = options?.format ? { Accept: `image/${options.format}` } : undefined;
+    const headers = options?.format ? { Accept: mime.getType(options.format) ?? `image/${options.format}` } : undefined;
     // Rendering — especially high quality or large sizes — can take minutes, so
     // allow well beyond the default render/translate/search budget.
     return this.postRaw("/api/v1/render", data, (resp) => resp.blob(), headers, 300_000, requestOptions);

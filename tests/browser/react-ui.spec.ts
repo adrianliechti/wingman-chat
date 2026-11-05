@@ -415,6 +415,58 @@ test("Canvas generates into the filmstrip, develops on the GPU and keeps the rec
   await expect(page.getByRole("slider", { name: "Exposure", exact: true })).toHaveValue("1.5");
 });
 
+test("Canvas generates SVG and GIF from the prompt into a view-only viewer", async ({ page }) => {
+  const stamp = Date.now();
+  const svgPrompt = `A paper boat ${stamp}`;
+  const gifPrompt = `A bouncing ball ${stamp}`;
+  await open(page, "?canvas&vector");
+  const generate = async (prompt: string, format: "SVG" | "GIF", frames?: string) => {
+    await page.getByRole("button", { name: "New image" }).first().click();
+    await page.getByRole("textbox", { name: "Prompt" }).fill(prompt);
+    await page.getByRole("button", { name: "Flare", exact: true }).click();
+    await page.getByRole("menuitem", { name: /^Format/ }).hover();
+    await page.getByRole("menuitemradio", { name: new RegExp(`^${format}`) }).click();
+    if (frames) {
+      await page.getByRole("button", { name: "Flare", exact: true }).click();
+      await page.getByRole("menuitem", { name: /^Frames/ }).hover();
+      await page.getByRole("menuitemradio", { name: new RegExp(`^${frames}`) }).click();
+    }
+    // Vector and animated output can't take references.
+    await expect(page.getByRole("button", { name: "Reference", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Generate" }).click();
+  };
+  const expectViewer = async (prompt: string, badge: string) => {
+    await expect(page.getByRole("img", { name: prompt })).toHaveCount(2); // viewer + filmstrip
+    await expect(page.getByText(badge, { exact: true })).toBeVisible();
+    await expect(page.locator(`canvas[aria-label="${prompt}"]`)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Adjustments" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
+    // The bytes decode as their own format, so the content type was kept.
+    await expect
+      .poll(() =>
+        page
+          .getByRole("img", { name: prompt })
+          .first()
+          .evaluate((image: HTMLImageElement) => image.naturalWidth),
+      )
+      .toBeGreaterThan(0);
+  };
+
+  await generate(svgPrompt, "SVG");
+  await expectViewer(svgPrompt, "SVG");
+  await generate(gifPrompt, "GIF", "16");
+  await expectViewer(gifPrompt, "Animated GIF");
+  expect(await page.evaluate(() => window.reactUiE2E.state().renders)).toEqual([
+    { model: "gpt-image-2.6-flare", prompt: svgPrompt, options: { quality: "medium", format: "svg" } },
+    { model: "gpt-image-2.6-flare", prompt: gifPrompt, options: { quality: "medium", format: "gif", frameCount: 16 } },
+  ]);
+
+  // Both survive a reload and still open in the viewer.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("option", { name: svgPrompt }).getByRole("button", { name: svgPrompt }).click();
+  await expectViewer(svgPrompt, "SVG");
+});
+
 test("Canvas keeps a live adjustment when switching photos immediately", async ({ page }) => {
   await open(page, "?canvas");
   const png = await page.evaluate(async () => {

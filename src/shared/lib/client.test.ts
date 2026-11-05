@@ -354,6 +354,19 @@ describe("raw request lifetime", () => {
     expect(body.get("background")).toBe("transparent");
     expect(body.get("aspect_ratio")).toBeNull();
   });
+  it.each([
+    ["svg", "image/svg+xml", undefined],
+    ["gif", "image/gif", 12],
+  ] as const)("negotiates %s output and forwards GIF and complexity fields", async (format, accept, frameCount) => {
+    fetchMock.mockResolvedValueOnce(new Response("out", { headers: { "content-type": accept } }));
+    await new Client().generateImage("gpt-image-2.6-flare", "Alpaca", [], { format, complexity: "low", frameCount });
+    const [, init] = fetchMock.mock.calls.at(-1)!;
+    expect(new Headers(init.headers).get("Accept")).toBe(accept);
+    const body = init.body as FormData;
+    expect(body.get("complexity")).toBe("low");
+    expect(body.get("frame_count")).toBe(frameCount === undefined ? null : String(frameCount));
+    expect(body.get("frame_duration_ms")).toBeNull();
+  });
 
   function stalledBody(status = 200) {
     fetchMock.mockImplementationOnce(

@@ -19,7 +19,8 @@ interface StageProps {
   className?: string;
 }
 
-const CHECKER =
+/** Checkerboard behind transparent pixels. */
+export const CHECKER =
   "bg-[length:16px_16px] bg-[position:0_0,8px_8px] bg-[image:linear-gradient(45deg,var(--checker)_25%,transparent_25%,transparent_75%,var(--checker)_75%),linear-gradient(45deg,var(--checker)_25%,transparent_25%,transparent_75%,var(--checker)_75%)] [--checker:rgb(0_0_0/0.08)] dark:[--checker:rgb(255_255_255/0.08)]";
 
 /**
