@@ -86,11 +86,16 @@ export class MemoryOpfs {
         // OPFS does not retain the MIME type supplied when writing a Blob.
         return new File([blob], path.split("/").at(-1)!, { lastModified: 1000 });
       },
-      createWritable: async () => {
-        let staged = new Blob();
+      createWritable: async (options?: { keepExistingData?: boolean }) => {
+        let staged = options?.keepExistingData ? this.files.get(path)! : new Blob();
+        let offset = 0;
         return {
+          seek: async (position: number) => {
+            offset = position;
+          },
           write: async (blob: Blob) => {
-            staged = blob;
+            staged = new Blob([staged.slice(0, offset), blob, staged.slice(offset + blob.size)]);
+            offset += blob.size;
             await this.beforeWrite?.(path, blob);
           },
           close: async () => {

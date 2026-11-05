@@ -23,6 +23,7 @@
   "tts": {},
   "voice": {},
   "artifacts": {},
+  "store": {},
   "repository": {},
   "renderer": {},
   "extractor": {
@@ -264,5 +265,6 @@
       "ja",
       "ru"
     ]
-  }
+  },
+  "onlineBackup": {}
 }

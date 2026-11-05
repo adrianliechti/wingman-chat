@@ -173,6 +173,18 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Chat.Compaction.Threshold = *v
 	}
 
+	withFeature("ONLINE_BACKUP_ENABLED", &cfg.OnlineBackup, nil)
+	if cfg.OnlineBackup != nil {
+		cfg.Store = ensurePtr(cfg.Store)
+	}
+	withFeature("STORE_ENABLED", &cfg.Store, nil)
+	if s := cfg.Store; s != nil {
+		envOverride("BACKUP_STORE_PATH", &s.Path)
+		if s.Path == "" {
+			s.Path = "./data/store"
+		}
+	}
+
 	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)
 
 	if cfg.Telemetry != nil {

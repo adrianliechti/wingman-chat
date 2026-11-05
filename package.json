@@ -23,6 +23,7 @@
     "build": "vp check --no-fmt --no-lint && npm run check:react-compiler && npm run check:skills && vp build && node scripts/compress-assets.mjs",
     "format": "vp fmt",
     "lint": "vp lint",
+    "test": "vitest run",
     "check": "vp check && npm run check:react-compiler && npm run check:skills",
     "check:react-compiler": "node scripts/check-react-compiler.mjs",
     "check:skills": "node scripts/validate-skills.mjs && npm run check:ui-reference",

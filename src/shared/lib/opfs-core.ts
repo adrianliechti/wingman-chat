@@ -1,4 +1,5 @@
 import { contentToBlob } from "./fileContent";
+import { forgetBackup } from "./rememberedBackup";
 import { inferContentTypeFromPath } from "./fileTypes";
 import { stopPersistence, withPersistenceLock } from "./persistence";
 import { decodeDataURL, readAsDataURL } from "./utils";
@@ -47,6 +48,32 @@ import { isRebuildableCollection, salvageIndexEntries, scanFolderIndex } from ".
  *
  *   /profile.json             # User profile settings
  */
+
+// ============================================================================
+// Mutation notifications
+// ============================================================================
+
+export type OpfsMutationKind = "write" | "delete" | "delete-dir";
+export type OpfsMutationListener = (path: string, kind: OpfsMutationKind) => void;
+
+const mutationListeners = new Set<OpfsMutationListener>();
+
+/** Watch every OPFS mutation that goes through this module. Paths are
+ *  normalized (no leading/duplicate slashes); "delete-dir" paths name a
+ *  directory whose entire subtree was removed. */
+export function onOpfsMutation(fn: OpfsMutationListener): () => void {
+  mutationListeners.add(fn);
+  return () => mutationListeners.delete(fn);
+}
+
+function normalizeOpfsPath(path: string): string {
+  return path.split("/").filter(Boolean).join("/");
+}
+
+function notifyMutation(path: string, kind: OpfsMutationKind): void {
+  const normalized = normalizeOpfsPath(path);
+  for (const fn of mutationListeners) fn(normalized, kind);
+}
 
 // ============================================================================
 // Core OPFS Operations
@@ -112,7 +139,11 @@ export async function writeText(
  * Write binary data to a file.
  * Uses FileSystemWritableFileStream for Safari compatibility.
  */
-export async function writeBlob(path: string, blob: Blob): Promise<void> {
+export function writeBlob(path: string, blob: Blob): Promise<void> {
+  return writeFileBlob(path, blob, false);
+}
+
+async function writeFileBlob(path: string, blob: Blob, append: boolean): Promise<void> {
   if (storageReset) throw new Error("Storage was reset. Reload before saving changes.");
   const { dir, name } = parsePath(path);
   const result = withPersistenceLock(`file:${dir}/${name}`, async () => {
@@ -129,7 +160,8 @@ export async function writeBlob(path: string, blob: Blob): Promise<void> {
     }
     let writable: FileSystemWritableFileStream | undefined;
     try {
-      writable = await fileHandle.createWritable();
+      writable = await fileHandle.createWritable(append ? { keepExistingData: true } : undefined);
+      if (append) await writable.seek((await fileHandle.getFile()).size);
       await writable.write(blob);
       await writable.close();
     } catch (error) {
@@ -148,6 +180,20 @@ export async function writeBlob(path: string, blob: Blob): Promise<void> {
   } finally {
     activeWrites.delete(result);
   }
+
+  notifyMutation(path, "write");
+}
+
+/**
+ * Append binary data to a file (creates the file if missing).
+ *
+ * Uses `createWritable({ keepExistingData: true })` and seeks to the
+ * file's current size — supported by every modern browser. This keeps
+ * append-only logs (e.g. JSONL chat logs) from being rewritten in full
+ * on every save.
+ */
+export function appendBlob(path: string, blob: Blob): Promise<void> {
+  return writeFileBlob(path, blob, true);
 }
 
 /**
@@ -233,6 +279,7 @@ export async function deleteFile(path: string): Promise<void> {
     const { dir, name } = parsePath(path);
     const directory = await getDirectory(dir);
     await directory.removeEntry(name);
+    notifyMutation(path, "delete");
   } catch (error) {
     // NotFoundError is fine - file already doesn't exist
     if (error instanceof DOMException && error.name === "NotFoundError") {
@@ -323,6 +370,7 @@ export async function deleteDirectory(path: string): Promise<void> {
 
     const parent = parentPath ? await getDirectory(parentPath) : await getRoot();
     await parent.removeEntry(dirName, { recursive: true });
+    notifyMutation(path, "delete-dir");
   } catch (error) {
     if (error instanceof DOMException && error.name === "NotFoundError") {
       return;
@@ -336,12 +384,14 @@ export async function deleteDirectory(path: string): Promise<void> {
  */
 export async function clearAll(): Promise<void> {
   storageReset = true;
+  await forgetBackup();
   await stopPersistence();
   await Promise.allSettled(activeWrites);
   const root = await getRoot();
 
   for await (const [name] of root.entries()) {
     await root.removeEntry(name, { recursive: true });
+    notifyMutation(name, "delete-dir");
   }
 }
 

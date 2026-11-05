@@ -349,3 +349,43 @@ func TestTelemetryNameReachesBrowserConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestOnlineBackupMode(t *testing.T) {
+	for _, test := range []struct {
+		name, online, store   string
+		wantOnline, wantStore bool
+	}{
+		{name: "default local"},
+		{name: "explicit local", online: "false"},
+		{name: "online enables store", online: "true", wantOnline: true, wantStore: true},
+		{name: "store alone keeps local", store: "true", wantStore: true},
+		{name: "disabled online with store", online: "false", store: "true", wantStore: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("ONLINE_BACKUP_ENABLED", test.online)
+			t.Setenv("STORE_ENABLED", test.store)
+			t.Setenv("BACKUP_STORE_PATH", "/data/backups")
+			var cfg Config
+			applyEnvOverrides(&cfg)
+			if (cfg.OnlineBackup != nil) != test.wantOnline || (cfg.Store != nil) != test.wantStore {
+				t.Fatalf("online = %+v, store = %+v", cfg.OnlineBackup, cfg.Store)
+			}
+			if cfg.Store != nil && cfg.Store.Path != "/data/backups" {
+				t.Fatalf("store overrides lost: %+v", cfg.Store)
+			}
+			data, err := json.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var browser struct {
+				OnlineBackup *struct{} `json:"onlineBackup"`
+			}
+			if err := json.Unmarshal(data, &browser); err != nil {
+				t.Fatal(err)
+			}
+			if (browser.OnlineBackup != nil) != test.wantOnline {
+				t.Fatalf("browser config lost backup mode: %s", data)
+			}
+		})
+	}
+}

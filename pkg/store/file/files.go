@@ -1,0 +1,232 @@
+package file
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"time"
+
+	"github.com/adrianliechti/wingman-chat/pkg/store"
+)
+
+// Synced file tree. Contents are encrypted client-side; the real OPFS
+// path only exists inside the ciphertext, so entries are addressed by a
+// client-derived id. A per-user manifest carries etag/updated/size so
+// listing doesn't touch the content files.
+//
+//	{user}/files/index.json
+//	{user}/files/{fileID}.{etag}
+
+type fileManifestEntry struct {
+	ETag             string    `json:"etag"`
+	Updated          time.Time `json:"updated"`
+	Size             int64     `json:"size"`
+	ContentAddressed bool      `json:"contentAddressed,omitempty"`
+}
+
+func (p *Provider) filesDir(userID string) string {
+	return filepath.Join(p.userDir(userID), "files")
+}
+
+func (p *Provider) filePath(userID, fileID string) string {
+	return filepath.Join(p.filesDir(userID), fileID)
+}
+
+func (p *Provider) fileContentPath(userID, fileID string, entry fileManifestEntry) string {
+	path := p.filePath(userID, fileID)
+	if entry.ContentAddressed {
+		return path + "." + entry.ETag
+	}
+	return path // Existing manifests address the original, unversioned file.
+}
+
+func (p *Provider) fileManifestPath(userID string) string {
+	return filepath.Join(p.filesDir(userID), "index.json")
+}
+
+func (p *Provider) loadFileManifest(userID string) (map[string]fileManifestEntry, error) {
+	data, err := os.ReadFile(p.fileManifestPath(userID))
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]fileManifestEntry{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	out := map[string]fileManifestEntry{}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (p *Provider) saveFileManifest(userID string, m map[string]fileManifestEntry) error {
+	data, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(p.fileManifestPath(userID), data)
+}
+
+func (p *Provider) ListFiles(ctx context.Context, userID string) ([]store.FileMeta, error) {
+	unlock, err := p.lock(ctx, "files:"+userID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
+	manifest, err := p.loadFileManifest(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]store.FileMeta, 0, len(manifest))
+	for id, e := range manifest {
+		out = append(out, store.FileMeta{ID: id, ETag: e.ETag, Updated: e.Updated, Size: e.Size})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
+	return out, nil
+}
+
+func (p *Provider) GetFile(ctx context.Context, userID, fileID string) (io.ReadCloser, string, error) {
+	if err := validateID(fileID); err != nil {
+		return nil, "", err
+	}
+
+	unlock, err := p.lock(ctx, "files:"+userID)
+	if err != nil {
+		return nil, "", err
+	}
+	defer unlock()
+	manifest, err := p.loadFileManifest(userID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	entry, ok := manifest[fileID]
+	if !ok {
+		return nil, "", store.ErrNotFound
+	}
+
+	f, err := os.Open(p.fileContentPath(userID, fileID, entry))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, "", store.ErrNotFound
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	return f, entry.ETag, nil
+}
+
+func (p *Provider) PutFile(ctx context.Context, userID, fileID string, r io.Reader, ifMatch string) (string, error) {
+	if err := validateID(fileID); err != nil {
+		return "", err
+	}
+
+	unlock, err := p.lock(ctx, "files:"+userID)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+
+	manifest, err := p.loadFileManifest(userID)
+	if err != nil {
+		return "", err
+	}
+
+	current, exists := manifest[fileID]
+	switch {
+	case ifMatch == "":
+		// unconditional
+	case ifMatch == "*":
+		if exists {
+			return "", store.ErrFileConflict
+		}
+	default:
+		if !exists || current.ETag != ifMatch {
+			return "", store.ErrFileConflict
+		}
+	}
+
+	if err := ensureDir(p.filesDir(userID)); err != nil {
+		return "", err
+	}
+
+	path := p.filePath(userID, fileID)
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmp.Name()
+
+	hasher := sha256.New()
+	size, err := io.Copy(tmp, io.TeeReader(r, hasher))
+	if err == nil {
+		err = tmp.Sync()
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmpPath)
+		return "", err
+	}
+
+	etag := hex.EncodeToString(hasher.Sum(nil))
+	entry := fileManifestEntry{ETag: etag, Updated: time.Now().UTC(), Size: size, ContentAddressed: true}
+	newPath := p.fileContentPath(userID, fileID, entry)
+	if err := os.Rename(tmpPath, newPath); err != nil {
+		os.Remove(tmpPath)
+		return "", err
+	}
+	// The manifest is the commit point. Until it is published, readers keep
+	// opening the previous immutable object with its matching etag.
+	manifest[fileID] = entry
+	if err := p.saveFileManifest(userID, manifest); err != nil {
+		if !exists || newPath != p.fileContentPath(userID, fileID, current) {
+			os.Remove(newPath)
+		}
+		return "", err
+	}
+	if exists {
+		if oldPath := p.fileContentPath(userID, fileID, current); oldPath != newPath {
+			// Open readers retain their file descriptor after unlinking. A
+			// cleanup failure only leaves an unreferenced object for later.
+			os.Remove(oldPath)
+		}
+	}
+	return etag, nil
+}
+
+func (p *Provider) DeleteFile(ctx context.Context, userID, fileID string) error {
+	if err := validateID(fileID); err != nil {
+		return err
+	}
+
+	unlock, err := p.lock(ctx, "files:"+userID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	manifest, err := p.loadFileManifest(userID)
+	if err != nil {
+		return err
+	}
+
+	if entry, ok := manifest[fileID]; ok {
+		delete(manifest, fileID)
+		if err := p.saveFileManifest(userID, manifest); err != nil {
+			return err
+		}
+		// Publish the deletion before reclaiming the now-unreferenced data.
+		os.Remove(p.fileContentPath(userID, fileID, entry))
+	}
+	return nil
+}

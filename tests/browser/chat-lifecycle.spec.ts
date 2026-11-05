@@ -333,3 +333,66 @@ test("a send delayed by loading is discarded if the user navigates to another ch
   expect(state.queue).toEqual([]);
   expect(state.calls).toHaveLength(0);
 });
+
+for (const ending of ["finish", "stop", "error"] as const) {
+  test(`server backup waits for streaming to ${ending} while local saves continue`, async ({ page }) => {
+    let key: object | null = null;
+    let revision = 0;
+    let appends = 0;
+    await page.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+    await page.route("**/api/v1/**", (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
+      if (path.endsWith("/keystore")) {
+        if (request.method() === "GET")
+          return key
+            ? route.fulfill({ json: key, headers: { ETag: `"${revision}"` } })
+            : route.fulfill({ status: 404 });
+        key = request.postDataJSON();
+        revision++;
+        return route.fulfill({ status: 204, headers: { ETag: `"${revision}"` } });
+      }
+      if (path.endsWith("/events") && request.method() === "POST") {
+        appends++;
+        const frames = request.postData()!.split("\n").filter(Boolean);
+        for (const frame of frames) expect(Buffer.from(JSON.parse(frame).frame, "base64")[0]).toBe(3);
+        return route.fulfill({ json: { newSeq: Number(request.headers()["x-expected-seq"]) + frames.length } });
+      }
+      if (request.method() === "PUT" || request.method() === "DELETE")
+        return route.fulfill({ status: 204, headers: { ETag: '"file"' } });
+      return route.fulfill({ json: [] });
+    });
+    await page.goto("/tests/browser/fixtures/chat-lifecycle.html");
+    await page.waitForFunction(() => window.chatE2E?.state().ready);
+    await page.evaluate(() => window.chatE2E.enableBackups());
+    await page.evaluate(() => window.chatE2E.send("Stream this response"));
+    await page.waitForFunction(
+      () =>
+        window.chatE2E.state().calls.length > 0 ||
+        window.chatE2E.state().messages.some((message) => message.metadata?.error),
+    );
+    const started = await page.evaluate(() => window.chatE2E.state());
+    expect(started.messages.map((message) => message.metadata?.error)).toEqual(
+      expect.not.arrayContaining([expect.any(Object)]),
+    );
+    expect(started.calls).toHaveLength(1);
+    for (const text of ["First ", "First second ", "First second third "]) {
+      await page.evaluate((text) => window.chatE2E.stream(0, text), text);
+      await expect(page.getByTestId("messages")).toContainText(text.trim());
+      await page.evaluate(() => window.chatE2E.flush());
+      expect(appends).toBe(0);
+    }
+    if (ending === "finish") {
+      await page.evaluate(() => window.chatE2E.finish(0, "First second third final answer"));
+      await expect(page.getByTestId("messages")).toContainText("final answer");
+    } else if (ending === "error") {
+      await page.evaluate(() => window.chatE2E.fail(0, "stream failed"));
+    } else {
+      await page.evaluate(() => window.chatE2E.stop());
+    }
+    await expect.poll(() => appends).toBe(1);
+    await page.evaluate(() => window.chatE2E.flush());
+    expect(appends).toBe(1);
+  });
+}

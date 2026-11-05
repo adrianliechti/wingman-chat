@@ -10,8 +10,17 @@ tasks:
     env:
       PORT: "8080"
       PREFIX: "/"
+      STORE_ENABLED: "true"
     cmds:
-      - go run .
+      # Keep explicit platform settings; default to the local gateway for development.
+      - WINGMAN_URL="${WINGMAN_URL:-${OPENAI_BASE_URL:-http://localhost:4242}}" go run .
+
+  ui:
+    cmds:
+      # task serve is the dev backend — inline so it beats a WINGMAN_URL exported
+      # in the shell (Taskfile `env:` does not override OS environment variables),
+      # which would bypass the local server (and its store routes) entirely.
+      - WINGMAN_URL=http://localhost:8080 npm run dev
 
   run:
     cmds:

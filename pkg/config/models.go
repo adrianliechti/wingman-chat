@@ -33,6 +33,9 @@ type Config struct {
 
 	Chat *Chat `json:"chat,omitempty" yaml:"chat,omitempty"`
 
+	Store        *Store        `json:"store,omitempty" yaml:"store,omitempty"`
+	OnlineBackup *OnlineBackup `json:"onlineBackup,omitempty" yaml:"onlineBackup,omitempty"`
+
 	Telemetry *Telemetry `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
 
 	Backgrounds map[string][]Background `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
@@ -190,6 +193,14 @@ type Risk struct {
 	Severity    string  `json:"severity,omitempty" yaml:"severity,omitempty"`
 	Message     string  `json:"message,omitempty" yaml:"message,omitempty"`
 	Threshold   float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+}
+
+// OnlineBackup enables online backup controls and server-backed sync.
+type OnlineBackup struct{}
+
+// Store configures file storage for encrypted backups. Path stays server-private.
+type Store struct {
+	Path string `json:"-" yaml:"path,omitempty"`
 }
 
 type Translator struct {
