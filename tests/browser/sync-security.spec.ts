@@ -10,7 +10,7 @@ async function expectStableSyncHeight(page: Page) {
     const before = (await card.boundingBox())!.height;
     await button.click();
     await expect(button).toBeDisabled();
-    await expect(card.getByText("Syncing…", { exact: true })).toBeVisible();
+    await expect(card.getByText("Backing up changes", { exact: true })).toBeVisible();
     expect((await card.boundingBox())!.height).toBe(before);
     await expect(button).toBeEnabled();
     expect((await card.boundingBox())!.height).toBe(before);
@@ -22,10 +22,10 @@ async function expectStableSyncHeight(page: Page) {
 async function enterUploadOnlyMode(page: Page) {
   await page.evaluate(() => window.syncSecurityE2E.forgetUnlock());
   await page.reload();
-  await expect(page.getByText("On", { exact: true })).toBeVisible();
+  await expect(page.getByText("Backup is running", { exact: true })).toBeVisible();
 }
 
-test("passkey protection survives reload and can switch to PIN", async ({ page, context, browserName }) => {
+test("PIN and passkey protection survive reload and permit PIN changes", async ({ page, context, browserName }) => {
   test.skip(browserName !== "chromium", "Virtual PRF authenticator requires Chromium CDP");
   const cdp = await context.newCDPSession(page);
   await cdp.send("WebAuthn.enable");
@@ -90,24 +90,26 @@ test("passkey protection survives reload and can switch to PIN", async ({ page, 
     return route.fulfill({ status: 204, headers: { ETag: `"${revision}"` } });
   });
   await page.goto("http://localhost:4175/tests/browser/fixtures/sync-security.html");
-  await expect(page.getByText("Off", { exact: true })).toBeVisible();
+  await expect(page.getByText("Backup is off", { exact: true })).toBeVisible();
   await expect(page.getByText("Your data is saved only in this browser.", { exact: false })).toBeVisible();
   expect(stored).toBeNull();
   expect(files.size).toBe(0);
   await expect(page.getByRole("radio")).toHaveCount(0);
-  await page.getByRole("button", { name: "Start backup", exact: true }).click();
-  await expect(page.getByRole("radio", { name: "Passkey (recommended)", exact: true })).toBeChecked();
-  await expect(page.getByText("Off", { exact: true })).toBeVisible();
-  await expect(page.locator('[aria-current="step"]')).toContainText("Choose protection");
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
+  await expect(page.getByRole("form", { name: "Create your backup PIN", exact: true })).toBeVisible();
+  await expect(page.getByText("Backup is off", { exact: true })).toHaveCount(0);
+  await expect(page.locator('[aria-current="step"]')).toContainText("Create PIN");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("radio")).toHaveCount(0);
-  await page.getByRole("button", { name: "Start backup", exact: true }).click();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.locator('[aria-current="step"]')).toContainText("Turn on backup");
-  await expect(page.getByText("Off", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
+  await expect(page.locator('[aria-current="step"]')).toContainText("Create PIN");
+  await expect(page.getByText("Backup is off", { exact: true })).toHaveCount(0);
   expect(stored).toBeNull();
-  await page.getByRole("button", { name: "Create passkey & turn on backup", exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await page.getByLabel("New PIN", { exact: true }).fill("123456");
+  await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
+  await page.getByRole("button", { name: "Create PIN", exact: true }).click();
+  await page.getByRole("button", { name: "Create passkey", exact: true }).click();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Backup options", exact: true })).toBeVisible();
   await expect(page.getByRole("menuitem")).toHaveCount(0);
   await expect(page.getByText("Protection", { exact: true })).toHaveCount(0);
@@ -118,10 +120,11 @@ test("passkey protection survives reload and can switch to PIN", async ({ page, 
   await expectStableSyncHeight(page);
   const peer = await context.newPage();
   await peer.goto("http://localhost:4175/tests/browser/fixtures/sync-security.html");
-  await expect(peer.getByText("Up to date", { exact: true })).toBeVisible();
+  await expect(peer.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Backup options", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Stop sync on this device", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Deactivate backup", exact: true }).click();
   for (const tab of [page, peer]) {
+    await expect(tab.getByRole("button", { name: "Turn on backup", exact: true })).toHaveCount(0);
     await expect(tab.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true })).toBeVisible();
     expect(await tab.evaluate(() => window.syncSecurityE2E.sessionStatus())).toBe("locked");
     expect(await tab.evaluate(() => window.syncSecurityE2E.uploadCache())).toBeUndefined();
@@ -139,10 +142,11 @@ test("passkey protection survives reload and can switch to PIN", async ({ page, 
   });
   await peer.close();
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Backup options", exact: true })).toBeVisible();
   await enterUploadOnlyMode(page);
   await page.reload();
-  await expect(page.getByText("On", { exact: true })).toBeVisible();
+  await expect(page.getByText("Backup is running", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true })).toBeVisible();
   await expectStableSyncHeight(page);
   await page.evaluate(() => window.syncSecurityE2E.save("agents/upload-test/AGENTS.md", "automatically uploaded"));
@@ -160,55 +164,52 @@ test("passkey protection survives reload and can switch to PIN", async ({ page, 
   await expect(page.getByText("Ready to restore", { exact: true })).toBeVisible();
   expect(fileDownloads).toBe(0);
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.syncSecurityE2E.read("agents/upload-test/AGENTS.md")))
     .toBe("automatically uploaded");
   expect(fileDownloads).toBeGreaterThan(0);
   expect(await page.evaluate(() => window.syncSecurityE2E.sessionStatus())).toBe("ready");
   rejectNextUpdate = true;
-  await page.getByRole("button", { name: "Backup options", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Replace passkey", exact: true }).click();
+  await page.getByRole("button", { name: "Replace passkey", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("412");
   await page.reload();
   await expect(page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/ })).toHaveCount(0);
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Backup options", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Replace passkey", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Backup options", exact: true })).toBeEnabled();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Replace passkey", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Replace passkey", exact: true })).toBeEnabled();
   // Replacement enrollment must not overwrite the original credential before its keystore commit.
   const credentials = await cdp.send("WebAuthn.getCredentials", { authenticatorId });
   expect(credentials.credentials).toHaveLength(3);
-  await page.getByRole("button", { name: "Backup options", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Switch to PIN", exact: true }).click();
+  await page.getByRole("button", { name: "Change PIN", exact: true }).click();
+  await page.getByLabel("Current PIN", { exact: true }).fill("123456");
   await page.getByLabel("New PIN", { exact: true }).fill("123456");
-  await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
+  await page.getByLabel("Confirm new PIN", { exact: true }).fill("123456");
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await page.getByRole("button", { name: "Backup options", exact: true }).click();
-  await expect(page.getByRole("menuitem", { name: "Switch to passkey", exact: true })).toBeVisible();
-  await page.getByRole("menuitem", { name: "Change PIN", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Replace passkey", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Change PIN", exact: true }).click();
   await expect(page.getByLabel("Current PIN", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  expect(stored).toMatchObject({ pinProtected: true });
-  expect(stored).not.toHaveProperty("passkey");
+  expect(stored).toMatchObject({ pinProtected: true, passkeyProtected: true });
+  expect(stored).toHaveProperty("passkey");
   await page.reload();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await enterUploadOnlyMode(page);
   await page.reload();
   await expect(page.getByLabel("PIN", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
+  await page.getByRole("button", { name: "Use PIN instead", exact: true }).click();
   await expect(page.getByLabel("PIN", { exact: true })).toBeFocused();
   await page.getByLabel("PIN", { exact: true }).fill("not-saved");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByLabel("PIN", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
+  await page.getByRole("button", { name: "Use PIN instead", exact: true }).click();
   await expect(page.getByLabel("PIN", { exact: true })).toHaveValue("");
   await page.getByLabel("PIN", { exact: true }).fill("wrong-pin");
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("Check your PIN and try again");
+  await expect(page.getByRole("alert")).toContainText("Incorrect PIN. Please try again.");
   await page.getByLabel("PIN", { exact: true }).fill("123456");
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
 });
 
 test("initialization failures show the backend error", async ({ page }) => {
@@ -248,26 +249,22 @@ test("new backups stay local until PIN protection is configured", async ({ page 
     return route.fulfill({ json: [] });
   });
   await page.goto("http://localhost:4175/tests/browser/fixtures/sync-security.html");
-  await expect(page.getByText("Off", { exact: true })).toBeVisible();
+  await expect(page.getByText("Backup is off", { exact: true })).toBeVisible();
   await page.evaluate(() => window.syncSecurityE2E.save("agents/local/AGENTS.md", "saved before setup"));
   await page.reload();
-  await expect(page.getByText("Off", { exact: true })).toBeVisible();
+  await expect(page.getByText("Backup is off", { exact: true })).toBeVisible();
   expect(writes).toHaveLength(0);
   expect(uploads).toBe(0);
-  await page.getByRole("button", { name: "Start backup", exact: true }).click();
-  await page.getByRole("radio", { name: "PIN", exact: true }).check();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.locator('[aria-current="step"]')).toContainText("Turn on backup");
-  await expect(page.getByText("Off", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Back", exact: true }).click();
-  await expect(page.locator('[aria-current="step"]')).toContainText("Choose protection");
-  await expect(page.getByRole("radio", { name: "PIN", exact: true })).toBeChecked();
-  await page.getByRole("radio", { name: "PIN", exact: true }).check();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
+  await expect(page.locator('[aria-current="step"]')).toContainText("Create PIN");
+  await expect(page.getByText("Backup is off", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
   await page.getByLabel("New PIN", { exact: true }).fill("123456");
   await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
-  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Create PIN", exact: true }).click();
+  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await expect.poll(() => uploads).toBe(1);
   await expect(page.getByRole("button", { name: "Remove PIN", exact: true })).toHaveCount(0);
 });
@@ -295,18 +292,16 @@ test("PIN setup recovers when protection saves but backup key provisioning fails
     return route.fulfill({ status: 204, headers: { ETag: `"${revision}"` } });
   });
   await page.goto("http://localhost:4175/tests/browser/fixtures/sync-security.html");
-  await page.getByRole("button", { name: "Start backup", exact: true }).click();
-  await page.getByRole("radio", { name: "PIN", exact: true }).check();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
   await page.getByLabel("New PIN", { exact: true }).fill("123456");
   await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
-  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
+  await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await expect(page.getByText("Ready to restore", { exact: true })).toBeVisible();
   await expect(page.getByLabel("PIN", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
   await page.getByLabel("PIN", { exact: true }).fill("123456");
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   expect(revision).toBe(2);
 });
 
@@ -349,22 +344,21 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
   });
   const fixture = "/tests/browser/fixtures/sync-security.html";
   await page.goto(fixture);
-  await page.getByRole("button", { name: "Start backup", exact: true }).click();
-  await page.getByRole("radio", { name: "PIN", exact: true }).check();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
   await page.getByLabel("New PIN", { exact: true }).fill("123456");
   await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
-  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Create PIN", exact: true }).click();
+  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await enterUploadOnlyMode(page);
   const originalPublicKey = (key!.backup as { publicKey: string }).publicKey;
   await page.evaluate(() => window.syncSecurityE2E.save("agents/keep/AGENTS.md", "keep me"));
   await expect.poll(() => uploads).toBe(1);
   await page.reload();
-  await expect(page.getByText("On", { exact: true })).toBeVisible();
+  await expect(page.getByText("Backup is running", { exact: true })).toBeVisible();
   const other = await context.newPage();
   await other.goto(fixture);
-  await expect(other.getByText("On", { exact: true })).toBeVisible();
+  await expect(other.getByText("Backup is running", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Danger zone", exact: true }).click();
   await page.getByRole("button", { name: "Reset online backup", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("Local chats and files stay on this browser");
@@ -373,8 +367,8 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
   expect(key).not.toBeNull();
   await page.getByRole("button", { name: "Reset online backup", exact: true }).click();
   await page.getByRole("button", { name: "Delete online backup and reset", exact: true }).click();
-  await expect(page.getByText("Off", { exact: true })).toBeVisible();
-  await expect(other.getByText("Off", { exact: true })).toBeVisible();
+  await expect(page.getByText("Backup is off", { exact: true })).toBeVisible();
+  await expect(other.getByText("Backup is off", { exact: true })).toBeVisible();
   expect(resets).toBe(1);
   expect(key).toBeNull();
   expect(files.size).toBe(0);
@@ -382,15 +376,14 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
   expect(await page.evaluate(() => window.syncSecurityE2E.read("agents/keep/AGENTS.md"))).toBe("keep me");
   await other.close();
   await page.reload();
-  await expect(page.getByText("Off", { exact: true })).toBeVisible();
+  await expect(page.getByText("Backup is off", { exact: true })).toBeVisible();
   expect(uploads).toBe(1);
-  await page.getByRole("button", { name: "Start backup", exact: true }).click();
-  await page.getByRole("radio", { name: "PIN", exact: true }).check();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
   await page.getByLabel("New PIN", { exact: true }).fill("654321");
   await page.getByLabel("Confirm PIN", { exact: true }).fill("654321");
-  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Create PIN", exact: true }).click();
+  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await expect.poll(() => uploads).toBe(2);
   expect((key!.backup as { publicKey: string }).publicKey).not.toBe(originalPublicKey);
 });
@@ -410,7 +403,7 @@ test("a failed reset preserves local data and retries on reload", async ({ page 
     return route.fulfill({ json: [] });
   });
   await page.goto("/tests/browser/fixtures/sync-security.html");
-  await expect(page.getByText("Off", { exact: true })).toBeVisible();
+  await expect(page.getByText("Backup is off", { exact: true })).toBeVisible();
   await page.evaluate(() => window.syncSecurityE2E.save("agents/keep/AGENTS.md", "keep me"));
   await page.getByRole("button", { name: "Danger zone", exact: true }).click();
   await page.getByRole("button", { name: "Reset online backup", exact: true }).click();
@@ -419,7 +412,7 @@ test("a failed reset preserves local data and retries on reload", async ({ page 
   expect(await page.evaluate(() => window.syncSecurityE2E.read("agents/keep/AGENTS.md"))).toBe("keep me");
   fail = false;
   await page.reload();
-  await expect(page.getByText("Off", { exact: true })).toBeVisible();
+  await expect(page.getByText("Backup is off", { exact: true })).toBeVisible();
   expect(resets).toBe(2);
   expect(await page.evaluate(() => window.syncSecurityE2E.read("agents/keep/AGENTS.md"))).toBe("keep me");
 });
@@ -458,13 +451,12 @@ test("reset waits for a peer upload's local writes and fences the stale tab afte
     return route.fulfill({ json: [] });
   });
   await page.goto("/tests/browser/fixtures/sync-security.html");
-  await page.getByRole("button", { name: "Start backup", exact: true }).click();
-  await page.getByRole("radio", { name: "PIN", exact: true }).check();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
   await page.getByLabel("New PIN", { exact: true }).fill("123456");
   await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
-  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Create PIN", exact: true }).click();
+  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await enterUploadOnlyMode(page);
   const peer = await context.newPage();
   // Simulate a tab whose reset notification is delayed/suppressed. Correctness
@@ -476,7 +468,7 @@ test("reset waits for a peer upload's local writes and fences the stale tab afte
     }),
   );
   await peer.goto("/tests/browser/fixtures/sync-security.html");
-  await expect(peer.getByText("On", { exact: true })).toBeVisible();
+  await expect(peer.getByText("Backup is running", { exact: true })).toBeVisible();
   await peer.evaluate(() => window.syncSecurityE2E.saveChat("retained during reset"));
   await expect.poll(() => appends).toBe(1);
   await page.getByRole("button", { name: "Danger zone", exact: true }).click();
@@ -493,7 +485,7 @@ test("reset waits for a peer upload's local writes and fences the stale tab afte
     .toBe(true);
   expect(resets).toBe(0);
   releaseAppend();
-  await expect(page.getByText("Off", { exact: true })).toBeVisible();
+  await expect(page.getByText("Backup is off", { exact: true })).toBeVisible();
   expect(resets).toBe(1);
   expect(JSON.stringify(await page.evaluate(() => window.syncSecurityE2E.readChat()))).toContain(
     "retained during reset",
@@ -508,7 +500,7 @@ test("reset waits for a peer upload's local writes and fences the stale tab afte
   expect(await page.evaluate(() => window.syncSecurityE2E.read("_sync/state.json"))).toBeUndefined();
 });
 
-test("setup falls back to PIN and validates without sending data", async ({ page }) => {
+test("PIN setup validates before sending data when passkeys are unavailable", async ({ page }) => {
   let writes = 0;
   await page.setViewportSize({ width: 375, height: 850 });
   await page.addInitScript(() => Object.defineProperty(window, "PublicKeyCredential", { value: undefined }));
@@ -522,69 +514,27 @@ test("setup falls back to PIN and validates without sending data", async ({ page
     return route.fulfill({ json: [] });
   });
   await page.goto("/tests/browser/fixtures/sync-security.html");
-  await page.getByRole("button", { name: "Start backup", exact: true }).click();
-  await expect(page.getByRole("radio", { name: "Passkey (recommended)", exact: true })).toBeDisabled();
-  await expect(page.getByRole("radio", { name: "PIN", exact: true })).toBeChecked();
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
   await expect(page.getByRole("list", { name: "Backup setup progress" })).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("radio", { name: "PIN", exact: true })).toBeFocused();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByText("Use 4–32 characters. A longer PIN is harder to guess.", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
+  await expect(page.getByLabel("New PIN", { exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("at least 4 characters");
   await page.getByLabel("New PIN", { exact: true }).fill("123");
   await page.getByLabel("Confirm PIN", { exact: true }).fill("123");
-  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
+  await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("at least 4 characters");
   await page.getByLabel("New PIN", { exact: true }).fill("123456");
   await page.getByLabel("Confirm PIN", { exact: true }).fill("654321");
-  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
+  await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("PINs do not match");
   expect(writes).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.getByRole("button", { name: "Back", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByRole("radio", { name: "PIN", exact: true })).toBeChecked();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByLabel("New PIN", { exact: true })).toHaveValue("");
-  await page.getByRole("button", { name: "Back", exact: true }).click();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Start backup", exact: true })).toBeFocused();
-});
-
-test("a cancelled passkey keeps setup on step two and allows choosing PIN", async ({ page }) => {
-  let writes = 0;
-  await page.addInitScript(() => {
-    navigator.credentials.create = async () => {
-      throw new DOMException("Passkey setup was cancelled. Try again or choose a PIN.", "NotAllowedError");
-    };
-  });
-  await page.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
-  await page.route("**/api/v1/**", (route) => {
-    const request = route.request();
-    if (request.method() !== "GET") writes++;
-    const path = new URL(request.url()).pathname;
-    if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (path.endsWith("/keystore")) return route.fulfill({ status: 404 });
-    return route.fulfill({ json: [] });
-  });
-  await page.goto("/tests/browser/fixtures/sync-security.html");
-  await page.getByRole("button", { name: "Start backup", exact: true }).click();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await page.getByRole("button", { name: "Create passkey & turn on backup", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("Passkey setup didn’t finish");
-  await page.getByText("Error details", { exact: true }).click();
-  await expect(
-    page.getByText("Passkey setup was cancelled. Try again or choose a PIN.", { exact: true }),
-  ).toBeVisible();
-  await expect(page.locator('[aria-current="step"]')).toContainText("Turn on backup");
-  await expect(page.getByText("Off", { exact: true })).toBeVisible();
-  expect(writes).toBe(0);
-  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Turn on backup", exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await page.getByRole("radio", { name: "PIN", exact: true }).check();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Create your backup PIN" })).toBeVisible();
+  await expect(page.getByLabel("New PIN", { exact: true })).toHaveValue("");
 });
 
 test("danger zone stays at the bottom and scrolls with the whole section in short views", async ({ page }) => {
@@ -603,13 +553,11 @@ test("danger zone stays at the bottom and scrolls with the whole section in shor
   const dangerBox = await danger.boundingBox();
   expect(Math.abs(dangerBox!.y + dangerBox!.height - (fullView!.y + fullView!.height - 24))).toBeLessThan(2);
   await page.setViewportSize({ width: 375, height: 420 });
-  await page.getByRole("button", { name: "Start backup", exact: true }).click();
-  await page.getByRole("radio", { name: "PIN", exact: true }).check();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
   const setup = await page.getByRole("form", { name: "Create your backup PIN" }).boundingBox();
   const shortViewDanger = await danger.boundingBox();
   expect(shortViewDanger!.y).toBeGreaterThanOrEqual(setup!.y + setup!.height + 16);
-  await expect(danger).not.toBeInViewport();
+  await expect(page.getByRole("button", { name: "Reset online backup", exact: true })).toBeHidden();
   await page.getByRole("button", { name: "Danger zone", exact: true }).click();
   await page.getByRole("button", { name: "Reset online backup", exact: true }).scrollIntoViewIfNeeded();
   await expect(page.getByRole("button", { name: "Reset online backup", exact: true })).toBeInViewport();
@@ -641,32 +589,46 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
     return route.fulfill({ json: [] });
   });
   await page.goto("/tests/browser/fixtures/sync-security.html");
-  await page.getByRole("button", { name: "Start backup", exact: true }).click();
-  await page.getByRole("radio", { name: "PIN", exact: true }).check();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   await page.getByLabel("New PIN", { exact: true }).fill("123456");
   await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
-  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Create PIN", exact: true }).click();
+  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("remembered-device.png"), animations: "disabled" });
   const beforeReload = chatPulls;
   await page.reload();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await expect.poll(() => chatPulls).toBeGreaterThan(beforeReload);
   await expect(page.getByRole("button", { name: "Unlock backup", exact: true })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Backup options", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Change PIN", exact: true }).click();
+  await page.getByRole("button", { name: "Change PIN", exact: true }).click();
   await page.getByLabel("Current PIN", { exact: true }).fill("123456");
   await page.getByLabel("New PIN", { exact: true }).fill("654321");
   await page.getByLabel("Confirm new PIN", { exact: true }).fill("654321");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByLabel("Current PIN", { exact: true })).toHaveCount(0);
   await page.reload();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await expect(page.getByRole("checkbox")).toHaveCount(0);
+
+  // Deactivating backup persists across reload, keeps protection on the server,
+  // and requires a successful PIN unlock before backup resumes.
+  const protectionBeforeStop = structuredClone(stored!);
+  await page.getByRole("button", { name: "Backup options", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Deactivate backup", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Backup options", exact: true })).toHaveCount(0);
+  expect(stored).toEqual(protectionBeforeStop);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Backup options", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
+  await expect(page.getByRole("button", { name: "Backup options", exact: true })).toHaveCount(0);
+  await page.getByLabel("PIN", { exact: true }).fill("654321");
+  await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
+  await expect(page.getByRole("button", { name: "Backup options", exact: true })).toBeVisible();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
 
   // A different server protection record requires another explicit unlock.
   const original = structuredClone(stored!);
@@ -681,9 +643,9 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
   await page.getByRole("button", { name: "Unlock backup", exact: true }).click();
   await page.getByLabel("PIN", { exact: true }).fill("654321");
   await page.getByRole("button", { name: "Unlock backup", exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
 
   // Even an identical keystore must never unlock for another signed-in account.
   userId = "bob";
@@ -697,7 +659,7 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
   await page.getByRole("button", { name: "Unlock backup", exact: true }).click();
   await page.getByLabel("PIN", { exact: true }).fill("654321");
   await page.getByRole("button", { name: "Unlock backup", exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await page.evaluate(() => window.syncSecurityE2E.clear());
   await page.reload();
   await expect(page.getByRole("button", { name: "Restore backup", exact: true })).toBeVisible();

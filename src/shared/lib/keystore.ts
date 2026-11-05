@@ -2,7 +2,7 @@
  * Keystore management.
  *
  * The keystore is a small JSON blob stored on the server that holds the
- * user's DEK PIN-wrapped or passkey-wrapped. Plain keys are supported only
+ * user's DEK wrapped with a PIN, passkey, or both independently. Plain keys are supported only
  * in memory during setup and when upgrading old unprotected server records:
  *
  *   { version: 2, kid: 1, pinProtected: false, dek: "<base64 raw key>" }
@@ -65,9 +65,14 @@ export interface PasskeyKeystore {
   passkey: PasskeyEnvelope;
 }
 
-export type Keystore = PlainKeystore | ProtectedKeystore | PasskeyKeystore;
+export interface DualProtectedKeystore extends Omit<ProtectedKeystore, "passkeyProtected"> {
+  passkeyProtected: true;
+  passkey: PasskeyEnvelope;
+}
 
-export function isPasskeyProtected(k: Keystore): k is PasskeyKeystore {
+export type Keystore = PlainKeystore | ProtectedKeystore | PasskeyKeystore | DualProtectedKeystore;
+
+export function isPasskeyProtected(k: Keystore): k is PasskeyKeystore | DualProtectedKeystore {
   return k.passkeyProtected === true;
 }
 
@@ -80,7 +85,7 @@ export interface KeystoreState {
   etag: string;
 }
 
-export function isPinProtected(k: Keystore): k is ProtectedKeystore {
+export function isPinProtected(k: Keystore): k is ProtectedKeystore | DualProtectedKeystore {
   return k.pinProtected === true;
 }
 
@@ -120,27 +125,37 @@ async function saveProtected(state: KeystoreState, ks: Keystore): Promise<Keysto
  * Unwrap the DEK from a PIN-protected keystore.
  */
 export async function unlockWithPin(state: KeystoreState, pin: string, userId: string): Promise<DEK> {
-  if (isPasskeyProtected(state.keystore)) throw new Error("Use your passkey to unlock sync.");
   if (!isPinProtected(state.keystore)) {
+    if (isPasskeyProtected(state.keystore)) throw new Error("Use your passkey to unlock sync.");
     return dekFromPlain(state.keystore);
   }
-  return unwrapDEKWithPin(state.keystore, pin, userId, state.keystore.kid);
+  try {
+    return await unwrapDEKWithPin(state.keystore, pin, userId, state.keystore.kid);
+  } catch (err) {
+    if (err instanceof Error && err.name === "OperationError") {
+      throw new Error("Incorrect PIN. Please try again.", { cause: err });
+    }
+    throw err;
+  }
 }
 
 /**
- * Replace the keystore with a PIN-protected version. Requires the
+ * Add or update PIN protection, preserving any passkey. Requires the
  * current state (so we can use If-Match) and the current DEK.
  */
 export async function setPin(state: KeystoreState, dek: DEK, pin: string, userId: string): Promise<KeystoreState> {
   if (pin.length < 4 || pin.length > 32) throw new Error("PIN must be between 4 and 32 characters.");
   const wrapped = await wrapDEKWithPin(dek, pin, userId);
-  const ks: ProtectedKeystore = {
+  const pinState: ProtectedKeystore = {
     version: 2,
     kid: dek.kid,
     pinProtected: true,
     backup: state.keystore.backup,
     ...wrapped,
   };
+  const ks: ProtectedKeystore | DualProtectedKeystore = isPasskeyProtected(state.keystore)
+    ? { ...pinState, passkeyProtected: true, passkey: state.keystore.passkey }
+    : pinState;
   return saveProtected(state, ks);
 }
 
@@ -157,10 +172,10 @@ export async function changePin(
   return setPin(state, dek, newPin, userId);
 }
 
-/** Replace PIN/plain protection only after passkey enrollment and verification succeed. */
+/** Add or replace a passkey after verification, preserving any PIN protection. */
 export async function setPasskey(state: KeystoreState, dek: DEK, userId: string): Promise<KeystoreState> {
   const passkey = await createPasskeyEnvelope(dek, userId);
-  const ks: PasskeyKeystore = {
+  const passkeyState: PasskeyKeystore = {
     version: 2,
     kid: dek.kid,
     pinProtected: false,
@@ -168,6 +183,15 @@ export async function setPasskey(state: KeystoreState, dek: DEK, userId: string)
     backup: state.keystore.backup,
     passkey,
   };
+  const ks: PasskeyKeystore | DualProtectedKeystore = isPinProtected(state.keystore)
+    ? {
+        ...passkeyState,
+        pinProtected: true,
+        wrappedDek: state.keystore.wrappedDek,
+        nonce: state.keystore.nonce,
+        kdf: state.keystore.kdf,
+      }
+    : passkeyState;
   return saveProtected(state, ks);
 }
 

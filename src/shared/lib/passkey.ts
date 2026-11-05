@@ -71,9 +71,12 @@ async function wrappingKey(credentialId: string, rpId: string, salt: string, use
     }),
   );
   if (toBase64(new Uint8Array(credential.rawId)) !== credentialId) throw new Error("Unexpected passkey returned.");
-  const result = prfBytes((credential.getClientExtensionResults() as PrfOutputs).prf?.results?.first);
+  return deriveWrappingKey((credential.getClientExtensionResults() as PrfOutputs).prf?.results?.first, salt, userId);
+}
+
+async function deriveWrappingKey(result: unknown, salt: string, userId: string): Promise<CryptoKey> {
   // Separate wrapping keys from other uses of the credential's PRF output.
-  const material = await crypto.subtle.importKey("raw", result, "HKDF", false, ["deriveKey"]);
+  const material = await crypto.subtle.importKey("raw", prfBytes(result), "HKDF", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
     {
       name: "HKDF",
@@ -116,10 +119,14 @@ export async function createPasskeyEnvelope(dek: DEK, userId: string): Promise<P
     }),
   );
   const credentialId = toBase64(new Uint8Array(credential.rawId));
-  // Some providers omit the creation capability flag. Successful PRF evaluation
-  // and repeatable unwrap below are the authority for enabling protection.
-  // Always evaluate via get: some authenticators only enable PRF during create.
-  const key = await wrappingKey(credentialId, rpId, salt, userId);
+  // Reuse creation PRF output to avoid an extra prompt. Some providers only
+  // enable PRF during creation, so evaluate via get when no output is returned.
+  // The capability flag is advisory; the verified unwrap below is authoritative.
+  const creationResult = (credential.getClientExtensionResults() as PrfOutputs).prf?.results?.first;
+  const key =
+    creationResult === undefined
+      ? await wrappingKey(credentialId, rpId, salt, userId)
+      : await deriveWrappingKey(creationResult, salt, userId);
   const nonce = randomBytes(12);
   const ciphertext = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: nonce, additionalData: aad(userId, dek.kid) },
@@ -133,7 +140,7 @@ export async function createPasskeyEnvelope(dek: DEK, userId: string): Promise<P
     nonce: toBase64(nonce),
     wrappedDek: toBase64(new Uint8Array(ciphertext)),
   };
-  // A second assertion verifies this credential returns a repeatable secret before replacing the keystore.
+  // Always verify a fresh assertion can unwrap the key before replacing the keystore.
   const verified = await unlockPasskeyEnvelope(envelope, userId, dek.kid);
   if (!verified.raw.every((byte, index) => byte === dek.raw[index])) throw new Error("Passkey verification failed.");
   return envelope;

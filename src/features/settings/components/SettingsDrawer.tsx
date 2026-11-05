@@ -59,7 +59,7 @@ const SECTION_META: { id: SectionId; label: string; icon: React.ReactNode }[] = 
   { id: "general", label: "Appearance", icon: <Palette size={16} /> },
   { id: "audio", label: "Audio", icon: <Mic size={16} /> },
   { id: "profile", label: "Profile", icon: <User size={16} /> },
-  { id: "backup", label: "Backup & Restore", icon: <HardDrive size={16} /> },
+  { id: "backup", label: "Backup", icon: <HardDrive size={16} /> },
   { id: "companion", label: "Companion", icon: <Coffee size={16} /> },
   { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
 ];
@@ -74,12 +74,25 @@ const emojiOptions: { value: EmojiMode; label: string }[] = [
   { value: "native", label: "Native" },
 ];
 
-function SettingsViewHeader({ id, title, description }: { id?: string; title: string; description: string }) {
+function SettingsViewHeader({
+  id,
+  title,
+  description,
+  actions,
+}: {
+  id?: string;
+  title: string;
+  description: string;
+  actions?: React.ReactNode;
+}) {
   return (
     <div className="border-b border-neutral-200/60 pb-4 dark:border-neutral-800/60">
-      <h3 id={id} className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-        {title}
-      </h3>
+      <div className="flex items-center justify-between gap-3">
+        <h3 id={id} className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+          {title}
+        </h3>
+        {actions}
+      </div>
       <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">{description}</p>
     </div>
   );
@@ -687,20 +700,23 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         </section>
                       )}
 
-                      {/* Backup & Restore Section */}
+                      {/* Backup Section */}
                       {section === "backup" && (
                         <section aria-labelledby="backup-settings-heading" className="flex min-h-full flex-col gap-6">
-                          <SettingsViewHeader
-                            id="backup-settings-heading"
-                            title="Backup & Restore"
-                            description={
-                              getConfig().store
-                                ? "Manage your online backup and restore your data."
-                                : "Download a copy of your data or restore a backup file."
-                            }
-                          />
-
                           <SyncSection
+                            renderHeader={(actions) => (
+                              <SettingsViewHeader
+                                id="backup-settings-heading"
+                                actions={actions}
+                                title={getConfig().store ? "Online backup" : "Backup"}
+                                description={
+                                  getConfig().store
+                                    ? "Manage your online backup and restore your data."
+                                    : "Download a copy of your data or restore a backup file."
+                                }
+                              />
+                            )}
+                            showHeading={false}
                             dangerDisabled={isExporting || isRestoring}
                             dangerActions={
                               <>

@@ -281,7 +281,7 @@ one final transcript update per completed request, not a strict one-HTTP-call li
 ## Multiple backend pods and shared storage
 
 The Alpine Docker image supports shared storage with no additional runtime
-packages or lock service. Set `ONLINE_BACKUP_ENABLED=true` and `STORE_PATH=/data/store`,
+packages or lock service. Set `ONLINE_BACKUP_ENABLED=true` and `BACKUP_STORE_PATH=/data/store`,
 and mount a writable volume at `/data`. Containers sharing a store must use the
 same directory and compatible filesystem permissions.
 

@@ -364,7 +364,7 @@ func TestOnlineBackupMode(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("ONLINE_BACKUP_ENABLED", test.online)
 			t.Setenv("STORE_ENABLED", test.store)
-			t.Setenv("STORE_PATH", "/data/backups")
+			t.Setenv("BACKUP_STORE_PATH", "/data/backups")
 			var cfg Config
 			applyEnvOverrides(&cfg)
 			if (cfg.OnlineBackup != nil) != test.wantOnline || (cfg.Store != nil) != test.wantStore {

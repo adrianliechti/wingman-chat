@@ -33,14 +33,21 @@ func protectedKeystore(data []byte) bool {
 			Wrapped      string `json:"wrappedDek"`
 		} `json:"passkey"`
 	}
-	if json.Unmarshal(data, &key) != nil || key.Version != 2 || key.Kid < 1 || key.Kid > 255 || len(key.DEK) != 0 || key.PIN == key.PasskeyProtected {
+	if json.Unmarshal(data, &key) != nil || key.Version != 2 || key.Kid < 1 || key.Kid > 255 || len(key.DEK) != 0 || (!key.PIN && !key.PasskeyProtected) {
 		return false
 	}
 	if key.PIN {
-		return sizedBase64(key.Wrapped, 48) && sizedBase64(key.Nonce, 12) && key.KDF.Name == "pbkdf2-sha256" && sizedBase64(key.KDF.Salt, 16) && key.KDF.Iter >= 600000 && key.KDF.Iter <= 10000000
+		if !sizedBase64(key.Wrapped, 48) || !sizedBase64(key.Nonce, 12) || key.KDF.Name != "pbkdf2-sha256" || !sizedBase64(key.KDF.Salt, 16) || key.KDF.Iter < 600000 || key.KDF.Iter > 10000000 {
+			return false
+		}
 	}
-	id, err := base64.StdEncoding.DecodeString(key.Passkey.CredentialID)
-	return err == nil && len(id) > 0 && len(id) <= 1024 && strings.TrimSpace(key.Passkey.RPID) != "" && sizedBase64(key.Passkey.Salt, 32) && sizedBase64(key.Passkey.Nonce, 12) && sizedBase64(key.Passkey.Wrapped, 48)
+	if key.PasskeyProtected {
+		id, err := base64.StdEncoding.DecodeString(key.Passkey.CredentialID)
+		if err != nil || len(id) == 0 || len(id) > 1024 || strings.TrimSpace(key.Passkey.RPID) == "" || !sizedBase64(key.Passkey.Salt, 32) || !sizedBase64(key.Passkey.Nonce, 12) || !sizedBase64(key.Passkey.Wrapped, 48) {
+			return false
+		}
+	}
+	return true
 }
 
 func sizedBase64(value string, size int) bool {

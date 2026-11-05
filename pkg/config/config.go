@@ -179,7 +179,7 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	withFeature("STORE_ENABLED", &cfg.Store, nil)
 	if s := cfg.Store; s != nil {
-		envOverride("STORE_PATH", &s.Path)
+		envOverride("BACKUP_STORE_PATH", &s.Path)
 		if s.Path == "" {
 			s.Path = "./data/store"
 		}

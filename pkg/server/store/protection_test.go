@@ -25,6 +25,14 @@ func TestProtectedKeystoreValidation(t *testing.T) {
 	if !protectedKeystore([]byte(protectedTestKey("valid"))) {
 		t.Fatal("valid PIN rejected")
 	}
+	var dual map[string]any
+	_ = json.Unmarshal([]byte(protectedTestKey("dual")), &dual)
+	dual["passkeyProtected"] = true
+	dual["passkey"] = passkey["passkey"]
+	dualData, _ := json.Marshal(dual)
+	if !protectedKeystore(dualData) {
+		t.Fatal("valid combined PIN and passkey rejected")
+	}
 	for _, body := range []string{
 		strings.Replace(string(data), `"version":2`, `"version":1`, 1),
 		strings.Replace(string(data), `"kid":1`, `"kid":0`, 1),
@@ -34,6 +42,9 @@ func TestProtectedKeystoreValidation(t *testing.T) {
 		`{"dek":null,` + string(data)[1:],
 		`{"dek":"plaintext",` + string(data)[1:],
 		strings.Replace(protectedTestKey("weak"), `"iter":600000`, `"iter":1`, 1),
+		strings.Replace(string(dualData), `"iter":600000`, `"iter":1`, 1),
+		strings.Replace(string(dualData), `"rpId":"localhost"`, `"rpId":""`, 1),
+		`{"dek":null,` + string(dualData)[1:],
 	} {
 		if protectedKeystore([]byte(body)) {
 			t.Fatalf("accepted invalid protection: %s", body)

@@ -12,7 +12,8 @@ tasks:
       PREFIX: "/"
       STORE_ENABLED: "true"
     cmds:
-      - go run .
+      # Keep explicit platform settings; default to the local gateway for development.
+      - WINGMAN_URL="${WINGMAN_URL:-${OPENAI_BASE_URL:-http://localhost:4242}}" go run .
 
   ui:
     cmds:

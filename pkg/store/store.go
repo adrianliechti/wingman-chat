@@ -41,6 +41,9 @@ type AppendResult struct {
 // The server never decrypts key, frame, or blob contents. Providers must
 // preserve an existing keystore backup envelope when root-key protection changes.
 type Provider interface {
+	// BackupSize returns approximate stored bytes, including encrypted data and metadata.
+	BackupSize(ctx context.Context, userID string) (int64, error)
+
 	// LockUser coordinates complete API requests with account-wide resets.
 	// Ordinary requests hold a shared lock through validation and streaming.
 	LockUser(ctx context.Context, userID string, exclusive bool) (unlock func(), err error)

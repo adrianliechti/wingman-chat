@@ -273,6 +273,20 @@ open the URL printed by Vite using `localhost`. The Go server listens on port
 Set `WINGMAN_URL` (and `WINGMAN_TOKEN` if required) when using another platform.
 `task ui` connects the frontend to the Go server at `http://localhost:8080`.
 
+Run the backup resilience browser tests with:
+
+```bash
+npx playwright test tests/browser/backup-resilience.spec.ts --project=chromium
+```
+
+These tests require Go and Playwright Chromium (`npx playwright install chromium`).
+They build and start the real Go backend with temporary storage and isolated test
+accounts. They cover backup and restore on a fresh device, missing API routes,
+offline startup, queued edits surviving reloads, temporary server failures, and
+chat/file uploads interrupted before commit or after commit but before the
+response arrives. Network faults are injected at the browser's backup API boundary;
+the frontend remains available so local editing and recovery can be verified.
+
 
 Keep `vite-plus`, its core package and the `vite` alias at the same version, and
 pin Vitest to the version bundled with Vite+. React Compiler runs through the
@@ -302,7 +316,7 @@ To enable persistent server backups in the Alpine image, mount a writable volume
 ```bash
 docker run -it --rm -p 8000:8000 \
   -e WINGMAN_URL=http://host.docker.internal:4242 \
-  -e ONLINE_BACKUP_ENABLED=true -e STORE_PATH=/data/store \
+  -e ONLINE_BACKUP_ENABLED=true -e BACKUP_STORE_PATH=/data/store \
   -v wingman-store:/data \
   wingman-chat
 ```
@@ -402,7 +416,7 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
 
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
-- `ONLINE_BACKUP_ENABLED` — show online backup instead of local ZIP backup controls (default `false`). Also enables file storage on the server; `STORE_PATH` configures its directory (default `./data/store`). `STORE_ENABLED` alone exposes storage routes without enabling online backup in the UI. For frontend development, add `"onlineBackup": {}` in `public/config.json`.
+- `ONLINE_BACKUP_ENABLED` — show online backup instead of local ZIP backup controls (default `false`). Also enables file storage on the server; `BACKUP_STORE_PATH` configures its directory (default `./data/store`). `STORE_ENABLED` alone exposes storage routes without enabling online backup in the UI. For frontend development, add `"onlineBackup": {}` in `public/config.json`.
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED` (`TELEMETRY_NAME` — the OpenTelemetry `service.name`, default `wingman-chat`)

@@ -26,7 +26,20 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("keystore protection methods", () => {
-  it("switches plain → passkey → PIN without changing the encryption key", async () => {
+  it("reports an incorrect PIN clearly when unlocking or changing it", async () => {
+    const prepared = await keystore.prepareSetup();
+    const pin = await keystore.setPin(prepared.state, prepared.dek, "123456", "alice");
+    vi.mocked(api.putKeystore).mockClear();
+
+    await expect(keystore.unlockWithPin(pin, "wrong-pin", "alice")).rejects.toThrow("Incorrect PIN. Please try again.");
+    await expect(keystore.changePin(pin, "wrong-pin", "654321", "alice")).rejects.toThrow(
+      "Incorrect PIN. Please try again.",
+    );
+    expect(api.putKeystore).not.toHaveBeenCalled();
+    expect(await keystore.unlockWithPin(pin, "123456", "alice")).toEqual(prepared.dek);
+  });
+
+  it("adds and updates both methods without changing the encryption key or losing either method", async () => {
     const dek = await generateDEK(5);
     const initial: keystore.KeystoreState = {
       etag: "initial-etag",
@@ -42,10 +55,30 @@ describe("keystore protection methods", () => {
     await expect(keystore.unlockWithPin(passkey, "", "alice")).rejects.toThrow(/passkey/);
     expect(await keystore.unlockWithPasskey(passkey, "alice")).toEqual(dek);
     const pin = await keystore.setPin(passkey, dek, "123456", "alice");
-    expect(keystore.isPasskeyProtected(pin.keystore)).toBe(false);
+    expect(keystore.isPasskeyProtected(pin.keystore)).toBe(true);
+    expect(pin.keystore).toMatchObject({ pinProtected: true, passkeyProtected: true });
+    expect(pin.keystore).not.toHaveProperty("dek");
     expect(await keystore.unlockWithPin(pin, "123456", "alice")).toEqual(dek);
+    expect(await keystore.unlockWithPasskey(pin, "alice")).toEqual(dek);
     const again = await keystore.setPasskey(pin, dek, "alice");
     expect(await keystore.unlockWithPasskey(again, "alice")).toEqual(dek);
+    expect(await keystore.unlockWithPin(again, "123456", "alice")).toEqual(dek);
+    const changed = await keystore.changePin(again, "123456", "987654", "alice");
+    expect(await keystore.unlockWithPasskey(changed, "alice")).toEqual(dek);
+    expect(await keystore.unlockWithPin(changed, "987654", "alice")).toEqual(dek);
+    await expect(keystore.unlockWithPin(changed, "123456", "alice")).rejects.toThrow();
+  });
+
+  it("preserves a PIN-only backup when adding or replacing a passkey fails", async () => {
+    const prepared = await keystore.prepareSetup();
+    const pin = await keystore.setPin(prepared.state, prepared.dek, "123456", "alice");
+    const original = JSON.stringify(pin);
+    vi.mocked(api.putKeystore).mockClear();
+    get.mockRejectedValue(new DOMException("Cancelled", "NotAllowedError"));
+    await expect(keystore.setPasskey(pin, prepared.dek, "alice")).rejects.toThrow("Cancelled");
+    expect(api.putKeystore).not.toHaveBeenCalled();
+    expect(JSON.stringify(pin)).toBe(original);
+    expect(await keystore.unlockWithPin(pin, "123456", "alice")).toEqual(prepared.dek);
   });
 
   it("does not upload anything when enrollment is cancelled or PRF is unsupported", async () => {

@@ -2,7 +2,7 @@ import { BackupStatusIcon } from "./BackupStatusIcon";
 import { type SyncHealth, useSyncStatus } from "../hooks/useSyncStatus";
 
 interface SyncIndicatorProps {
-  /** Open the settings drawer at Backup & Restore. */
+  /** Open the settings drawer at Backup. */
   onClick?: () => void;
 }
 
@@ -13,7 +13,7 @@ function describe(health: SyncHealth, pendingCount: number): string {
     case "setup":
       return "Backups disabled — set a PIN or passkey";
     case "locked":
-      return "Backup locked — unlock in Backup & Restore";
+      return "Backup locked — unlock in Backup";
     case "error":
       return "Sync error — click for details";
     case "syncing":

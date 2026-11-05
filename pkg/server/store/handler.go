@@ -30,6 +30,7 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc("GET "+prefix+"/v1/keystore", h.withUserLock(h.handleGetKeystore))
 	mux.HandleFunc("PUT "+prefix+"/v1/keystore", h.withUserLock(h.handlePutKeystore))
 	mux.HandleFunc("DELETE "+prefix+"/v1/backup", h.handleResetBackup)
+	mux.HandleFunc("GET "+prefix+"/v1/backup/usage", h.requireProtection(h.handleBackupUsage))
 
 	mux.HandleFunc("GET "+prefix+"/v1/chats", h.requireProtection(h.handleListChats))
 	mux.HandleFunc("GET "+prefix+"/v1/chats/{id}/events", h.requireProtection(h.handleReadEvents))
@@ -535,4 +536,21 @@ func (h *Handler) handleDeleteBlob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleBackupUsage(w http.ResponseWriter, r *http.Request) {
+	userID, _, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	size, err := h.store.BackupSize(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(struct {
+		Bytes int64 `json:"bytes"`
+	}{Bytes: size})
 }

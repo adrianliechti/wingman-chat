@@ -275,3 +275,20 @@ export async function deleteFile(fileId: string): Promise<void> {
     throw new ServerError(res.status, body || res.statusText);
   }
 }
+
+/** Stored encrypted data and metadata, excluding filesystem overhead. */
+export async function getBackupSize(): Promise<number> {
+  const res = await fetchOrThrow(`${PREFIX}/backup/usage`);
+  const data: unknown = await res.json();
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    !("bytes" in data) ||
+    typeof data.bytes !== "number" ||
+    !Number.isFinite(data.bytes) ||
+    data.bytes < 0
+  ) {
+    throw new Error("Invalid backup size");
+  }
+  return data.bytes;
+}

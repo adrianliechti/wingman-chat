@@ -23,6 +23,43 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("passkey wrapping", () => {
+  it.each(["ArrayBuffer", "plain array", "typed array", "DataView"])(
+    "reuses creation PRF output as %s and verifies with only one assertion",
+    async (format) => {
+      const padded = new Uint8Array(40);
+      padded.set(secret, 4);
+      const result =
+        format === "ArrayBuffer"
+          ? secret.buffer
+          : format === "plain array"
+            ? Array.from(secret)
+            : format === "typed array"
+              ? padded.subarray(4, 36)
+              : new DataView(padded.buffer, 4, 32);
+      // A provider may return results without the optional enabled flag.
+      create.mockResolvedValue(credential({ results: { first: result } }));
+      const dek = await generateDEK(7);
+      const envelope = await createPasskeyEnvelope(dek, "alice");
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(await unlockPasskeyEnvelope(JSON.parse(JSON.stringify(envelope)), "alice", 7)).toEqual(dek);
+    },
+  );
+
+  it("rejects creation PRF output that cannot be repeated by a fresh assertion", async () => {
+    create.mockResolvedValue(credential({ results: { first: secret.buffer } }));
+    get.mockResolvedValue(credential({ results: { first: new Uint8Array(32).buffer } }));
+    await expect(createPasskeyEnvelope(await generateDEK(), "alice")).rejects.toThrow();
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not finish enrollment when the final confirmation is cancelled", async () => {
+    create.mockResolvedValue(credential({ results: { first: secret.buffer } }));
+    get.mockRejectedValue(new DOMException("User cancelled", "NotAllowedError"));
+    await expect(createPasskeyEnvelope(await generateDEK(), "alice")).rejects.toThrow("User cancelled");
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
   it("verifies repeatable PRF output, then unlocks the same DEK after serialization", async () => {
     const dek = await generateDEK(7);
     const envelope = await createPasskeyEnvelope(dek, "alice");
@@ -83,6 +120,15 @@ describe("passkey wrapping", () => {
     get.mockResolvedValue(credential({ results: { first: result } }));
     await expect(createPasskeyEnvelope(await generateDEK(), "alice")).rejects.toThrow(/PRF/);
   });
+
+  it.each([null, [], new Uint8Array(31), Array(32).fill("0")])(
+    "rejects malformed creation PRF output before requesting a confirmation: %j",
+    async (result) => {
+      create.mockResolvedValue(credential({ results: { first: result } }));
+      await expect(createPasskeyEnvelope(await generateDEK(), "alice")).rejects.toThrow(/PRF/);
+      expect(get).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects another user's context, key id, PRF secret, or tampered ciphertext", async () => {
     const envelope = await createPasskeyEnvelope(await generateDEK(2), "alice");

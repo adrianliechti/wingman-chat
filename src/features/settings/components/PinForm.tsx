@@ -1,9 +1,10 @@
 import { useId } from "react";
-import { ArrowLeft, LoaderCircle } from "lucide-react";
+import { ArrowLeft, LoaderCircle, TriangleAlert } from "lucide-react";
 
 interface PinFormProps {
   title: string;
   description?: string;
+  warning?: string;
   fields: { label: string; value: string; setter: (value: string) => void }[];
   error: string | null;
   busy: boolean;
@@ -16,6 +17,7 @@ interface PinFormProps {
 export function PinForm({
   title,
   description,
+  warning,
   fields,
   error,
   busy,
@@ -35,14 +37,23 @@ export function PinForm({
       }}
     >
       <div className="space-y-1.5">
-        <h4 id={`${formId}-title`} className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+        <h4 id={`${formId}-title`} className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
           {title}
         </h4>
         {description && <p className="text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">{description}</p>}
       </div>
+      {warning && (
+        <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          <TriangleAlert size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+          <span>{warning}</span>
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         {fields.map((field) => (
-          <label key={field.label} className="block text-xs font-medium text-neutral-700 dark:text-neutral-300">
+          <label
+            key={field.label}
+            className={`block text-xs font-medium text-neutral-700 dark:text-neutral-300 ${field.label === "New PIN" ? "sm:col-start-1" : ""}`}
+          >
             {field.label}
             <input
               type="password"
@@ -61,7 +72,7 @@ export function PinForm({
           {error}
         </p>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
         <button
           type="button"
           onClick={onCancel}
@@ -74,7 +85,7 @@ export function PinForm({
         <button
           type="submit"
           disabled={busy}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-neutral-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+          className="inline-flex items-center justify-center justify-self-end gap-2 rounded-lg bg-neutral-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
         >
           {busy && <LoaderCircle size={13} aria-hidden="true" className="animate-spin" />}
           {busy ? "Saving…" : confirmLabel}
