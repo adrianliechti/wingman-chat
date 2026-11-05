@@ -3,7 +3,7 @@ import { parseSkillFile } from "@/features/skills/lib/skillParser";
 import { type IndexEntry, listDirectories, listFiles, readJson, readText, writeJson } from "./opfs-core";
 import { withPersistenceLock } from "./persistence";
 
-export const STORAGE_COLLECTIONS = ["agents", "chats", "images", "skills", "projects"] as const;
+export const STORAGE_COLLECTIONS = ["agents", "chats", "images", "skills", "projects", "translations"] as const;
 
 /** Collections whose listing can be derived from their folders. */
 const REBUILDABLE_COLLECTIONS: readonly string[] = [...STORAGE_COLLECTIONS, "plugins"];

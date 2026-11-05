@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { isSupportedFile, pickLanguage, supportedLanguages, supportedProviders } from "./TranslateContext";
+import { isSupportedFile, pickLanguage, providerForFile, supportedLanguages, supportedProviders } from "./languages";
 
 vi.mock("@/shared/config", () => ({
   getConfig: () => ({
@@ -28,5 +28,11 @@ describe("translator providers", () => {
     expect(pickLanguage(["fr", "en"], "ja")).toBe("en");
     expect(pickLanguage(["ja", "fr"], "de")).toBe("ja");
     expect(pickLanguage([])).toBe("");
+  });
+
+  it("keeps the current provider for a file it accepts and switches otherwise", () => {
+    expect(providerForFile(new File([], "a.pdf"), "llm")).toBe("llm");
+    expect(providerForFile(new File([], "a.docx"), "llm")).toBe("google");
+    expect(providerForFile(new File([], "a.xlsx"), "llm")).toBeUndefined();
   });
 });

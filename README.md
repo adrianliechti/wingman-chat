@@ -123,20 +123,30 @@ including live transcription.
 
 ### Translate
 
-A dedicated mode for translating documents (PDF and more) and text, with selectable tone and style
-across many languages. When `translator.yaml` lists more than one provider, users can pick which
-translator to use; each `id` must match a translator configured on the platform. A provider's
-`files` and `languages` override the translator-wide lists:
+A workspace for translating text and whole documents. Text translates as you type; a formality
+(formal or informal address) and a style (plain, professional, natural, technical) revise the
+translation against the source, a free instruction refines it, and any selected passage offers alternatives. Drop one or more
+documents (PDF, Word, PowerPoint, Excel, Markdown, text) to translate each into the chosen language;
+the original and the translation open side by side in the same viewers the artifacts drawer uses, and
+the translation downloads in the original format. Translators that return text for documents (the AI
+translator) show the translated text next to the original and offer a Word export. Every translation is
+kept in a history in the sidebar, so a document can be translated into further languages later.
+
+When `translator.yaml` lists more than one provider, users can pick which translator to use; each `id`
+must match a translator configured on the platform (the gateway's `translators:` section). The first is
+the default. A provider's `files` and `languages` override the translator-wide lists; list only the file
+types a translator accepts, because a dropped document goes to the first translator that takes it:
 
 ```yaml
 providers:
-  - id: azure-translator
-    name: Azure
-  - id: google-translator
-    name: Google
-    languages: [en, de, fr, ja, zh]
+  - id: deepl
+    name: DeepL
+    files: [.docx, .pptx, .xlsx, .pdf, .txt, .html]
+    languages: [en, de, fr, it, es, ja, zh]
+  - id: llm
+    name: AI
 
-files: [.pdf, .docx]
+files: [.pdf]
 languages: [en, de, fr, it, es]
 ```
 
