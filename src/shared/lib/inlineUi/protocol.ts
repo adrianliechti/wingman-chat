@@ -98,7 +98,13 @@ export function parseMessages(source: string, streaming = false): ParsedMessages
     for (const message of raw) {
       validateRecursionAndPaths(message);
       validatePaths(message);
-      const parsed = AgentToRendererMessageSchema.parse(message);
+      // SDK 0.15 canonicalizes the version marker. Saved conversations from
+      // earlier SDKs still carry the former spelling, with the same payload.
+      const canonical =
+        message && typeof message === "object" && "version" in message && message.version === "v1.0"
+          ? { ...message, version: "1.0" }
+          : message;
+      const parsed = AgentToRendererMessageSchema.parse(canonical);
       if ("updateDataModel" in parsed && !("value" in parsed.updateDataModel))
         throw new Error("updateDataModel requires value; use null to delete");
       messages.push(parsed);

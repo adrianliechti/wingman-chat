@@ -67,7 +67,7 @@ async function surface(
     {
       key: "test",
       source: JSON.stringify({
-        version: "v1.0",
+        version: "1.0",
         createSurface: { surfaceId: "main", catalogId: BASIC_CATALOG_ID, components, dataModel },
       }),
     },

@@ -1,11 +1,12 @@
 import { Transition } from "@headlessui/react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { ChevronDown, Coffee, Image, Languages, MessageCircle, PanelLeftOpen } from "lucide-react";
+import { Coffee, Image, Languages, MessageCircle, PanelLeftOpen } from "lucide-react";
 import { ViewTransition, useCallback, useEffect, useRef, useState } from "react";
+import { useVisualViewport } from "@/shared/hooks/useVisualViewport";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useProjects } from "@/features/projects/context/ProjectsContext";
-import { AccountMenu } from "@/features/settings/components/AccountMenu";
+import { AccountLinks, AccountMenu } from "@/features/settings/components/AccountMenu";
 import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
@@ -76,8 +77,9 @@ export function AppLayout() {
   const isDesktop = useBreakpoint("md");
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
-  // Mobile menu state
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Keep fixed bottom chrome above the on-screen keyboard on phones.
+  useVisualViewport();
+
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsAdvanced, setSettingsAdvanced] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
@@ -91,8 +93,7 @@ export function AppLayout() {
   // React to breakpoint changes; the active tab's highlight follows its own
   // layout and React coordinates the shared-element navigation animation.
   useEffect(() => {
-    if (isDesktop) setMobileMenuOpen(false);
-    else setShowSidebar(false);
+    if (!isDesktop) setShowSidebar(false);
   }, [isDesktop, setShowSidebar]);
 
   // Prevent default file-drop behavior on the rest of the page (avoid navigation)
@@ -131,23 +132,12 @@ export function AppLayout() {
   // On desktop the sidebar pushes content aside; when a panel is open it becomes
   // an overlay instead, and on mobile it's always a full-width overlay.
   const sidebarPushesContent = isDesktop && showSidebar && !!sidebarContent && !hasPanelOpen;
+  // Phones keep the drawer even on pages without their own list (e.g. Canvas):
+  // it still carries the page switch and the account row.
+  const hasDrawer = !!sidebarContent || (!isDesktop && showNavigation);
 
   return (
     <div className="h-dvh w-dvw flex overflow-hidden relative">
-      {/* Fixed hamburger button for mobile - only visible when sidebar is closed */}
-      {sidebarContent && !showSidebar && (
-        <div className="fixed top-0 left-0 z-40 md:hidden p-3">
-          <button
-            type="button"
-            className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-            onClick={() => setShowSidebar(true)}
-            aria-label="Open sidebar"
-          >
-            <PanelLeftOpen size={20} />
-          </button>
-        </div>
-      )}
-
       {/* Backdrop for overlay sidebar when panels are open */}
       <Transition
         show={!!(sidebarContent && hasPanelOpen && showSidebar)}
@@ -169,10 +159,12 @@ export function AppLayout() {
       {/* Generic sidebar - pushes content normally, becomes overlay when panels are open.
           A tinted, translucent surface sets it apart from the content instead of a border,
           so it reads as one column from the top bar to the bottom edge. */}
-      {sidebarContent && (
+      {hasDrawer && (
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-50 w-full overflow-hidden bg-neutral-100/85 backdrop-blur-xl transition-transform duration-500 ease-in-out md:right-auto dark:bg-neutral-900/85",
+            "fixed inset-y-0 left-0 z-50 flex w-full flex-col overflow-hidden bg-neutral-100/85 backdrop-blur-xl transition-transform duration-500 ease-in-out md:right-auto dark:bg-neutral-900/85",
+            // Phones: a frosted page that starts under the status bar and slides with an iOS curve.
+            "max-md:bg-(--glass-bg-strong) max-md:pt-(--safe-top) max-md:backdrop-blur-2xl max-md:backdrop-saturate-150 max-md:duration-400 max-md:ease-[cubic-bezier(0.32,0.72,0,1)]",
             showSidebar ? "translate-x-0" : "-translate-x-full",
             hasPanelOpen && "md:shadow-2xl md:shadow-black/15 dark:md:shadow-black/50",
           )}
@@ -186,7 +178,35 @@ export function AppLayout() {
             if (deltaX > 50) setShowSidebar(false);
           }}
         >
-          {sidebarContent}
+          {/* Phones: the page switch lives at the top of the drawer, like a native segmented control. */}
+          {showNavigation && (
+            <div className="shrink-0 px-3 pt-2 pb-1 md:hidden">
+              <div className="flex rounded-full bg-black/6 p-1 dark:bg-white/10">
+                {pages.map(({ key, label, icon, to }) => (
+                  <Link
+                    key={key}
+                    to={to}
+                    onClick={() => setShowSidebar(false)}
+                    className={cn(
+                      "press flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full text-[13px] font-semibold",
+                      currentPage === key
+                        ? "bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-neutral-50"
+                        : "text-neutral-600 dark:text-neutral-400",
+                    )}
+                  >
+                    {icon}
+                    <span>{label}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="min-h-0 flex-1">{sidebarContent}</div>
+
+          {/* Phones: links and Settings sit flat at the bottom of the drawer. */}
+          <div className="shrink-0 border-t border-black/8 px-2 pt-1.5 pb-[max(var(--safe-bottom),0.5rem)] md:hidden dark:border-white/10">
+            <AccountLinks onOpenSettings={openSettings} />
+          </div>
 
           {/* Resize handle — desktop only. Drag to resize, double-click to reset. */}
           <button
@@ -230,22 +250,33 @@ export function AppLayout() {
         <nav
           data-app-topbar
           className={cn(
-            "fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-800 shadow-sm ease-in-out",
+            "fixed top-0 left-0 right-0 z-30 ease-in-out",
+            // Desktop: one translucent bar with a hairline.
+            "md:px-3 md:py-2 md:bg-neutral-50/60 md:dark:bg-neutral-950/80 md:backdrop-blur-sm md:border-b md:border-neutral-200 md:dark:border-neutral-800 md:shadow-sm",
+            // Phones: no bar at all. Glass controls float over the page, which scrolls
+            // beneath them and fades out under the status bar.
+            "max-md:pointer-events-none max-md:px-3 max-md:pt-[calc(var(--safe-top)+0.5rem)] max-md:pb-2",
             !isSidebarResizing && "transition-[padding] duration-500",
           )}
           style={sidebarPushesContent ? { paddingLeft: sidebarWidth + 12 } : undefined}
         >
+          <div
+            aria-hidden="true"
+            className="scroll-edge-top absolute inset-x-0 top-0 -z-10 h-[calc(var(--safe-top)+5.25rem)] md:hidden"
+          />
           <div className="flex items-center justify-between">
             {/* Left section */}
-            <div className="flex items-center gap-1 flex-1">
+            <div className="flex items-center gap-1 flex-1 max-md:gap-2">
               {/* Fixed space for sidebar button - always reserve the space */}
-              <div className="w-12 flex justify-start">
-                {sidebarContent && (
+              <div className="w-12 flex justify-start max-md:w-auto">
+                {hasDrawer && (
                   <button
                     type="button"
                     className={cn(
-                      "p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-500 ease-in-out hidden md:flex",
-                      showSidebar ? "opacity-0 pointer-events-none" : "opacity-100 delay-500",
+                      "flex items-center justify-center",
+                      "max-md:glass max-md:press max-md:pointer-events-auto max-md:size-11 max-md:rounded-full max-md:text-neutral-800 max-md:dark:text-neutral-100",
+                      "md:p-2 md:rounded md:text-neutral-600 md:dark:text-neutral-400 md:hover:text-neutral-800 md:dark:hover:text-neutral-200 md:transition-all md:duration-500 md:ease-in-out",
+                      showSidebar ? "md:opacity-0 md:pointer-events-none" : "md:opacity-100 md:delay-500",
                     )}
                     onClick={toggleSidebar}
                     aria-label="Open sidebar"
@@ -255,27 +286,7 @@ export function AppLayout() {
                 )}
               </div>
 
-              {/* Mobile hamburger menu - visible on smaller screens */}
-              {showNavigation && (
-                <div className="flex items-center md:hidden -ml-2 relative">
-                  <div className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20">
-                    <button
-                      type="button"
-                      onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                      className="relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out flex items-center gap-1.5 text-sm bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 shadow-sm"
-                    >
-                      {pages.find((p) => p.key === currentPage)?.icon}
-                      <span>{pages.find((p) => p.key === currentPage)?.label}</span>
-                      <ChevronDown
-                        size={14}
-                        className={cn("transition-transform duration-200", mobileMenuOpen && "rotate-180")}
-                      />
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {leftActions}
+              {leftActions && <div className="max-md:pointer-events-auto">{leftActions}</div>}
             </div>
 
             {/* Center section - Modern pill navigation for desktop */}
@@ -315,59 +326,32 @@ export function AppLayout() {
               </div>
             )}
 
-            {/* Right section */}
+            {/* Right section. Phones group the page actions in one glass capsule
+                and keep the account avatar as its own round glass button. */}
             <div className="flex items-center gap-2 justify-end flex-1">
-              {companionAvailable && (
-                <button
-                  type="button"
-                  onClick={() => openSettings({ advanced: false, section: "companion" })}
-                  className={cn(
-                    "p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                    !companionActive && "opacity-40",
-                  )}
-                  title="Companion"
-                >
-                  <Coffee size={20} />
-                </button>
-              )}
-              {rightActions}
-              <AccountMenu onOpenSettings={openSettings} />
+              <div className="flex items-center gap-2 max-md:glass max-md:pointer-events-auto max-md:h-11 max-md:gap-0 max-md:rounded-full max-md:px-0.5 max-md:empty:hidden">
+                {companionAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => openSettings({ advanced: false, section: "companion" })}
+                    className={cn(
+                      "flex size-10 items-center justify-center rounded-full press text-neutral-700 dark:text-neutral-300 md:size-auto md:rounded md:p-2 md:text-neutral-600 md:dark:text-neutral-400 md:transition-all md:duration-150 md:ease-out hover:text-neutral-800 dark:hover:text-neutral-200",
+                      !companionActive && "opacity-40",
+                    )}
+                    title="Companion"
+                  >
+                    <Coffee size={20} />
+                  </button>
+                )}
+                {rightActions}
+              </div>
+              {/* Phones reach the account from the sidebar footer instead. */}
+              <div className="hidden md:block">
+                <AccountMenu onOpenSettings={openSettings} />
+              </div>
             </div>
           </div>
         </nav>
-
-        {/* Mobile dropdown menu */}
-        {mobileMenuOpen && (
-          <div className="fixed top-14 left-3 z-30 md:hidden bg-white dark:bg-neutral-900 backdrop-blur-md border border-neutral-200 dark:border-neutral-800 shadow-lg rounded-xl overflow-hidden min-w-40">
-            <div className="py-1">
-              {pages.map(({ key, label, icon, to }) => (
-                <Link
-                  key={key}
-                  to={to}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${
-                    currentPage === key
-                      ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
-                      : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                  }`}
-                >
-                  {icon}
-                  <span className="font-medium text-sm">{label}</span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Mobile menu backdrop */}
-        {mobileMenuOpen && (
-          <button
-            type="button"
-            aria-label="Close mobile menu"
-            className="fixed inset-0 z-20 md:hidden"
-            onClick={() => setMobileMenuOpen(false)}
-          />
-        )}
 
         {/* Content area */}
         <div className="flex-1 overflow-hidden flex">

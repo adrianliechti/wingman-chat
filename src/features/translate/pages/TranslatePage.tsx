@@ -91,7 +91,7 @@ export function TranslatePage() {
   const accept = acceptedFiles.map((file) => file.ext).join(",");
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden pt-12 md:pt-14">
+    <div className="relative flex h-full w-full flex-col overflow-hidden pt-(--app-topbar) md:pt-14">
       <main ref={containerRef} className="relative flex min-h-0 w-full grow flex-col overflow-hidden">
         {(isDragging || fetchingDrive) && acceptedFiles.length > 0 && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-neutral-50/80 backdrop-blur-sm dark:bg-neutral-950/60">

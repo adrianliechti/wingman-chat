@@ -23,6 +23,8 @@ interface PanelShellProps {
   onResizeStart?: MouseEventHandler<HTMLButtonElement>;
   /** Renders a "Back" bar on small screens, where the panel covers the whole page. */
   onClose?: () => void;
+  /** The content draws its own phone header (with its own back control), so the shell draws none. */
+  ownsHeader?: boolean;
   /** Edge latch attached to the shell's left edge; rendered last so it paints above the resize handle. */
   latch?: ReactNode;
   children: ReactNode;
@@ -49,6 +51,7 @@ export function PanelShell({
   resizeLabel,
   onResizeStart,
   onClose,
+  ownsHeader,
   latch,
   children,
 }: PanelShellProps) {
@@ -74,15 +77,15 @@ export function PanelShell({
           </div>
         </button>
       )}
-      <div className="flex h-full flex-col overflow-hidden border-l border-black/10 dark:border-white/10">
-        {onClose && (
-          <div className="mt-4 flex h-10 items-center border-b border-neutral-200/60 bg-white/90 px-2 backdrop-blur-sm md:hidden dark:border-neutral-700/60 dark:bg-neutral-900/90">
+      <div className="flex h-full flex-col overflow-hidden border-l border-black/10 max-md:bg-neutral-50 max-md:pt-(--safe-top) dark:border-white/10 dark:max-md:bg-neutral-950">
+        {onClose && !ownsHeader && (
+          <div className="flex h-13 shrink-0 items-center px-2 md:hidden">
             <button
               type="button"
               onClick={onClose}
-              className="flex items-center gap-1 rounded p-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
+              className="press flex h-10 items-center gap-0.5 rounded-full pr-4 pl-2 text-[15px] font-medium text-neutral-700 dark:text-neutral-200"
             >
-              <ChevronLeft size={16} />
+              <ChevronLeft size={20} />
               <span>Back</span>
             </button>
           </div>
@@ -96,13 +99,14 @@ export function PanelShell({
       className={cn(
         "fixed right-0 max-w-none md:top-14 md:bottom-0",
         !resizing && "transition-[translate] duration-500 ease-in-out",
-        compact && "w-full",
         className,
+        // Phones: the panel is a full-screen page above the floating top controls.
+        compact && "z-40 w-full",
       )}
       style={{
         width: compact ? undefined : `${widthVw}vw`,
         translate,
-        top: compact ? "48px" : undefined,
+        top: compact ? 0 : undefined,
         bottom: compact ? 0 : undefined,
       }}
     >

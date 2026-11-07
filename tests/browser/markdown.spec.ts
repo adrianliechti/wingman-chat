@@ -20,7 +20,7 @@ const set = (path: string, value: unknown) => ({ functionCall: call("setValue", 
 const ui = (components: unknown[], dataModel: Record<string, unknown>) =>
   "```ui\n" +
   JSON.stringify({
-    version: "v1.0",
+    version: "1.0",
     createSurface: { surfaceId: "example", catalogId: BASIC, components, dataModel },
   }) +
   "\n```";

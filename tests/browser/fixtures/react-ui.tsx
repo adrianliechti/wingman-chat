@@ -3,6 +3,7 @@ import { StrictMode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { PanelShell } from "../../../src/features/chat/components/PanelShell";
+import { storeAgent } from "../../../src/features/agent/lib/agentStorage";
 import { storeChat } from "../../../src/features/chat/lib/chatStorage";
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
@@ -20,7 +21,14 @@ const state = {
   tools: [] as string[],
   instructions: "",
   input: [] as ModelMessage[],
-  renders: [] as { model: string; prompt: string; options?: unknown; images?: number; mask?: number; markup?: number }[],
+  renders: [] as {
+    model: string;
+    prompt: string;
+    options?: unknown;
+    images?: number;
+    mask?: number;
+    markup?: number;
+  }[],
 };
 let stream = (_text: string) => {};
 let think = (_text: string) => {};
@@ -118,6 +126,16 @@ if (parameters.has("panels")) {
     name: "Fixture",
     ...(parameters.has("research") ? { tools: { enabled: ["internet"], disabled: [] } } : {}),
   };
+  if (parameters.has("agent")) {
+    await storeAgent({
+      id: "mobile-agent",
+      name: "Mobile agent",
+      model: model.id,
+      skills: [],
+      plugins: [],
+      tools: [],
+    });
+  }
   if (parameters.has("research")) {
     config.mcps = [
       {
@@ -310,7 +328,14 @@ declare global {
         tools: string[];
         instructions: string;
         input: ModelMessage[];
-        renders: { model: string; prompt: string; options?: unknown; images?: number; mask?: number; markup?: number }[];
+        renders: {
+          model: string;
+          prompt: string;
+          options?: unknown;
+          images?: number;
+          mask?: number;
+          markup?: number;
+        }[];
       };
       stream(text: string): void;
       think(text: string): void;

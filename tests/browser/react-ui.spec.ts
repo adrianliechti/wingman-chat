@@ -42,7 +42,7 @@ test("invalid inline UI repairs automatically and stays repaired after reload", 
   await input.press("Enter");
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
   const surface = {
-    version: "v1.0",
+    version: "1.0",
     createSurface: {
       surfaceId: "pairing",
       catalogId: "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1233,8 +1233,12 @@ test("search targets stay below a resized top bar on mobile", async ({ page }) =
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, "?search");
   await page.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
-  await page.getByRole("button", { name: "Search chats", exact: true }).click();
-  await page.getByRole("textbox", { name: "Search chats", exact: true }).fill("copper compass");
+  // The phone search field is tucked above the list until the reader scrolls up.
+  const search = page.getByRole("searchbox", { name: "Search chats", exact: true });
+  await page.locator("aside .overflow-y-auto").hover();
+  await page.mouse.wheel(0, -300);
+  await expect(search).toBeInViewport();
+  await search.fill("copper compass");
   await page.getByRole("button", { name: "Planning notes", exact: true }).click();
   const message = page.locator('[data-message-id="search-followup"]');
   await expect(message).toBeInViewport();
@@ -1249,6 +1253,72 @@ test("search targets stay below a resized top bar on mobile", async ({ page }) =
     (element as HTMLElement).style.minHeight = "100px";
   });
   await expect.poll(gap).toBeGreaterThanOrEqual(20);
+});
+
+test("mobile chat keeps the latest response and Latest control above the keyboard", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, "?seed");
+  const response = page.locator('[data-role="assistant"]').last();
+  await expect(response).toContainText("A long answer.");
+  const scroll = page.locator("main > div.overflow-auto");
+  await scroll.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  const gap = () =>
+    response.evaluate(
+      (element) =>
+        document.querySelector("footer")!.getBoundingClientRect().top - element.getBoundingClientRect().bottom,
+    );
+  await expect.poll(gap).toBeGreaterThanOrEqual(0);
+  await page.evaluate(() => {
+    // iOS shrinks only the visual viewport when its software keyboard opens.
+    Object.defineProperty(window.visualViewport, "height", {
+      configurable: true,
+      get: () => window.innerHeight - 320,
+    });
+    window.visualViewport!.dispatchEvent(new Event("resize"));
+  });
+  await expect(page.locator("footer")).toHaveCSS("bottom", "320px");
+  await expect.poll(gap).toBeGreaterThanOrEqual(0);
+  await expect.poll(() => scroll.evaluate((element) => element.getBoundingClientRect().bottom)).toBe(524);
+  await scroll.hover();
+  await page.mouse.wheel(0, -400);
+  const latest = page.getByRole("button", { name: "Latest", exact: true });
+  await expect(latest).toBeVisible();
+  await expect
+    .poll(() =>
+      latest.evaluate(
+        (element) =>
+          document.querySelector("footer")!.getBoundingClientRect().top - element.getBoundingClientRect().bottom,
+      ),
+    )
+    .toBeGreaterThanOrEqual(0);
+  await latest.click();
+  await expect.poll(gap).toBeGreaterThanOrEqual(0);
+  await page.evaluate(() => {
+    Reflect.deleteProperty(window.visualViewport!, "height");
+    window.visualViewport!.dispatchEvent(new Event("resize"));
+  });
+  await expect(page.locator("footer")).toHaveCSS("bottom", "0px");
+  await expect.poll(() => scroll.evaluate((element) => element.getBoundingClientRect().bottom)).toBe(844);
+  await expect.poll(gap).toBeGreaterThanOrEqual(0);
+});
+
+test("mobile agent model picker switches between text and Real-time Voice", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, "?agent");
+  await page.getByRole("button", { name: "Fixture", exact: true }).click();
+  await expect(page.getByRole("menuitemradio", { name: "Real-time Voice", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Agent None", exact: true }).click();
+  await page.getByRole("button", { name: "Open Mobile agent", exact: true }).click();
+  const model = page.getByRole("button", { name: "Fixture", exact: true });
+  await model.click();
+  const voice = page.getByRole("menuitemradio", { name: "Real-time Voice", exact: true });
+  await voice.click();
+  await page.getByRole("button", { name: "Real-time Voice", exact: true }).click();
+  await expect(voice).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("menuitemradio", { name: "Fixture", exact: true }).click();
+  await expect(model).toBeVisible();
 });
 
 test("hi then long Markdown keeps the start readable; Latest follows until the reader scrolls up", async ({ page }) => {

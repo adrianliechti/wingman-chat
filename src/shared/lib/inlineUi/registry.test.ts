@@ -132,7 +132,7 @@ describe("published SDK reference fixtures", () => {
 it("validates all renderer message types against upstream schemas", () => {
   const messages = [
     {
-      version: "v1.0",
+      version: "1.0",
       action: {
         name: "save",
         surfaceId: "main",
@@ -142,16 +142,16 @@ it("validates all renderer message types against upstream schemas", () => {
       },
     },
     {
-      version: "v1.0",
+      version: "1.0",
       callAgentFunction: {
         surfaceId: "main",
         functionCallId: "f",
         callFunction: { "@call": "search", args: { query: "test" } },
       },
     },
-    { version: "v1.0", rendererFunctionResponse: { functionCallId: "f", value: 1 } },
+    { version: "1.0", rendererFunctionResponse: { functionCallId: "f", value: 1 } },
     {
-      version: "v1.0",
+      version: "1.0",
       error: { code: "VALIDATION_FAILED", surfaceId: "main", path: "/value", message: "Invalid value" },
     },
   ];

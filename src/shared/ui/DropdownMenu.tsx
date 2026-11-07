@@ -1,7 +1,16 @@
 import { Menu, MenuButton, MenuItem, MenuItems, Portal, Transition } from "@headlessui/react";
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
-import { BACKDROP_CLASS, ITEM_CLASS, ITEM_DESTRUCTIVE_CLASS, PANEL_CLASS } from "./menuStyles";
+import { cn } from "@/shared/lib/cn";
+import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
+import {
+  BACKDROP_CLASS,
+  ITEM_CLASS,
+  ITEM_DESTRUCTIVE_CLASS,
+  PANEL_CLASS,
+  SHEET_CLASS,
+  SHEET_GRABBER_CLASS,
+} from "./menuStyles";
 
 // ─── Divider ─────────────────────────────────────────────────────────────────
 
@@ -120,28 +129,39 @@ export function DropdownMenu({
   backdrop,
   children,
 }: DropdownMenuProps) {
+  // Phones get a bottom sheet instead of an anchored panel: it is reachable with
+  // a thumb, never clipped by the viewport, and always dims the page behind it.
+  const isDesktop = useBreakpoint("md");
+  const sheet = !isDesktop;
   return (
     <Menu>
       {({ open }) => (
         <>
           {trigger}
-          {backdrop && (
+          {(backdrop || sheet) && (
             // Portaled: a fixed element inside a blurred header would be
             // positioned relative to the header instead of the viewport.
             <Portal>
               <Transition show={open}>
-                <div aria-hidden="true" className={BACKDROP_CLASS} />
+                <div aria-hidden="true" className={cn(BACKDROP_CLASS, sheet && "z-55")} />
               </Transition>
             </Portal>
           )}
-          <MenuItems
-            modal={false}
-            transition
-            anchor={anchor as Parameters<typeof MenuItems>[0]["anchor"]}
-            className={[PANEL_CLASS, ANCHOR_MOTION[anchor], panelClassName].filter(Boolean).join(" ")}
-          >
-            {children}
-          </MenuItems>
+          {sheet ? (
+            <MenuItems modal={false} transition portal className={SHEET_CLASS}>
+              <div aria-hidden="true" className={SHEET_GRABBER_CLASS} />
+              {children}
+            </MenuItems>
+          ) : (
+            <MenuItems
+              modal={false}
+              transition
+              anchor={anchor as Parameters<typeof MenuItems>[0]["anchor"]}
+              className={[PANEL_CLASS, ANCHOR_MOTION[anchor], panelClassName].filter(Boolean).join(" ")}
+            >
+              {children}
+            </MenuItems>
+          )}
         </>
       )}
     </Menu>

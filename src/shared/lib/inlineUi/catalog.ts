@@ -14,14 +14,13 @@ import {
   FunctionCallSchema,
   type ComponentApi,
   type FunctionImplementation,
-  type FunctionInvoker,
 } from "@a2ui/web_core/v1_0";
 // web_core's schema introspector uses Zod 3. Keep this boundary explicit.
 import { z } from "zod-a2ui";
 import { evaluate, type Scope } from "./expression.ts";
 
-export const A2UI_VERSION = "v1.0" as const;
-export const A2UI_SDK_VERSION = "0.14.0";
+export const A2UI_VERSION = "1.0" as const;
+export const A2UI_SDK_VERSION = "0.15.0";
 export const BASIC_CATALOG_ID = "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json";
 export const WINGMAN_CATALOG_ID = "urn:wingman:inline-ui:catalog:1";
 const string = DynamicStringSchema.describe("REF:#/$defs/DynamicString");
@@ -180,34 +179,12 @@ export const WINGMAN_FUNCTIONS: FunctionImplementation[] = [
   },
 ];
 
-/**
- * The SDK revalidates resolved logical operands against the wire boolean
- * schema, rejecting its own ValidationResult objects. Normalize only those
- * execution-time operands; the published wire schemas remain unchanged.
- * Remove this adapter when the upstream invoker accepts ValidationResult.
- */
-class BasicCatalog extends Catalog<ComponentApi> {
-  declare readonly invoker: FunctionInvoker;
-  constructor() {
-    // Reserved system functions are resolved by the SDK, outside any catalog.
-    super(
-      BASIC_CATALOG_ID,
-      A2UI_VERSION,
-      BASIC_COMPONENTS,
-      BASIC_FUNCTIONS.filter((fn) => !fn.name.startsWith("@")),
-    );
-    const invoke = (this as Catalog<ComponentApi>).invoker;
-    const operand = (value: unknown) =>
-      value && typeof value === "object" && "valid" in value && typeof value.valid === "boolean" ? value.valid : value;
-    this.invoker = (name, args, context, abortSignal) => {
-      if ((name === "and" || name === "or") && Array.isArray(args.values))
-        args = { ...args, values: args.values.map(operand) };
-      if (name === "not") args = { ...args, value: operand(args.value) };
-      return invoke(name, args, context, abortSignal);
-    };
-  }
-}
-
-export const basicCatalog = new BasicCatalog();
+// Reserved system functions are resolved by the SDK, outside any catalog.
+export const basicCatalog = new Catalog(
+  BASIC_CATALOG_ID,
+  A2UI_VERSION,
+  BASIC_COMPONENTS,
+  BASIC_FUNCTIONS.filter((fn) => !fn.name.startsWith("@")),
+);
 export const wingmanCatalog = new Catalog(WINGMAN_CATALOG_ID, A2UI_VERSION, WINGMAN_COMPONENTS, WINGMAN_FUNCTIONS);
 export const catalogs = [basicCatalog, wingmanCatalog];

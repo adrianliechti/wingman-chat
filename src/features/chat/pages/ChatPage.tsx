@@ -33,6 +33,7 @@ import { getConfig } from "@/shared/config";
 import { useChatScroll } from "@/shared/hooks/useChatScroll";
 import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
+import { navButtonClassName } from "@/shared/ui/actionButton";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { AppDrawer } from "@/shell/components/AppDrawer";
 import { BackgroundImage } from "@/shell/components/BackgroundImage";
@@ -400,17 +401,13 @@ export function ChatPage() {
     goToTarget,
   );
 
-  // Set up navigation actions
+  // Set up navigation actions. Phones have no edge latches; the artifact and app
+  // panels open from the composer's plus sheet instead.
   useEffect(() => {
     setRightActions(
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 max-md:gap-0">
         {!editingProjectId && <AgentButton />}
-        <button
-          type="button"
-          className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-          onClick={handleNewChat}
-          aria-label="New chat"
-        >
+        <button type="button" className={navButtonClassName} onClick={handleNewChat} aria-label="New chat">
           <PlusIcon size={20} />
         </button>
       </div>,
@@ -453,7 +450,9 @@ export function ChatPage() {
         className={`flex-1 flex flex-col overflow-hidden relative ${isArtifactsResizing || isAppResizing || isAgentResizing ? "" : "transition-all duration-500 ease-in-out"}`}
         style={contentRightOffset ? { marginRight: contentRightOffset } : undefined}
       >
-        <main className="flex-1 flex flex-col overflow-hidden relative">
+        {/* Keep the scroll viewport and its floating controls above the keyboard,
+            just like the fixed composer below. */}
+        <main className="flex-1 flex flex-col overflow-hidden relative max-md:mb-(--app-keyboard)">
           {(chatLoading && (showChatLoading || messages.length === 0)) || chatError ? (
             <div className="m-auto p-6 text-sm text-neutral-500" role={chatError ? "alert" : "status"}>
               {chatError ?? "Loading conversation…"}
@@ -493,7 +492,7 @@ export function ChatPage() {
             >
               <div
                 className={cn(
-                  "px-3 pt-18 transition-[max-width] duration-150 ease-out",
+                  "px-3 pt-18 transition-[max-width] duration-150 ease-out max-md:px-4 max-md:pt-[calc(var(--app-topbar)+0.5rem)]",
                   layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width",
                 )}
                 style={{ paddingBottom: chatInputHeight }}
@@ -549,11 +548,19 @@ export function ChatPage() {
             </div>
           )}
 
+          {messages.length > 0 && (
+            <div
+              aria-hidden="true"
+              className="scroll-edge-bottom absolute inset-x-0 bottom-0 z-10 md:hidden"
+              style={{ height: chatInputHeight }}
+            />
+          )}
+
           {messages.length > 0 && !isAtBottom && (
             <button
               type="button"
               onClick={goToLatest}
-              className="absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-neutral-200/80 bg-white/95 px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm backdrop-blur transition-colors hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700/80 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:border-neutral-600 dark:hover:text-neutral-50"
+              className="glass press absolute left-1/2 z-10 flex h-10 -translate-x-1/2 items-center gap-2 rounded-full px-4 text-sm font-medium text-neutral-800 md:h-auto md:px-3 md:py-2 md:text-neutral-700 md:hover:text-neutral-900 dark:text-neutral-100 md:dark:text-neutral-200 md:dark:hover:text-neutral-50"
               style={{ bottom: chatInputHeight + 16 }}
               title="Follow latest response"
             >
@@ -568,7 +575,9 @@ export function ChatPage() {
       <footer
         ref={measureFooter}
         className={cn(
-          "fixed bottom-0 left-0 px-2 md:px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
+          "fixed bottom-0 left-0 px-2 md:px-3 pb-[calc(var(--safe-bottom)+0.5rem)] md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
+          // Phones: ride above the keyboard (see useVisualViewport) and the home indicator.
+          "max-md:bottom-(--app-keyboard) max-md:px-3 max-md:transition-[bottom] max-md:duration-200 max-md:ease-out",
           "right-0",
         )}
         style={{
@@ -617,13 +626,14 @@ export function ChatPage() {
         resizeLabel="Resize artifacts panel"
         onResizeStart={handleArtifactsResizeMouseDown}
         onClose={toggleArtifactsDrawer}
+        ownsHeader={isMobile}
         latch={
           artifactsAvailable && (
             <EdgeLatch
               label="Artifacts"
               icon={<Shapes size={16} className="-rotate-90" />}
               open={showArtifactsDrawer}
-              hidden={isMobile && showAppDrawer}
+              hidden={isMobile}
               shiftVw={showAppDrawer ? appWidthVw : 0}
               resizing={isAppResizing || isSwapping}
               compact={isMobile}
@@ -665,7 +675,7 @@ export function ChatPage() {
               name={activeApp?.title ?? "app"}
               icon={<AppWindow size={16} className="-rotate-90" />}
               open={showAppDrawer}
-              hidden={isMobile && showArtifactsDrawer}
+              hidden={isMobile}
               shiftVw={showArtifactsDrawer ? artifactsWidthVw : 0}
               resizing={isArtifactsResizing || isSwapping}
               compact={isMobile}

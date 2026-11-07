@@ -6,6 +6,7 @@ import {
   type RendererToAgentMessage,
   type SurfaceModel,
   type Subscription,
+  type ActionListener,
 } from "@a2ui/web_core/v1_0";
 import { A2UI_SDK_VERSION, A2UI_VERSION, catalogs, WINGMAN_CATALOG_ID } from "./catalog.ts";
 import { parseMessages, type UiBlock, type UiMessage } from "./protocol.ts";
@@ -56,57 +57,57 @@ export class InlineUiRuntime {
   }
 
   private createProcessor(): MessageProcessor {
-    const processor = new MessageProcessor(
-      catalogs,
-      async (action) => {
-        if (this.disposed || this.processor !== processor) return;
-        const surface = processor.getSurface(action.surfaceId);
-        if (this.actionErrors.delete(action.surfaceId)) this.changed();
-        try {
-          const message = ActionMessageSchema.parse({ version: A2UI_VERSION, action });
-          if (!this.onSubmit) throw new Error("Sending an action is unavailable here");
-          await this.onSubmit({
-            message,
-            metadata: {
-              a2uiRendererCapabilities: processor.getRendererCapabilities({ versions: [A2UI_VERSION] }),
-              ...(processor.getRendererDataModel(A2UI_VERSION) && {
-                a2uiRendererDataModel: processor.getRendererDataModel(A2UI_VERSION),
-              }),
-            },
-          });
-        } catch (error) {
-          // The SDK's EventEmitter logs and swallows listener rejections. Keep
-          // submission failures observable, without replaying the action.
-          if (
-            !this.disposed &&
-            this.processor === processor &&
-            processor.getSurface(action.surfaceId) === surface &&
-            surface
-          ) {
-            this.actionErrors.set(action.surfaceId, error instanceof Error ? error.message : String(error));
-            this.changed();
-          }
+    const onAction: ActionListener = async (action) => {
+      if (this.disposed || this.processor !== processor) return;
+      const surface = processor.getSurface(action.surfaceId);
+      if (this.actionErrors.delete(action.surfaceId)) this.changed();
+      try {
+        const message = ActionMessageSchema.parse({ version: A2UI_VERSION, action });
+        if (!this.onSubmit) throw new Error("Sending an action is unavailable here");
+        await this.onSubmit({
+          message,
+          metadata: {
+            a2uiRendererCapabilities: processor.getRendererCapabilities({ versions: [A2UI_VERSION] }),
+            ...(processor.getRendererDataModel(A2UI_VERSION) && {
+              a2uiRendererDataModel: processor.getRendererDataModel(A2UI_VERSION),
+            }),
+          },
+        });
+      } catch (error) {
+        // The SDK's EventEmitter logs and swallows listener rejections. Keep
+        // submission failures observable, without replaying the action.
+        if (
+          !this.disposed &&
+          this.processor === processor &&
+          processor.getSurface(action.surfaceId) === surface &&
+          surface
+        ) {
+          this.actionErrors.set(action.surfaceId, error instanceof Error ? error.message : String(error));
+          this.changed();
         }
+      }
+    };
+    const processor = new MessageProcessor(catalogs, undefined, {
+      version: A2UI_VERSION,
+      validationConfig: {
+        targetVersion: A2UI_VERSION,
+        allowUnknownElements: false,
+        allowMissingRoot: true,
+        allowDanglingReferences: true,
+        allowOrphanComponents: true,
+        allowedMessages: [
+          "createSurface",
+          "updateComponents",
+          "updateDataModel",
+          "deleteSurface",
+          "agentFunctionResponse",
+        ],
       },
-      {
-        version: A2UI_VERSION,
-        validationConfig: {
-          targetVersion: A2UI_VERSION,
-          allowUnknownElements: false,
-          allowMissingRoot: true,
-          allowDanglingReferences: true,
-          allowOrphanComponents: true,
-          allowedMessages: [
-            "createSurface",
-            "updateComponents",
-            "updateDataModel",
-            "deleteSurface",
-            "agentFunctionResponse",
-          ],
-        },
-      },
-    );
+    });
     processor.onSurfaceCreated((surface) => {
+      // The SDK's group-level forwarding does not await action listeners.
+      // Subscribe at the surface so controls stay busy until submission ends.
+      this.subscriptions.push(surface.onAction.subscribe(onAction));
       this.subscriptions.push(
         surface.dataModel.subscribe("/", () => {
           if (!this.syncing) this.scheduleSave();

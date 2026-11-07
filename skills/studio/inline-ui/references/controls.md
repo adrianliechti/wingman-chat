@@ -37,13 +37,13 @@ Basic validators inside Wingman controls require the Basic catalogId above. `req
 
 <!-- A2UI-CATALOG:START -->
 
-A2UI v1.0; SDK 0.14.0. Generated signatures; `?` means optional.
+A2UI 1.0; SDK 0.15.0. Generated signatures; `?` means optional.
 
 ### Basic catalog
 
 `catalogId: "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"`
 
-Every component also accepts { weight?: number }.
+Every component also accepts { weight?: Weight }.
 
 `visible` and `disabled` are Wingman-only properties; Basic components reject them.
 

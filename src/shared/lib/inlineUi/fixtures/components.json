@@ -1,6 +1,6 @@
 {
   "Text": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Text",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -33,7 +33,7 @@
     }
   },
   "Image": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Image",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -67,7 +67,7 @@
     }
   },
   "Icon": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Icon",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -100,7 +100,7 @@
     }
   },
   "Video": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Video",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -133,7 +133,7 @@
     }
   },
   "AudioPlayer": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-AudioPlayer",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -167,7 +167,7 @@
     }
   },
   "Row": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Row",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -200,7 +200,7 @@
     }
   },
   "Column": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Column",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -233,7 +233,7 @@
     }
   },
   "List": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-List",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -266,7 +266,7 @@
     }
   },
   "Card": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Card",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -299,7 +299,7 @@
     }
   },
   "Tabs": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Tabs",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -337,7 +337,7 @@
     }
   },
   "Divider": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Divider",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -369,7 +369,7 @@
     }
   },
   "Modal": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Modal",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -403,7 +403,7 @@
     }
   },
   "Button": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Button",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -447,7 +447,7 @@
     }
   },
   "CheckBox": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-CheckBox",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -483,7 +483,7 @@
     }
   },
   "TextField": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-TextField",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -519,7 +519,7 @@
     }
   },
   "DateTimeInput": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-DateTimeInput",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -557,7 +557,7 @@
     }
   },
   "ChoicePicker": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-ChoicePicker",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -602,7 +602,7 @@
     }
   },
   "Slider": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Slider",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -640,7 +640,7 @@
     }
   },
   "Grid": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Grid",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -675,7 +675,7 @@
     }
   },
   "Collapsible": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Collapsible",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -710,7 +710,7 @@
     }
   },
   "Heading": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Heading",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -744,7 +744,7 @@
     }
   },
   "Metric": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Metric",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -780,7 +780,7 @@
     }
   },
   "Callout": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Callout",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -814,7 +814,7 @@
     }
   },
   "Badge": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Badge",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -848,7 +848,7 @@
     }
   },
   "Code": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Code",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -883,7 +883,7 @@
     }
   },
   "Progress": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Progress",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -918,7 +918,7 @@
     }
   },
   "Svg": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Svg",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -953,7 +953,7 @@
     }
   },
   "Link": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Link",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -988,7 +988,7 @@
     }
   },
   "Html": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Html",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1022,7 +1022,7 @@
     }
   },
   "Timeline": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Timeline",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1061,7 +1061,7 @@
     }
   },
   "KeyValue": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-KeyValue",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1100,7 +1100,7 @@
     }
   },
   "TextList": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-TextList",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1134,7 +1134,7 @@
     }
   },
   "Table": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Table",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1187,7 +1187,7 @@
     }
   },
   "Chart": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Chart",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1233,7 +1233,7 @@
     }
   },
   "Select": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Select",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1280,7 +1280,7 @@
     }
   },
   "MultiSelect": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-MultiSelect",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1327,7 +1327,7 @@
     }
   },
   "Segmented": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Segmented",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1374,7 +1374,7 @@
     }
   },
   "Radio": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Radio",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1421,7 +1421,7 @@
     }
   },
   "Toggle": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Toggle",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1458,7 +1458,7 @@
     }
   },
   "Stepper": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Stepper",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1497,7 +1497,7 @@
     }
   },
   "Checklist": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Checklist",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -1535,7 +1535,7 @@
     }
   },
   "Form": {
-    "version": "v1.0",
+    "version": "1.0",
     "createSurface": {
       "surfaceId": "fixture-Form",
       "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",

@@ -266,7 +266,7 @@ export function CanvasPage() {
   const empty = isLoaded && images.length === 0 && pending.length === 0;
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden pt-12 md:pt-14">
+    <div className="relative flex h-full w-full flex-col overflow-hidden pt-(--app-topbar) md:pt-14">
       <main ref={containerRef} className="relative flex min-h-0 w-full grow flex-col overflow-hidden">
         {isDragging && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-neutral-50/80 backdrop-blur-sm dark:bg-neutral-950/60">

@@ -37,7 +37,7 @@ Useful expression patterns:
 
 <!-- A2UI-CATALOG:START -->
 
-A2UI v1.0; SDK 0.14.0. Generated signatures; `?` means optional.
+A2UI 1.0; SDK 0.15.0. Generated signatures; `?` means optional.
 
 ### Basic catalog
 
