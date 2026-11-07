@@ -130,7 +130,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   return (
     <section
       aria-label={projectId === "new" ? "New project" : "Project settings"}
-      className="h-full w-full overflow-y-auto bg-white pt-14 text-neutral-900 md:pt-[3.6875rem] dark:bg-neutral-950 dark:text-neutral-100"
+      className="h-full w-full overflow-y-auto bg-white pt-(--app-topbar) text-neutral-900 md:pt-[3.6875rem] dark:bg-neutral-950 dark:text-neutral-100"
     >
       <form
         onSubmit={(event) => {

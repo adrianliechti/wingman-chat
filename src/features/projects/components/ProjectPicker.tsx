@@ -29,7 +29,7 @@ export function ProjectPicker() {
         panelClassName="min-w-52 max-w-80"
         trigger={
           <MenuButton
-            className="inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-neutral-800 hover:bg-black/5 dark:text-neutral-200 dark:hover:bg-white/5"
+            className="inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-neutral-800 hover:bg-black/5 dark:text-neutral-200 dark:hover:bg-white/5 max-md:h-10 max-md:rounded-full max-md:px-2.5 max-md:text-lg max-md:font-semibold"
             aria-label="Choose project"
             title={selected?.name ?? "All chats"}
           >

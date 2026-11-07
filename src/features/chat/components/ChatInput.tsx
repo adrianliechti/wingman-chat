@@ -1,4 +1,5 @@
 import {
+  ArrowUp,
   AudioLines,
   Bot,
   Loader2,
@@ -8,7 +9,6 @@ import {
   Rocket,
   RotateCcw,
   ScreenShare,
-  Send,
   Sparkles,
   Square,
   X,
@@ -30,6 +30,12 @@ import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
+
+// Composer controls: 40px round targets on phones, compact icons on desktop.
+const composerIconButtonClass =
+  "press flex size-10 shrink-0 items-center justify-center rounded-full text-neutral-700 dark:text-neutral-300 md:size-7 md:text-neutral-600 md:hover:text-neutral-800 md:dark:text-neutral-400 md:dark:hover:text-neutral-200 disabled:opacity-40";
+const composerSendButtonClass =
+  "press flex size-10 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 md:size-7 disabled:opacity-35 disabled:active:scale-100";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { sameModelSettings } from "@/shared/lib/models";
@@ -600,8 +606,8 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
           className={`relative @container contain-[layout_style] will-change-[height] ${
             isDragging
               ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl"
-              : `border border-solid border-neutral-200/60 dark:border-neutral-700/60 bg-white/60 dark:bg-neutral-950/70 rounded-2xl md:rounded-2xl`
-          } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
+              : `border border-solid border-neutral-200/60 dark:border-neutral-700/60 bg-white/60 dark:bg-neutral-950/70 rounded-2xl md:rounded-2xl max-md:rounded-[26px] max-md:border-(--glass-border) max-md:bg-(--glass-bg) max-md:shadow-[inset_0_1px_0_var(--glass-hi),0_1px_2px_rgba(0,0,0,0.05),0_10px_30px_var(--glass-shadow)]`
+          } backdrop-blur-2xl max-md:backdrop-saturate-180 flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
         >
           <input
             type="file"
@@ -645,7 +651,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
           <div className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}>
             {isRealtimeSelected ? (
               <textarea
-                className="block w-full resize-none border-0 bg-transparent p-3 md:p-4 max-h-[40vh] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
+                className="block w-full resize-none border-0 bg-transparent px-4 py-3 md:p-4 max-h-[40vh] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
                 value={voiceTextInput}
                 rows={1}
                 aria-label="Voice text input"
@@ -665,7 +671,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
               <>
                 <textarea
                   ref={contentInputRef}
-                  className="block w-full resize-none border-0 bg-transparent p-3 md:p-4 max-h-[40vh] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
+                  className="block w-full resize-none border-0 bg-transparent px-4 py-3 md:p-4 max-h-[40vh] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
                   value={content}
                   rows={1}
                   inputMode="text"
@@ -724,7 +730,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                 {shouldShowPlaceholder && (
                   <div
                     className={cn(
-                      "absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200",
+                      "absolute top-3 md:top-4 left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200",
                       !hasMessages && "typewriter-text",
                     )}
                     style={
@@ -748,13 +754,13 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
 
           <div
             className={cn(
-              "relative flex items-center justify-between p-3 pt-0 pb-3 transition-all duration-200",
+              "relative flex items-center justify-between p-3 pt-0 pb-3 max-md:px-2.5 max-md:pb-2.5 transition-all duration-200",
               isDragging && "blur-sm",
             )}
           >
             {isRealtimeSelected && isListening && (
               <div
-                className="pointer-events-none absolute inset-0 p-3 pt-0 pb-8 md:pb-3 flex items-center justify-center"
+                className="pointer-events-none absolute inset-0 flex items-center justify-center p-3 pt-0 max-md:px-2.5 max-md:pb-2.5"
                 aria-hidden="true"
               >
                 <div className="flex items-center gap-0.75 h-6">
@@ -801,7 +807,10 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                     <span className="font-medium text-neutral-700 dark:text-neutral-300">
                       {currentAgent?.name ?? "Listening"}
                     </span>
-                    <span className="text-neutral-500 dark:text-neutral-400"> — speak or type a message</span>
+                    <span className="text-neutral-500 max-md:hidden dark:text-neutral-400">
+                      {" "}
+                      — speak or type a message
+                    </span>
                   </span>
                 </div>
               )}
@@ -881,11 +890,25 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                       <button
                         type="button"
                         {...getProps()}
-                        className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium transition-colors max-w-56 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium transition-colors max-w-56 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 max-md:press max-md:h-9 max-md:max-w-52 max-md:rounded-full max-md:bg-black/5 max-md:px-3 max-md:text-[13px] max-md:text-neutral-800 max-md:dark:bg-white/8 max-md:dark:text-neutral-100"
                       >
                         <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
                           <span className="shrink-0 flex justify-center">{toolIndicator}</span>
-                          <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
+                          <span className="truncate min-w-0 max-md:hidden">
+                            {model?.name ?? model?.id ?? "Select Model"}
+                          </span>
+                          {/* Phones drop the vendor word ("Claude Sonnet 5.5" → "Sonnet 5.5") to fit the chip. */}
+                          <span className="truncate min-w-0 md:hidden">
+                            {(model?.name ?? model?.id ?? "Select Model").replace(
+                              /^(Claude|Anthropic|OpenAI|Google|Gemini|Mistral|Meta|Amazon)\s+(?=\S+\s*\S*)/i,
+                              "",
+                            )}
+                          </span>
+                          {(effort ?? model?.defaultEffort) && (
+                            <span className="hidden max-md:inline shrink-0 font-normal opacity-60">
+                              {EFFORT_LABEL[(effort ?? model?.defaultEffort)!]}
+                            </span>
+                          )}
                         </Tooltip>
                       </button>
                     )}
@@ -936,10 +959,18 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                       </button>
                     </Tooltip>
                   ) : (
-                    <span className="flex items-center gap-1.5 pl-1 min-w-0 max-w-56 text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAgentDrawerView("details");
+                        setShowAgentDrawer(true);
+                      }}
+                      aria-label={`Open ${currentAgent.name}`}
+                      className="flex items-center gap-1.5 pl-1 min-w-0 max-w-56 text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 max-md:press max-md:h-9 max-md:max-w-44 max-md:rounded-full max-md:bg-black/5 max-md:px-3 max-md:text-[13px] max-md:text-neutral-800 max-md:dark:bg-white/8 max-md:dark:text-neutral-100"
+                    >
                       <Bot size={14} className="shrink-0" />
                       <span className="truncate min-w-0">{currentAgent.name}</span>
-                    </span>
+                    </button>
                   )}
                   <Tooltip content={`Turn off ${currentAgent.name}`} side="bottom" className="flex shrink-0">
                     <button
@@ -980,14 +1011,14 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                     // Send action in the microphone selector's slot.
                     <button
                       type="button"
-                      className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      className={composerSendButtonClass}
                       onClick={() => {
                         sendVoiceText(voiceTextInput.trim());
                         setVoiceTextInput("");
                       }}
                       title="Send text"
                     >
-                      <Send size={16} />
+                      <ArrowUp size={18} />
                     </button>
                   ) : (
                     voiceAvailable && (
@@ -1040,20 +1071,22 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                   {isConnecting && !isListening ? (
                     <button
                       type="button"
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-neutral-300/50 dark:border-neutral-600/50 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors text-xs font-medium"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-neutral-300/50 dark:border-neutral-600/50 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors text-xs font-medium max-md:press max-md:size-10 max-md:justify-center max-md:rounded-full max-md:border-0 max-md:bg-neutral-900 max-md:p-0 max-md:text-white max-md:dark:bg-white max-md:dark:text-neutral-900"
                       title="Cancel connecting"
+                      aria-label="Cancel connecting"
                       onClick={async () => {
                         await stopVoice();
                         onModelChange(getSavedModel(models) ?? models[0] ?? null);
                       }}
                     >
-                      <LoaderCircle size={12} className="animate-spin" />
-                      <span>Cancel</span>
+                      <LoaderCircle size={12} className="animate-spin max-md:hidden" />
+                      <X size={18} className="md:hidden" />
+                      <span className="max-md:hidden">Cancel</span>
                     </button>
                   ) : (
                     <button
                       type="button"
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-neutral-300/50 dark:border-neutral-600/50 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors text-xs font-medium"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-neutral-300/50 dark:border-neutral-600/50 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors text-xs font-medium max-md:press max-md:size-10 max-md:justify-center max-md:rounded-full max-md:border-0 max-md:bg-neutral-900 max-md:p-0 max-md:text-white max-md:dark:bg-white max-md:dark:text-neutral-900"
                       onClick={async () => {
                         if (!isListening) {
                           await startVoice();
@@ -1065,13 +1098,15 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                     >
                       {isListening ? (
                         <>
-                          <Square size={12} />
-                          <span>Stop</span>
+                          <Square size={12} className="max-md:hidden" />
+                          <Square size={14} fill="currentColor" className="md:hidden" />
+                          <span className="max-md:hidden">Stop</span>
                         </>
                       ) : (
                         <>
-                          <AudioLines size={12} />
-                          <span>Start audio</span>
+                          <AudioLines size={12} className="max-md:hidden" />
+                          <AudioLines size={18} className="md:hidden" />
+                          <span className="max-md:hidden">Start audio</span>
                         </>
                       )}
                     </button>
@@ -1081,7 +1116,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                 <div className="flex items-center">
                   {hasPrompt && (
                     <button
-                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      className={composerIconButtonClass}
                       type="submit"
                       disabled={
                         !draftLoaded ||
@@ -1096,17 +1131,18 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                       }
                       title="Queue message"
                     >
-                      <Send size={16} />
+                      <ArrowUp size={18} />
                     </button>
                   )}
                   <button
                     type="button"
-                    className="group/stop p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    className={cn("group/stop", composerSendButtonClass)}
                     onClick={stopStreaming}
                     title="Stop generating (Esc)"
+                    aria-label="Stop generating"
                   >
-                    <LoaderCircle size={16} className="animate-spin group-hover/stop:hidden" />
-                    <Square size={16} className="hidden group-hover/stop:block" />
+                    <LoaderCircle size={16} className="animate-spin max-md:hidden group-hover/stop:hidden" />
+                    <Square size={14} fill="currentColor" className="hidden max-md:block group-hover/stop:block" />
                   </button>
                 </div>
               ) : (
@@ -1116,54 +1152,53 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                   {canTranscribe &&
                     !isListening &&
                     (transcribingContent ? (
-                      <button
-                        type="button"
-                        className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
-                        disabled
-                        title="Processing audio..."
-                      >
+                      <button type="button" className={composerIconButtonClass} disabled title="Processing audio...">
                         <Loader2 size={16} className="animate-spin" />
                       </button>
                     ) : isTranscribing ? (
                       <button
                         type="button"
-                        className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                        className={cn(
+                          composerIconButtonClass,
+                          "text-red-600 dark:text-red-400 md:text-red-600 md:hover:text-red-800 md:dark:text-red-400 md:dark:hover:text-red-200",
+                        )}
                         onClick={handleTranscriptionClick}
                         title="Stop recording"
+                        aria-label="Stop recording"
                       >
-                        <Square size={16} />
+                        <Square size={16} fill="currentColor" />
                       </button>
                     ) : (
-                      <Tooltip
-                        content={content.trim() ? "Add dictation" : "Start dictate"}
-                        side="bottom"
-                        className="hidden md:block"
-                      >
+                      <Tooltip content={content.trim() ? "Add dictation" : "Start dictate"} side="bottom">
                         <button
                           type="button"
-                          className="p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                          className={composerIconButtonClass}
                           onClick={handleTranscriptionClick}
+                          aria-label={content.trim() ? "Add dictation" : "Start dictation"}
                         >
-                          <Mic size={16} />
+                          <Mic size={18} />
                         </button>
                       </Tooltip>
                     ))}
                   {isTranscribing || transcribingContent ? null : hasPrompt ? (
                     <button
-                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      className={composerSendButtonClass}
                       type="submit"
                       disabled={
                         !draftLoaded || submitting || extractingAttachments.size > 0 || chatLoading || !!chatError
                       }
                       aria-label="Send message"
                     >
-                      <Send size={16} />
+                      <ArrowUp size={18} />
                     </button>
                   ) : voiceAvailable && !currentAgent?.model ? (
                     <Tooltip content="Voice mode" side="bottom">
                       <button
                         type="button"
-                        className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        className={cn(
+                          composerIconButtonClass,
+                          "max-md:bg-black/6 max-md:text-neutral-800 max-md:dark:bg-white/10 max-md:dark:text-neutral-100",
+                        )}
                         onClick={() =>
                           onModelChange({
                             id: "realtime",
@@ -1177,15 +1212,8 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                         <AudioLines size={16} />
                       </button>
                     </Tooltip>
-                  ) : canTranscribe && !isListening ? (
-                    <button
-                      className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                      type="submit"
-                    >
-                      <Send size={16} />
-                    </button>
-                  ) : (
-                    <span className="p-2.5 md:p-1.5 text-neutral-400 dark:text-neutral-500">
+                  ) : canTranscribe && !isListening ? null : (
+                    <span className={cn(composerIconButtonClass, "text-neutral-400 dark:text-neutral-500")}>
                       <AudioLines size={16} />
                     </span>
                   )}
