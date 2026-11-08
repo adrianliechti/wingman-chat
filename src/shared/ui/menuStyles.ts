@@ -9,7 +9,7 @@ export const PANEL_CLASS =
 // can otherwise highlight the empty line at the panel's top edge.
 // Phones: menus rise from the bottom edge as a glass sheet with a grabber.
 export const SHEET_CLASS =
-  "fixed inset-x-0 bottom-0 z-60 glass-strong rounded-t-[28px] border-b-0 px-2 pt-2 pb-[max(var(--safe-bottom),0.5rem)] max-h-[80dvh] overflow-auto overscroll-contain transition duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-closed:translate-y-full motion-reduce:transition-none";
+  "fixed inset-x-0 bottom-(--app-keyboard) z-60 glass-strong rounded-t-[28px] border-b-0 pl-[max(var(--safe-left),0.5rem)] pr-[max(var(--safe-right),0.5rem)] pt-2 pb-[max(var(--safe-bottom),0.5rem)] max-h-[calc(var(--app-height)*0.8)] overflow-auto overscroll-contain transition duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-closed:translate-y-full motion-reduce:transition-none";
 
 export const SHEET_GRABBER_CLASS =
   "mx-auto mb-2 mt-1 h-1.5 w-9 shrink-0 rounded-full bg-neutral-400/50 dark:bg-neutral-500/60";

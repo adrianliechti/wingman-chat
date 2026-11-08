@@ -4,7 +4,7 @@
 
 /* ─── Mobile shell tokens ────────────────────────────────────────────────────
    Safe areas (status bar, home indicator) and the floating top-bar region used
-   by every page on small screens. `--app-keyboard` tracks the on-screen
+   by every page. `--app-keyboard` tracks the on-screen
    keyboard height (see useVisualViewport) so fixed bottom chrome rides above it. */
 :root {
   --safe-top: env(safe-area-inset-top, 0px);
@@ -25,6 +25,13 @@
   --glass-hi: rgba(255, 255, 255, 0.95);
   --glass-shadow: rgba(0, 0, 0, 0.14);
   --glass-blur: 20px;
+}
+
+@media (min-width: 48rem) {
+  :root {
+    /* Desktop navigation: 42px tabs, 16px vertical padding and a 1px border. */
+    --app-topbar: calc(var(--safe-top) + 3.6875rem);
+  }
 }
 
 /* The keyboard covers the home indicator, so bottom chrome sits flush on it. */

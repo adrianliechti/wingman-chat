@@ -9,9 +9,9 @@ import { useEffect } from "react";
  */
 export function useVisualViewport() {
   useEffect(() => {
+    const root = document.documentElement;
     const viewport = window.visualViewport;
     if (!viewport) return;
-    const root = document.documentElement;
     let frame = 0;
     let expandedHeight = window.innerHeight;
     let layoutWidth = window.innerWidth;

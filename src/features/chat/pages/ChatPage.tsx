@@ -489,7 +489,7 @@ export function ChatPage() {
             >
               <div
                 className={cn(
-                  "px-3 pt-18 transition-[max-width] duration-150 ease-out max-md:px-4 max-md:pt-[calc(var(--app-topbar)+0.5rem)]",
+                  "px-3 md:pt-[calc(var(--safe-top)+4.5rem)] transition-[max-width] duration-150 ease-out max-md:px-4 max-md:pt-[calc(var(--app-topbar)+0.5rem)]",
                   layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width",
                 )}
                 style={{ paddingBottom: chatInputHeight }}
@@ -572,7 +572,7 @@ export function ChatPage() {
       <footer
         ref={measureFooter}
         className={cn(
-          "fixed bottom-(--app-keyboard) left-0 pl-[max(var(--safe-left),0.75rem)] pr-[max(var(--safe-right),0.75rem)] pb-[calc(var(--safe-bottom)+0.5rem)] md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
+          "fixed bottom-(--app-keyboard) left-0 pl-[max(var(--safe-left),0.75rem)] pr-[max(var(--safe-right),0.75rem)] pb-[calc(var(--safe-bottom)+0.5rem)] md:pb-[calc(var(--safe-bottom)+1rem)] pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
           "right-0",
         )}
         style={{

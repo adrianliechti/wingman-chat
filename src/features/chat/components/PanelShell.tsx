@@ -11,7 +11,7 @@ interface PanelShellProps {
   offsetVw?: number;
   /** A drag on this or a sibling panel is in progress: follow instantly, no transition. */
   resizing?: boolean;
-  /** Small-screen layout: full width below the 3rem top bar, no resize handle. */
+  /** Small-screen layout: full width with its own header, no resize handle. */
   compact: boolean;
   /** Keep the content mounted while closed (for iframes); otherwise it mounts only while open. */
   keepMounted?: boolean;
@@ -77,7 +77,7 @@ export function PanelShell({
           </div>
         </button>
       )}
-      <div className="flex h-full flex-col overflow-hidden pl-(--safe-left) pr-(--safe-right) border-l border-black/10 max-md:bg-neutral-50 max-md:pt-(--safe-top) dark:border-white/10 dark:max-md:bg-neutral-950">
+      <div className="flex h-full flex-col overflow-hidden pl-(--safe-left) pr-(--safe-right) pb-(--safe-bottom) border-l border-black/10 max-md:bg-neutral-50 max-md:pt-(--safe-top) dark:border-white/10 dark:max-md:bg-neutral-950">
         {onClose && !ownsHeader && (
           <div className="flex h-13 shrink-0 items-center px-2 md:hidden">
             <button
@@ -106,7 +106,7 @@ export function PanelShell({
       style={{
         width: compact ? undefined : `${widthVw}vw`,
         translate,
-        top: compact ? "var(--app-viewport-top)" : "calc(var(--app-viewport-top) + 3.5rem)",
+        top: compact ? "var(--app-viewport-top)" : "calc(var(--app-viewport-top) + var(--app-topbar))",
       }}
     >
       {keepMounted ? (

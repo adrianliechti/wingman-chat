@@ -162,7 +162,7 @@ export function AppLayout() {
       {hasDrawer && (
         <aside
           className={cn(
-            "fixed app-viewport left-0 z-50 flex w-full flex-col overflow-hidden pl-(--safe-left) pr-(--safe-right) bg-neutral-100/85 backdrop-blur-xl transition-transform duration-500 ease-in-out md:right-auto dark:bg-neutral-900/85",
+            "fixed app-viewport left-0 z-50 flex w-full flex-col overflow-hidden pl-(--safe-left) pr-(--safe-right) md:pt-(--safe-top) md:pb-(--safe-bottom) bg-neutral-100/85 backdrop-blur-xl transition-transform duration-500 ease-in-out md:right-auto dark:bg-neutral-900/85",
             // Phones: a frosted page that starts under the status bar and slides with an iOS curve.
             "max-md:bg-(--glass-bg-strong) max-md:pt-(--safe-top) max-md:backdrop-blur-2xl max-md:backdrop-saturate-150 max-md:duration-400 max-md:ease-[cubic-bezier(0.32,0.72,0,1)]",
             showSidebar ? "translate-x-0" : "-translate-x-full",
@@ -252,10 +252,10 @@ export function AppLayout() {
           className={cn(
             "fixed top-(--app-viewport-top) left-0 right-0 z-30 pl-[max(var(--safe-left),0.75rem)] pr-[max(var(--safe-right),0.75rem)] ease-in-out",
             // Desktop: one translucent bar with a hairline.
-            "md:py-2 md:bg-neutral-50/60 md:dark:bg-neutral-950/80 md:backdrop-blur-sm md:border-b md:border-neutral-200 md:dark:border-neutral-800 md:shadow-sm",
+            "md:pb-2 md:bg-neutral-50/60 md:dark:bg-neutral-950/80 md:backdrop-blur-sm md:border-b md:border-neutral-200 md:dark:border-neutral-800 md:shadow-sm",
             // Phones: no bar at all. Glass controls float over the page, which scrolls
             // beneath them and fades out under the status bar.
-            "max-md:pointer-events-none max-md:pt-[calc(var(--safe-top)+0.5rem)] max-md:pb-2",
+            "pt-[calc(var(--safe-top)+0.5rem)] max-md:pointer-events-none max-md:pb-2",
             !isSidebarResizing && "transition-[padding] duration-500",
           )}
           style={sidebarPushesContent ? { paddingLeft: sidebarWidth + 12 } : undefined}

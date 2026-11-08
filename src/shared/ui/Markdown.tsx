@@ -573,7 +573,7 @@ function MarkdownTable({ children, ...props }: React.TableHTMLAttributes<HTMLTab
             leaveFrom="opacity-100"
             leaveTo="opacity-0"
           >
-            <Dialog.Panel className="fixed inset-x-0 app-viewport flex flex-col bg-white dark:bg-neutral-950">
+            <Dialog.Panel className="fixed inset-x-0 app-viewport flex flex-col pt-(--safe-top) pb-(--safe-bottom) pl-(--safe-left) pr-(--safe-right) bg-white dark:bg-neutral-950">
               <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
                 <div className="flex items-center gap-1">
                   <button

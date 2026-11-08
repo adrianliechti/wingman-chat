@@ -850,7 +850,7 @@ export function ArtifactsDrawer() {
               )}
             </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-[max(var(--safe-bottom),1rem)]">
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
             {fs && files.length > 0 ? (
               <FileTree
                 size="lg"

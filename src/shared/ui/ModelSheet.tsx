@@ -106,7 +106,7 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="press flex size-10 items-center justify-center rounded-full bg-black/6 text-neutral-700 dark:bg-white/10 dark:text-neutral-200"
+      className="press flex size-9 shrink-0 items-center justify-center rounded-full bg-black/6 text-neutral-700 dark:bg-white/10 dark:text-neutral-200"
     >
       {children}
     </button>
@@ -314,30 +314,31 @@ export function ModelSheet(props: ModelDropdownProps) {
         <div className="fixed inset-x-0 bottom-(--app-keyboard)">
           <DialogPanel
             transition
-            className="glass-strong flex max-h-[calc(var(--app-height)*0.85)] w-full flex-col overflow-hidden rounded-t-[28px] border-b-0 pb-[max(var(--safe-bottom),0.75rem)] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-closed:translate-y-full"
+            className="glass-strong flex max-h-[calc(var(--app-height)*0.85)] w-full flex-col overflow-hidden rounded-t-[28px] border-b-0 pl-(--safe-left) pr-(--safe-right) pb-[max(var(--safe-bottom),0.75rem)] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-closed:translate-y-full"
           >
             <div className="flex shrink-0 justify-center pt-2 pb-1">
               <div className="h-1.5 w-9 rounded-full bg-neutral-400/50 dark:bg-neutral-500/60" />
             </div>
-            <div className="relative flex h-12 shrink-0 items-center px-3">
-              {page ? (
+            <div className="relative flex h-13 shrink-0 items-center px-3">
+              {page && (
                 <IconButton label="Back" onClick={pop}>
                   <ChevronLeft size={20} />
-                </IconButton>
-              ) : (
-                <IconButton label="Close" onClick={close}>
-                  <X size={18} />
                 </IconButton>
               )}
               <DialogTitle
                 key={nav.page ?? "root"}
                 className={cn(
-                  "pointer-events-none absolute inset-x-0 text-center text-[17px] font-semibold text-neutral-900 dark:text-neutral-50",
+                  "pointer-events-none absolute inset-x-0 truncate px-14 text-center text-[17px] font-semibold text-neutral-900 dark:text-neutral-50",
                   slide,
                 )}
               >
                 {page?.title ?? "Select model"}
               </DialogTitle>
+              <div className="ml-auto">
+                <IconButton label="Close" onClick={close}>
+                  <X size={18} />
+                </IconButton>
+              </div>
             </div>
 
             {/* The body animates to each page's height; the page itself is keyed so it

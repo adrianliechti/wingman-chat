@@ -432,7 +432,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                 leaveFrom="opacity-100 translate-y-0 sm:scale-100"
                 leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
               >
-                <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[calc(var(--app-height)*0.92)] sm:h-[calc(var(--app-height)*0.75)] sm:max-w-3xl max-sm:rounded-t-[28px] max-sm:bg-(--glass-bg-strong) max-sm:pb-(--safe-bottom) max-sm:backdrop-blur-2xl max-sm:backdrop-saturate-150">
+                <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[calc(var(--app-height)*0.92)] sm:h-[calc(var(--app-height)*0.75)] sm:max-w-3xl max-sm:rounded-t-[28px] max-sm:bg-(--glass-bg-strong) max-sm:pl-(--safe-left) max-sm:pr-(--safe-right) max-sm:pb-(--safe-bottom) max-sm:backdrop-blur-2xl max-sm:backdrop-saturate-150">
                   <div
                     aria-hidden="true"
                     className="mx-auto mt-2 h-1.5 w-9 shrink-0 rounded-full bg-neutral-400/50 sm:hidden dark:bg-neutral-500/60"
@@ -695,7 +695,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                 id={profileAboutInputId}
                                 value={profile.profile || ""}
                                 onChange={(e) => updateProfile({ profile: e.target.value })}
-                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 max-sm:rounded-xl max-sm:px-4 max-sm:py-3 max-sm:text-base focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none backdrop-blur-sm transition-colors"
+                                className="w-full max-h-[max(3rem,calc(var(--app-height)*0.75-6rem))] px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 max-sm:rounded-xl max-sm:px-4 max-sm:py-3 max-sm:text-base focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none backdrop-blur-sm transition-colors"
                                 rows={5}
                                 placeholder="Brief description about yourself..."
                               />

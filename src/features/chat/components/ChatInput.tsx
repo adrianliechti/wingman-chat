@@ -648,10 +648,12 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
               disabled={!draftLoaded || submitting}
             />
           )}
+          {/* Keep a long draft below the header even on a short landscape viewport;
+              the height cap also reserves 4rem for the controls and bottom spacing. */}
           <div className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}>
             {isRealtimeSelected ? (
               <textarea
-                className="block w-full resize-none border-0 bg-transparent px-4 py-3 md:p-4 max-h-[calc(var(--app-height)*0.4)] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
+                className="block w-full resize-none border-0 bg-transparent px-4 py-3 md:p-4 max-h-[min(calc(var(--app-height)*0.4),calc(var(--app-height)-var(--app-topbar)-var(--safe-bottom)-4rem))] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
                 value={voiceTextInput}
                 rows={1}
                 aria-label="Voice text input"
@@ -672,7 +674,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
               <>
                 <textarea
                   ref={contentInputRef}
-                  className="block w-full resize-none border-0 bg-transparent px-4 py-3 md:p-4 max-h-[calc(var(--app-height)*0.4)] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
+                  className="block w-full resize-none border-0 bg-transparent px-4 py-3 md:p-4 max-h-[min(calc(var(--app-height)*0.4),calc(var(--app-height)-var(--app-topbar)-var(--safe-bottom)-4rem))] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
                   value={content}
                   rows={1}
                   inputMode="text"

@@ -130,7 +130,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   return (
     <section
       aria-label={projectId === "new" ? "New project" : "Project settings"}
-      className="h-full w-full overflow-y-auto bg-white pt-(--app-topbar) text-neutral-900 md:pt-[3.6875rem] dark:bg-neutral-950 dark:text-neutral-100"
+      className="h-full w-full overflow-y-auto bg-white pt-(--app-topbar) text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100"
     >
       <form
         onSubmit={(event) => {
@@ -376,7 +376,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
             </section>
           </fieldset>
         </div>
-        <footer className="sticky bottom-0 z-10 mt-6 bg-white pb-[env(safe-area-inset-bottom)] before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-8 before:bg-linear-to-t before:from-white before:to-transparent dark:bg-neutral-950 dark:before:from-neutral-950">
+        <footer className="sticky bottom-0 z-10 mt-6 bg-white pb-(--safe-bottom) before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-8 before:bg-linear-to-t before:from-white before:to-transparent dark:bg-neutral-950 dark:before:from-neutral-950">
           <div className="mx-auto w-full max-w-3xl px-5 py-4 md:px-10">
             {error && (
               <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">

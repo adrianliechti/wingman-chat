@@ -700,7 +700,7 @@ export function ChatInputAddMenu({
         <div className="fixed inset-x-0 bottom-(--app-keyboard)">
           <DialogPanel
             transition
-            className="w-full max-h-[calc(var(--app-height)*0.8)] flex flex-col rounded-t-[28px] bg-(--glass-bg-strong) backdrop-blur-2xl backdrop-saturate-150 shadow-2xl border-t border-x border-(--glass-border) pb-[max(var(--safe-bottom),0.5rem)] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-closed:translate-y-full"
+            className="w-full max-h-[calc(var(--app-height)*0.8)] flex flex-col rounded-t-[28px] bg-(--glass-bg-strong) backdrop-blur-2xl backdrop-saturate-150 shadow-2xl border-t border-x border-(--glass-border) pl-(--safe-left) pr-(--safe-right) pb-[max(var(--safe-bottom),0.5rem)] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-closed:translate-y-full"
           >
             {/* Drag handle */}
             <div className="flex justify-center pt-2 pb-1 shrink-0">
@@ -708,8 +708,8 @@ export function ChatInputAddMenu({
             </div>
 
             {/* Header */}
-            <div className="relative flex h-11 shrink-0 items-center justify-center px-4">
-              <DialogTitle className="text-[17px] font-semibold text-neutral-900 dark:text-neutral-50">
+            <div className="relative flex h-13 shrink-0 items-center justify-center px-3">
+              <DialogTitle className="pointer-events-none absolute inset-x-0 truncate px-14 text-center text-[17px] font-semibold text-neutral-900 dark:text-neutral-50">
                 Add to chat
               </DialogTitle>
               <button
