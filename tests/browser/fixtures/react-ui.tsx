@@ -183,11 +183,13 @@ if (parameters.has("panels")) {
     // A renderer with known capabilities (aspect tiles, quality tiers) and a
     // synthetic gradient in place of the gateway's image.
     // `vector` swaps in GPT Image 2.6, which can also return SVG and GIF.
-    const renderer = parameters.has("vector")
-      ? { id: "gpt-image-2.6-flare", name: "Flare", type: "renderer" as const }
-      : { id: "gpt-image-1", name: "Painter", type: "renderer" as const };
+    const renderer = parameters.has("video")
+      ? { id: "gemini-omni-1.2-flash", name: "Omni", type: "renderer" as const }
+      : parameters.has("vector")
+        ? { id: "gpt-image-2.6-flare", name: "Flare", type: "renderer" as const }
+        : { id: "gpt-image-1", name: "Painter", type: "renderer" as const };
     config.client.listModels = async () => [model, renderer];
-    config.client.generateImage = async (rendererModel, prompt, images, options) => {
+    config.client.render = async (rendererModel, prompt, images, options) => {
       // Blobs don't serialize across page.evaluate; record their sizes instead.
       const { mask, markup, ...rest } = options ?? {};
       state.renders.push({
@@ -198,6 +200,29 @@ if (parameters.has("panels")) {
         ...(mask ? { mask: mask.size } : {}),
         ...(markup ? { markup: markup.size } : {}),
       });
+      if (options?.format === "mp4") {
+        // Real browser media exercises decoding, poster capture, playback and OPFS.
+        const canvas = document.createElement("canvas");
+        canvas.width = 160;
+        canvas.height = 90;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = "#1d4ed8";
+        context.fillRect(0, 0, 160, 90);
+        const stream = canvas.captureStream(10);
+        const mimeType = MediaRecorder.isTypeSupported("video/mp4") ? "video/mp4" : "video/webm";
+        const recorder = new MediaRecorder(stream, { mimeType });
+        const chunks: Blob[] = [];
+        recorder.ondataavailable = (event) => chunks.push(event.data);
+        const recorded = new Promise<Blob>((resolve) => {
+          recorder.onstop = () => {
+            stream.getTracks().forEach((track) => track.stop());
+            resolve(new Blob(chunks, { type: "video/mp4" }));
+          };
+        });
+        recorder.start();
+        setTimeout(() => recorder.stop(), 300);
+        return recorded;
+      }
       if (options?.format === "svg") {
         const svg =
           '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200"><rect width="300" height="200" fill="#1d4ed8"/></svg>';
@@ -221,6 +246,7 @@ if (parameters.has("panels")) {
       return canvas.convertToBlob({ type: "image/png" });
     };
   }
+  config.client.generateImage = (...args) => config.client.render(...args);
   config.client.generateTitle = async () => "Fixture";
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
   const provider = testClient(

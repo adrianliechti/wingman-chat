@@ -18,6 +18,8 @@ export type ImageResolution = "512" | "1K" | "2K" | "4K";
 export type ImageBackground = "opaque" | "transparent";
 /** Image-generation output beyond the default raster image: vector SVG or animated GIF. */
 export type ImageFormat = "svg" | "gif";
+export type RenderFormat = ImageFormat | "mp4";
+export type RenderResolution = ImageResolution | "360p" | "720p" | "1080p";
 /** How much an image model plans before rendering, separate from quality (GPT Image 2.6). */
 export type ImageComplexity = "low" | "medium" | "high";
 
@@ -65,11 +67,13 @@ export type Model = {
   supportedQualities?: ImageQuality[];
   supportedAspectRatios?: string[];
   /** Output resolutions, for models whose size lever is resolution (e.g. Gemini) rather than a quality tier. */
-  supportedResolutions?: ImageResolution[];
+  supportedResolutions?: RenderResolution[];
   /** Background modes beyond the always-available "auto" default (opaque/transparent). */
   supportedBackgrounds?: ImageBackground[];
   /** Output formats beyond the default raster image; text-to-image only (no reference images). */
-  supportedFormats?: ImageFormat[];
+  supportedFormats?: RenderFormat[];
+  /** Video durations offered in whole seconds; unset uses the model default. */
+  supportedDurations?: number[];
   /** Planning levels before rendering, separate from quality. */
   supportedComplexities?: ImageComplexity[];
 

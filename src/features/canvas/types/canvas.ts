@@ -29,6 +29,10 @@ export interface Image {
 
   /** Data URL of the current version's pixels (e.g. "data:image/png;base64,..."). */
   data: string;
+  /** Video bytes stay binary; data is its thumbnail rather than base64 video. */
+  blob?: Blob;
+  contentType?: string;
+  duration?: number;
   width?: number;
   height?: number;
 
@@ -36,4 +40,14 @@ export interface Image {
   versions: ImageVersion[];
   /** Non-destructive edits rendered on top of `data`. */
   recipe: Adjustments;
+}
+
+/** A generation in flight (or failed), shown as a placeholder tile. */
+export interface PendingGeneration {
+  id: string;
+  prompt: string;
+  /** Width / height when the request asked for a specific aspect. */
+  aspect: number | null;
+  status: "running" | "error";
+  error?: string;
 }

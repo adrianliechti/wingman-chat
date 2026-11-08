@@ -8,7 +8,7 @@ import { getConfig } from "@/shared/config";
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { isTextContentType } from "@/shared/lib/fileTypes";
-import { withRendererFallback } from "@/shared/lib/models";
+import { isVideoRenderer, withRendererFallback } from "@/shared/lib/models";
 import { pickModel } from "@/shared/lib/modelSelection";
 import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
 import { readAsDataURL } from "@/shared/lib/utils";
@@ -62,8 +62,16 @@ interface ImageToolOptions {
   fs: FileSystemManager | null;
 }
 
-function createImageTool({ client, catalog, models, rendererModel, elicitation, fs }: ImageToolOptions): Tool {
-  const model = pickModel(catalog, rendererModel, "renderer");
+function createImageTool({ client, catalog, models, rendererModel, elicitation, fs }: ImageToolOptions): Tool | null {
+  const imageCatalog = catalog.filter((entry) => !isVideoRenderer(withRendererFallback(entry)));
+  const configured = rendererModel
+    ? withRendererFallback(
+        catalog.find((entry) => entry.id === rendererModel) ??
+          models.find((entry) => entry.id === rendererModel) ?? { id: rendererModel, name: rendererModel },
+      )
+    : null;
+  const model = pickModel(imageCatalog, isVideoRenderer(configured) ? undefined : rendererModel, "renderer");
+  if (!model && (isVideoRenderer(configured) || catalog.some((entry) => entry.type === "renderer"))) return null;
   // The catalog may not have loaded yet, or may type a configured alias
   // differently — config overrides still carry the renderer's capabilities.
   const entry = catalog.find((m) => m.id === model) ?? models.find((m) => m.id === model);
@@ -124,7 +132,7 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
         "How much the renderer plans the composition before drawing, separate from quality. Lower is faster and keeps edits closer to the original; omit for the renderer default.",
       );
   }
-  const formats = caps.supportedFormats ?? [];
+  const formats = (caps.supportedFormats ?? []).filter((format) => format !== "mp4");
   if (formats.length) {
     const kinds = [
       formats.includes("svg") && '"svg" for a static vector illustration (logo, icon, flat art)',

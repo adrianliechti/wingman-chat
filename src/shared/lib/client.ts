@@ -83,20 +83,24 @@ const TRANSCRIBE_EXTENSIONS: Record<string, string> = {
  * and silently drops what a model can't honor, so the same options work across
  * providers.
  */
-export interface ImageRenderOptions {
+export type ImageRenderOptions = RenderOptions;
+
+export interface RenderOptions {
   /** Aspect ratio like "1:1" or "16:9"; snapped to the nearest the model supports. */
   aspectRatio?: string;
   /** Quality tier; higher is slower and may cost more. */
   quality?: ImageQuality;
   /** Output resolution. */
-  resolution?: "512" | "1K" | "2K" | "4K";
+  resolution?: "512" | "1K" | "2K" | "4K" | "360p" | "720p" | "1080p";
   /** Background handling (only honored by models that support it). */
   background?: "transparent" | "opaque";
   /**
    * Desired output format; negotiated via the `Accept` header, not a form field.
    * SVG and GIF are text-to-image only — the backend rejects them with images.
    */
-  format?: "png" | "jpeg" | "webp" | ImageFormat;
+  format?: "png" | "jpeg" | "webp" | ImageFormat | "mp4";
+  /** Video duration in whole seconds. */
+  durationSeconds?: number;
   /** How much the model plans before rendering (separate from quality). */
   complexity?: ImageComplexity;
   /** Animated GIF frame count; GIF output only. */
@@ -605,6 +609,16 @@ export class Client {
     options?: ImageRenderOptions,
     requestOptions: ClientRequestOptions = {},
   ): Promise<Blob> {
+    return this.render(model, prompt, images, options, requestOptions);
+  }
+
+  async render(
+    model: string,
+    prompt: string,
+    images?: Blob[],
+    options?: ImageRenderOptions,
+    requestOptions: ClientRequestOptions = {},
+  ): Promise<Blob> {
     const data = new FormData();
     data.append("input", prompt);
     if (model) data.append("model", model);
@@ -618,13 +632,21 @@ export class Client {
     if (options?.resolution) data.append("resolution", options.resolution);
     if (options?.background) data.append("background", options.background);
     if (options?.complexity) data.append("complexity", options.complexity);
+    if (options?.durationSeconds !== undefined) data.append("duration_seconds", String(options.durationSeconds));
     if (options?.frameCount !== undefined) data.append("frame_count", String(options.frameCount));
     if (options?.frameDurationMs !== undefined) data.append("frame_duration_ms", String(options.frameDurationMs));
     // Output format is negotiated via Accept, not a form field (see /v1/render).
     const headers = options?.format ? { Accept: mime.getType(options.format) ?? `image/${options.format}` } : undefined;
     // Rendering — especially high quality or large sizes — can take minutes, so
     // allow well beyond the default render/translate/search budget.
-    return this.postRaw("/api/v1/render", data, (resp) => resp.blob(), headers, 300_000, requestOptions);
+    return this.postRaw(
+      "/api/v1/render",
+      data,
+      (resp) => resp.blob(),
+      headers,
+      options?.format === "mp4" ? 900_000 : 300_000,
+      requestOptions,
+    );
   }
 
   async optimizeSkill(

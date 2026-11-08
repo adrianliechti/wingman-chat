@@ -1,18 +1,8 @@
 import { AlertCircle, FolderOpen, Loader2, PlusIcon, RotateCw, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { viewOnlyFormat } from "../lib/images";
-import type { Image } from "../types/canvas";
+import type { Image, PendingGeneration } from "../types/canvas";
 import { cn } from "@/shared/lib/cn";
-
-/** A generation in flight (or failed), shown as a placeholder tile. */
-export interface PendingGeneration {
-  id: string;
-  prompt: string;
-  /** Width / height when the request asked for a specific aspect. */
-  aspect: number | null;
-  status: "running" | "error";
-  error?: string;
-}
 
 interface FilmstripProps {
   images: Image[];
@@ -58,10 +48,10 @@ export function Filmstrip({
     <div
       ref={strip}
       role="listbox"
-      aria-label="Images"
+      aria-label="Images and videos"
       className="flex h-24 shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden border-t border-neutral-200/70 bg-white/50 px-3 backdrop-blur-xl dark:border-neutral-800/70 dark:bg-neutral-900/50"
     >
-      <button type="button" onClick={onNew} title="New image" aria-label="New image" className={ADD_TILE_CLASS}>
+      <button type="button" onClick={onNew} title="New creation" aria-label="New creation" className={ADD_TILE_CLASS}>
         <PlusIcon size={20} />
       </button>
       <button
@@ -83,7 +73,7 @@ export function Filmstrip({
             data-id={item.id}
             role="option"
             aria-selected={active}
-            aria-label={item.status === "error" ? "Failed generation" : "Generating image"}
+            aria-label={item.status === "error" ? "Failed generation" : "Generating media"}
             className={cn(
               "group relative h-16 shrink-0 overflow-hidden rounded-xl",
               active ? "ring-2 ring-blue-500 dark:ring-blue-400" : "ring-1 ring-neutral-200 dark:ring-neutral-700",
@@ -131,7 +121,7 @@ export function Filmstrip({
 
       {images.map((image) => {
         const active = image.id === selectedId;
-        const format = viewOnlyFormat(image.data);
+        const format = viewOnlyFormat(image.data, image.contentType);
         return (
           <div
             key={image.id}
@@ -166,7 +156,7 @@ export function Filmstrip({
             )}
             <button
               type="button"
-              aria-label="Delete image"
+              aria-label={format === "mp4" ? "Delete video" : "Delete image"}
               title="Delete"
               onClick={(event) => {
                 event.stopPropagation();

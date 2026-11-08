@@ -4,6 +4,8 @@ import type {
   ImageFormat,
   ImageQuality,
   ImageResolution,
+  RenderResolution,
+  RenderFormat,
   Model,
   ModelType,
   ReasoningEffort,
@@ -196,9 +198,10 @@ export function compactThreshold(id: string): number {
 export interface RendererCapabilities {
   qualities?: ImageQuality[];
   aspectRatios?: string[];
-  resolutions?: ImageResolution[];
+  resolutions?: RenderResolution[];
   backgrounds?: ImageBackground[];
-  formats?: ImageFormat[];
+  formats?: RenderFormat[];
+  durations?: number[];
   complexities?: ImageComplexity[];
 }
 
@@ -215,6 +218,17 @@ const GENERIC_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"];
  */
 export function rendererCapabilities(id: string): RendererCapabilities {
   const lowerId = id.toLowerCase();
+
+  if (/gemini-omni-1[.-]2-flash/.test(lowerId)) {
+    return {
+      formats: ["mp4"],
+      resolutions: ["360p", "720p", "1080p", "4K"],
+      aspectRatios: ["16:9", "9:16"],
+      durations: Array.from({ length: 13 }, (_, i) => i + 3),
+    };
+  }
+  // Other video families use upstream defaults unless configuration supplies capabilities.
+  if (/(?:gemini-omni|veo-|sora-|seedance-|hailuo-|wan-)/.test(lowerId)) return { formats: ["mp4"] };
 
   // Image 2.5 adds higher quality tiers, custom sizes, and transparent output
   // through the gateway for both Sunburst and Flare. Image 2.6 keeps those and
@@ -285,6 +299,11 @@ export function rendererCapabilities(id: string): RendererCapabilities {
  * explicit config value (including `[]` to hide a picker) is kept, exactly like
  * `withChatFallback` does for chat capabilities.
  */
+/** A renderer whose default output is a video. */
+export function isVideoRenderer(model: Model | null | undefined): boolean {
+  return model?.supportedFormats?.length === 1 && model.supportedFormats[0] === "mp4";
+}
+
 export function withRendererFallback(model: Model): Model {
   const caps = rendererCapabilities(model.id);
   return {
@@ -294,6 +313,7 @@ export function withRendererFallback(model: Model): Model {
     supportedResolutions: model.supportedResolutions ?? caps.resolutions,
     supportedBackgrounds: model.supportedBackgrounds ?? caps.backgrounds,
     supportedFormats: model.supportedFormats ?? caps.formats,
+    supportedDurations: model.supportedDurations ?? caps.durations,
     supportedComplexities: model.supportedComplexities ?? caps.complexities,
   };
 }
@@ -310,7 +330,10 @@ const MODEL_TYPE_CUES: [ModelType, RegExp][] = [
   ["embedder", /(?:^|[^a-z0-9])(?:embedding|embeddings|embed|bge|clip|gte|minilm)(?:$|[^a-z0-9])/],
   ["transcriber", /(?:^|[^a-z0-9])(?:stt|transcribe|whisper)(?:$|[^a-z0-9])/],
   ["synthesizer", /(?:^|[^a-z0-9])(?:tts|eleven|elevenlabs|mai-voice|stable-audio|speech)(?:$|[^a-z0-9])/],
-  ["renderer", /(?:^|[^a-z0-9])(?:image|imagen|flux|dall-e|stable-diffusion|midjourney|nano-banana)(?:$|[^a-z0-9])/],
+  [
+    "renderer",
+    /(?:^|[^a-z0-9])(?:gemini-omni|veo|sora|seedance|hailuo|wan|image|imagen|flux|dall-e|stable-diffusion|midjourney|nano-banana)(?:$|[^a-z0-9])/,
+  ],
 ];
 
 export function isModelType(value: unknown): value is ModelType {

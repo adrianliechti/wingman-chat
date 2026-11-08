@@ -270,7 +270,7 @@ test("Canvas loads optional image styles from the shared design reference", asyn
   });
   await open(page);
   await page.getByRole("link", { name: "Canvas", exact: true }).click();
-  await page.getByRole("button", { name: "New image" }).first().click();
+  await page.getByRole("button", { name: "New creation" }).first().click();
   await page.getByRole("button", { name: "All styles", exact: true }).click();
   const watercolor = page.getByRole("button", { name: "Watercolor", exact: true });
   await watercolor.click();
@@ -285,7 +285,7 @@ test("Canvas generates into the filmstrip, develops on the GPU and keeps the rec
   // use a prompt unique to this run.
   const prompt = `A fox in the snow ${Date.now()}`;
   await open(page, "?canvas");
-  await page.getByRole("button", { name: "New image" }).first().click();
+  await page.getByRole("button", { name: "New creation" }).first().click();
   await page.getByRole("textbox", { name: "Prompt" }).fill(prompt);
   await page.getByRole("radio", { name: "3:2", exact: true }).click();
   await page.getByRole("button", { name: "Generate" }).click();
@@ -433,7 +433,7 @@ test("Canvas generates SVG and GIF from the prompt into a view-only viewer", asy
   const gifPrompt = `A bouncing ball ${stamp}`;
   await open(page, "?canvas&vector");
   const generate = async (prompt: string, format: "SVG" | "GIF", frames?: string) => {
-    await page.getByRole("button", { name: "New image" }).first().click();
+    await page.getByRole("button", { name: "New creation" }).first().click();
     await page.getByRole("textbox", { name: "Prompt" }).fill(prompt);
     await page.getByRole("button", { name: "Flare", exact: true }).click();
     await page.getByRole("menuitem", { name: /^Format/ }).hover();
@@ -1568,4 +1568,53 @@ test("composer can send an attachment without typed text", async ({ page }) => {
   await page.evaluate(() => window.reactUiE2E.finish("Document received"));
   await expect(page.getByText("Document received", { exact: true })).toBeVisible();
   await expect(send).toHaveCount(0);
+});
+
+test("Canvas generates video, downloads its bytes and restores playback after reload", async ({ page }) => {
+  test.setTimeout(60_000);
+  page.setDefaultTimeout(15_000);
+  await page.addInitScript(() =>
+    Object.defineProperty(window, "showSaveFilePicker", { value: undefined, configurable: true }),
+  );
+  const prompt = `A fox running ${Date.now()}`;
+  await open(page, "?canvas&video");
+  await page.getByRole("button", { name: "New creation" }).first().click();
+  await expect(page.getByRole("button", { name: "Omni", exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "Prompt" }).fill(prompt);
+  await expect(page.getByRole("button", { name: "Reference", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Omni", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Duration/ }).hover();
+  await page.getByRole("menuitemradio", { name: "15s", exact: true }).click();
+  await page.getByRole("button", { name: "Omni", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Resolution/ }).hover();
+  await page.getByRole("menuitemradio", { name: /^720p/ }).click();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  const video = page.locator(`video[aria-label="${prompt}"]`);
+  await expect(video).toBeVisible();
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThanOrEqual(2);
+  await expect(page.locator(`canvas[aria-label="${prompt}"]`)).toHaveCount(0);
+  expect(await page.evaluate(() => window.reactUiE2E.state().renders)).toEqual([
+    { model: "gemini-omni-1.2-flash", prompt, options: { format: "mp4", durationSeconds: 15, resolution: "720p" } },
+  ]);
+  const bytes = await video.evaluate(async (element: HTMLVideoElement) =>
+    Array.from(new Uint8Array(await (await fetch(element.src)).arrayBuffer())),
+  );
+  expect(bytes.length).toBeGreaterThan(100);
+  await page.reload();
+  await expect(video).toBeVisible();
+  await expect
+    .poll(() => video.evaluate((element: HTMLVideoElement) => [element.videoWidth, element.videoHeight]))
+    .toEqual([160, 90]);
+  const restored = await video.evaluate(async (element: HTMLVideoElement) =>
+    Array.from(new Uint8Array(await (await fetch(element.src)).arrayBuffer())),
+  );
+  expect(restored).toEqual(bytes);
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download", exact: true }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toMatch(/\.mp4$/);
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  expect(Buffer.concat(chunks)).toEqual(Buffer.from(bytes));
 });

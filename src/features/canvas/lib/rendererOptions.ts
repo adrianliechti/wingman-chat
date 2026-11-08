@@ -1,11 +1,12 @@
 import type {
   ImageBackground,
   ImageComplexity,
-  ImageFormat,
+  RenderFormat,
   ImageQuality,
-  ImageResolution,
+  RenderResolution,
   Model,
 } from "@/shared/types/chat";
+import { isVideoRenderer } from "@/shared/lib/models";
 import type { SubmenuConfig } from "@/shared/ui/ModelDropdown";
 
 /** Aspect-ratio option metadata; only those the selected model supports are shown. */
@@ -30,7 +31,10 @@ export const QUALITY_OPTIONS: { value: ImageQuality; label: string; description:
   { value: "max", label: "Max", description: "Maximum quality, highest cost" },
 ];
 
-export const RESOLUTION_OPTIONS: { value: ImageResolution; label: string; description: string }[] = [
+export const RESOLUTION_OPTIONS: { value: RenderResolution; label: string; description: string }[] = [
+  { value: "360p", label: "360p", description: "Quick video draft" },
+  { value: "720p", label: "720p", description: "HD video" },
+  { value: "1080p", label: "1080p", description: "Full HD video" },
   { value: "512", label: "512", description: "Small and fast" },
   { value: "1K", label: "1K", description: "Standard size" },
   { value: "2K", label: "2K", description: "Sharper, slower" },
@@ -49,7 +53,8 @@ export const COMPLEXITY_OPTIONS: { value: ImageComplexity; label: string; descri
 ];
 
 /** PNG is the editable default; SVG and GIF open in the viewer. */
-export const FORMAT_OPTIONS: { value: "png" | ImageFormat; label: string; description: string }[] = [
+export const FORMAT_OPTIONS: { value: "png" | RenderFormat; label: string; description: string }[] = [
+  { value: "mp4", label: "MP4", description: "Video with playback and download" },
   { value: "png", label: "PNG", description: "Image you can edit" },
   { value: "svg", label: "SVG", description: "Vector illustration" },
   { value: "gif", label: "GIF", description: "Short looping animation" },
@@ -78,13 +83,14 @@ export function aspectRatioValue(aspect: string | null | undefined): number | nu
 export interface RenderSelection {
   aspect: string | null;
   quality: ImageQuality | null;
-  resolution: ImageResolution | null;
+  resolution: RenderResolution | null;
   background: ImageBackground | null;
   complexity: ImageComplexity | null;
   /** SVG or GIF output; null is the default editable PNG. */
-  format: ImageFormat | null;
+  format: RenderFormat | null;
   frameCount: number | null;
   frameDurationMs: number | null;
+  durationSeconds: number | null;
 }
 
 export const EMPTY_SELECTION: RenderSelection = {
@@ -96,6 +102,7 @@ export const EMPTY_SELECTION: RenderSelection = {
   format: null,
   frameCount: null,
   frameDurationMs: null,
+  durationSeconds: null,
 };
 
 /** Drop selections the model can't honor so we never send an option it ignores. */
@@ -103,18 +110,23 @@ export function constrainSelection(model: Model | null, selection: RenderSelecti
   if (!model) return selection;
   const keep = <T extends string>(value: T | null, supported?: readonly T[]) =>
     value && supported?.includes(value) ? value : null;
-  const format = keep(selection.format, model.supportedFormats);
+  const format = isVideoRenderer(model) ? "mp4" : keep(selection.format, model.supportedFormats);
+  const video = format === "mp4";
   const gif = format === "gif";
   return {
     aspect: keep(selection.aspect, model.supportedAspectRatios),
-    quality: keep(selection.quality, model.supportedQualities),
+    quality: video ? null : keep(selection.quality, model.supportedQualities),
     // Vector and animated output have no resolution or transparency lever.
-    resolution: format ? null : keep(selection.resolution, model.supportedResolutions),
+    resolution: format && !video ? null : keep(selection.resolution, model.supportedResolutions),
     background: format ? null : keep(selection.background, model.supportedBackgrounds),
-    complexity: keep(selection.complexity, model.supportedComplexities),
+    complexity: video ? null : keep(selection.complexity, model.supportedComplexities),
     format,
     frameCount: gif ? selection.frameCount : null,
     frameDurationMs: gif ? selection.frameDurationMs : null,
+    durationSeconds:
+      video && selection.durationSeconds !== null && model.supportedDurations?.includes(selection.durationSeconds)
+        ? selection.durationSeconds
+        : null,
   };
 }
 
@@ -137,11 +149,14 @@ export function rendererSubmenus(
     format: React.ReactNode;
     frames: React.ReactNode;
     speed: React.ReactNode;
+    duration?: React.ReactNode;
   },
 ): SubmenuConfig[] {
   const submenus: SubmenuConfig[] = [];
   const formats = FORMAT_OPTIONS.filter(
-    (option) => option.value === "png" || model?.supportedFormats?.includes(option.value),
+    (option) =>
+      (option.value === "png" && !isVideoRenderer(model)) ||
+      model?.supportedFormats?.includes(option.value as RenderFormat),
   );
   if (formats.length > 1) {
     submenus.push({
@@ -149,17 +164,22 @@ export function rendererSubmenus(
       label: "Format",
       options: formats,
       value: selection.format ?? "png",
-      onChange: (value) => onChange({ ...selection, format: value === "svg" || value === "gif" ? value : null }),
+      onChange: (value) =>
+        onChange({ ...selection, format: value === "svg" || value === "gif" || value === "mp4" ? value : null }),
     });
   }
-  const quality = QUALITY_OPTIONS.filter((option) => model?.supportedQualities?.includes(option.value));
-  const resolution = selection.format
-    ? []
-    : RESOLUTION_OPTIONS.filter((option) => model?.supportedResolutions?.includes(option.value));
+  const video = selection.format === "mp4";
+  const quality = (video ? [] : QUALITY_OPTIONS).filter((option) => model?.supportedQualities?.includes(option.value));
+  const resolution =
+    selection.format && !video
+      ? []
+      : RESOLUTION_OPTIONS.filter((option) => model?.supportedResolutions?.includes(option.value));
   const background = selection.format
     ? []
     : BACKGROUND_OPTIONS.filter((option) => model?.supportedBackgrounds?.includes(option.value));
-  const complexity = COMPLEXITY_OPTIONS.filter((option) => model?.supportedComplexities?.includes(option.value));
+  const complexity = (video ? [] : COMPLEXITY_OPTIONS).filter((option) =>
+    model?.supportedComplexities?.includes(option.value),
+  );
   if (quality.length) {
     submenus.push({
       icon: icons.quality,
@@ -177,7 +197,7 @@ export function rendererSubmenus(
       label: "Resolution",
       options: resolution,
       value: selection.resolution,
-      onChange: (value) => onChange({ ...selection, resolution: value as ImageResolution | null }),
+      onChange: (value) => onChange({ ...selection, resolution: value as RenderResolution | null }),
       allowDeselect: true,
       defaultLabel: "Auto",
     });
@@ -200,6 +220,17 @@ export function rendererSubmenus(
       options: complexity,
       value: selection.complexity,
       onChange: (value) => onChange({ ...selection, complexity: value as ImageComplexity | null }),
+      allowDeselect: true,
+      defaultLabel: "Auto",
+    });
+  }
+  if (video && model?.supportedDurations?.length) {
+    submenus.push({
+      icon: icons.duration ?? icons.speed,
+      label: "Duration",
+      options: model.supportedDurations.map((seconds) => ({ value: String(seconds), label: `${seconds}s` })),
+      value: selection.durationSeconds === null ? null : String(selection.durationSeconds),
+      onChange: (value) => onChange({ ...selection, durationSeconds: value === null ? null : Number(value) }),
       allowDeselect: true,
       defaultLabel: "Auto",
     });

@@ -20,6 +20,7 @@ interface StoredImageMeta {
   height?: number;
   /** MIME type of image.png's bytes; opened photos keep their own encoding. */
   contentType?: string;
+  duration?: number;
   versions?: ImageVersion[];
   recipe?: unknown;
 }
@@ -54,6 +55,8 @@ export function hydrateImage(id: string, meta: StoredImageMeta, data: string): I
     data,
     width: meta.width,
     height: meta.height,
+    contentType: meta.contentType,
+    duration: meta.duration,
     versions,
     recipe: meta.recipe === undefined ? DEFAULTS : normalizeRecipe(meta.recipe),
   };
@@ -78,7 +81,14 @@ async function writeImage(image: Image): Promise<void> {
     // is a small metadata write. The superseded pixels move to versions/ so
     // the history can be revisited.
     let contentType = existing?.contentType;
-    if (previousId !== nextId) {
+    const video = image.contentType === "video/mp4";
+    if (video && previousId !== nextId) {
+      if (!image.blob?.size) throw new Error("The video has no content to save");
+      await opfs.writeBlob(`${imagePath}/video.mp4`, image.blob);
+      if (image.data) await opfs.writeBlob(`${imagePath}/poster.jpg`, opfs.dataUrlToBlob(image.data));
+      contentType = "video/mp4";
+    }
+    if (!video && previousId !== nextId) {
       if (existing && previousId && image.versions.some((version) => version.id === previousId)) {
         const previous = await opfs.readBlob(`${imagePath}/image.png`);
         if (previous) await opfs.writeBlob(`${imagePath}/versions/${previousId}.png`, previous);
@@ -102,6 +112,7 @@ async function writeImage(image: Image): Promise<void> {
       width: image.width,
       height: image.height,
       contentType,
+      duration: image.duration,
       versions: image.versions,
       recipe: image.recipe,
     };
@@ -139,6 +150,15 @@ export async function loadImage(id: string): Promise<Image | undefined> {
     const meta = await opfs.readJson<StoredImageMeta>(`${imagePath}/metadata.json`);
     if (!meta) return undefined;
 
+    if (meta.contentType === "video/mp4") {
+      const video = await opfs.readBlob(`${imagePath}/video.mp4`);
+      if (!video) throw new Error("Stored video is missing");
+      const poster = await opfs.readBlob(`${imagePath}/poster.jpg`);
+      return {
+        ...hydrateImage(id, meta, poster ? await opfs.blobToDataUrl(poster, "image/jpeg") : ""),
+        blob: new Blob([video], { type: "video/mp4" }),
+      };
+    }
     // Legacy files used .bin instead of .png. Stamp image/png so a legacy
     // read-back type (application/macbinary on Safari) can't leak into the data URL.
     const blob = (await opfs.readBlob(`${imagePath}/image.png`)) ?? (await opfs.readBlob(`${imagePath}/image.bin`));

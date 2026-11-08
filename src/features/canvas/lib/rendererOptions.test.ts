@@ -75,3 +75,40 @@ describe("render selection", () => {
     expect(next.format).toBeNull();
   });
 });
+
+describe("video render selection", () => {
+  const omni = withRendererFallback({ id: "google/gemini-omni-1.2-flash", name: "Omni", type: "renderer" });
+  it("selects MP4 and keeps video resolution and duration without image controls", () => {
+    const selection = constrainSelection(omni, {
+      ...EMPTY_SELECTION,
+      quality: "high",
+      background: "transparent",
+      resolution: "720p",
+      durationSeconds: 15,
+      frameCount: 16,
+      frameDurationMs: 100,
+    });
+    expect(selection).toMatchObject({
+      format: "mp4",
+      resolution: "720p",
+      durationSeconds: 15,
+      quality: null,
+      background: null,
+      frameCount: null,
+      frameDurationMs: null,
+    });
+    expect(labels(omni, selection)).toEqual(["Resolution", "Duration"]);
+    expect(constrainSelection(legacy, selection)).toMatchObject({
+      format: null,
+      durationSeconds: null,
+      resolution: null,
+    });
+  });
+  it("drops durations and resolutions the model cannot honor", () => {
+    expect(constrainSelection(omni, { ...EMPTY_SELECTION, durationSeconds: 16, resolution: "2K" })).toMatchObject({
+      format: "mp4",
+      durationSeconds: null,
+      resolution: null,
+    });
+  });
+});

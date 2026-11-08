@@ -1,15 +1,19 @@
 import { FolderOpen, ImagePlus, Info, Loader2, PlusIcon, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CreateImageDialog, type GenerationRequest } from "@/features/canvas/components/CreateImageDialog";
-import { Editor, NAV_BUTTON_CLASS } from "@/features/canvas/components/Editor";
-import { Filmstrip, type PendingGeneration } from "@/features/canvas/components/Filmstrip";
+import { Editor } from "@/features/canvas/components/Editor";
+import { CanvasSidebar } from "@/features/canvas/components/CanvasSidebar";
+import { Filmstrip } from "@/features/canvas/components/Filmstrip";
 import { Viewer } from "@/features/canvas/components/Viewer";
 import { useImageStyles } from "@/features/canvas/hooks/useImageStyles";
 import { newVersion, useImages } from "@/features/canvas/hooks/useImages";
 import { useRendererModels } from "@/features/canvas/hooks/useRendererModels";
+import { useSwipe, type SwipeDirection } from "@/features/canvas/hooks/useSwipe";
 import { fileTitle, imageDimensions, imageFiles, viewOnlyFormat } from "@/features/canvas/lib/images";
+import { videoMetadata } from "@/features/canvas/lib/video";
+import { isVideoRenderer } from "@/shared/lib/models";
 import { aspectRatioValue } from "@/features/canvas/lib/rendererOptions";
-import type { Image } from "@/features/canvas/types/canvas";
+import type { Image, PendingGeneration } from "@/features/canvas/types/canvas";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
@@ -18,8 +22,10 @@ import { confirm } from "@/shared/lib/confirm";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
+import { navButtonClassName } from "@/shared/ui/actionButton";
 import type { Model } from "@/shared/types/chat";
 import { useNavigation } from "@/shell/hooks/useNavigation";
+import { useSidebar } from "@/shell/hooks/useSidebar";
 
 function CanvasBackground() {
   const mask = "radial-gradient(ellipse at center, black 40%, transparent 85%)";
@@ -73,22 +79,28 @@ async function runGeneration(
 ) {
   try {
     const client = getConfig().client;
-    const blob = await client.generateImage(request.model.id, request.prompt, request.references, {
+    const blob = await client.render(request.model.id, request.prompt, request.references, {
       aspectRatio: request.selection.aspect ?? undefined,
       quality: request.selection.quality ?? undefined,
       resolution: request.selection.resolution ?? undefined,
       background: request.selection.background ?? undefined,
       complexity: request.selection.complexity ?? undefined,
       format: request.selection.format ?? undefined,
+      durationSeconds: request.selection.durationSeconds ?? undefined,
       frameCount: request.selection.frameCount ?? undefined,
       frameDurationMs: request.selection.frameDurationMs ?? undefined,
     });
-    const [data, size] = await Promise.all([readAsDataURL(blob), imageDimensions(blob)]);
+    const video = request.selection.format === "mp4";
+    if (video && blob.type !== "video/mp4") throw new Error("The renderer did not return an MP4 video");
+    const { data, ...size } = video
+      ? await videoMetadata(blob)
+      : await Promise.all([readAsDataURL(blob), imageDimensions(blob)]).then(([data, size]) => ({ data, ...size }));
     const image = await createImage({
       prompt: request.prompt,
       model: request.model.id,
       data,
       ...size,
+      ...(video && { blob, contentType: blob.type }),
       versions: [newVersion("generated", request.prompt, request.model.id)],
     });
     onDone(image);
@@ -122,6 +134,7 @@ async function importPhotos(files: File[], createImage: CreateImage): Promise<Im
 export function CanvasPage() {
   const config = getConfig();
   const { setRightActions } = useNavigation();
+  const { setSidebarContent } = useSidebar();
   const compact = !useBreakpoint("md");
   const { images, isLoaded, createImage, updateImage, deleteImage } = useImages();
   const models = useRendererModels();
@@ -194,7 +207,7 @@ export function CanvasPage() {
           setSelectedId((current) => (current === id || current === null ? image.id : current));
         },
         (message) => {
-          notify.error("Image generation failed", message);
+          notify.error("Generation failed", message);
           setPending((current) =>
             current.map((existing) =>
               existing.id === id ? { ...existing, status: "error", error: message } : existing,
@@ -222,7 +235,7 @@ export function CanvasPage() {
     async (id: string) => {
       const image = images.find((existing) => existing.id === id);
       const confirmed = await confirm({
-        title: "Delete this image?",
+        title: image?.contentType === "video/mp4" ? "Delete this video?" : "Delete this image?",
         message: image?.title || image?.prompt || "The image and its adjustments will be removed.",
         confirmLabel: "Delete",
         danger: true,
@@ -235,16 +248,69 @@ export function CanvasPage() {
   const openCreate = useCallback(() => setCreateOpen(true), []);
   const openPhotoPicker = useCallback(() => fileInputRef.current?.click(), []);
 
-  // The editor owns the top-bar actions while an image is open.
+  // Phones browse the library from the drawer; desktop keeps the filmstrip.
   useEffect(() => {
-    if (selectedImage) return;
+    if (!compact) return;
+    setSidebarContent(
+      <CanvasSidebar
+        images={images}
+        pending={pending}
+        selectedId={selectedId}
+        isLoaded={isLoaded}
+        importing={importing}
+        onSelect={setSelectedId}
+        onDelete={(id) => void removeImage(id)}
+        onDismissPending={dismissPending}
+        onRetryPending={retryPending}
+        onNew={openCreate}
+        onOpenPhoto={openPhotoPicker}
+      />,
+    );
+    return () => setSidebarContent(null);
+  }, [
+    compact,
+    images,
+    pending,
+    selectedId,
+    isLoaded,
+    importing,
+    removeImage,
+    dismissPending,
+    retryPending,
+    openCreate,
+    openPhotoPicker,
+    setSidebarContent,
+  ]);
+
+  // Phones: a swipe across the stage steps through the library in filmstrip order.
+  const step = useCallback(
+    (direction: SwipeDirection) => {
+      const order = [...pending.map((item) => item.id), ...images.map((image) => image.id)];
+      const index = order.indexOf(selectedId ?? "");
+      const next = order[index + direction];
+      if (index !== -1 && next) setSelectedId(next);
+    },
+    [pending, images, selectedId],
+  );
+  const onSwipe = compact ? step : undefined;
+  const placeholderSwipe = useSwipe(onSwipe);
+
+  // "New" is the only top-bar action, as on the chat and translate pages; the
+  // editor and viewer keep their own controls in a toolbar over the stage.
+  useEffect(() => {
     setRightActions(
-      <button type="button" className={NAV_BUTTON_CLASS} onClick={openCreate} title="New image" aria-label="New image">
+      <button
+        type="button"
+        className={navButtonClassName}
+        onClick={openCreate}
+        title="New creation"
+        aria-label="New creation"
+      >
         <PlusIcon size={20} />
       </button>,
     );
     return () => setRightActions(null);
-  }, [selectedImage, setRightActions, openCreate]);
+  }, [setRightActions, openCreate]);
 
   // Dropped or pasted photos open as new images.
   const isDragging = useDropZone(containerRef, openPhotos);
@@ -286,9 +352,9 @@ export function CanvasPage() {
               <div className="rounded-2xl bg-white/70 p-4 text-neutral-500 shadow-sm ring-1 ring-black/5 dark:bg-neutral-900/70 dark:text-neutral-400 dark:ring-white/10">
                 <Sparkles size={28} />
               </div>
-              <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Create or edit an image</h1>
+              <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Create images and videos</h1>
               <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                Generate from a prompt, or open a photo to adjust light, color, and effects.
+                Generate an image or video from a prompt, or open a photo to adjust light, color, and effects.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
                 <button
@@ -298,7 +364,7 @@ export function CanvasPage() {
                   className="flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
                 >
                   <PlusIcon size={16} />
-                  New image
+                  New creation
                 </button>
                 <button
                   type="button"
@@ -320,19 +386,23 @@ export function CanvasPage() {
           </div>
         ) : (
           <>
-            {selectedImage && viewOnlyFormat(selectedImage.data) ? (
-              <Viewer key={selectedImage.id} image={selectedImage} onNew={openCreate} />
+            {selectedImage && viewOnlyFormat(selectedImage.data, selectedImage.contentType) ? (
+              <Viewer key={selectedImage.id} image={selectedImage} onSwipe={onSwipe} />
             ) : selectedImage ? (
               <Editor
                 key={selectedImage.id}
                 image={selectedImage}
                 updateImage={updateImage}
-                model={selectedModel}
+                model={
+                  isVideoRenderer(selectedModel)
+                    ? (models.find((model) => !isVideoRenderer(model)) ?? null)
+                    : selectedModel
+                }
                 compact={compact}
-                onNew={openCreate}
+                onSwipe={onSwipe}
               />
             ) : (
-              <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+              <div className="flex min-h-0 flex-1 items-center justify-center p-4" {...placeholderSwipe}>
                 {selectedPending ? (
                   <GeneratingPlaceholder item={selectedPending} onRetry={retryPending} onDismiss={dismissPending} />
                 ) : (
@@ -340,18 +410,20 @@ export function CanvasPage() {
                 )}
               </div>
             )}
-            <Filmstrip
-              images={images}
-              pending={pending}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              onDelete={(id) => void removeImage(id)}
-              onDismissPending={dismissPending}
-              onRetryPending={retryPending}
-              onNew={openCreate}
-              onOpenPhoto={openPhotoPicker}
-              importing={importing}
-            />
+            {!compact && (
+              <Filmstrip
+                images={images}
+                pending={pending}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                onDelete={(id) => void removeImage(id)}
+                onDismissPending={dismissPending}
+                onRetryPending={retryPending}
+                onNew={openCreate}
+                onOpenPhoto={openPhotoPicker}
+                importing={importing}
+              />
+            )}
           </>
         )}
       </main>
@@ -406,13 +478,13 @@ function GeneratingPlaceholder({
         )}
         style={{ aspectRatio: aspect }}
         role="status"
-        aria-label={item.status === "running" ? "Generating image" : "Generation failed"}
+        aria-label={item.status === "running" ? "Generating media" : "Generation failed"}
       >
         {item.status === "running" ? (
           <Loader2 size={28} className="animate-spin text-neutral-400 dark:text-neutral-500" />
         ) : (
           <div className="flex flex-col items-center gap-3 p-6 text-center">
-            <p className="text-sm text-red-700 dark:text-red-300">{item.error || "Image generation failed"}</p>
+            <p className="text-sm text-red-700 dark:text-red-300">{item.error || "Generation failed"}</p>
             <div className="flex gap-2">
               <button
                 type="button"

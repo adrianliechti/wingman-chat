@@ -1,6 +1,6 @@
 import { ImageRenderer } from "./gl/renderer";
 import type { Adjustments } from "./recipe";
-import type { ImageFormat } from "@/shared/types/chat";
+import type { RenderFormat } from "@/shared/types/chat";
 
 export type ExportFormat = "png" | "jpeg" | "webp";
 
@@ -124,7 +124,7 @@ export async function renderExport(
 }
 
 /** Filesystem-safe name from a title or prompt, e.g. "misty-forest-at-dawn.png". */
-export function exportFilename(base: string | undefined, format: ExportFormat | ImageFormat): string {
+export function exportFilename(base: string | undefined, format: ExportFormat | RenderFormat): string {
   const slug = (base ?? "")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, "-")

@@ -488,3 +488,21 @@ describe("sameModelSettings", () => {
     expect(sameModelSettings(luna, { ...luna, id: "sol" })).toBe(false);
   });
 });
+
+describe("Gemini Omni model mapping", () => {
+  it.each(["gemini-omni-1.2-flash", "google/gemini-omni-1.2-flash"])(
+    "maps %s to a video renderer with versioned capabilities",
+    (id) => {
+      expect(modelType(id)).toBe("renderer");
+      expect(rendererCapabilities(id)).toEqual({
+        formats: ["mp4"],
+        resolutions: ["360p", "720p", "1080p", "4K"],
+        aspectRatios: ["16:9", "9:16"],
+        durations: Array.from({ length: 13 }, (_, i) => i + 3),
+      });
+    },
+  );
+  it("does not apply 1.2 duration limits to other Omni versions", () => {
+    expect(rendererCapabilities("google/gemini-omni-1.1-flash")).toEqual({ formats: ["mp4"] });
+  });
+});

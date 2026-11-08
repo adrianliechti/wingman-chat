@@ -1,5 +1,5 @@
 import { svgSize } from "@/shared/lib/svg";
-import type { ImageFormat } from "@/shared/types/chat";
+import type { RenderFormat } from "@/shared/types/chat";
 
 /**
  * Pixel size of an encoded image. SVG is measured from its markup, since
@@ -34,7 +34,8 @@ async function decodedSize(blob: Blob): Promise<{ width: number; height: number 
  * Vector and animated images are shown as they are: the photo editor would
  * rasterize an SVG and freeze a GIF on its first frame.
  */
-export function viewOnlyFormat(data: string): ImageFormat | null {
+export function viewOnlyFormat(data: string, contentType?: string): RenderFormat | null {
+  if (contentType === "video/mp4") return "mp4";
   const type = /^data:([^;,]+)/.exec(data)?.[1]?.toLowerCase();
   return type === "image/svg+xml" ? "svg" : type === "image/gif" ? "gif" : null;
 }

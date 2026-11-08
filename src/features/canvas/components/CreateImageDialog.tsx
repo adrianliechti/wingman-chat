@@ -101,7 +101,8 @@ export function CreateImageDialog({
   const constrained = useMemo(() => constrainSelection(model, selection), [model, selection]);
   const aspects = supportedAspects(model);
   // SVG and GIF are drawn from the prompt alone; references stay for PNG.
-  const textOnly = constrained.format !== null;
+  const video = constrained.format === "mp4";
+  const textOnly = constrained.format === "svg" || constrained.format === "gif";
 
   const addReferences = useCallback(async (blobs: Blob[]) => {
     if (!blobs.length) return;
@@ -222,7 +223,7 @@ export function CreateImageDialog({
                 <DialogPanel className="flex max-h-[calc(var(--app-height)-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-neutral-200/60 bg-white/95 shadow-2xl backdrop-blur-xl dark:border-neutral-700/60 dark:bg-neutral-900/95">
                   <div className="flex shrink-0 items-center justify-between border-b border-neutral-200/60 px-5 py-3 dark:border-neutral-800/60">
                     <DialogTitle className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                      New image
+                      {video ? "New video" : "New image"}
                     </DialogTitle>
                     <button
                       type="button"
@@ -242,11 +243,13 @@ export function CreateImageDialog({
                         rows={3}
                         value={text}
                         placeholder={
-                          constrained.format === "gif"
-                            ? "Describe the animation you want…"
-                            : constrained.format === "svg"
-                              ? "Describe the illustration you want…"
-                              : "Describe the image you want…"
+                          video
+                            ? "Describe the video you want…"
+                            : constrained.format === "gif"
+                              ? "Describe the animation you want…"
+                              : constrained.format === "svg"
+                                ? "Describe the illustration you want…"
+                                : "Describe the image you want…"
                         }
                         onChange={(event) => setText(event.target.value)}
                         onKeyDown={(event) => {

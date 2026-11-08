@@ -8,6 +8,7 @@ describe("canvas images", () => {
     expect(viewOnlyFormat("data:image/gif;base64,R0lGOD")).toBe("gif");
     expect(viewOnlyFormat("data:image/png;base64,iVBOR")).toBeNull();
     expect(viewOnlyFormat("")).toBeNull();
+    expect(viewOnlyFormat("data:image/jpeg;base64,cG9zdGVy", "video/mp4")).toBe("mp4");
   });
 
   it("measures SVG from its markup instead of decoding it", async () => {

@@ -204,7 +204,7 @@ test("landscape safe areas keep the composer and navigation clear of cutouts", a
 
 test("image prompt keeps Generate reachable and ignores IME confirmation", async ({ page }, info) => {
   await open(page, "?canvas");
-  await page.getByRole("button", { name: "New image" }).first().click();
+  await page.getByRole("button", { name: "New creation" }).first().click();
   const input = page.getByRole("textbox", { name: "Prompt" });
   await input.fill("山と海");
   await input.dispatchEvent("keydown", { key: "Enter", code: "Enter", isComposing: true, keyCode: 229 });

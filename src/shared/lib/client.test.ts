@@ -368,6 +368,22 @@ describe("raw request lifetime", () => {
     expect(body.get("frame_duration_ms")).toBeNull();
   });
 
+  it("negotiates MP4 and sends duration in seconds while preserving GIF wire units", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("video", { headers: { "content-type": "video/mp4" } }));
+    const blob = await new Client().render("gemini-omni-1.2-flash", "A fox", [], {
+      format: "mp4",
+      durationSeconds: 15,
+      resolution: "720p",
+    });
+    expect(blob.type).toBe("video/mp4");
+    const [, init] = fetchMock.mock.calls.at(-1)!;
+    expect(new Headers(init.headers).get("Accept")).toBe("video/mp4");
+    const body = init.body as FormData;
+    expect(body.get("duration_seconds")).toBe("15");
+    expect(body.get("resolution")).toBe("720p");
+    expect(body.get("frame_duration_ms")).toBeNull();
+  });
+
   function stalledBody(status = 200) {
     fetchMock.mockImplementationOnce(
       async (_url: URL, options: RequestInit) =>

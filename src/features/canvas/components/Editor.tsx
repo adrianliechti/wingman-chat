@@ -5,7 +5,7 @@ import {
   History,
   Palette,
   PanelRight,
-  PlusIcon,
+  SlidersHorizontal,
   Redo2,
   RotateCcw,
   Sparkles,
@@ -33,7 +33,6 @@ import { notify } from "@/shared/lib/notify";
 import { decodeDataURL, downloadBlob, readAsDataURL } from "@/shared/lib/utils";
 import type { Model } from "@/shared/types/chat";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
-import { useNavigation } from "@/shell/hooks/useNavigation";
 import { Inspector, InspectorAction, type InspectorTab, type InspectorTabMeta } from "./Inspector";
 import { CropOverlay } from "./overlays/CropOverlay";
 import { MaskOverlay } from "./overlays/MaskOverlay";
@@ -43,7 +42,8 @@ import { EffectsPanel } from "./panels/EffectsPanel";
 import { LightPanel } from "./panels/LightPanel";
 import { DEFAULT_SELECTION_SETTINGS, RetouchPanel, type SelectionSettings } from "./panels/RetouchPanel";
 import { VersionsPanel } from "./panels/VersionsPanel";
-import { Stage } from "./Stage";
+import { Stage, StageToolbar, TOOLBAR_ACTIVE_CLASS, TOOLBAR_BUTTON_CLASS } from "./Stage";
+import type { SwipeDirection } from "../hooks/useSwipe";
 
 const TABS: InspectorTabMeta[] = [
   { id: "light", label: "Light", icon: <Sun size={16} /> },
@@ -54,9 +54,6 @@ const TABS: InspectorTabMeta[] = [
   { id: "versions", label: "Versions", icon: <History size={16} /> },
 ];
 
-export const NAV_BUTTON_CLASS =
-  "p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out disabled:opacity-30 disabled:pointer-events-none";
-
 interface EditorProps {
   image: Image;
   updateImage: (id: string, updater: (image: Image) => Image) => void;
@@ -64,7 +61,8 @@ interface EditorProps {
   model: Model | null;
   /** Phone layout: inspector as a bottom sheet, fewer nav actions. */
   compact: boolean;
-  onNew: () => void;
+  /** Phones: swipe across the stage steps to the previous/next image. */
+  onSwipe?: (direction: SwipeDirection) => void;
 }
 
 interface Pixels {
@@ -112,8 +110,7 @@ async function loadVersion(image: Image, versionId: string): Promise<Pixels> {
  * Stage plus inspector for one image, owning its recipe state, the top-bar
  * actions and the editing shortcuts. Mount it keyed by image id.
  */
-export function Editor({ image, updateImage, model, compact, onNew }: EditorProps) {
-  const { setRightActions } = useNavigation();
+export function Editor({ image, updateImage, model, compact, onSwipe }: EditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [versionPreview, setVersionPreview] = useState<{ id: string; pixels: Pixels; recipe: Adjustments } | null>(
     null,
@@ -344,61 +341,6 @@ export function Editor({ image, updateImage, model, compact, onNew }: EditorProp
     [image.id, updateImage],
   );
 
-  useEffect(() => {
-    setRightActions(
-      <>
-        <button type="button" className={NAV_BUTTON_CLASS} onClick={onNew} title="New image" aria-label="New image">
-          <PlusIcon size={20} />
-        </button>
-        <button
-          type="button"
-          className={cn(NAV_BUTTON_CLASS, compare && "text-blue-600 dark:text-blue-400")}
-          onClick={() => setCompare((value) => !value)}
-          disabled={!editable}
-          aria-pressed={compare}
-          title="Show original (hold \)"
-          aria-label="Show original"
-        >
-          <Eye size={20} />
-        </button>
-        <DropdownMenu
-          anchor="bottom end"
-          trigger={
-            <MenuButton
-              className={NAV_BUTTON_CLASS}
-              disabled={exporting || !!previewLoading}
-              title="Export"
-              aria-label="Export"
-            >
-              <Download size={20} className={exporting ? "animate-pulse" : undefined} />
-            </MenuButton>
-          }
-        >
-          {EXPORT_FORMATS.map((format) => (
-            <DropdownMenuItem
-              key={format.value}
-              description={format.description}
-              onClick={() => exportAs(format.value)}
-            >
-              {format.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenu>
-        <button
-          type="button"
-          className={cn(NAV_BUTTON_CLASS, panelOpen && "text-blue-600 dark:text-blue-400")}
-          onClick={() => setPanelOpen((value) => !value)}
-          aria-pressed={panelOpen}
-          title="Adjustments"
-          aria-label="Adjustments"
-        >
-          <PanelRight size={20} />
-        </button>
-      </>,
-    );
-    return () => setRightActions(null);
-  }, [setRightActions, onNew, compare, editable, exporting, exportAs, panelOpen, previewLoading]);
-
   // Shortcuts: ⌘Z / ⇧⌘Z for the recipe, hold "\" to peek at the original,
   // C and R toggle crop and retouch, Escape returns to the sliders.
   useEffect(() => {
@@ -490,6 +432,56 @@ export function Editor({ image, updateImage, model, compact, onNew }: EditorProp
         alt={image.title || image.prompt || "Image"}
         badge={stageBadge}
         className="p-4"
+        onSwipe={cropping || retouching ? undefined : onSwipe}
+        toolbar={
+          <StageToolbar>
+            <button
+              type="button"
+              className={cn(TOOLBAR_BUTTON_CLASS, compare && TOOLBAR_ACTIVE_CLASS)}
+              onClick={() => setCompare((value) => !value)}
+              disabled={!editable}
+              aria-pressed={compare}
+              title="Show original (hold \)"
+              aria-label="Show original"
+            >
+              <Eye size={18} />
+            </button>
+            <DropdownMenu
+              anchor="top"
+              trigger={
+                <MenuButton
+                  className={TOOLBAR_BUTTON_CLASS}
+                  disabled={exporting || !!previewLoading}
+                  title="Export"
+                  aria-label="Export"
+                >
+                  <Download size={18} className={exporting ? "animate-pulse" : undefined} />
+                </MenuButton>
+              }
+            >
+              {EXPORT_FORMATS.map((format) => (
+                <DropdownMenuItem
+                  key={format.value}
+                  description={format.description}
+                  onClick={() => exportAs(format.value)}
+                >
+                  {format.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenu>
+            <button
+              type="button"
+              className={cn(TOOLBAR_BUTTON_CLASS, panelOpen && TOOLBAR_ACTIVE_CLASS)}
+              onClick={() => setPanelOpen((value) => !value)}
+              aria-pressed={panelOpen}
+              title="Adjustments"
+              aria-label="Adjustments"
+            >
+              {/* Phones show the inspector as a sheet below the image, not a side panel. */}
+              {compact ? <SlidersHorizontal size={18} /> : <PanelRight size={18} />}
+            </button>
+          </StageToolbar>
+        }
       >
         {cropping && editable && (
           <CropOverlay
