@@ -315,6 +315,32 @@ configuration at `/config.json`; local frontend development uses `public/config.
 
 - `TITLE`, `DISCLAIMER`, `BRIDGE_URL`
 
+The public `/manifest.json` endpoint reads `dist/manifest.json` by default, using
+shared artwork. `?color-scheme=light` selects `dist/manifest_light.json`, and
+`?color-scheme=dark` selects `dist/manifest_dark.json`. If the selected file is
+missing, Go falls back to the common manifest. Go applies `TITLE` to `name` and
+`short_name`, preserving the icons, colors, install identity, and other fields.
+Mounted replacements are read on the next request. Vite development and preview
+serve the common manifest regardless of the query. All three files are standard
+web manifests; keep their `id`, `start_url`, and `scope` identical.
+
+Run `npm run generate:app-icons` after changing `public/icon.svg` to regenerate
+the PNG favicon fallback and light/dark 192/512-pixel install icons (requires Playwright
+Chromium). The same SVG is used directly for the favicon and chat logo; it has no
+light/dark artwork differences. Run `npm run generate:app-icons -- --check` to verify
+that the generated PNGs are current.
+
+The page selects the manifest and Apple touch icon using the OS appearance at install
+time, independently of the in-app theme. Explicit dark PNGs avoid relying on the
+installer to evaluate the SVG's media query. Existing Dock/Home Screen icons may keep
+their saved appearance; reinstalling or replacing the icon may be required. Automatic
+switching after installation depends on the browser and launcher.
+
+If an authentication proxy protects the app, allow unauthenticated GET/HEAD requests
+to `/manifest.json` (including its `color-scheme` query), `/icon.svg`, `/icon.png`,
+and `/icon_maskable_{light,dark}_{192,512}.png`. Keep these exceptions anchored to
+exact asset paths. Remove obsolete asset exceptions after deploying the new names.
+
 **Account menu links**
 
 Add any number of links to `links.yaml` in the server's working directory, in display order:

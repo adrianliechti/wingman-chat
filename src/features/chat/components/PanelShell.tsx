@@ -77,7 +77,7 @@ export function PanelShell({
           </div>
         </button>
       )}
-      <div className="flex h-full flex-col overflow-hidden border-l border-black/10 max-md:bg-neutral-50 max-md:pt-(--safe-top) dark:border-white/10 dark:max-md:bg-neutral-950">
+      <div className="flex h-full flex-col overflow-hidden pl-(--safe-left) pr-(--safe-right) border-l border-black/10 max-md:bg-neutral-50 max-md:pt-(--safe-top) dark:border-white/10 dark:max-md:bg-neutral-950">
         {onClose && !ownsHeader && (
           <div className="flex h-13 shrink-0 items-center px-2 md:hidden">
             <button
@@ -97,7 +97,7 @@ export function PanelShell({
   return (
     <div
       className={cn(
-        "fixed right-0 max-w-none md:top-14 md:bottom-0",
+        "fixed right-0 max-w-none bottom-(--app-keyboard)",
         !resizing && "transition-[translate] duration-500 ease-in-out",
         className,
         // Phones: the panel is a full-screen page above the floating top controls.
@@ -106,8 +106,7 @@ export function PanelShell({
       style={{
         width: compact ? undefined : `${widthVw}vw`,
         translate,
-        top: compact ? 0 : undefined,
-        bottom: compact ? 0 : undefined,
+        top: compact ? "var(--app-viewport-top)" : "calc(var(--app-viewport-top) + 3.5rem)",
       }}
     >
       {keepMounted ? (

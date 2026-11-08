@@ -651,7 +651,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
           <div className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}>
             {isRealtimeSelected ? (
               <textarea
-                className="block w-full resize-none border-0 bg-transparent px-4 py-3 md:p-4 max-h-[40vh] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
+                className="block w-full resize-none border-0 bg-transparent px-4 py-3 md:p-4 max-h-[calc(var(--app-height)*0.4)] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
                 value={voiceTextInput}
                 rows={1}
                 aria-label="Voice text input"
@@ -660,6 +660,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                 readOnly={!isListening}
                 onChange={(e) => isListening && setVoiceTextInput(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                   if (isListening && e.key === "Enter" && !e.shiftKey && voiceTextInput.trim()) {
                     e.preventDefault();
                     sendVoiceText(voiceTextInput.trim());
@@ -671,7 +672,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
               <>
                 <textarea
                   ref={contentInputRef}
-                  className="block w-full resize-none border-0 bg-transparent px-4 py-3 md:p-4 max-h-[40vh] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
+                  className="block w-full resize-none border-0 bg-transparent px-4 py-3 md:p-4 max-h-[calc(var(--app-height)*0.4)] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
                   value={content}
                   rows={1}
                   inputMode="text"

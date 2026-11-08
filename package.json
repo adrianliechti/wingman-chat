@@ -28,6 +28,7 @@
     "check:react-compiler": "node scripts/check-react-compiler.mjs",
     "check:skills": "node scripts/validate-skills.mjs && npm run check:ui-reference",
     "generate:ui-reference": "node scripts/generate-inline-ui-reference.mjs",
+    "generate:app-icons": "node scripts/generate-app-icons.mjs",
     "check:ui-reference": "node scripts/generate-inline-ui-reference.mjs --check",
     "preview": "vp preview"
   },

@@ -94,8 +94,7 @@ export function TranslatePage() {
     <div className="relative flex h-full w-full flex-col overflow-hidden pt-(--app-topbar) md:pt-14">
       <main
         ref={containerRef}
-        // Phones: shrink above the on-screen keyboard (see useVisualViewport) so the pane footers stay reachable.
-        className="relative flex min-h-0 w-full grow flex-col overflow-hidden max-md:mb-(--app-keyboard)"
+        className="relative flex min-h-0 w-full grow flex-col overflow-hidden"
       >
         {(isDragging || fetchingDrive) && acceptedFiles.length > 0 && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-neutral-50/80 backdrop-blur-sm dark:bg-neutral-950/60">

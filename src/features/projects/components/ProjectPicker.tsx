@@ -70,7 +70,7 @@ export function MoveChatDialog({ chatId, onClose }: { chatId: string; onClose: (
   return (
     <Dialog open onClose={onClose} className="relative z-50">
       <div className="fixed inset-0 bg-black/30" />
-      <div className="fixed inset-0 grid place-items-center p-4">
+      <div className="fixed inset-x-0 app-viewport grid place-items-center p-4">
         <DialogPanel className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-5 dark:bg-neutral-950">
           <DialogTitle className="font-medium">Move chat to project</DialogTitle>
           <select

@@ -386,7 +386,7 @@ export function MemorySection({ agent }: { agent: Agent }) {
           >
             <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
           </Transition.Child>
-          <div className="fixed inset-0 overflow-y-auto">
+          <div className="fixed inset-x-0 app-viewport overflow-y-auto">
             <div className="flex min-h-full items-end justify-center sm:items-center sm:p-4">
               <Transition.Child
                 as={Fragment}
@@ -397,7 +397,7 @@ export function MemorySection({ agent }: { agent: Agent }) {
                 leaveFrom="opacity-100 translate-y-0 sm:scale-100"
                 leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
               >
-                <Dialog.Panel className="relative flex h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white/95 shadow-xl backdrop-blur-xl sm:h-[75dvh] sm:max-w-3xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:bg-neutral-900/95 dark:sm:border-neutral-700/50">
+                <Dialog.Panel className="relative flex h-[calc(var(--app-height)*0.92)] w-full flex-col overflow-hidden rounded-t-2xl bg-white/95 shadow-xl backdrop-blur-xl sm:h-[calc(var(--app-height)*0.75)] sm:max-w-3xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:bg-neutral-900/95 dark:sm:border-neutral-700/50">
                   {/* ── Top bar ── */}
                   <div className="flex h-12 shrink-0 items-center gap-1 border-b border-neutral-200/60 pr-3 pl-3 sm:pl-4 dark:border-neutral-800/60">
                     {detailOnMobile && notes.length > 0 && (

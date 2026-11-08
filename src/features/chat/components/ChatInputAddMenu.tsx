@@ -697,10 +697,10 @@ export function ChatInputAddMenu({
           transition
           className="fixed inset-0 bg-black/40 dark:bg-black/60 duration-200 ease-out data-closed:opacity-0"
         />
-        <div className="fixed inset-x-0 bottom-0">
+        <div className="fixed inset-x-0 bottom-(--app-keyboard)">
           <DialogPanel
             transition
-            className="w-full max-h-[80dvh] flex flex-col rounded-t-[28px] bg-(--glass-bg-strong) backdrop-blur-2xl backdrop-saturate-150 shadow-2xl border-t border-x border-(--glass-border) pb-[max(var(--safe-bottom),0.5rem)] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-closed:translate-y-full"
+            className="w-full max-h-[calc(var(--app-height)*0.8)] flex flex-col rounded-t-[28px] bg-(--glass-bg-strong) backdrop-blur-2xl backdrop-saturate-150 shadow-2xl border-t border-x border-(--glass-border) pb-[max(var(--safe-bottom),0.5rem)] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-closed:translate-y-full"
           >
             {/* Drag handle */}
             <div className="flex justify-center pt-2 pb-1 shrink-0">

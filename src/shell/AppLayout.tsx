@@ -77,7 +77,7 @@ export function AppLayout() {
   const isDesktop = useBreakpoint("md");
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
-  // Keep fixed bottom chrome above the on-screen keyboard on phones.
+  // Share the visible viewport with pages and portaled sheets at every width.
   useVisualViewport();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -137,7 +137,7 @@ export function AppLayout() {
   const hasDrawer = !!sidebarContent || (!isDesktop && showNavigation);
 
   return (
-    <div className="h-dvh w-dvw flex overflow-hidden relative">
+    <div className="h-(--app-height) top-(--app-viewport-top) w-dvw pl-(--safe-left) pr-(--safe-right) flex overflow-hidden relative">
       {/* Backdrop for overlay sidebar when panels are open */}
       <Transition
         show={!!(sidebarContent && hasPanelOpen && showSidebar)}
@@ -162,7 +162,7 @@ export function AppLayout() {
       {hasDrawer && (
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-50 flex w-full flex-col overflow-hidden bg-neutral-100/85 backdrop-blur-xl transition-transform duration-500 ease-in-out md:right-auto dark:bg-neutral-900/85",
+            "fixed app-viewport left-0 z-50 flex w-full flex-col overflow-hidden pl-(--safe-left) pr-(--safe-right) bg-neutral-100/85 backdrop-blur-xl transition-transform duration-500 ease-in-out md:right-auto dark:bg-neutral-900/85",
             // Phones: a frosted page that starts under the status bar and slides with an iOS curve.
             "max-md:bg-(--glass-bg-strong) max-md:pt-(--safe-top) max-md:backdrop-blur-2xl max-md:backdrop-saturate-150 max-md:duration-400 max-md:ease-[cubic-bezier(0.32,0.72,0,1)]",
             showSidebar ? "translate-x-0" : "-translate-x-full",
@@ -250,12 +250,12 @@ export function AppLayout() {
         <nav
           data-app-topbar
           className={cn(
-            "fixed top-0 left-0 right-0 z-30 ease-in-out",
+            "fixed top-(--app-viewport-top) left-0 right-0 z-30 pl-[max(var(--safe-left),0.75rem)] pr-[max(var(--safe-right),0.75rem)] ease-in-out",
             // Desktop: one translucent bar with a hairline.
-            "md:px-3 md:py-2 md:bg-neutral-50/60 md:dark:bg-neutral-950/80 md:backdrop-blur-sm md:border-b md:border-neutral-200 md:dark:border-neutral-800 md:shadow-sm",
+            "md:py-2 md:bg-neutral-50/60 md:dark:bg-neutral-950/80 md:backdrop-blur-sm md:border-b md:border-neutral-200 md:dark:border-neutral-800 md:shadow-sm",
             // Phones: no bar at all. Glass controls float over the page, which scrolls
             // beneath them and fades out under the status bar.
-            "max-md:pointer-events-none max-md:px-3 max-md:pt-[calc(var(--safe-top)+0.5rem)] max-md:pb-2",
+            "max-md:pointer-events-none max-md:pt-[calc(var(--safe-top)+0.5rem)] max-md:pb-2",
             !isSidebarResizing && "transition-[padding] duration-500",
           )}
           style={sidebarPushesContent ? { paddingLeft: sidebarWidth + 12 } : undefined}

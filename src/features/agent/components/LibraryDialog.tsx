@@ -308,7 +308,7 @@ export function LibraryDialog({
           <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
         </Transition.Child>
 
-        <div className="fixed inset-0 overflow-y-auto">
+        <div className="fixed inset-x-0 app-viewport overflow-y-auto">
           <div className="flex min-h-full items-end justify-center sm:items-center sm:p-4">
             <Transition.Child
               as={Fragment}
@@ -326,7 +326,7 @@ export function LibraryDialog({
                   e.preventDefault();
                   void handleEscape();
                 }}
-                className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-5xl"
+                className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[calc(var(--app-height)*0.92)] sm:h-[calc(var(--app-height)*0.75)] sm:max-w-5xl"
               >
                 {/* ── Top bar ── */}
                 <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 pr-3 pl-3 sm:pl-4 sm:py-2 dark:border-neutral-800/60">

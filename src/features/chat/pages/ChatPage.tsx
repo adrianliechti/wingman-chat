@@ -450,9 +450,7 @@ export function ChatPage() {
         className={`flex-1 flex flex-col overflow-hidden relative ${isArtifactsResizing || isAppResizing || isAgentResizing ? "" : "transition-all duration-500 ease-in-out"}`}
         style={contentRightOffset ? { marginRight: contentRightOffset } : undefined}
       >
-        {/* Keep the scroll viewport and its floating controls above the keyboard,
-            just like the fixed composer below. */}
-        <main className="flex-1 flex flex-col overflow-hidden relative max-md:mb-(--app-keyboard)">
+        <main className="flex-1 flex flex-col overflow-hidden relative">
           {(chatLoading && (showChatLoading || messages.length === 0)) || chatError ? (
             <div className="m-auto p-6 text-sm text-neutral-500" role={chatError ? "alert" : "status"}>
               {chatError ?? "Loading conversation…"}
@@ -474,8 +472,7 @@ export function ChatPage() {
                 {/* Logo - only show if no background image is available */}
                 {!backgroundImage && (
                   <div className="mb-8">
-                    <img src="/logo_light.svg" alt="Wingman Chat" className="h-24 w-24 opacity-70 dark:hidden" />
-                    <img src="/logo_dark.svg" alt="Wingman Chat" className="h-24 w-24 opacity-70 hidden dark:block" />
+                    <img src="/icon.svg" alt="Wingman Chat" className="h-24 w-24 opacity-70" />
                   </div>
                 )}
               </div>
@@ -575,9 +572,7 @@ export function ChatPage() {
       <footer
         ref={measureFooter}
         className={cn(
-          "fixed bottom-0 left-0 px-2 md:px-3 pb-[calc(var(--safe-bottom)+0.5rem)] md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
-          // Phones: ride above the keyboard (see useVisualViewport) and the home indicator.
-          "max-md:bottom-(--app-keyboard) max-md:px-3 max-md:transition-[bottom] max-md:duration-200 max-md:ease-out",
+          "fixed bottom-(--app-keyboard) left-0 pl-[max(var(--safe-left),0.75rem)] pr-[max(var(--safe-right),0.75rem)] pb-[calc(var(--safe-bottom)+0.5rem)] md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
           "right-0",
         )}
         style={{
@@ -603,7 +598,7 @@ export function ChatPage() {
               !showAppDrawer &&
               !showAgentDrawer &&
               !showArtifactsDrawer &&
-              "md:translate-y-[calc(50%-33.333vh)]",
+              "md:translate-y-[min(0px,calc(50%-var(--app-height)/3))]",
           )}
         >
           <div className="pointer-events-auto">

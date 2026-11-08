@@ -208,7 +208,7 @@ export function CreateImageDialog({
           >
             <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
           </TransitionChild>
-          <div className="fixed inset-0 overflow-y-auto">
+          <div className="fixed inset-x-0 app-viewport overflow-y-auto">
             <div className="flex min-h-full items-center justify-center p-4">
               <TransitionChild
                 as={Fragment}
@@ -219,8 +219,8 @@ export function CreateImageDialog({
                 leaveFrom="opacity-100 scale-100"
                 leaveTo="opacity-0 scale-95"
               >
-                <DialogPanel className="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-neutral-200/60 bg-white/95 shadow-2xl backdrop-blur-xl dark:border-neutral-700/60 dark:bg-neutral-900/95">
-                  <div className="flex items-center justify-between border-b border-neutral-200/60 px-5 py-3 dark:border-neutral-800/60">
+                <DialogPanel className="flex max-h-[calc(var(--app-height)-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-neutral-200/60 bg-white/95 shadow-2xl backdrop-blur-xl dark:border-neutral-700/60 dark:bg-neutral-900/95">
+                  <div className="flex shrink-0 items-center justify-between border-b border-neutral-200/60 px-5 py-3 dark:border-neutral-800/60">
                     <DialogTitle className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                       New image
                     </DialogTitle>
@@ -234,8 +234,8 @@ export function CreateImageDialog({
                     </button>
                   </div>
 
-                  <div className="flex max-h-[70vh] flex-col gap-5 overflow-y-auto px-5 py-4">
-                    <div className="rounded-xl border border-neutral-200/70 bg-neutral-50/60 focus-within:border-neutral-400 dark:border-neutral-700/60 dark:bg-neutral-800/40 dark:focus-within:border-neutral-500">
+                  <div className="flex min-h-0 max-h-[calc(var(--app-height)*0.7)] flex-col gap-5 overflow-y-auto px-5 py-4">
+                    <div className="shrink-0 rounded-xl border border-neutral-200/70 bg-neutral-50/60 focus-within:border-neutral-400 dark:border-neutral-700/60 dark:bg-neutral-800/40 dark:focus-within:border-neutral-500">
                       <textarea
                         ref={textarea}
                         aria-label="Prompt"
@@ -250,6 +250,7 @@ export function CreateImageDialog({
                         }
                         onChange={(event) => setText(event.target.value)}
                         onKeyDown={(event) => {
+                          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                           if (event.key === "Enter" && !event.shiftKey) {
                             event.preventDefault();
                             submit();
@@ -439,7 +440,7 @@ export function CreateImageDialog({
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between gap-3 border-t border-neutral-200/60 px-4 py-3 dark:border-neutral-800/60">
+                  <div className="flex shrink-0 items-center justify-between gap-3 border-t border-neutral-200/60 px-4 py-3 dark:border-neutral-800/60">
                     <div className="flex min-w-0 items-center gap-3">
                       <ModelDropdown
                         models={models}
@@ -484,7 +485,7 @@ export function CreateImageDialog({
                     </button>
                   </div>
                   {disclaimer && (
-                    <div className="border-t border-neutral-200/60 px-5 py-2 text-[11px] text-neutral-500 dark:border-neutral-800/60 dark:text-neutral-400">
+                    <div className="shrink-0 border-t border-neutral-200/60 px-5 py-2 text-[11px] text-neutral-500 dark:border-neutral-800/60 dark:text-neutral-400">
                       {disclaimer}
                     </div>
                   )}

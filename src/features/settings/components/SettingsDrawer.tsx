@@ -421,7 +421,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
             <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
           </Transition.Child>
 
-          <div className="fixed inset-0 overflow-y-auto">
+          <div className="fixed inset-x-0 app-viewport overflow-y-auto">
             <div className="flex min-h-full items-end justify-center sm:items-center sm:p-4">
               <Transition.Child
                 as={Fragment}
@@ -432,7 +432,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                 leaveFrom="opacity-100 translate-y-0 sm:scale-100"
                 leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
               >
-                <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-3xl max-sm:rounded-t-[28px] max-sm:bg-(--glass-bg-strong) max-sm:pb-(--safe-bottom) max-sm:backdrop-blur-2xl max-sm:backdrop-saturate-150">
+                <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[calc(var(--app-height)*0.92)] sm:h-[calc(var(--app-height)*0.75)] sm:max-w-3xl max-sm:rounded-t-[28px] max-sm:bg-(--glass-bg-strong) max-sm:pb-(--safe-bottom) max-sm:backdrop-blur-2xl max-sm:backdrop-saturate-150">
                   <div
                     aria-hidden="true"
                     className="mx-auto mt-2 h-1.5 w-9 shrink-0 rounded-full bg-neutral-400/50 sm:hidden dark:bg-neutral-500/60"

@@ -308,10 +308,10 @@ export function ModelSheet(props: ModelDropdownProps) {
           transition
           className="fixed inset-0 bg-black/40 duration-200 ease-out data-closed:opacity-0 dark:bg-black/60"
         />
-        <div className="fixed inset-x-0 bottom-0">
+        <div className="fixed inset-x-0 bottom-(--app-keyboard)">
           <DialogPanel
             transition
-            className="glass-strong flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-[28px] border-b-0 pb-[max(var(--safe-bottom),0.75rem)] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-closed:translate-y-full"
+            className="glass-strong flex max-h-[calc(var(--app-height)*0.85)] w-full flex-col overflow-hidden rounded-t-[28px] border-b-0 pb-[max(var(--safe-bottom),0.75rem)] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-closed:translate-y-full"
           >
             <div className="flex shrink-0 justify-center pt-2 pb-1">
               <div className="h-1.5 w-9 rounded-full bg-neutral-400/50 dark:bg-neutral-500/60" />
@@ -341,7 +341,11 @@ export function ModelSheet(props: ModelDropdownProps) {
                 starts unscrolled and slides in from the side it came from. */}
             <div
               className="min-h-0 overflow-y-auto transition-[height] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
-              style={pageHeight === null ? undefined : { height: `min(${pageHeight}px, calc(85dvh - 6rem))` }}
+              style={
+                pageHeight === null
+                  ? undefined
+                  : { height: `min(${pageHeight}px, calc(var(--app-height) * 0.85 - 6rem))` }
+              }
             >
               <div key={nav.page ?? "root"} ref={measurePage} className={cn("px-3 pt-2 pb-2", slide)}>
                 {page ? (

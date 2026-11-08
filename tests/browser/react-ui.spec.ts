@@ -1293,7 +1293,9 @@ test("mobile chat keeps the latest response and Latest control above the keyboar
   await expect(page.locator("footer")).toHaveCSS("bottom", "320px");
   await expect.poll(gap).toBeGreaterThanOrEqual(0);
   await expect.poll(() => scroll.evaluate((element) => element.getBoundingClientRect().bottom)).toBe(524);
-  await scroll.hover();
+  // A restored multiline draft can cover the center of the scroll viewport.
+  // Wheel over the exposed history, below the floating top bar.
+  await scroll.hover({ position: { x: 20, y: 100 } });
   await page.mouse.wheel(0, -400);
   const latest = page.getByRole("button", { name: "Latest", exact: true });
   await expect(latest).toBeVisible();

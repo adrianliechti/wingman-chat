@@ -13,6 +13,8 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --app-topbar: calc(var(--safe-top) + 3.75rem);
   --app-keyboard: 0px;
+  --app-height: 100dvh;
+  --app-viewport-top: 0px;
 
   /* Liquid-glass material (light). Surfaces reference only these tokens. */
   --app-bg: #fafafa;
@@ -28,6 +30,32 @@
 /* The keyboard covers the home indicator, so bottom chrome sits flush on it. */
 .keyboard-open {
   --safe-bottom: 0px;
+}
+
+/* Use on fixed shells, including dialogs portaled outside the application root. */
+@utility app-viewport {
+  top: var(--app-viewport-top);
+  bottom: var(--app-keyboard);
+}
+
+/* iPhone zooms small form controls on focus. Cover landscape and tablets too,
+   without disabling the user's pinch zoom. Keep non-text controls their size. */
+@media (any-pointer: coarse) {
+  textarea,
+  select,
+  input:not(
+    [type="checkbox"],
+    [type="radio"],
+    [type="range"],
+    [type="color"],
+    [type="file"],
+    [type="hidden"],
+    [type="button"],
+    [type="submit"],
+    [type="reset"]
+  ) {
+    font-size: max(16px, 1rem);
+  }
 }
 
 .dark {

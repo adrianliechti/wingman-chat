@@ -36,7 +36,13 @@ export default defineConfig({
     },
     {
       name: "webkit-react-ui",
-      testMatch: ["react-ui.spec.ts", "mcp-lifecycle.spec.ts", "canvas-renderer.spec.ts"],
+      testMatch: [
+        "react-ui.spec.ts",
+        "mobile-views.spec.ts",
+        "mcp-lifecycle.spec.ts",
+        "canvas-renderer.spec.ts",
+        "install-icons.spec.ts",
+      ],
       use: { ...devices["Desktop Safari"] },
     },
     { name: "webkit-services", testMatch: "worker-services.spec.ts", use: { ...devices["Desktop Safari"] } },
