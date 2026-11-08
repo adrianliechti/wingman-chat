@@ -13,6 +13,8 @@ import {
   type Resource,
   type ResourceTemplateType,
   type Prompt,
+  type ElicitRequest,
+  type ElicitResult,
 } from "@modelcontextprotocol/client";
 import { withAbort } from "@/shared/lib/abortSignals";
 
@@ -34,6 +36,7 @@ export async function createBrowserMcpClient(options: {
   version: string;
   transport: Transport;
   clientOptions: ClientOptions;
+  elicit: (params: ElicitRequest["params"], signal: AbortSignal) => Promise<ElicitResult>;
 }): Promise<NativeMCPClient> {
   const sdk = new Client(
     { name: options.name, version: options.version },
@@ -42,6 +45,7 @@ export async function createBrowserMcpClient(options: {
       versionNegotiation: { mode: "auto" },
     },
   );
+  sdk.setRequestHandler("elicitation/create", (request, ctx) => options.elicit(request.params, ctx.mcpReq.signal));
   await sdk.connect(options.transport);
   let subscription: McpSubscription | undefined;
   if (sdk.getProtocolEra() === "modern" && sdk.getServerCapabilities()?.tools?.listChanged)
@@ -59,7 +63,7 @@ export async function createBrowserMcpClient(options: {
     async callTool(name, args, requestOptions) {
       const params = { name, arguments: args };
       if (sdk.getProtocolEra() === "modern" || definitions.get(name)?.execution?.taskSupport !== "required")
-        return sdk.callTool(params, { ...requestOptions, allowInputRequired: true });
+        return sdk.callTool(params, requestOptions);
       // Preserve task-required servers on the 2025 protocol era.
       const signal = AbortSignal.any([
         ...(requestOptions?.signal ? [requestOptions.signal] : []),

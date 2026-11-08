@@ -51,6 +51,7 @@ import {
 } from "./mcpAppSession";
 
 const MCP_UI_EXTENSION = "io.modelcontextprotocol/ui";
+const TOOL_TIMEOUT_MS = 15 * 60_000;
 
 function findUiResource(uri: string, contents: MCPResourceContents[]): MCPResourceContents | undefined {
   return contents.find(
@@ -86,6 +87,7 @@ export class MCPClient implements ToolProvider {
   private readonly authProvider: BrowserOAuthClientProvider;
   private readonly activeToolCalls = new Set<ActiveToolCall>();
   private readonly elicitations = new Map<string, ActiveToolCall>();
+  private pendingInput = Promise.resolve();
   private readonly appListeners = new Set<(kind: AppNotification) => void>();
   private discovery?: { client: NativeMCPClient; dirty: boolean; promise: Promise<void> };
 
@@ -163,11 +165,11 @@ export class MCPClient implements ToolProvider {
       client = await createBrowserMcpClient({
         name: HOST_INFO.name,
         version: HOST_INFO.version,
+        elicit: (params, signal) => {
+          assertCurrent();
+          return this.elicit(params, signal);
+        },
         transport: browserMcpTransport(transport, {
-          elicit: (params) => {
-            assertCurrent();
-            return this.elicit(params);
-          },
           initialized: ({ instructions, serverInfo }) => {
             if (this.connectionVersion !== version) return;
             this.instructions = instructions;
@@ -238,40 +240,61 @@ export class MCPClient implements ToolProvider {
     }
   }
 
-  private async elicit(params: ElicitRequest["params"]): Promise<ElicitResult> {
+  private async elicit(params: ElicitRequest["params"], signal: AbortSignal): Promise<ElicitResult> {
     const [call] = this.activeToolCalls;
     const context = call?.context;
     if (this.activeToolCalls.size !== 1 || !context?.elicit || context.signal?.aborted) {
       throw new Error("Elicitation requires a single active tool context");
     }
-    if (params.mode === "url") {
-      const url = new URL(params.url);
-      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
-        throw new Error("MCP elicitation URLs must use HTTP(S) without embedded credentials");
-      this.elicitations.set(params.elicitationId, call);
-      try {
-        const result = await context.elicit({
-          mode: "url",
+    const elicit = context.elicit.bind(context);
+    // Capture the owner before queueing; the UI can show only one SDK input request at a time.
+    const previous = this.pendingInput;
+    const answer = withAbort(signal, async () => {
+      await previous;
+      signal.throwIfAborted();
+      context.signal?.throwIfAborted();
+      if (params.mode === "url") {
+        const url = new URL(params.url);
+        if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
+          throw new Error("MCP elicitation URLs must use HTTP(S) without embedded credentials");
+        this.elicitations.set(params.elicitationId, call);
+        try {
+          const result = await elicit(
+            {
+              mode: "url",
+              message: params.message,
+              source: this.name,
+              url: params.url,
+              elicitationId: params.elicitationId,
+            },
+            { signal },
+          );
+          signal.throwIfAborted();
+          context.signal?.throwIfAborted();
+          if (result.action !== "accept") this.elicitations.delete(params.elicitationId);
+          return { action: result.action };
+        } catch (error) {
+          this.elicitations.delete(params.elicitationId);
+          throw error;
+        }
+      }
+      const result = await elicit(
+        {
           message: params.message,
           source: this.name,
-          url: params.url,
-          elicitationId: params.elicitationId,
-        });
-        context.signal?.throwIfAborted();
-        if (result.action !== "accept") this.elicitations.delete(params.elicitationId);
-        return { action: result.action };
-      } catch (error) {
-        this.elicitations.delete(params.elicitationId);
-        throw error;
-      }
-    }
-    const result = await context.elicit({
-      message: params.message,
-      source: this.name,
-      requestedSchema: normalizeRequestedSchema(params.requestedSchema),
+          requestedSchema: normalizeRequestedSchema(params.requestedSchema),
+        },
+        { signal },
+      );
+      signal.throwIfAborted();
+      context.signal?.throwIfAborted();
+      return result;
     });
-    context.signal?.throwIfAborted();
-    return result;
+    this.pendingInput = answer.then(
+      () => undefined,
+      () => undefined,
+    );
+    return answer;
   }
 
   async disconnect(): Promise<void> {
@@ -442,15 +465,19 @@ export class MCPClient implements ToolProvider {
     context?: ToolContext,
   ): Promise<CallToolResult> {
     if (this.client !== client) throw new Error("MCP connection changed; reload tools before calling");
-    const { controller, cleanup } = followAbortSignal(context?.signal, this.connectionAbort?.signal);
+    const { controller, cleanup } = followAbortSignal(
+      context?.signal,
+      this.connectionAbort?.signal,
+      AbortSignal.timeout(TOOL_TIMEOUT_MS),
+    );
     const call: ActiveToolCall = {
       context: {
         ...context,
         signal: controller.signal,
         elicit: context?.elicit
-          ? (request) =>
+          ? (request, options) =>
               context.elicit!(request, {
-                signal: controller.signal,
+                signal: options?.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal,
                 onCancel: () => controller.abort(new DOMException("MCP elicitation cancelled", "AbortError")),
               })
           : undefined,
@@ -461,7 +488,7 @@ export class MCPClient implements ToolProvider {
       let progress = -Infinity;
       const result = await client.callTool(params.name, params.arguments, {
         signal: controller.signal,
-        timeout: 15 * 60_000,
+        timeout: TOOL_TIMEOUT_MS,
         onprogress: (update) => {
           if (controller.signal.aborted || this.client !== client || !this.activeToolCalls.has(call)) return;
           if (!Number.isFinite(update.progress) || update.progress <= progress) return;

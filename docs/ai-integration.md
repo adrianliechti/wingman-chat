@@ -629,8 +629,11 @@ per endpoint across clients/tabs, while ordinary MCP requests remain concurrent.
 belongs to the individual popup. The internal companion name retains the public
 `BRIDGE_URL` environment variable and `bridge.url` JSON contract.
 
-`mcpTransport.ts` forwards the SDK transport while exposing server metadata,
-legacy elicitation, and change notifications to the workspace. Resource reads use
+`mcpTransport.ts` forwards the SDK transport while exposing server metadata
+and change notifications to the workspace. The MCP SDK handles both legacy
+elicitation and modern `input_required` retries through one registered handler.
+Wingman queues form display after capturing the active tool owner; the SDK owns
+request IDs, state echoing, round limits and cancellation. Resource reads use
 local cancellation because the native MCP resource API has no signal argument.
 Calls and discovery use the native client's APIs.
 
