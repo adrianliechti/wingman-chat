@@ -46,7 +46,9 @@ it("gives every registered component and function exactly one focused lookup", (
   ] as const) {
     for (const kind of ["components", "functions"] as const) {
       const documented = groups.flatMap((group) => group[key]?.[kind] ?? []);
-      expect(documented.sort()).toEqual([...catalog[kind].keys()].sort());
+      // The SDK also registers reserved system functions such as @index;
+      // these are documented separately and never belong to a catalog call.
+      expect(documented.sort()).toEqual([...catalog[kind].keys()].filter((name) => !name.startsWith("@")).sort());
     }
   }
 });

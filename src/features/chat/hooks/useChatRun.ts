@@ -1,6 +1,6 @@
 import { EventType, type AGUIEvent } from "@ag-ui/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { useChat } from "@tanstack/ai-react";
+import { stream, useChat } from "@tanstack/ai-react";
 import type { ChatInterruptState, ChatPersistedState, RunAgentInputContext } from "@tanstack/ai-client";
 import { normalizeToUIMessage, isContentPart, type ContentPart, type UIMessage, type ModelMessage } from "@tanstack/ai";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
@@ -313,9 +313,7 @@ export function useChatRun({
     threadId: session.id,
     tools,
     queue: { whenBusy: "queue", drain: "batch" },
-    connection: {
-      connect: (messages, _data, signal, context) => connectRef.current(session, messages, signal, context),
-    },
+    connection: stream((messages, _data, signal, context) => connectRef.current(session, messages, signal, context)),
     persistence: {
       getItem: async () => {
         const saved = getChat(session.id) ?? (chatId === session.id ? await loadChat(session.id) : undefined);

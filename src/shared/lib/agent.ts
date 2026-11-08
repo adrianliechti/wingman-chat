@@ -154,16 +154,31 @@ export class RunSidecar {
     });
   }
 
-  /** Native all-text conversion drops part metadata; restore it only for matching provider context. */
-  applyModelPhases(messages: ModelMessage[]): ModelMessage[] {
+  /** Preserve item boundaries for TanStack's native Responses replay, using only real provider ids. */
+  applyModelResponseItems(messages: ModelMessage[]): ModelMessage[] {
     return messages.map((message) => {
       const parts = message.id ? this.phasedText.get(message.id) : undefined;
-      return message.role === "assistant" &&
-        parts?.some((part) => textMetadata(part).phase) &&
-        typeof message.content === "string" &&
-        message.content === parts.map((part) => part.content).join("")
-        ? { ...message, content: parts }
-        : message;
+      const items = message.metadata?.tanstack?.responseItems;
+      if (
+        message.role !== "assistant" ||
+        !parts ||
+        !items?.length ||
+        items.length !== parts.length ||
+        typeof message.content !== "string" ||
+        message.content !== parts.map((part) => part.content).join("")
+      )
+        return message;
+      let thinking = 0;
+      const blockOrder: NonNullable<ModelMessage["blockOrder"]> = withTextPhases(
+        normalizeToUIMessage(message, () => crypto.randomUUID()),
+        parts,
+      ).parts.flatMap<NonNullable<ModelMessage["blockOrder"]>[number]>((part) => {
+        if (part.type === "thinking") return [{ type: "thinking" as const, index: thinking++ }];
+        if (part.type === "tool-call") return [{ type: "tool-call" as const, id: part.id }];
+        if (part.type === "text" && part.content) return [{ type: "text" as const, length: part.content.length }];
+        return [];
+      });
+      return { ...message, blockOrder };
     });
   }
 
@@ -337,7 +352,7 @@ export async function* streamRun(
           };
         if (ctx.phase !== "beforeModel") return;
         const providerMessages = describeToolMessages(
-          sidecar.applyModelPhases(config.providerMessages ?? config.messages),
+          sidecar.applyModelResponseItems(config.providerMessages ?? config.messages),
         );
         return {
           providerMessages: hooks.prepareMessages
@@ -447,15 +462,9 @@ export async function* streamRun(
               throw error;
             }
             if (direct !== undefined) {
-              // Keep the same native approval/result boundary, but return
-              // retrieval text without starting a child model generation.
-              return (async function* (): AsyncGenerator<AGUIEvent> {
-                const messageId = `${ctx.subagentRunId}-direct`;
-                yield { type: EventType.TEXT_MESSAGE_START, messageId, role: "assistant" };
-                if (direct) yield { type: EventType.TEXT_MESSAGE_CONTENT, messageId, delta: direct };
-                yield { type: EventType.TEXT_MESSAGE_END, messageId };
-                yield { type: EventType.RUN_FINISHED, runId: ctx.runId, threadId: ctx.threadId, result: direct };
-              })();
+              // defineAgent streams string results and delivers them to the
+              // parent without starting another model generation.
+              return direct;
             }
             const isolated = spec.inheritHistory === false;
             const history = sidecar.apply(

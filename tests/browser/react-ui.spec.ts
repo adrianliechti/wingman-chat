@@ -761,7 +761,7 @@ for (const existingChat of [false, true]) {
     await input.press("Enter");
     await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
     await expect(activity).toBeVisible();
-    await page.getByRole("button", { name: "Stop generating (Esc)", exact: true }).click();
+  await page.getByRole("button", { name: "Stop generating", exact: true }).click();
     await expect(activity).toHaveCount(0);
   });
 }
@@ -801,7 +801,7 @@ test("Stop clears subagent loading activity and keeps it stopped after reload", 
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
   const card = page.locator('[class~="group/subagent"]');
   await expect(card.locator("summary .animate-spin")).toHaveCount(1);
-  await page.getByRole("button", { name: "Stop generating (Esc)", exact: true }).click();
+  await page.getByRole("button", { name: "Stop generating", exact: true }).click();
   await expect(card.locator("summary")).toContainText("Stopped");
   await expect(card.locator(".animate-spin")).toHaveCount(0);
   await page.evaluate(() => window.reactUiE2E.finish("Late child reply"));
@@ -1009,7 +1009,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
       // Stop while the newly received burst is still being revealed.
       setTimeout(() => document.querySelector<HTMLButtonElement>('button[title="Stop generating (Esc)"]')?.click(), 30);
     }, final);
-    await expect(page.getByRole("button", { name: "Stop generating (Esc)", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Stop generating", exact: true })).toHaveCount(0);
     await expect(page.locator('[data-role="assistant"]').last()).toContainText(final.trim());
     await page.evaluate(() => window.reactUiE2E.finish("Late provider completion"));
     await expect(page.locator('[data-role="assistant"]').last()).toContainText(final.trim());

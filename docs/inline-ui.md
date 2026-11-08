@@ -24,7 +24,7 @@ Load the [inline-ui skill](../skills/studio/inline-ui/SKILL.md), which routes to
 
 ## Architecture and persistence
 
-`src/shared/lib/inlineUi/catalog.ts` registers upstream schemas/functions and Wingman extensions. `protocol.ts` parses bounded strict messages and uses the same Markdown parser as display. `runtime.ts` owns one SDK MessageProcessor per conversation, its resolvers and local persistence. `src/shared/ui/inlineUi` renders resolved nodes with native React components. `diagnostics.ts` supplies bounded diagnostics and structured interaction context to the model.
+`src/shared/lib/inlineUi/catalog.ts` reuses the SDK's Basic catalog and registers Wingman extensions. The SDK supplies the complete Basic definitions, catalog instructions and theme schema. `protocol.ts` parses bounded strict messages and uses the same Markdown parser as display. `runtime.ts` owns one SDK MessageProcessor per conversation, its resolvers and local persistence. Surface subscriptions are released when each surface is deleted. `src/shared/ui/inlineUi` renders resolved nodes with native React components. `diagnostics.ts` supplies bounded diagnostics and structured interaction context to the model.
 
 Both catalogs have explicit renderer maps checked against their schemas, including nested props and control write types. `rendererTypes.ts` infers resolved values from schema branches before the SDK's dynamic-expression `any` can erase their types; child references become SDK ComponentNodes. One dispatch boundary connects SDK nodes to these typed renderers. Type regression tests and catalog coverage tests guard this mapping alongside the existing wire-format snapshots.
 

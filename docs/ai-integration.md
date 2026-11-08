@@ -53,7 +53,7 @@ calls create their own thread ids. Compaction summaries use
 
 ## Markdown compatibility
 
-Code blocks and source editor mirrors share a lazy `@tanstack/highlight@1.2.0`
+Code blocks and source editor mirrors share a lazy `@tanstack/highlight@1.2.11`
 registry with all 79 shipped definitions (including plaintext). Unknown languages
 and sources over 30,000 characters stay readable as plain text. React renders
 `tokenize()` output directly, preserving source whitespace and escaping code as
@@ -127,14 +127,17 @@ intact, and completed input must match the non-streaming render.
 ## Shared execution and removed code
 
 Chat connects native [`useChat`](https://tanstack.com/ai/latest/docs/ui/react)
-directly to browser-local `streamRun`, which calls
-native `chat()`. The connection forwards TanStack's run, parent, thread, and
+to browser-local `streamRun` through the SDK's `stream()` connection helper,
+which handles in-process cancellation. The runner calls native `chat()`.
+The connection forwards TanStack's run, parent, thread, and
 resume context. There is no application token buffer, tool-execution loop,
 queue controller, manual React client lifecycle, or recursive queue drain.
 A draft receives its thread ID before saving, so its first send keeps the same
 native client. Voice messages enter that transcript through `setMessages`;
 completed voice tools retain their call arguments alongside the result.
-Delegation uses `defineAgent` and native nested streams. One-shot interpreter
+Delegation uses `defineAgent` and native nested streams. Retrieval-only agents
+return strings directly; the SDK creates their child text events and parent
+tool results, including empty results. One-shot interpreter
 `llm`/`vision` calls use the same stream through a short `run` helper, with only
 their own prompt and no tools. Noninteractive callers collect messages using
 TanStack's `StreamProcessor`; they do not create an interactive `ChatClient`.
@@ -223,9 +226,11 @@ A `RunSidecar` per thread collects tool display data, rich failure details,
 text phases and each turn's run and usage while streaming. It restores these
 on native parts when the transcript is persisted. Commentary and final-answer
 phases live on text parts, without duplicating text in message metadata; saved
-`textSegments` migrate on loading. Because TanStack joins all-text content when
-building model history, the request boundary restores phased text parts before
-gateway serialization. Execution and history replay send the same text
+`textSegments` migrate on loading. Older messages without original provider
+item ids replay as ordinary assistant text; migration never invents response
+ids. For native `metadata.tanstack.responseItems`, the request boundary preserves
+text-item boundaries in TanStack's `blockOrder` and delegates id/phase replay to
+the Responses adapter. Execution and history replay send the same text
 descriptions of binary tool outputs to the provider. Inline user
 files retain their filename, MIME type, and bytes as gateway `input_file` items,
 including Office documents and text files beyond the native adapter's PDF-only
@@ -541,7 +546,7 @@ cancellation attached to provider requests, and omits an empty multipart model
 field when selecting the gateway default. The embedding boundary retains the
 resolved model identity returned by the gateway for retrieval indexes.
 `gatewayText.ts` extends the native Responses adapter to retain commentary and
-final-answer phases on output and replay, resolved model identity, and the
+final-answer phases on live text parts, resolved model identity, and the
 gateway's reasoning context mode. It forwards inline documents using the same
 file contract as the pre-migration client; supported formats still depend on the
 gateway deployment. Native parsing still handles the stream. Completed response
@@ -554,20 +559,21 @@ than signed blocks with empty text, including deployments behind opaque aliases.
 Structured helper calls keep summaries opt-in.
 
 `Client.chatOptions()` owns SDK option placement for chat, subagents and
-structured helpers. With the published AI 0.68 API, reasoning still belongs in
-`modelOptions`. The next [reasoning migration](https://github.com/TanStack/ai/blob/5bd27f2fc94ebfb6d11bfb28d46d5d858310805e/docs/migration/reasoning-option.md)
-also requires mapping `none` to `off`, replacing summary styles with a boolean,
-and supplying reasoning metadata for gateway aliases through `modelReasoning`.
-Moving the property alone would silently lose alias reasoning. Cross-provider
+structured helpers. TanStack 1.x provides a native
+[`chat({ reasoning })` option](https://tanstack.com/ai/latest/docs/migration/reasoning-option),
+but the gateway keeps its wire-level reasoning in `modelOptions`: it accepts
+opaque aliases and `concise`/`detailed` summary styles, while the native option
+requires model reasoning metadata and exposes only a summary boolean. Moving
+the property alone would silently lose alias reasoning and summary styles. Cross-provider
 history support does not replace the gateway's deployment-bound ciphertext guard.
 
 The provider SDK already retries HTTP rate limits twice. Once exhausted,
 `streamRun` formats `metadata.tanstack.retryAfterMs` before ChatClient converts
 the event to an Error and drops that metadata. The displayed wait rounds up to
 whole seconds and survives transcript persistence. Missing or invalid delays
-retain the generic message. A future core `chat({ retry })` policy must account
-for those existing SDK retries. Automatic prompt-cache keys and core retries
-remain deferred until their APIs are published and gateway behavior is verified.
+retain the generic message. TanStack's optional `chat({ retry })` policy would
+add retries after the provider SDK's attempts, so it remains disabled. Its
+prompt-cache API likewise stays opt-in until gateway behavior is verified.
 
 Conversation loading includes native `isHydrating`, disabling composer sends
 and retries until hydration completes. The saved hydration snapshot remains:

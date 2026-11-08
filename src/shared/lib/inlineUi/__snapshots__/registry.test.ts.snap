@@ -418,6 +418,24 @@ exports[`locks the published catalog schemas and generated references to registe
         },
       ],
     },
+    "theme": {
+      "additionalProperties": true,
+      "properties": {
+        "agentDisplayName": {
+          "description": "Text to be displayed next to the surface to identify the agent or tool that created it.",
+          "type": "string",
+        },
+        "iconUrl": {
+          "description": "A URL for an image that identifies the agent or tool associated with the surface.",
+          "type": "string",
+        },
+        "primaryColor": {
+          "description": "The primary brand color used for highlights (e.g., primary buttons, active borders). Renderers may generate variants of this color for different contexts. Format: Hexadecimal code, named color, or functional notation (e.g., '#00BFFF', 'red', 'rgb(255, 0, 0)').",
+          "type": "string",
+        },
+      },
+      "type": "object",
+    },
   },
   "$id": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1824,6 +1842,112 @@ Examples:
       "type": "object",
     },
   },
+  "instructions": "For layout, use the Row and Column components to organize other components.
+
+## Catalog Guidelines
+
+1. String Concatenation & Formatting: A2UI does not support binary operators like '+' or formatting symbols. To concatenate strings or dynamically inject data bindings into text, you must use the catalog function \`formatString(value)\` where the value string contains placeholders formatted as \`\${expression}\`:
+   formatString("Hello \${/user/name}")
+
+2. Strict Hierarchy: You must strictly adhere to the requested component nesting and hierarchy. If the prompt specifies that a component is 'inside' or 'contained in' another component, you MUST place it as a child of that specific component, not as a sibling or in a different container.
+
+3. Validation Checks: When components support validation checks, specify any custom error messages directly as the 'message' inside the check. Do NOT create separate text-display components to display validation errors.
+
+## Examples
+
+Example 1: Dynamic text form
+\`\`\`json
+[
+  {
+    "version": "1.0",
+    "createSurface": {
+      "surfaceId": "main",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "components": [
+        {
+          "id": "root",
+          "component": "Column",
+          "children": ["repField", "valueField"]
+        },
+        {
+          "id": "repField",
+          "component": "TextField",
+          "label": "Representative",
+          "value": {"@path": "/form/rep"},
+          "placeholder": "Enter name"
+        },
+        {
+          "id": "valueField",
+          "component": "TextField",
+          "label": "Deal Value",
+          "value": {"@path": "/form/value"},
+          "placeholder": "0.00",
+          "variant": "number",
+          "checks": [
+            {
+              "condition": {
+                "@call": "required",
+                "args": {"value": {"@path": "/form/value"}}
+              },
+              "message": "Deal value is required."
+            }
+          ]
+        }
+      ],
+      "dataModel": {
+        "form": {
+          "rep": "John Doe",
+          "value": 1500.00
+        }
+      }
+    }
+  }
+]
+\`\`\`
+
+Example 2: Dynamic list with templates
+\`\`\`json
+[
+  {
+    "version": "1.0",
+    "createSurface": {
+      "surfaceId": "main",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "components": [
+        {
+          "id": "root",
+          "component": "Card",
+          "child": "breedList"
+        },
+        {
+          "id": "breedList",
+          "component": "List",
+          "children": {
+            "path": "/breeds",
+            "componentId": "breedTemplate"
+          },
+          "direction": "horizontal"
+        },
+        {
+          "id": "breedTemplate",
+          "component": "Image",
+          "url": {"@path": "url"}
+        }
+      ],
+      "dataModel": {
+        "breeds": [
+          {
+            "url": "https://example.com/poodle.jpg"
+          },
+          {
+            "url": "https://example.com/lab.jpg"
+          }
+        ]
+      }
+    }
+  }
+]
+\`\`\`",
   "protocolVersion": "1.0",
 }
 `;

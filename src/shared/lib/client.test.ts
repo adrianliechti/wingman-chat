@@ -824,8 +824,16 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     await runMessages(client, "model", "", [...prompt, restored], []);
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).input).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ role: "assistant", content: "Working", phase: "commentary" }),
-        expect.objectContaining({ role: "assistant", content: "Done", phase: "final_answer" }),
+        expect.objectContaining({
+          id: "msg_commentary",
+          phase: "commentary",
+          content: [{ type: "output_text", text: "Working", annotations: [] }],
+        }),
+        expect.objectContaining({
+          id: "msg_final",
+          phase: "final_answer",
+          content: [{ type: "output_text", text: "Done", annotations: [] }],
+        }),
       ]),
     );
   });

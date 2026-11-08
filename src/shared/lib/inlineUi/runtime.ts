@@ -41,7 +41,7 @@ export class InlineUiRuntime {
   private messageErrors = new Map<string, string>();
   private applied: string[] = [];
   private listeners = new Set<() => void>();
-  private subscriptions: Subscription[] = [];
+  private subscriptions = new Map<string, Subscription[]>();
   private revision = 0;
   private snapshot = EMPTY_UI_SNAPSHOT;
   private syncing = false;
@@ -107,21 +107,21 @@ export class InlineUiRuntime {
     processor.onSurfaceCreated((surface) => {
       // The SDK's group-level forwarding does not await action listeners.
       // Subscribe at the surface so controls stay busy until submission ends.
-      this.subscriptions.push(surface.onAction.subscribe(onAction));
-      this.subscriptions.push(
+      this.subscriptions.set(surface.id, [
+        surface.onAction.subscribe(onAction),
         surface.dataModel.subscribe("/", () => {
           if (!this.syncing) this.scheduleSave();
         }),
-      );
-      this.subscriptions.push(
         surface.onError.subscribe((error) => {
           this.errors.set(surface.id, error.message);
           this.changed();
         }),
-      );
+      ]);
       this.resolvers.set(surface.id, new NodeResolver(surface, surface.defaultCatalog));
     });
     processor.onSurfaceDeleted((id) => {
+      for (const subscription of this.subscriptions.get(id) ?? []) subscription.unsubscribe();
+      this.subscriptions.delete(id);
       this.resolvers.get(id)?.dispose();
       this.resolvers.delete(id);
       this.errors.delete(id);
@@ -216,9 +216,8 @@ export class InlineUiRuntime {
           }
         }
       });
-      // The candidate SDK reports intermediate missing dependencies while
-      // installing nested reactive functions. Recheck only affected surfaces
-      // against the settled data model so repaired errors do not linger.
+      // SDK 0.15 still reports transient dependencies while installing nested
+      // reactive functions. Recheck affected surfaces after the batch settles.
       for (const [id, surface] of this.processor.getSurfaces()) {
         if (!this.errors.has(id)) continue;
         this.errors.delete(id);
@@ -292,8 +291,9 @@ export class InlineUiRuntime {
     for (const resolver of this.resolvers.values()) resolver.dispose();
     this.resolvers.clear();
     this.actionErrors.clear();
-    for (const subscription of this.subscriptions) subscription.unsubscribe();
-    this.subscriptions = [];
+    for (const subscriptions of this.subscriptions.values())
+      for (const subscription of subscriptions) subscription.unsubscribe();
+    this.subscriptions.clear();
     this.processor.dispose();
   }
   dispose() {

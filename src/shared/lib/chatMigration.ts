@@ -657,6 +657,8 @@ export function normalizeStoredChat(stored: StoredChat | LegacyStoredChat): Stor
     );
     // Keep unfamiliar or damaged metadata intact rather than discard readable text.
     if (messageText(message) !== phased.map((part) => part.content).join("")) return message;
+    // Display labels survive migration, but provider item ids cannot be
+    // reconstructed. Only native responseItems participate in phased replay.
     const next = withTextPhases(message, phased);
     const { textSegments: _legacy, ...metadata } = message.metadata!;
     const { metadata: _metadata, ...rest } = next;

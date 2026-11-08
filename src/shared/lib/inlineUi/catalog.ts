@@ -1,7 +1,6 @@
 import {
   ActionSchema,
-  BASIC_COMPONENTS,
-  BASIC_FUNCTIONS,
+  basicCatalog as upstreamBasicCatalog,
   Catalog,
   CheckRuleSchema,
   ChildListSchema,
@@ -179,12 +178,6 @@ export const WINGMAN_FUNCTIONS: FunctionImplementation[] = [
   },
 ];
 
-// Reserved system functions are resolved by the SDK, outside any catalog.
-export const basicCatalog = new Catalog(
-  BASIC_CATALOG_ID,
-  A2UI_VERSION,
-  BASIC_COMPONENTS,
-  BASIC_FUNCTIONS.filter((fn) => !fn.name.startsWith("@")),
-);
+export const basicCatalog = upstreamBasicCatalog;
 export const wingmanCatalog = new Catalog(WINGMAN_CATALOG_ID, A2UI_VERSION, WINGMAN_COMPONENTS, WINGMAN_FUNCTIONS);
 export const catalogs = [basicCatalog, wingmanCatalog];

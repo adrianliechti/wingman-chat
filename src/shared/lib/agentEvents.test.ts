@@ -42,12 +42,18 @@ it.each(["Retrieved result", ""])("emits SDK-valid direct subagent replies: %j",
   expect(direct).toHaveBeenCalledOnce();
   expect(complete).toHaveBeenCalledTimes(2);
   const child = events.find((event) => event.type === EventType.SUBAGENT_STARTED)!;
-  const messageId = `${child.subagentRunId}-direct`;
-  expect(events.filter((event) => "messageId" in event && event.messageId === messageId)).toMatchObject([
-    { type: EventType.TEXT_MESSAGE_START, subagentRunId: child.subagentRunId },
-    ...(answer ? [{ type: EventType.TEXT_MESSAGE_CONTENT, delta: answer, subagentRunId: child.subagentRunId }] : []),
-    { type: EventType.TEXT_MESSAGE_END, subagentRunId: child.subagentRunId },
-  ]);
+  const textEvents = events.filter(
+    (event) => "subagentRunId" in event && event.subagentRunId === child.subagentRunId && "messageId" in event,
+  );
+  expect(textEvents).toMatchObject(
+    answer
+      ? [
+          { type: EventType.TEXT_MESSAGE_START },
+          { type: EventType.TEXT_MESSAGE_CONTENT, delta: answer },
+          { type: EventType.TEXT_MESSAGE_END },
+        ]
+      : [],
+  );
   expect(events).toContainEqual(
     expect.objectContaining({ type: EventType.SUBAGENT_FINISHED, subagentRunId: child.subagentRunId, result: answer }),
   );
