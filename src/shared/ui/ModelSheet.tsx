@@ -303,7 +303,10 @@ export function ModelSheet(props: ModelDropdownProps) {
   return (
     <>
       {trigger({ getProps: (overrides) => ({ ...overrides, onClick: show }) })}
-      <Dialog open={open} onClose={close} className="relative z-60">
+      {/* Above every dialog that can host the picker (image dialog, agent wizard at z-80):
+          Headless UI portals a nested Dialog to the body root, not into the parent dialog,
+          so the sheet competes with its opener on z-index. */}
+      <Dialog open={open} onClose={close} className="relative z-90">
         <DialogBackdrop
           transition
           className="fixed inset-0 bg-black/40 duration-200 ease-out data-closed:opacity-0 dark:bg-black/60"
