@@ -604,6 +604,31 @@ card owns the retry and the transcript records no separate error.
 Structured extraction uses TanStack's `combinedStructuredOutputSource()` event
 contract to select the final answer instead of concatenating commentary with JSON.
 TanStack continues to normalize optional fields and validate the result schema.
+These repairs span two boundaries. The gateway owns missing upstream text deltas
+and provider signature rejection; its Responses adapter can append a missing
+final-text suffix, but a contradictory snapshot must fail because already emitted
+SSE text cannot be replaced. Its signature wrapper scopes replay by deployment
+and retries a recognized rejection once before forwarding any completion. It
+preserves tool results and compaction state during that retry.
+
+The client still needs final-answer JSON selection: commentary and final messages
+are valid separate Responses items, while the native TanStack adapter concatenates
+their text. The extended reasoning signature also retains separate visible text
+and summary across TanStack conversions. Keep the client fallback until gateway
+rollout and retry ownership are coordinated; a gateway fix alone does not remove
+those adapter limitations or invalidate older saved conversations.
+
+`npm run test:e2e:sdk` compares the app with the official OpenAI SDK using identical
+captured live gateway responses, including text, phases, reasoning, function calls,
+usage, and persisted replay. `WINGMAN_SDK_MODELS` selects a comma-separated model
+list; the default covers OpenAI, Anthropic, and Gemini. Absent and null optional
+fields are normalized, while text and opaque signatures are compared exactly.
+The gateway's `TestRepairSDKCrossProvider` and
+`TestRepairSDKDoesNotRetryAfterOutput` exercise both API directions with fixed
+upstream responses. Its opt-in `TestRepairLiveAnthropicSDKReplay` uses
+`WINGMAN_SDK_LIVE_URL` to test the reverse live path with the Anthropic SDK,
+including signed reasoning replay through OpenAI and Anthropic backends.
+
 Compaction requests a new summary with a final user instruction, avoiding an
 assistant-prefill request that gateway providers can reject.
 
@@ -633,7 +658,9 @@ belongs to the individual popup. The internal companion name retains the public
 and change notifications to the workspace. The MCP SDK handles both legacy
 elicitation and modern `input_required` retries through one registered handler.
 Wingman queues form display after capturing the active tool owner; the SDK owns
-request IDs, state echoing, round limits and cancellation. Resource reads use
+request IDs, state echoing, round limits and cancellation. Forms stop when their
+request or owning tool ends. Follow-up prompts replace accepted URL status
+without cancelling the tool. Resource reads use
 local cancellation because the native MCP resource API has no signal argument.
 Calls and discovery use the native client's APIs.
 

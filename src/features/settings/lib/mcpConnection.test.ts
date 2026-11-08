@@ -442,6 +442,72 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     ).rejects.toThrow("single active tool context");
   });
 
+  it("keeps later forms behind the visible form when a queued request is cancelled", async () => {
+    await provider.connect();
+    const pending = deferred<CallToolResult>();
+    call.mockReturnValue(pending.promise);
+    const response = deferred<ElicitationResult>();
+    const elicit = vi.fn().mockReturnValueOnce(response.promise).mockResolvedValue({ action: "decline" });
+    const execution = provider.tools[0].execute({}, { context: { elicit }, emitCustomEvent() {} });
+    const form = (message: string) => ({ message, requestedSchema: { type: "object" as const, properties: {} } });
+    const first = server.elicitInput(form("First"));
+    await vi.waitFor(() => expect(elicit).toHaveBeenCalledOnce());
+    const controller = new AbortController();
+    const second = server.elicitInput(form("Cancelled"), { signal: controller.signal });
+    const cancelled = expect(second).rejects.toThrow();
+    // Let the real SDK dispatch this request into the display queue before cancelling it.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.abort();
+    await cancelled;
+    const third = server.elicitInput(form("Third"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    try {
+      expect(elicit).toHaveBeenCalledOnce();
+    } finally {
+      response.resolve({ action: "decline" });
+      await Promise.all([first, third]);
+      pending.resolve(result);
+      await execution;
+    }
+    expect(elicit.mock.calls.map(([request]) => request.message)).toEqual(["First", "Third"]);
+  });
+
+  it("closes unanswered forms when their tool finishes and releases the queue for the next call", async () => {
+    await provider.connect();
+    const pending = deferred<CallToolResult>();
+    call.mockReturnValueOnce(pending.promise);
+    const response = deferred<ElicitationResult>();
+    let signal!: AbortSignal;
+    const elicit = vi.fn((_request, options) => {
+      signal = options.signal;
+      return response.promise;
+    });
+    const execution = provider.tools[0].execute({}, { context: { elicit }, emitCustomEvent() {} });
+    const request = server.elicitInput({ message: "First", requestedSchema: { type: "object", properties: {} } });
+    const settled = request.then(
+      () => "answered",
+      () => "cancelled",
+    );
+    await vi.waitFor(() => expect(elicit).toHaveBeenCalledOnce());
+    pending.resolve(result);
+    await execution;
+    try {
+      expect(signal.aborted).toBe(true);
+      expect(await settled).toBe("cancelled");
+      const next = deferred<CallToolResult>();
+      call.mockReturnValueOnce(next.promise);
+      const nextElicit = vi.fn().mockResolvedValue({ action: "decline" });
+      const nextExecution = provider.tools[0].execute({}, { context: { elicit: nextElicit }, emitCustomEvent() {} });
+      await server.elicitInput({ message: "Next", requestedSchema: { type: "object", properties: {} } });
+      expect(nextElicit).toHaveBeenCalledOnce();
+      next.resolve(result);
+      await nextExecution;
+    } finally {
+      response.resolve({ action: "accept" });
+      await settled;
+    }
+  });
+
   it("cancels resource-link hydration along with its tool run", async () => {
     await provider.connect();
     call.mockResolvedValue({ content: [{ type: "resource_link", name: "file", uri: "files://result" }] });

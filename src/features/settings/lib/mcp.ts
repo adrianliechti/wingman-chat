@@ -63,7 +63,7 @@ function findUiResource(uri: string, contents: MCPResourceContents[]): MCPResour
 }
 
 type McpIcon = { src: string; theme?: "light" | "dark" };
-type ActiveToolCall = { context?: ToolContext };
+type ActiveToolCall = { context?: ToolContext; controller: AbortController };
 function pickIcon(icons?: McpIcon[]): string | undefined {
   return (icons?.find((icon) => icon.theme === "light") ?? icons?.find((icon) => !icon.theme) ?? icons?.[0])?.src;
 }
@@ -186,7 +186,7 @@ export class MCPClient implements ToolProvider {
             else if (method === "notifications/elicitation/complete" && typeof params?.elicitationId === "string") {
               const call = this.elicitations.get(params.elicitationId);
               this.elicitations.delete(params.elicitationId);
-              if (!call?.context?.signal?.aborted) call?.context?.onElicitationComplete?.(params.elicitationId);
+              if (!call?.controller.signal.aborted) call?.context?.onElicitationComplete?.(params.elicitationId);
             }
           },
           closed: () => {
@@ -243,58 +243,60 @@ export class MCPClient implements ToolProvider {
   private async elicit(params: ElicitRequest["params"], signal: AbortSignal): Promise<ElicitResult> {
     const [call] = this.activeToolCalls;
     const context = call?.context;
-    if (this.activeToolCalls.size !== 1 || !context?.elicit || context.signal?.aborted) {
+    if (this.activeToolCalls.size !== 1 || !context?.elicit || call.controller.signal.aborted) {
       throw new Error("Elicitation requires a single active tool context");
     }
+    signal = AbortSignal.any([signal, call.controller.signal]);
     const elicit = context.elicit.bind(context);
+    const options = {
+      signal,
+      onCancel: () => call.controller.abort(new DOMException("MCP elicitation cancelled", "AbortError")),
+    };
     // Capture the owner before queueing; the UI can show only one SDK input request at a time.
-    const previous = this.pendingInput;
-    const answer = withAbort(signal, async () => {
-      await previous;
-      signal.throwIfAborted();
-      context.signal?.throwIfAborted();
-      if (params.mode === "url") {
-        const url = new URL(params.url);
-        if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
-          throw new Error("MCP elicitation URLs must use HTTP(S) without embedded credentials");
-        this.elicitations.set(params.elicitationId, call);
-        try {
-          const result = await elicit(
-            {
-              mode: "url",
-              message: params.message,
-              source: this.name,
-              url: params.url,
-              elicitationId: params.elicitationId,
-            },
-            { signal },
-          );
-          signal.throwIfAborted();
-          context.signal?.throwIfAborted();
-          if (result.action !== "accept") this.elicitations.delete(params.elicitationId);
-          return { action: result.action };
-        } catch (error) {
-          this.elicitations.delete(params.elicitationId);
-          throw error;
+    const answer = this.pendingInput.then(() =>
+      withAbort(signal, async () => {
+        if (params.mode === "url") {
+          const url = new URL(params.url);
+          if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
+            throw new Error("MCP elicitation URLs must use HTTP(S) without embedded credentials");
+          this.elicitations.set(params.elicitationId, call);
+          try {
+            const result = await elicit(
+              {
+                mode: "url",
+                message: params.message,
+                source: this.name,
+                url: params.url,
+                elicitationId: params.elicitationId,
+              },
+              options,
+            );
+            signal.throwIfAborted();
+            if (result.action !== "accept") this.elicitations.delete(params.elicitationId);
+            return { action: result.action };
+          } catch (error) {
+            this.elicitations.delete(params.elicitationId);
+            throw error;
+          }
         }
-      }
-      const result = await elicit(
-        {
-          message: params.message,
-          source: this.name,
-          requestedSchema: normalizeRequestedSchema(params.requestedSchema),
-        },
-        { signal },
-      );
-      signal.throwIfAborted();
-      context.signal?.throwIfAborted();
-      return result;
-    });
+        const result = await elicit(
+          {
+            message: params.message,
+            source: this.name,
+            requestedSchema: normalizeRequestedSchema(params.requestedSchema),
+          },
+          options,
+        );
+        signal.throwIfAborted();
+        return result;
+      }),
+    );
     this.pendingInput = answer.then(
       () => undefined,
       () => undefined,
     );
-    return answer;
+    // Cancel the caller immediately without letting later forms bypass the queue.
+    return withAbort(signal, () => answer);
   }
 
   async disconnect(): Promise<void> {
@@ -470,19 +472,7 @@ export class MCPClient implements ToolProvider {
       this.connectionAbort?.signal,
       AbortSignal.timeout(TOOL_TIMEOUT_MS),
     );
-    const call: ActiveToolCall = {
-      context: {
-        ...context,
-        signal: controller.signal,
-        elicit: context?.elicit
-          ? (request, options) =>
-              context.elicit!(request, {
-                signal: options?.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal,
-                onCancel: () => controller.abort(new DOMException("MCP elicitation cancelled", "AbortError")),
-              })
-          : undefined,
-      },
-    };
+    const call: ActiveToolCall = { context, controller };
     this.activeToolCalls.add(call);
     try {
       let progress = -Infinity;
@@ -506,12 +496,13 @@ export class MCPClient implements ToolProvider {
       });
       controller.signal.throwIfAborted();
       if (this.client !== client) throw new Error("MCP connection changed during tool call");
-      return result as CallToolResult;
+      return result;
     } catch (error) {
       controller.signal.throwIfAborted();
       throw error;
     } finally {
       cleanup();
+      controller.abort();
       this.activeToolCalls.delete(call);
       for (const [id, owner] of this.elicitations) {
         if (owner === call) this.elicitations.delete(id);

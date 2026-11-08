@@ -21,13 +21,12 @@ export function tanstackResponsePhases(): Plugin {
               countGuard,
               `
               if (!items) return;
-              if (items.length !== texts.length) {
-                const lengths = items.map(item => item.textLength);
-                if (!lengths.every(length => Number.isInteger(length) && length >= 0) ||
-                    lengths.reduce((sum, length) => sum + length, 0) !== text.length) return;
+              const lengths = items.map(item => item.textLength);
+              if (lengths.every(length => Number.isInteger(length) && length >= 0) &&
+                  lengths.reduce((sum, length) => sum + length, 0) === text.length) {
                 let offset = 0;
                 texts = lengths.map(length => text.slice(offset, offset += length));
-              }
+              } else if (items.length !== texts.length) return;
             `,
             )
             .replace(

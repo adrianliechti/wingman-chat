@@ -2,7 +2,6 @@ import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/re
 import { Check, ChevronLeft, ChevronRight, Settings2, X } from "lucide-react";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/shared/lib/cn";
-import type { ModelPreset } from "@/shared/lib/modelPresets";
 import type { Model } from "@/shared/types/chat";
 import { EFFORT_LABEL } from "./effortLabels";
 import { PresetSlider, type ModelDropdownProps } from "./ModelDropdown";
@@ -30,14 +29,6 @@ interface Page {
 
 const PUSH = "animate-[sheet-push_280ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:animate-none";
 const POP = "animate-[sheet-pop_280ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:animate-none";
-
-/** Caption under a preset row: the model, unless the label already names it, plus the effort. */
-function presetCaption(step: ModelPreset): string | undefined {
-  const modelName = step.model.name ?? step.model.id;
-  const key = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const parts = [key(step.label) === key(modelName) ? null : modelName, step.effort && EFFORT_LABEL[step.effort]];
-  return parts.filter(Boolean).join(" · ") || undefined;
-}
 
 function Group({ children }: { children: ReactNode }) {
   return (
@@ -144,8 +135,6 @@ export function ModelSheet(props: ModelDropdownProps) {
   const [open, setOpen] = useState(false);
   // `null` is the root; a page id pushes that page. Direction drives the slide.
   const [nav, setNav] = useState<{ page: string | null; back: boolean }>({ page: null, back: false });
-  // Step under the slider thumb while dragging; the caption follows it live.
-  const [preview, setPreview] = useState<number | null>(null);
   // The sheet takes only the space its page needs; the body's height is measured
   // from the page so a change of page animates the sheet to the new size.
   const [pageHeight, setPageHeight] = useState<number | null>(null);
@@ -372,32 +361,9 @@ export function ModelSheet(props: ModelDropdownProps) {
                   <div className="space-y-3">
                     {steps && presets ? (
                       // The Faster → Smarter ladder, as on desktop; the full list sits behind "Model".
-                      <div className="rounded-[22px] bg-black/4 px-2 pt-1 pb-3 dark:bg-white/6">
-                        <PresetSlider {...presets} fallbackLabel={currentModel?.name ?? value} onPreview={setPreview} />
-                        <div className="flex min-h-11 flex-col items-center justify-center px-3 text-center">
-                          {(() => {
-                            const shown = steps[preview ?? presets.value];
-                            return shown ? (
-                              <>
-                                <span className="text-[17px] font-medium text-neutral-900 dark:text-neutral-50">
-                                  {shown.label}
-                                </span>
-                                {presetCaption(shown) && (
-                                  <span className="text-[15px] text-neutral-500 dark:text-neutral-400">
-                                    {presetCaption(shown)}
-                                  </span>
-                                )}
-                              </>
-                            ) : (
-                              <>
-                                <span className="text-[17px] font-medium text-neutral-900 dark:text-neutral-50">
-                                  {currentModel?.name ?? value}
-                                </span>
-                                <span className="text-[15px] text-neutral-500 dark:text-neutral-400">Custom</span>
-                              </>
-                            );
-                          })()}
-                        </div>
+                      // The Model and Effort rows below already name the selection, so the slider stands alone.
+                      <div className="rounded-[22px] bg-black/4 px-2 py-2 dark:bg-white/6">
+                        <PresetSlider {...presets} fallbackLabel={currentModel?.name ?? value} live />
                       </div>
                     ) : (
                       <Group>

@@ -7,6 +7,11 @@ import { useEffect } from "react";
  * `--app-keyboard` is the height of that hidden strip; the composer footer adds
  * it to its `bottom`, and `keyboard-open` drops the home-indicator inset, which
  * the keyboard already covers.
+ *
+ * Focusing a field under the keyboard also makes iOS pan the visual viewport
+ * up to reveal the caret, even though the document itself can't scroll. That
+ * shoves the top bar off-screen and leaves the bottom chrome half hidden, so
+ * the pan is undone here; the pages shrink by `--app-keyboard` instead.
  */
 export function useVisualViewport() {
   useEffect(() => {
@@ -16,6 +21,8 @@ export function useVisualViewport() {
     let frame = 0;
     const update = () => {
       frame = 0;
+      // Not while pinch-zoomed: that offset is the user's.
+      if (viewport.scale <= 1 && (viewport.offsetTop > 0 || window.scrollY > 0)) window.scrollTo(0, 0);
       const covered = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
       root.style.setProperty("--app-keyboard", `${Math.round(covered)}px`);
       root.classList.toggle("keyboard-open", covered > 80);

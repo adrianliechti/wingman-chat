@@ -534,18 +534,23 @@ export function PresetSlider({
   onChange,
   fallbackLabel,
   onPreview,
+  live = false,
 }: PresetsConfig & {
   fallbackLabel: string;
   /** Reports the step under the thumb while dragging, and null when the drag ends. */
-  onPreview: (index: number | null) => void;
+  onPreview?: (index: number | null) => void;
+  /** Commit every step the thumb crosses instead of waiting for release. */
+  live?: boolean;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
-  // Position while dragging; committed on release so a drag across the track
-  // doesn't write every intermediate model to the chat.
+  // Position while dragging. Desktop commits on release so a drag across the
+  // track doesn't write every intermediate model to the chat; the phone sheet
+  // commits live, since there's no caption to preview into.
   const [dragIndex, setDragIndexState] = useState<number | null>(null);
   const setDragIndex = (next: number | null) => {
     setDragIndexState(next);
-    onPreview(next);
+    onPreview?.(next);
+    if (live && next !== null && next !== value) onChange(next);
   };
 
   const index = dragIndex ?? value;
