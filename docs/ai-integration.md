@@ -228,14 +228,20 @@ on native parts when the transcript is persisted. Commentary and final-answer
 phases live on text parts, without duplicating text in message metadata; saved
 `textSegments` migrate on loading. Older messages without original provider
 item ids replay as ordinary assistant text; migration never invents response
-ids. For native `metadata.tanstack.responseItems`, the request boundary preserves
-text-item boundaries in TanStack's `blockOrder` and delegates id/phase replay to
-the Responses adapter. Execution and history replay send the same text
+ids. Native `metadata.tanstack.responseItems` retain each item's text length;
+older phased records gain missing lengths on load. The Responses adapter owns
+id/phase replay. Execution and history replay send the same text
 descriptions of binary tool outputs to the provider. Inline user
 files retain their filename, MIME type, and bytes as gateway `input_file` items,
 including Office documents and text files beyond the native adapter's PDF-only
 document contract. Upload preservation and text extraction remain independent
 of this request serialization.
+
+`scripts/tanstack-response-phases.ts` temporarily patches `@tanstack/openai-base`
+1.0.2 in Vite transforms, dependency prebundling, and tests. It records item
+lengths and restores boundaries when core merges adjacent text. Remove the
+plugin once [the upstream fix](https://github.com/TanStack/ai/pull/2087) ships. Live display phases and final-only
+structured-output selection still use the gateway adapter.
 
 Dictation uses the native recorder's encoded blob directly, following the
 [audio recording guide](https://tanstack.com/ai/latest/docs/media/audio-recording).

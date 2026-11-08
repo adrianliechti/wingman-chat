@@ -154,34 +154,6 @@ export class RunSidecar {
     });
   }
 
-  /** Preserve item boundaries for TanStack's native Responses replay, using only real provider ids. */
-  applyModelResponseItems(messages: ModelMessage[]): ModelMessage[] {
-    return messages.map((message) => {
-      const parts = message.id ? this.phasedText.get(message.id) : undefined;
-      const items = message.metadata?.tanstack?.responseItems;
-      if (
-        message.role !== "assistant" ||
-        !parts ||
-        !items?.length ||
-        items.length !== parts.length ||
-        typeof message.content !== "string" ||
-        message.content !== parts.map((part) => part.content).join("")
-      )
-        return message;
-      let thinking = 0;
-      const blockOrder: NonNullable<ModelMessage["blockOrder"]> = withTextPhases(
-        normalizeToUIMessage(message, () => crypto.randomUUID()),
-        parts,
-      ).parts.flatMap<NonNullable<ModelMessage["blockOrder"]>[number]>((part) => {
-        if (part.type === "thinking") return [{ type: "thinking" as const, index: thinking++ }];
-        if (part.type === "tool-call") return [{ type: "tool-call" as const, id: part.id }];
-        if (part.type === "text" && part.content) return [{ type: "text" as const, length: part.content.length }];
-        return [];
-      });
-      return { ...message, blockOrder };
-    });
-  }
-
   apply(messages: UIMessage[]): UIMessage[] {
     if (!this.results.size && !this.turns.size && !this.rejectedReasoning.size && !this.phasedText.size)
       return messages;
@@ -351,9 +323,7 @@ export async function* streamRun(
             ),
           };
         if (ctx.phase !== "beforeModel") return;
-        const providerMessages = describeToolMessages(
-          sidecar.applyModelResponseItems(config.providerMessages ?? config.messages),
-        );
+        const providerMessages = describeToolMessages(config.providerMessages ?? config.messages);
         return {
           providerMessages: hooks.prepareMessages
             ? await hooks.prepareMessages(providerMessages, abortController.signal)

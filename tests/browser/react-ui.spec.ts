@@ -3,6 +3,18 @@ import { mcpToolName } from "../../src/features/settings/lib/mcpToolNames";
 
 const AGENT_TOOL_NAME = mcpToolName("internet", "@agent");
 
+base("native TanStack phases survive prebundling and a persisted wire round trip", async ({ page }) => {
+  await page.goto("/tests/browser/fixtures/markdown.html");
+  const replay = await page.evaluate(async (modulePath) => {
+    const { nativePhaseReplay } = await import(/* @vite-ignore */ modulePath);
+    return (await nativePhaseReplay()).replay;
+  }, "/src/shared/lib/test-support/tanstackPhases.ts");
+  expect(replay).toMatchObject([
+    { id: "commentary", phase: "commentary", content: [{ text: "Working" }] },
+    { id: "final", phase: "final_answer", content: [{ text: "Done" }] },
+  ]);
+});
+
 const test = base.extend({
   context: async ({ browserName, context, playwright, baseURL, viewport }, use, info) => {
     if (browserName !== "webkit") return use(context);
@@ -761,7 +773,7 @@ for (const existingChat of [false, true]) {
     await input.press("Enter");
     await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
     await expect(activity).toBeVisible();
-  await page.getByRole("button", { name: "Stop generating", exact: true }).click();
+    await page.getByRole("button", { name: "Stop generating", exact: true }).click();
     await expect(activity).toHaveCount(0);
   });
 }

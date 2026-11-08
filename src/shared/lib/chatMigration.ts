@@ -19,6 +19,7 @@ import {
   type SubagentPart,
   type ToolCallPart,
   type ToolResultPart,
+  type TanStackMessageMetadata,
   type UIMessage,
   type UIResourcePart,
 } from "@tanstack/ai";
@@ -32,6 +33,8 @@ import {
   messageText,
   outputText,
   text,
+  textParts,
+  textMetadata,
   toolResultContent,
   uiResourceFor,
   withTextPhases,
@@ -623,6 +626,27 @@ function normalizePart(part: MessagePart): MessagePart {
   return part;
 }
 
+/** Move the old duplicate text onto native parts before filling replay lengths. */
+function normalizeTextSegments(message: UIMessage): UIMessage {
+  const legacy = message.metadata?.textSegments;
+  if (!Array.isArray(legacy)) return message;
+  const phased = legacy.flatMap((segment) =>
+    segment && typeof segment.content === "string"
+      ? [
+          text(
+            segment.content,
+            segment.phase === "commentary" || segment.phase === "final_answer" ? { phase: segment.phase } : undefined,
+          ),
+        ]
+      : [],
+  );
+  if (messageText(message) !== phased.map((part) => part.content).join("")) return message;
+  const next = withTextPhases(message, phased);
+  const { textSegments: _legacy, ...metadata } = message.metadata!;
+  const { metadata: _metadata, ...rest } = next;
+  return Object.keys(metadata).length ? { ...rest, metadata } : rest;
+}
+
 /** Whatever shape is on disk, as the current record. */
 export function normalizeStoredChat(stored: StoredChat | LegacyStoredChat): StoredChat {
   if (isLegacyStoredChat(stored)) return normalizeStoredChat(migrateLegacyChat(stored));
@@ -642,27 +666,27 @@ export function normalizeStoredChat(stored: StoredChat | LegacyStoredChat): Stor
       normalizePart(part.type === "tool-result" ? normalizeToolResult(part, calls.get(part.toolCallId)) : part),
     );
     if (parts.some((part, index) => part !== message.parts[index])) message = { ...message, parts };
-    message = normalizeAppParts(message);
-    const legacy = message.metadata?.textSegments;
-    if (!Array.isArray(legacy)) return message;
-    const phased = legacy.flatMap((segment) =>
-      segment && typeof segment.content === "string"
-        ? [
-            text(
-              segment.content,
-              segment.phase === "commentary" || segment.phase === "final_answer" ? { phase: segment.phase } : undefined,
-            ),
-          ]
-        : [],
-    );
-    // Keep unfamiliar or damaged metadata intact rather than discard readable text.
-    if (messageText(message) !== phased.map((part) => part.content).join("")) return message;
-    // Display labels survive migration, but provider item ids cannot be
-    // reconstructed. Only native responseItems participate in phased replay.
-    const next = withTextPhases(message, phased);
-    const { textSegments: _legacy, ...metadata } = message.metadata!;
-    const { metadata: _metadata, ...rest } = next;
-    return Object.keys(metadata).length ? { ...rest, metadata } : rest;
+    message = normalizeTextSegments(normalizeAppParts(message));
+    const items: TanStackMessageMetadata["responseItems"] = message.metadata?.tanstack?.responseItems;
+    const texts = textParts(message);
+    if (
+      message.role !== "assistant" ||
+      !items?.length ||
+      items.length !== texts.length ||
+      !items.some((item) => !("textLength" in item)) ||
+      !items.every((item, index) => item.phase === textMetadata(texts[index]).phase)
+    )
+      return message;
+    return {
+      ...message,
+      metadata: {
+        ...message.metadata,
+        tanstack: {
+          ...message.metadata?.tanstack,
+          responseItems: items.map((item, index) => ({ ...item, textLength: texts[index].content.length })),
+        },
+      },
+    };
   });
   return messages === stored.messages ? stored : { ...stored, messages };
 }
