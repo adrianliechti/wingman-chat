@@ -468,10 +468,10 @@ function GeneratingPlaceholder({
 }) {
   const aspect = item.aspect ?? 1;
   return (
-    <div className="flex max-h-full max-w-full flex-col items-center gap-4">
+    <div className="flex max-h-full w-[min(70vw,36rem)] max-w-full min-w-0 flex-col items-center gap-4">
       <div
         className={cn(
-          "relative flex max-h-[60vh] w-[min(70vw,36rem)] items-center justify-center overflow-hidden rounded-2xl shadow-xl",
+          "relative flex max-h-[60vh] w-full items-center justify-center overflow-hidden rounded-2xl shadow-xl",
           item.status === "running"
             ? "animate-pulse bg-neutral-200 dark:bg-neutral-800"
             : "bg-red-50 ring-1 ring-red-200 dark:bg-red-950/30 dark:ring-red-900",
@@ -504,7 +504,10 @@ function GeneratingPlaceholder({
           </div>
         )}
       </div>
-      <p className="max-w-md truncate text-xs text-neutral-500 dark:text-neutral-400" title={item.prompt}>
+      <p
+        className="line-clamp-3 w-full max-w-md text-center text-xs wrap-anywhere text-neutral-500 dark:text-neutral-400"
+        title={item.prompt}
+      >
         {item.prompt}
       </p>
     </div>

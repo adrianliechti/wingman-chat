@@ -24,7 +24,7 @@ interface LanguagePickerProps {
   onProviderChange?: (id: string) => void;
   /** A reason a translator cannot be chosen right now (e.g. it rejects the open document). */
   providerDisabledReason?: (provider: TranslatorProvider) => string | null;
-  anchor?: "bottom" | "bottom start" | "bottom end";
+  anchor?: "bottom" | "bottom start" | "bottom end" | "top start";
   disabled?: boolean;
   className?: string;
 }
@@ -36,6 +36,7 @@ const ANCHOR_MOTION = {
   bottom: "origin-top data-closed:-translate-y-1.5",
   "bottom start": "origin-top-left data-closed:-translate-y-1.5",
   "bottom end": "origin-top-right data-closed:-translate-y-1.5",
+  "top start": "origin-bottom-left data-closed:translate-y-1.5",
 };
 
 /** Target language picker; also switches the translator when several are configured. */

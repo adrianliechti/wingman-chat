@@ -12,13 +12,14 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslate } from "../hooks/useTranslate";
 import { languageName, type SupportedFile } from "../lib/languages";
 import { replaceContext, selectionOffsets } from "../lib/selection";
 import { errorMessage } from "../lib/translationJobs";
 import type { Translation } from "../types/translate";
 import { type DriveConfig, getConfig } from "@/shared/config";
+import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { notify } from "@/shared/lib/notify";
 import { CopyButton } from "@/shared/ui/CopyButton";
@@ -90,6 +91,32 @@ export function TextWorkbench({ onPickFiles, onPickDrive }: TextWorkbenchProps) 
   const maxTextLength = config.translator?.maxTextLength;
   const overLimit = maxTextLength != null && draft.sourceText.length > maxTextLength;
 
+  // Phones while typing: the keyboard halves the screen, so the source takes all
+  // of it and the translation waits behind "Done" (or the return key).
+  const compact = !useBreakpoint("md");
+  const [editing, setEditing] = useState(false);
+  const focused = compact && editing;
+  const sourceRef = useRef<HTMLTextAreaElement>(null);
+  const finishEditing = () => {
+    translateNow();
+    sourceRef.current?.blur();
+  };
+  // Controls in the docked row must not steal focus: a blur would switch the
+  // layout and unmount the control before its click arrives.
+  const keepFocus = (event: React.PointerEvent) => event.preventDefault();
+
+  const picker = (
+    <LanguagePicker
+      value={draft.targetLang}
+      languages={languages}
+      onChange={setTargetLang}
+      providers={providers}
+      provider={draft.provider}
+      onProviderChange={setProvider}
+      anchor={focused ? "top start" : "bottom"}
+    />
+  );
+
   const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const pasted = Array.from(event.clipboardData.files);
     if (pasted.length === 0) return;
@@ -101,32 +128,54 @@ export function TextWorkbench({ onPickFiles, onPickDrive }: TextWorkbenchProps) 
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         {/* Source */}
-        <section aria-label="Source text" className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <PaneHeader>
-            <span className={PANE_LABEL_CLASS} title="The source language is detected automatically">
-              <ScanText size={15} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
-              <span className="truncate">Detect language</span>
-            </span>
-          </PaneHeader>
+        <section
+          aria-label="Source text"
+          className={cn("flex min-h-0 min-w-0 flex-1 flex-col", !focused && "max-md:flex-none")}
+        >
+          {!focused && (
+            <PaneHeader>
+              <span className={PANE_LABEL_CLASS} title="The source language is detected automatically">
+                <ScanText size={15} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
+                <span className="truncate">Detect language</span>
+              </span>
+            </PaneHeader>
+          )}
           <textarea
+            ref={sourceRef}
             value={draft.sourceText}
             onChange={(event) => setSourceText(event.target.value)}
             onPaste={onPaste}
             onKeyDown={(event) => {
+              if (compact && event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                // The return key reads "Done" on phones: translate and drop the keyboard.
+                event.preventDefault();
+                finishEditing();
+                return;
+              }
               if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                 event.preventDefault();
                 translateNow();
               }
             }}
-            autoFocus
+            autoFocus={!compact}
+            onFocus={() => setEditing(true)}
+            onBlur={() => setEditing(false)}
+            enterKeyHint={compact ? "done" : undefined}
             spellCheck={false}
             placeholder="Type or paste text to translate…"
             aria-label="Text to translate"
-            className="min-h-0 flex-1 resize-none bg-transparent px-5 pt-2 pb-2 text-base leading-relaxed text-neutral-800 outline-none placeholder:text-neutral-400 md:px-8 md:pt-4 dark:text-neutral-200 dark:placeholder:text-neutral-500"
+            className={cn(
+              "min-h-0 flex-1 resize-none bg-transparent px-5 pt-2 pb-2 text-base leading-relaxed text-neutral-800 outline-none placeholder:text-neutral-400 md:px-8 md:pt-4 dark:text-neutral-200 dark:placeholder:text-neutral-500",
+              // Keyboard closed: the field hugs its text so the translation below gets the room.
+              !focused &&
+                "max-md:max-h-[calc(var(--app-height)*0.4)] max-md:min-h-28 max-md:flex-none max-md:field-sizing-content",
+            )}
           />
-          <div className={FOOTER_CLASS}>
+          <div className={FOOTER_CLASS} onPointerDown={focused ? keepFocus : undefined}>
+            {focused && picker}
             {/* With drives configured the button offers them; otherwise it opens the file picker itself. */}
-            {acceptedFiles.length > 0 &&
+            {!focused &&
+              acceptedFiles.length > 0 &&
               (config.drives.length > 0 ? (
                 <DropdownMenu
                   anchor="top start"
@@ -189,26 +238,30 @@ export function TextWorkbench({ onPickFiles, onPickDrive }: TextWorkbenchProps) 
                   </button>
                 </>
               )}
+              {focused && (
+                <button
+                  type="button"
+                  onClick={finishEditing}
+                  className="press ml-1 rounded-full bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-neutral-900"
+                >
+                  Done
+                </button>
+              )}
             </div>
           </div>
         </section>
 
-        <div aria-hidden="true" className="h-px shrink-0 bg-black/10 md:h-auto md:w-px dark:bg-white/10" />
+        <div
+          aria-hidden="true"
+          className={cn("h-px shrink-0 bg-black/10 md:h-auto md:w-px dark:bg-white/10", focused && "hidden")}
+        />
 
         {/* Translation */}
         <TranslationResult
           job={job}
           hint={fileTypeHint(acceptedFiles)}
-          header={
-            <LanguagePicker
-              value={draft.targetLang}
-              languages={languages}
-              onChange={setTargetLang}
-              providers={providers}
-              provider={draft.provider}
-              onProviderChange={setProvider}
-            />
-          }
+          header={picker}
+          className={focused ? "hidden" : undefined}
         />
       </div>
     </div>
@@ -233,11 +286,13 @@ function TranslationResult({
   job,
   hint,
   header,
+  className,
 }: {
   job: Translation | null;
   hint: string;
   /** The target language picker, at the left edge of the pane. */
   header: React.ReactNode;
+  className?: string;
 }) {
   const config = getConfig();
   const { formalityOptions, styleOptions, setFormality, setStyle, retry, refine, revertRefinement, replaceResult } =
@@ -280,7 +335,7 @@ function TranslationResult({
   const idle = !job || (!text && !running && job.status !== "error");
 
   return (
-    <section aria-label="Translation" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+    <section aria-label="Translation" className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", className)}>
       <PaneHeader>{header}</PaneHeader>
       <div className="relative min-h-0 flex-1 overflow-y-auto">
         {idle ? (
