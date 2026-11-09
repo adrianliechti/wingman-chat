@@ -50,6 +50,91 @@ async function open(page: Page, query = "") {
   await page.goto(`/tests/browser/fixtures/react-ui.html${query}`, { waitUntil: "domcontentloaded" });
 }
 
+for (const existingChat of [false, true]) {
+  for (const repeats of [1, 300]) {
+    for (const submit of ["Enter", "button"] as const) {
+      test(`webpage paste (${repeats} paragraphs, ${existingChat ? "existing" : "new"} chat) clears after ${submit}`, async ({
+        page,
+      }) => {
+        await open(page, existingChat ? "?seed" : "");
+        const input = page.getByRole("textbox", { name: "Chat message input" });
+        await expect(input).toBeEnabled();
+        const pasted = "Page heading\r\nA paragraph copied from a webpage.\rAnother paragraph.\n".repeat(repeats);
+        await input.evaluate((element, text) => {
+          const clipboardData = new DataTransfer();
+          clipboardData.setData("text/plain", text);
+          clipboardData.setData("text/html", "<h1>Page heading</h1><p>A paragraph</p>");
+          // Some sources also include an image representation of the selection.
+          clipboardData.items.add(new File(["thumbnail"], "image.png", { type: "image/png" }));
+          element.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
+        }, pasted);
+        await expect(input).toHaveValue(pasted.replace(/\r\n?/g, "\n"));
+        if (submit === "Enter") await input.press("Enter");
+        else await page.getByRole("button", { name: "Send message", exact: true }).click();
+        await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+        await expect(input).toBeEnabled();
+        await expect(input).toHaveValue("");
+        await input.fill("My next question");
+        await page.evaluate(() => window.reactUiE2E.finish("Copied page reviewed"));
+        await expect(page.locator('[data-role="assistant"]').last()).toContainText("Copied page reviewed");
+        await expect(input).toBeEnabled();
+        await expect(input).toHaveValue("My next question");
+        await input.fill("");
+        await expect(input).toHaveValue("");
+      });
+    }
+  }
+}
+
+test("native webpage clipboard paste clears after Enter submission", async ({ page, context, browserName }) => {
+  test.skip(browserName !== "chromium", "Clipboard permissions require Chromium");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await expect(input).toBeEnabled();
+  const pasted = "Page heading\r\nA paragraph copied from a webpage.\r\n".repeat(300);
+  await page.evaluate(async (text) => {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        "text/plain": new Blob([text], { type: "text/plain" }),
+        "text/html": new Blob(["<h1>Page heading</h1><p>A paragraph</p>"], { type: "text/html" }),
+      }),
+    ]);
+  }, pasted);
+  await input.focus();
+  await input.press("ControlOrMeta+v");
+  await expect(input).toHaveValue(pasted.replace(/\r\n?/g, "\n"));
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  await page.evaluate(() => window.reactUiE2E.finish("Page reviewed"));
+  await expect(page.locator('[data-role="assistant"]').last()).toContainText("Page reviewed");
+  await expect(page.getByRole("button", { name: "Stop generating", exact: true })).toHaveCount(0);
+  await expect(input).toBeEnabled();
+  await expect(input).toHaveValue("");
+  await input.fill("Next question");
+  await expect(input).toHaveValue("Next question");
+});
+
+for (const outcome of ["error", "cancel"] as const) {
+  test(`composer retains a follow-up draft after response ${outcome}`, async ({ page }) => {
+    await open(page);
+    const input = page.getByRole("textbox", { name: "Chat message input" });
+    await input.fill("Review this page\n".repeat(300));
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    await expect(input).toBeEnabled();
+    await expect(input).toHaveValue("");
+    await input.fill("An unsent follow-up");
+    if (outcome === "error") await page.evaluate(() => window.reactUiE2E.fail());
+    else await page.getByRole("button", { name: "Stop generating", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Stop generating", exact: true })).toHaveCount(0);
+    await expect(input).toBeEnabled();
+    await expect(input).toHaveValue("An unsent follow-up");
+    await input.fill("Still editable");
+    await expect(input).toHaveValue("Still editable");
+  });
+}
+
 test("chat input receives focus after initial loading and page refresh", async ({ page }) => {
   await open(page);
   const input = page.getByRole("textbox", { name: "Chat message input" });

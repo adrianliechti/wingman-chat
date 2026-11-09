@@ -33,6 +33,7 @@ const state = {
 let stream = (_text: string) => {};
 let think = (_text: string) => {};
 let finish = (_text: string) => {};
+let fail = () => {};
 let callTool = (_name: string, _args: object) => {};
 let researchProgress = (_progress: number, _message: string, _total?: number) => {};
 let finishResearch = () => {};
@@ -41,6 +42,7 @@ window.reactUiE2E = {
   stream: (text) => stream(text),
   think: (text) => think(text),
   finish: (text) => finish(text),
+  fail: () => fail(),
   callTool: (name, args) => callTool(name, args),
   flush: flushPersistence,
   researchProgress: (progress, message, total) => researchProgress(progress, message, total),
@@ -251,7 +253,7 @@ if (parameters.has("panels")) {
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
   const provider = testClient(
     async (options, handler, onThinking) =>
-      new Promise<UIMessage>((resolve) => {
+      new Promise<UIMessage>((resolve, reject) => {
         state.calls++;
         state.tools = options.tools?.map((tool) => tool.name) ?? [];
         state.instructions = JSON.stringify(options.systemPrompts);
@@ -259,6 +261,7 @@ if (parameters.has("panels")) {
         stream = (text) => handler?.(text);
         think = onThinking;
         finish = (text) => resolve(assistantMessage(text));
+        fail = () => reject(new Error("Fixture response failed"));
         callTool = (name, args) =>
           resolve(
             assistantMessage([
@@ -366,6 +369,7 @@ declare global {
       stream(text: string): void;
       think(text: string): void;
       finish(text: string): void;
+      fail(): void;
       callTool(name: string, args: object): void;
       flush(): Promise<void>;
       researchProgress(progress: number, message: string, total?: number): void;
