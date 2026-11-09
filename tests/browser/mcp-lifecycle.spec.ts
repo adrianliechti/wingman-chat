@@ -1,6 +1,7 @@
 import { expect, test as base, type Page } from "@playwright/test";
 import { Server, createMcpHandler, inputRequired, inputResponse } from "@modelcontextprotocol/server";
 import { mcpToolName } from "../../src/features/settings/lib/mcpToolNames";
+import { isolateOpfs } from "./helpers/opfs";
 
 const test = base.extend({
   context: async ({ browserName, context, playwright, baseURL, viewport }, use, info) => {
@@ -9,9 +10,11 @@ const test = base.extend({
       baseURL,
       viewport,
     });
+    const cleanupOpfs = await isolateOpfs(persistent);
     try {
       await use(persistent);
     } finally {
+      await cleanupOpfs();
       await persistent.close();
     }
   },

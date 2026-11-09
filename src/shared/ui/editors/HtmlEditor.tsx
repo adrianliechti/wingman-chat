@@ -31,14 +31,7 @@ const EXCLUDED_PROVIDERS = new Set(["artifacts", "memory", "skills"]);
 
 const NO_TOOLS: Tool[] = [];
 
-export function HtmlEditor({
-  path,
-  content,
-  viewMode = "preview",
-  onSelectionRoot,
-  editing,
-  onAsk,
-}: HtmlEditorProps) {
+export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoot, editing, onAsk }: HtmlEditorProps) {
   const { fs } = useArtifacts();
   const draft = useTextDraft(content, editing);
   const toolsContext = useContext(ToolsContext);

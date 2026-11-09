@@ -6,6 +6,7 @@ export type { Skill } from "@/features/skills/lib/skillParser";
 
 export interface SkillsContextType {
   skills: Skill[];
+  isLoaded: boolean;
   addSkill: (skill: Omit<Skill, "id">) => Skill;
   updateSkill: (id: string, updates: Partial<Omit<Skill, "id">>) => void;
   removeSkill: (id: string) => void;

@@ -60,7 +60,7 @@ const PYODIDE_BUILTIN_TARGETS = [
   // nothing to load. `ssl` is a no-OpenSSL stub (constants/SSLContext config
   // work; actual TLS does not — it never did in the browser). The OpenSSL-backed
   // `hashlib` digests are likewise gone (no package to bundle); base stdlib
-  // hashlib (common digests + a pure-Python pbkdf2_hmac fallback) is built in.
+  // hashlib's common digests are built in; OpenSSL's pbkdf2_hmac is unavailable.
   // Data & document handling. xlrd/python-calamine read legacy .xls/.xlsb/.ods
   // that openpyxl can't; pydantic is ubiquitous for data modeling/validation.
   "xlrd",

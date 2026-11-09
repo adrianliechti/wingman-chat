@@ -1,4 +1,5 @@
 import { expect, test as base, type Locator, type Page } from "@playwright/test";
+import { isolateOpfs } from "./helpers/opfs";
 
 const test = base.extend({
   context: async ({ browserName, context, playwright, baseURL, viewport, isMobile, hasTouch }, use, info) => {
@@ -10,9 +11,11 @@ const test = base.extend({
       isMobile,
       hasTouch,
     });
+    const cleanupOpfs = await isolateOpfs(persistent);
     try {
       await use(persistent);
     } finally {
+      await cleanupOpfs();
       await persistent.close();
     }
   },
@@ -94,7 +97,7 @@ for (const width of [390, 756]) {
         )
         .toBeGreaterThan(0);
     };
-    await page.getByRole("button", { name: "Fixture", exact: true }).click();
+    await page.locator("form").getByRole("button", { name: "Fixture", exact: true }).click();
     await onRight(close);
     const modelInset = await rightInset();
     await dialog.getByRole("button", { name: /^Verbosity/ }).click();
@@ -114,7 +117,7 @@ for (const width of [390, 756]) {
     await dialog.getByRole("button", { name: /^Verbosity/ }).click();
     await close.click();
     await expect(dialog).toBeHidden();
-    await page.getByRole("button", { name: "Fixture", exact: true }).click();
+    await page.locator("form").getByRole("button", { name: "Fixture", exact: true }).click();
     await expect(dialog.getByRole("heading", { name: "Select model", exact: true })).toBeVisible();
     await close.click();
     await expect(dialog).toBeHidden();

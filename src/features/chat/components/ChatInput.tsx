@@ -325,13 +325,13 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
 
   // Focus the composer when the active chat changes — starting a new chat or opening an
   // existing one — so you can type right away. Skipped on touch devices to avoid popping
-  // the on-screen keyboard. rAF defers focus until the newly selected chat has rendered
-  // (Safari ignores focus() called too early in the same tick).
+  // the on-screen keyboard. Wait for hydration and drafts to enable the input,
+  // then defer focus until the newly selected chat has rendered.
   useEffect(() => {
-    if (window.matchMedia("(pointer: coarse)").matches) return;
+    if (!draftLoaded || chatLoading || isRealtimeSelected || window.matchMedia("(pointer: coarse)").matches) return;
     const raf = requestAnimationFrame(() => contentInputRef.current?.focus());
     return () => cancelAnimationFrame(raf);
-  }, [chatId]);
+  }, [chatId, draftLoaded, chatLoading, isRealtimeSelected]);
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
@@ -680,7 +680,7 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                   inputMode="text"
                   enterKeyHint="send"
                   onChange={handleContentChange}
-                  disabled={!draftLoaded || submitting}
+                  disabled={!draftLoaded || submitting || chatLoading}
                   onKeyDown={handleKeyDown}
                   onSelect={(e) => completion.syncCaret(e.currentTarget)}
                   onFocus={() => completion.setFocused(true)}

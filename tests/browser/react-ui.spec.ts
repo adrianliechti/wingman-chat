@@ -1,5 +1,6 @@
 import { expect, test as base, type Page } from "@playwright/test";
 import { mcpToolName } from "../../src/features/settings/lib/mcpToolNames";
+import { isolateOpfs } from "./helpers/opfs";
 
 const AGENT_TOOL_NAME = mcpToolName("internet", "@agent");
 
@@ -24,9 +25,11 @@ const test = base.extend({
       baseURL,
       viewport,
     });
+    const cleanupOpfs = await isolateOpfs(persistent);
     try {
       await use(persistent);
     } finally {
+      await cleanupOpfs();
       await persistent.close();
     }
   },
@@ -46,6 +49,14 @@ async function open(page: Page, query = "") {
   );
   await page.goto(`/tests/browser/fixtures/react-ui.html${query}`, { waitUntil: "domcontentloaded" });
 }
+
+test("chat input receives focus after initial loading and page refresh", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await expect(input).toBeFocused();
+  await page.reload();
+  await expect(input).toBeFocused();
+});
 
 test("invalid inline UI repairs automatically and stays repaired after reload", async ({ page }) => {
   await open(page);
@@ -1501,8 +1512,29 @@ test("composer skill picker loads disabled skills with resources on follow-ups a
   await expect(page.getByText("Checklist complete", { exact: true })).toBeVisible();
   await page.evaluate(() => window.reactUiE2E.flush());
   const id = new URL(page.url()).pathname.split("/").pop();
+  await page.addInitScript(() => {
+    const fixture = window as typeof window & { skillReadHeld: boolean; releaseSkillRead: () => void };
+    const getFile = Object.getOwnPropertyDescriptor(FileSystemFileHandle.prototype, "getFile")!
+      .value as FileSystemFileHandle["getFile"];
+    const ready = new Promise<void>((resolve) => {
+      fixture.releaseSkillRead = resolve;
+    });
+    FileSystemFileHandle.prototype.getFile = async function () {
+      const file = await getFile.call(this);
+      if (this.name === "SKILL.md" && document.querySelector('[aria-label="Chat message input"]')) {
+        fixture.skillReadHeld = true;
+        await ready;
+      }
+      return file;
+    };
+  });
   await page.goto(`/tests/browser/fixtures/react-ui.html?composer&chat=${id}`);
+  await page.waitForFunction(() => (window as typeof window & { skillReadHeld: boolean }).skillReadHeld);
+  await expect(input).toBeDisabled();
+  await page.evaluate(() => (window as typeof window & { releaseSkillRead: () => void }).releaseSkillRead());
+  await expect(input).toBeFocused();
   await input.fill("Use that checklist again");
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
   await input.press("Enter");
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
   await page.evaluate(() =>
@@ -1591,6 +1623,7 @@ test("Canvas generates video, downloads its bytes and restores playback after re
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   const video = page.locator(`video[aria-label="${prompt}"]`);
   await expect(video).toBeVisible();
+  await video.evaluate((element: HTMLVideoElement) => element.play());
   await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThanOrEqual(2);
   await expect(page.locator(`canvas[aria-label="${prompt}"]`)).toHaveCount(0);
   expect(await page.evaluate(() => window.reactUiE2E.state().renders)).toEqual([

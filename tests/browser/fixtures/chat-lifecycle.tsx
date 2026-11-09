@@ -250,7 +250,18 @@ function Fixture() {
 function AgentOwner({ children }: { children: ReactNode }) {
   const [currentAgent, setCurrentAgent] = useState<Agent | null>(null);
   window.setChatAgent = setCurrentAgent;
-  return <AgentContext value={{ currentAgent } as AgentContextType}>{children}</AgentContext>;
+  return (
+    <AgentContext
+      value={
+        {
+          currentAgent,
+          getAgent: (id: string) => (currentAgent?.id === id ? currentAgent : undefined),
+        } as AgentContextType
+      }
+    >
+      {children}
+    </AgentContext>
+  );
 }
 
 const skills = createSkillsProvider(

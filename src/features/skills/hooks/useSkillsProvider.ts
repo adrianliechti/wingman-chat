@@ -37,8 +37,12 @@ export function useSkillsProvider(
   sources: SkillSources,
   activePlugins: InstalledPlugin[] = [],
   installedPlugins: InstalledPlugin[] = activePlugins,
-): { provider: SkillsToolProvider | null; forSelection: (names: readonly string[]) => SkillsToolProvider | null } {
-  const { skills } = useSkills();
+): {
+  provider: SkillsToolProvider | null;
+  forSelection: (names: readonly string[]) => SkillsToolProvider | null;
+  isLoaded: boolean;
+} {
+  const { skills, isLoaded } = useSkills();
   const { templates, loadTemplate } = useSkillTemplates();
 
   const result = useMemo(() => {
@@ -75,5 +79,5 @@ export function useSkillsProvider(
     setSkillResourceResolver(SKILLS_PROVIDER_ID, result.provider?.loadFiles ?? null);
     return () => setSkillResourceResolver(SKILLS_PROVIDER_ID, null);
   }, [result.provider]);
-  return result;
+  return { ...result, isLoaded };
 }

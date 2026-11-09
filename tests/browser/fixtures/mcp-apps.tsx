@@ -117,6 +117,7 @@ window.fetch = async (input, init) => {
 const client = new MCPClient("fixture", `${location.origin}/fixture-mcp`, "Fixture", "Fixture");
 await client.connect();
 const toolsContext: ToolsContextValue = {
+  skillsLoading: false,
   providers: [client],
   coreProviders: [],
   isProviderEnabled: () => true,

@@ -54,10 +54,10 @@ check("stdlib lzma round-trip", t_lzma)
 def t_hashlib_base():
     import hashlib  # base stdlib digests (OpenSSL extras dropped in Pyodide 314)
     assert hashlib.sha256(b"abc").hexdigest().startswith("ba7816bf")
-    hashlib.pbkdf2_hmac("sha256", b"pw", b"salt", 1000)  # pure-Python fallback
+    assert hashlib.sha512(b"abc").hexdigest().startswith("ddaf35a1")
 
 
-check("stdlib hashlib (base + pbkdf2)", t_hashlib_base)
+check("stdlib hashlib (base digests)", t_hashlib_base)
 
 
 # --- tzdata / zoneinfo ------------------------------------------------------
