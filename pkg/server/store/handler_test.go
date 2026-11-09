@@ -10,20 +10,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/adrianliechti/wingman-chat/internal/testgraph"
 	"github.com/adrianliechti/wingman-chat/pkg/store"
-	"github.com/adrianliechti/wingman-chat/pkg/store/file"
+	"github.com/adrianliechti/wingman-chat/pkg/store/onedrive"
 )
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	provider, err := file.New(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	provider := newTestStore(t)
 
 	mux := http.NewServeMux()
-	New(provider).Attach(mux, "")
+	New(provider, testStoreMiddleware).Attach(mux, "")
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -122,16 +120,25 @@ func TestMe(t *testing.T) {
 	res := do(t, srv, "alice", "GET", "/v1/me", "", nil)
 	wantStatus(t, res, http.StatusOK)
 
-	var u userIdentity
+	var u struct {
+		ID    string `json:"id"`
+		Key   string `json:"key"`
+		Email string `json:"email"`
+	}
 	if err := json.NewDecoder(res.Body).Decode(&u); err != nil {
 		t.Fatal(err)
 	}
 	if len(u.ID) != 32 {
 		t.Fatalf("id should be 16 hashed bytes hex-encoded, got %q", u.ID)
 	}
+	if u.Key != "" {
+		t.Fatal("/me leaked the private storage key")
+	}
 
 	res2 := do(t, srv, "alice", "GET", "/v1/me", "", nil)
-	var u2 userIdentity
+	var u2 struct {
+		ID string `json:"id"`
+	}
 	json.NewDecoder(res2.Body).Decode(&u2)
 	if u.ID != u2.ID {
 		t.Fatal("identity must be stable across requests")
@@ -352,9 +359,7 @@ func TestUserIsolation(t *testing.T) {
 	res = do(t, srv, "bob", "GET", "/v1/blobs/"+blobID, "", nil)
 	wantStatus(t, res, http.StatusNotFound)
 	res = do(t, srv, "bob", "GET", "/v1/chats/"+chatID+"/events", "", nil)
-	if body := strings.TrimSpace(readBody(t, res)); body != "" {
-		t.Fatalf("bob must not read alice's events: %s", body)
-	}
+	wantStatus(t, res, http.StatusNotFound)
 }
 
 func TestFileLifecycle(t *testing.T) {
@@ -444,4 +449,18 @@ func TestBackupsRequireProtection(t *testing.T) {
 	// An older client cannot turn a protected account back into plaintext mode.
 	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", `{"version":2,"kid":1,"pinProtected":false,"dek":"raw"}`, map[string]string{"If-Match": res.Header.Get("ETag")}), http.StatusBadRequest)
 	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files", "", nil), http.StatusOK)
+}
+
+func newTestStore(t *testing.T) *onedrive.Provider {
+	t.Helper()
+	previous := http.DefaultClient
+	http.DefaultClient = &http.Client{Transport: &testgraph.Accounts{}}
+	defer func() { http.DefaultClient = previous }()
+	return onedrive.New()
+}
+func testStoreMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, _, _ := userFromRequest(r)
+		next.ServeHTTP(w, r.WithContext(onedrive.WithToken(r.Context(), user)))
+	})
 }

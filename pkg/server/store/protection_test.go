@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/adrianliechti/wingman-chat/pkg/store/file"
+	"github.com/adrianliechti/wingman-chat/pkg/store/onedrive"
 )
 
 func TestProtectedKeystoreValidation(t *testing.T) {
@@ -53,17 +53,14 @@ func TestProtectedKeystoreValidation(t *testing.T) {
 }
 
 func TestLegacyUnprotectedStoreRequiresUpgrade(t *testing.T) {
-	provider, err := file.New(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	provider := newTestStore(t)
 	legacy := `{"version":2,"kid":1,"pinProtected":false,"dek":"legacy-key"}`
-	etag, err := provider.PutKeystore(context.Background(), "alice", []byte(legacy), "*")
+	etag, err := provider.PutKeystore(onedrive.WithToken(context.Background(), "alice"), "alice", []byte(legacy), "*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	New(provider).Attach(mux, "")
+	New(provider, testStoreMiddleware).Attach(mux, "")
 	request := func(method, path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("X-Forwarded-User", "alice")

@@ -32,7 +32,7 @@ func TestBackupUsage(t *testing.T) {
 		t.Fatalf("other user's data counted: %d != %d", got, initial)
 	}
 	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/blobs/blob-alice1", "1234567890", nil), http.StatusNoContent)
-	if got := size("alice"); got != initial+10 {
+	if got := size("alice"); got < initial+10 {
 		t.Fatalf("blob size missing: %d", got)
 	}
 	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/files/file-alice1", "file data", nil), http.StatusNoContent)

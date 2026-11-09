@@ -170,10 +170,11 @@ it.each(["categories", "risks"])("rejects missing, blank, padded, or duplicate I
 
 it.each([
   { data: {}, enabled: false },
+  { data: { backup: {} }, enabled: false },
+  { data: { backup: { provider: "local" } }, enabled: false },
   { data: { store: {} }, enabled: false },
-  { data: { onlineBackup: null, store: {} }, enabled: false },
-  { data: { onlineBackup: {} }, enabled: true },
-  { data: { onlineBackup: {}, store: {} }, enabled: true },
-])("enables online backup when its feature object is present: $data", async ({ data, enabled }) => {
+  { data: { backup: { provider: "server" } }, enabled: false },
+  { data: { backup: { provider: "onedrive", drive: "personal" } }, enabled: true },
+])("selects local or online backup from configuration: $data", async ({ data, enabled }) => {
   expect((await loadWith(data)).store).toBe(enabled);
 });

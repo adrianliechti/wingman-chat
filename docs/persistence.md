@@ -166,9 +166,9 @@ index updates, but do not merge independently edited conversations. Restore UI
 reloads the page to replace its in-memory snapshots with restored data; a partial
 restore lets the user review the report and defer that reload.
 
-## Server backup uploads and protected restore
+## OneDrive backup uploads and protected restore
 
-When the deployment enables the server store, Settings → Backup & Restore offers
+When the deployment enables OneDrive backups, Settings → Backup & Restore offers
 required PIN or passkey protection. New accounts keep their key in memory and
 make no backup requests until protection is configured. Existing unprotected
 accounts enter setup and retain their old key for a protected upgrade, preserving
@@ -187,10 +187,19 @@ key. Both layers bind the user/resource context and key ID. Version 3 envelopes
 carry the wrapped content key, random nonce, ciphertext, and authentication tag.
 The private RSA key is stored on the server encrypted under the existing root
 key; that root remains protected by the user's PIN or passkey. RSA private keys remain in memory only. After successful setup or unlock,
-the root key is stored in a separate local IndexedDB database, bound to the signed-in
-account and a SHA-256 fingerprint of the complete protected keystore. This database
-is neither uploaded nor included in OPFS ZIP exports/imports. Access to the browser
-profile grants access to that saved decryption key. “Stop sync on this device” removes
+the root key is stored as a non-extractable AES-GCM `CryptoKey` in a separate local
+IndexedDB database, bound to the signed-in account and a SHA-256 fingerprint of the
+complete protected keystore. Older raw-byte records are converted on the next load.
+This database is neither uploaded nor included in OPFS ZIP exports/imports. Access
+to the browser profile grants use of that saved decryption key, but its bytes cannot
+be read back. Protection changes on a remembered device therefore re-authenticate
+with an existing passkey or PIN first.
+
+PIN wraps use Argon2id (64 MiB, t=3, p=1) followed by HKDF-SHA256 whose salt is the
+optional server PIN pepper (`HMAC-SHA256(BACKUP_PIN_SECRET, identity)`). The keystore
+records `kdf.pepper: true` when a pepper was used, and unlocking then requires it.
+Legacy PBKDF2-SHA256 wraps remain readable and are re-wrapped after a successful PIN
+unlock. The backend accepts only bounded Argon2id parameters. “Stop sync on this device” removes
 the saved key and public upload key, then reloads open tabs to stop uploads and
 incoming sync. The backend rejects unprotected
 keystore writes, protection downgrades, and all backup operations without a valid
@@ -214,6 +223,8 @@ remote version. Ordinary new uploads and pending local changes continue normally
 When an unlocked browser finds a remotely deleted chat, it removes an unchanged
 local copy. Pending local edits and their attachments survive and upload as a
 fresh chat log, matching file sync's preference for preserving unsynced work.
+A local file deletion only applies to the version this browser last synced; if
+another device changed the file since, its edit wins and is restored on the next pull.
 
 Existing version 2 symmetric history stays readable with the protected root key.
 An unlocked session provisions the backup key pair once without replacing old
@@ -283,26 +294,13 @@ one final transcript update per completed request, not a strict one-HTTP-call li
 
 ## Multiple backend pods and shared storage
 
-The Alpine Docker image supports shared storage with no additional runtime
-packages or lock service. Set `ONLINE_BACKUP_ENABLED=true` and `BACKUP_STORE_PATH=/data/store`,
-and mount a writable volume at `/data`. Containers sharing a store must use the
-same directory and compatible filesystem permissions.
-
-The static Go binary calls OS `flock` directly on Linux/macOS; it does not run the
-`flock` shell command or require CGO. Stable `.locks/*.lock` sidecars serialize
-keystore CAS, chat append/compaction/deletion, and file manifest updates across
-processes sharing the same store root. Readers open consistent
-file/header snapshots under the same locks, then release them before streaming.
-Lock waits respect request cancellation; process exit releases its locks. Never
-unlink the real lock sidecars while any backend process might be using the store.
-File manifests publish immutable ciphertext generations, so a failed metadata
-write leaves the previous bytes and ETag intact. Chat heads atomically commit
-the sequence, log size, and recent event IDs together. Existing unversioned
-files and older chat heads migrate when written. Stop older backend versions
-before upgrading; they cannot read the new file generations.
+OneDrive backups use Microsoft Graph ETags and conditional index commits to
+coordinate requests across replicas. They require no persistent server volume.
+See [OneDrive concurrency and rollout](backup.md#onedrive-authentication-and-storage)
+for conflict handling, reset fencing, and upgrading older writers.
 
 Settings → Backup & Restore → Reset backups permanently deletes the signed-in
-account's server keystore, chat logs, attachments, and workspace backups. It works
+account's OneDrive keystore, chat logs, attachments, and workspace backups. It works
 without the old PIN/passkey. Confirmation reloads open tabs and stops active
 responses after flushing local persistence. Local chats and files stay available;
 only backup tracking and the cached upload key are cleared. Backups remain off
@@ -316,23 +314,9 @@ generation fences old tabs even if they miss the reload notification. Pending
 local edits remain usable. A failed local cleanup retries without repeating an
 acknowledged online deletion.
 
-Ordinary store API requests hold a shared per-user lock through protection
-validation and streaming; reset takes its exclusive counterpart. This lets
-in-flight requests finish before deletion and blocks subsequent writes without a
-protected keystore. Requests also carry the public backup key in `X-Backup-Key`,
-so an older session cannot upload into a newly configured backup after a reset.
-
-A CSI volume does not by itself guarantee distributed locking. The filesystem and
-mount options must enforce `flock` across clients/nodes and support atomic rename.
-NFS mounts using local-only locks or `nolock` are unsuitable. Do not run the older
-mutex-only provider alongside this implementation: stop old writers before enabling
-the shared store on multiple upgraded pods.
-
-The Docker build runs storage tests inside its Alpine Go builder before
-cross-compiling the server. Subprocess tests verify CAS exclusion, concurrent
-manifest updates, cancellation, and release after a killed process. They do not validate a particular
-CSI driver's cross-node semantics or establish production throughput. Load-test the
-actual shared volume with representative request peaks and payload sizes.
+Requests carry the public backup key in `X-Backup-Key`. Conditional index commits
+reject an older session's writes after reset or a keystore change, so stale
+uploads cannot publish into a newly configured backup.
 
 ## Verification
 

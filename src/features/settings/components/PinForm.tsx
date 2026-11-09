@@ -5,13 +5,16 @@ interface PinFormProps {
   title: string;
   description?: string;
   warning?: string;
-  fields: { label: string; value: string; setter: (value: string) => void }[];
+  /** "current" fields accept the existing PIN; others choose a new one. */
+  fields: { label: string; value: string; setter: (value: string) => void; current?: boolean }[];
   error: string | null;
   busy: boolean;
   onSubmit: () => void | Promise<void>;
   onCancel: () => void;
   confirmLabel?: string;
+  busyLabel?: string;
   cancelLabel?: string;
+  autoFocus?: boolean;
 }
 
 export function PinForm({
@@ -24,7 +27,9 @@ export function PinForm({
   onSubmit,
   onCancel,
   confirmLabel = "Save",
+  busyLabel = "Saving…",
   cancelLabel = "Cancel",
+  autoFocus = false,
 }: PinFormProps) {
   const formId = useId();
   return (
@@ -49,7 +54,7 @@ export function PinForm({
         </p>
       )}
       <div className="grid gap-3 sm:grid-cols-2">
-        {fields.map((field) => (
+        {fields.map((field, index) => (
           <label
             key={field.label}
             className={`block text-xs font-medium text-neutral-700 dark:text-neutral-300 ${field.label === "New PIN" ? "sm:col-start-1" : ""}`}
@@ -59,7 +64,8 @@ export function PinForm({
               type="password"
               value={field.value}
               disabled={busy}
-              autoComplete={field.label === "Current PIN" ? "current-password" : "new-password"}
+              autoFocus={autoFocus && index === 0}
+              autoComplete={field.current ? "current-password" : "new-password"}
               aria-describedby={error ? `${formId}-error` : undefined}
               onChange={(event) => field.setter(event.target.value)}
               className="mt-1.5 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-normal text-neutral-900 focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500 disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-100"
@@ -88,7 +94,7 @@ export function PinForm({
           className="inline-flex items-center justify-center justify-self-end gap-2 rounded-lg bg-neutral-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
         >
           {busy && <LoaderCircle size={13} aria-hidden="true" className="animate-spin" />}
-          {busy ? "Saving…" : confirmLabel}
+          {busy ? busyLabel : confirmLabel}
         </button>
       </div>
     </form>

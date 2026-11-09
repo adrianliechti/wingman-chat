@@ -24,16 +24,22 @@ interface BackupEnvelope {
 import { createPasskeyEnvelope, unlockPasskeyEnvelope, type PasskeyEnvelope } from "./passkey";
 import {
   type DEK,
+  type RootKey,
   type UploadKey,
   encryptBlob,
   decryptBlob,
   fromBase64,
   generateDEK,
+  hasRawKey,
   type KdfParams,
+  kdfNeedsUpgrade,
   toBase64,
   unwrapDEKWithPin,
   wrapDEKWithPin,
 } from "./crypto";
+
+export const PIN_MIN_LENGTH = 8;
+export const PIN_MAX_LENGTH = 32;
 
 export interface PlainKeystore {
   backup?: BackupEnvelope;
@@ -129,8 +135,9 @@ export async function unlockWithPin(state: KeystoreState, pin: string, userId: s
     if (isPasskeyProtected(state.keystore)) throw new Error("Use your passkey to unlock sync.");
     return dekFromPlain(state.keystore);
   }
+  const pepper = state.keystore.kdf.name === "argon2id" && state.keystore.kdf.pepper ? await api.getPinPepper() : null;
   try {
-    return await unwrapDEKWithPin(state.keystore, pin, userId, state.keystore.kid);
+    return await unwrapDEKWithPin(state.keystore, pin, userId, state.keystore.kid, pepper);
   } catch (err) {
     if (err instanceof Error && err.name === "OperationError") {
       throw new Error("Incorrect PIN. Please try again.", { cause: err });
@@ -144,8 +151,42 @@ export async function unlockWithPin(state: KeystoreState, pin: string, userId: s
  * current state (so we can use If-Match) and the current DEK.
  */
 export async function setPin(state: KeystoreState, dek: DEK, pin: string, userId: string): Promise<KeystoreState> {
-  if (pin.length < 4 || pin.length > 32) throw new Error("PIN must be between 4 and 32 characters.");
-  const wrapped = await wrapDEKWithPin(dek, pin, userId);
+  if (pin.length < PIN_MIN_LENGTH || pin.length > PIN_MAX_LENGTH) {
+    throw new Error(`PIN must be between ${PIN_MIN_LENGTH} and ${PIN_MAX_LENGTH} characters.`);
+  }
+  return savePin(state, dek, pin, userId, await api.getPinPepper());
+}
+
+/**
+ * Re-wrap an existing PIN with the current KDF and server pepper after a
+ * successful unlock. Older PINs keep working even below today's minimum length.
+ * Returns the unchanged state when no upgrade is needed or possible.
+ */
+export async function upgradePinProtection(
+  state: KeystoreState,
+  dek: DEK,
+  pin: string,
+  userId: string,
+): Promise<KeystoreState> {
+  if (!isPinProtected(state.keystore)) return state;
+  let pepper: Uint8Array<ArrayBuffer> | null;
+  try {
+    pepper = await api.getPinPepper();
+  } catch {
+    return state;
+  }
+  if (!kdfNeedsUpgrade(state.keystore.kdf, pepper !== null)) return state;
+  return savePin(state, dek, pin, userId, pepper);
+}
+
+async function savePin(
+  state: KeystoreState,
+  dek: DEK,
+  pin: string,
+  userId: string,
+  pepper: Uint8Array<ArrayBuffer> | null,
+): Promise<KeystoreState> {
+  const wrapped = await wrapDEKWithPin(dek, pin, userId, pepper);
   const pinState: ProtectedKeystore = {
     version: 2,
     kid: dek.kid,
@@ -201,14 +242,14 @@ export async function unlockWithPasskey(state: KeystoreState, userId: string): P
 }
 
 /** Upgrade once while unlocked, preserving old symmetric history and its protected key. */
-export async function enableBackupUploads(
+export async function enableBackupUploads<K extends RootKey>(
   state: KeystoreState,
-  dek: DEK,
+  dek: K,
   userId: string,
-): Promise<{ state: KeystoreState; dek: DEK }> {
+): Promise<{ state: KeystoreState; dek: K }> {
   if (!isProtected(state.keystore)) throw new Error("Backups require a PIN or passkey.");
   // Seal only with the root key, never recursively with the backup public key.
-  const root = { raw: dek.raw, kid: dek.kid };
+  const root = (hasRawKey(dek) ? { raw: dek.raw, kid: dek.kid } : { key: dek.key, kid: dek.kid }) as K;
   let current = state;
   if (!current.keystore.backup) {
     const pair = await generateBackupKeys();

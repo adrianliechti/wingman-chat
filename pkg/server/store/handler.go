@@ -2,8 +2,6 @@ package store
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,83 +9,88 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/adrianliechti/wingman-chat/pkg/server/identity"
 	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
 
 type Handler struct {
-	store store.Provider
+	store      store.Provider
+	middleware func(http.Handler) http.Handler
+	pinSecret  []byte
 }
 
-func New(store store.Provider) *Handler {
-	return &Handler{store: store}
+// New serves the backup API. middleware, if non-nil, wraps every route.
+func New(store store.Provider, middleware func(http.Handler) http.Handler) *Handler {
+	return &Handler{store: store, middleware: middleware}
 }
 
 func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 	prefix = strings.TrimRight(prefix, "/")
+	handle := func(pattern string, handler http.HandlerFunc) {
+		var wrapped http.Handler = handler
+		if h.middleware != nil {
+			wrapped = h.middleware(wrapped)
+		}
+		mux.Handle(pattern, wrapped)
+	}
 
-	mux.HandleFunc("GET "+prefix+"/v1/me", h.handleMe)
+	handle("GET "+prefix+"/v1/me", h.handleMe)
 
-	mux.HandleFunc("GET "+prefix+"/v1/keystore", h.withUserLock(h.handleGetKeystore))
-	mux.HandleFunc("PUT "+prefix+"/v1/keystore", h.withUserLock(h.handlePutKeystore))
-	mux.HandleFunc("DELETE "+prefix+"/v1/backup", h.handleResetBackup)
-	mux.HandleFunc("GET "+prefix+"/v1/backup/usage", h.requireProtection(h.handleBackupUsage))
+	handle("GET "+prefix+"/v1/keystore", h.handleGetKeystore)
+	handle("PUT "+prefix+"/v1/keystore", h.handlePutKeystore)
+	handle("GET "+prefix+"/v1/keystore/pepper", h.handlePinPepper)
+	handle("DELETE "+prefix+"/v1/backup", h.handleResetBackup)
+	handle("GET "+prefix+"/v1/backup/usage", h.requireProtection(h.handleBackupUsage))
 
-	mux.HandleFunc("GET "+prefix+"/v1/chats", h.requireProtection(h.handleListChats))
-	mux.HandleFunc("GET "+prefix+"/v1/chats/{id}/events", h.requireProtection(h.handleReadEvents))
-	mux.HandleFunc("POST "+prefix+"/v1/chats/{id}/events", h.requireProtection(h.handleAppendEvents))
-	mux.HandleFunc("POST "+prefix+"/v1/chats/{id}/compact", h.requireProtection(h.handleCompactChat))
-	mux.HandleFunc("DELETE "+prefix+"/v1/chats/{id}", h.requireProtection(h.handleDeleteChat))
+	handle("GET "+prefix+"/v1/chats", h.requireProtection(h.handleListChats))
+	handle("GET "+prefix+"/v1/chats/{id}/events", h.requireProtection(h.handleReadEvents))
+	handle("POST "+prefix+"/v1/chats/{id}/events", h.requireProtection(h.handleAppendEvents))
+	handle("POST "+prefix+"/v1/chats/{id}/compact", h.requireProtection(h.handleCompactChat))
+	handle("DELETE "+prefix+"/v1/chats/{id}", h.requireProtection(h.handleDeleteChat))
 
-	mux.HandleFunc("GET "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleGetBlob))
-	mux.HandleFunc("HEAD "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleHeadBlob))
-	mux.HandleFunc("PUT "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handlePutBlob))
-	mux.HandleFunc("DELETE "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleDeleteBlob))
+	handle("GET "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleGetBlob))
+	handle("HEAD "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleHeadBlob))
+	handle("PUT "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handlePutBlob))
+	handle("DELETE "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleDeleteBlob))
 
-	mux.HandleFunc("GET "+prefix+"/v1/files", h.requireProtection(h.handleListFiles))
-	mux.HandleFunc("GET "+prefix+"/v1/files/{id}", h.requireProtection(h.handleGetFile))
-	mux.HandleFunc("PUT "+prefix+"/v1/files/{id}", h.requireProtection(h.handlePutFile))
-	mux.HandleFunc("DELETE "+prefix+"/v1/files/{id}", h.requireProtection(h.handleDeleteFile))
+	handle("GET "+prefix+"/v1/files", h.requireProtection(h.handleListFiles))
+	handle("GET "+prefix+"/v1/files/{id}", h.requireProtection(h.handleGetFile))
+	handle("PUT "+prefix+"/v1/files/{id}", h.requireProtection(h.handlePutFile))
+	handle("DELETE "+prefix+"/v1/files/{id}", h.requireProtection(h.handleDeleteFile))
 }
 
 // auth -------------------------------------------------------------------
-
-type userIdentity struct {
-	ID    string `json:"id"`
-	Email string `json:"email,omitempty"`
-}
 
 // userFromRequest returns the normalized identity string (the storage
 // key) plus the public identity. Both MUST derive from the same value:
 // the client bakes the /me id into its crypto AAD, so a storage key that
 // disagrees with it mixes users' data or splits one user across
 // directories.
-func userFromRequest(r *http.Request) (string, userIdentity, bool) {
-	user := strings.TrimSpace(r.Header.Get("X-Forwarded-User"))
-	email := strings.TrimSpace(r.Header.Get("X-Forwarded-Email"))
-
-	id := user
-	if id == "" {
-		id = email
+func userFromRequest(r *http.Request) (string, identity.User, bool) {
+	user, ok := identity.FromRequest(r)
+	if !ok {
+		return "", identity.User{}, false
 	}
-
-	if id == "" {
-		return "", userIdentity{}, false
-	}
-
-	sum := sha256.Sum256([]byte(id))
-	return id, userIdentity{
-		ID:    hex.EncodeToString(sum[:16]),
-		Email: email,
-	}, true
+	return user.Key, user, true
 }
 
-func requireUser(w http.ResponseWriter, r *http.Request) (string, userIdentity, bool) {
+func requireUser(w http.ResponseWriter, r *http.Request) (string, identity.User, bool) {
 	id, u, ok := userFromRequest(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return "", userIdentity{}, false
+		return "", identity.User{}, false
 	}
 	return id, u, true
+}
+
+// casFromRequest maps conditional request headers onto the provider's ifMatch
+// argument: "If-None-Match: *" → "*" (create only), "If-Match: <etag>" (quoted
+// or bare) → "<etag>" (compare-and-swap), neither → "" (unconditional).
+func casFromRequest(r *http.Request) string {
+	if strings.TrimSpace(r.Header.Get("If-None-Match")) == "*" {
+		return "*"
+	}
+	return strings.Trim(strings.TrimSpace(r.Header.Get("If-Match")), `"`)
 }
 
 // routes -----------------------------------------------------------------
@@ -108,12 +111,8 @@ func (h *Handler) handleGetKeystore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, etag, err := h.store.GetKeystore(r.Context(), userID)
-	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "no keystore", http.StatusNotFound)
-		return
-	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeStoreError(w, err)
 		return
 	}
 
@@ -140,24 +139,9 @@ func (h *Handler) handlePutKeystore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ifMatch := strings.Trim(r.Header.Get("If-Match"), `"`)
-	ifNone := strings.TrimSpace(r.Header.Get("If-None-Match"))
-
-	var cas string
-	switch {
-	case ifNone == "*":
-		cas = "*"
-	case ifMatch != "":
-		cas = ifMatch
-	}
-
-	etag, err := h.store.PutKeystore(r.Context(), userID, body, cas)
-	if errors.Is(err, store.ErrKeystoreConflict) {
-		http.Error(w, "keystore conflict", http.StatusPreconditionFailed)
-		return
-	}
+	etag, err := h.store.PutKeystore(r.Context(), userID, body, casFromRequest(r))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeStoreError(w, err)
 		return
 	}
 
@@ -173,7 +157,7 @@ func (h *Handler) handleListChats(w http.ResponseWriter, r *http.Request) {
 
 	chats, err := h.store.ListChats(r.Context(), userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeStoreError(w, err)
 		return
 	}
 	if chats == nil {
@@ -202,18 +186,18 @@ func (h *Handler) handleReadEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reader, err := h.store.ReadEvents(r.Context(), userID, chatID, fromSeq)
-	if errors.Is(err, store.ErrInvalidID) {
-		http.Error(w, "invalid chat id", http.StatusBadRequest)
-		return
-	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeStoreError(w, err)
 		return
 	}
 	defer reader.Close()
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
-	io.Copy(w, reader)
+	if _, err := io.Copy(w, reader); err != nil {
+		// A later OneDrive segment can fail after earlier frames were sent. Abort
+		// the HTTP stream so the client retries rather than accepting a partial log.
+		panic(http.ErrAbortHandler)
+	}
 }
 
 type appendRequest struct {
@@ -240,7 +224,7 @@ func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scanner := bufio.NewScanner(r.Body)
+	scanner := bufio.NewScanner(http.MaxBytesReader(w, r.Body, store.MaxAppendBytes))
 	scanner.Buffer(make([]byte, 64*1024), store.MaxFrameBytes+4*1024)
 
 	var ids []string
@@ -253,6 +237,12 @@ func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		var req appendRequest
 		if err := json.Unmarshal(line, &req); err != nil {
+			// The scanner yields the truncated tail before reporting a read error.
+			var tooLarge *http.MaxBytesError
+			if errors.As(scanner.Err(), &tooLarge) {
+				writeStoreError(w, scanner.Err())
+				return
+			}
 			http.Error(w, "invalid request line", http.StatusBadRequest)
 			return
 		}
@@ -264,11 +254,15 @@ func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request) {
 		frames = append(frames, []byte(req.Frame))
 	}
 	if err := scanner.Err(); err != nil {
-		if errors.Is(err, bufio.ErrTooLong) {
-			http.Error(w, "frame too large", http.StatusRequestEntityTooLarge)
-			return
+		var tooLarge *http.MaxBytesError
+		switch {
+		case errors.Is(err, bufio.ErrTooLong):
+			writeStoreError(w, store.ErrFrameTooLarge)
+		case errors.As(err, &tooLarge):
+			writeStoreError(w, err)
+		default:
+			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if len(ids) == 0 {
@@ -277,18 +271,8 @@ func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res, err := h.store.AppendEvents(r.Context(), userID, chatID, expectedSeq, ids, frames)
-	switch {
-	case errors.Is(err, store.ErrInvalidID):
-		http.Error(w, "invalid chat id", http.StatusBadRequest)
-		return
-	case errors.Is(err, store.ErrSeqConflict):
-		http.Error(w, "seq conflict", http.StatusConflict)
-		return
-	case errors.Is(err, store.ErrFrameTooLarge):
-		http.Error(w, "frame too large", http.StatusRequestEntityTooLarge)
-		return
-	case err != nil:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err != nil {
+		writeStoreError(w, err)
 		return
 	}
 
@@ -315,11 +299,7 @@ func (h *Handler) handleCompactChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.CompactChat(r.Context(), userID, chatID, beforeSeq); err != nil {
-		if errors.Is(err, store.ErrInvalidID) {
-			http.Error(w, "invalid chat id", http.StatusBadRequest)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeStoreError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -333,12 +313,8 @@ func (h *Handler) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 	blobID := r.PathValue("id")
 
 	exists, err := h.store.BlobExists(r.Context(), userID, blobID)
-	if errors.Is(err, store.ErrInvalidID) {
-		http.Error(w, "invalid blob id", http.StatusBadRequest)
-		return
-	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeStoreError(w, err)
 		return
 	}
 	if !exists {
@@ -357,11 +333,7 @@ func (h *Handler) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 	chatID := r.PathValue("id")
 
 	if err := h.store.DeleteChat(r.Context(), userID, chatID); err != nil {
-		if errors.Is(err, store.ErrInvalidID) {
-			http.Error(w, "invalid chat id", http.StatusBadRequest)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeStoreError(w, err)
 		return
 	}
 
@@ -376,23 +348,17 @@ func (h *Handler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 
 	blobID := r.PathValue("id")
 
-	reader, err := h.store.GetBlob(r.Context(), userID, blobID)
-	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if errors.Is(err, store.ErrInvalidID) {
-		http.Error(w, "invalid blob id", http.StatusBadRequest)
-		return
-	}
+	reader, _, err := h.store.GetObject(r.Context(), userID, store.BlobObject, blobID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeStoreError(w, err)
 		return
 	}
 	defer reader.Close()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	io.Copy(w, reader)
+	if _, err := io.Copy(w, reader); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func (h *Handler) handlePutBlob(w http.ResponseWriter, r *http.Request) {
@@ -403,12 +369,8 @@ func (h *Handler) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 
 	blobID := r.PathValue("id")
 
-	if err := h.store.PutBlob(r.Context(), userID, blobID, r.Body); err != nil {
-		if errors.Is(err, store.ErrInvalidID) {
-			http.Error(w, "invalid blob id", http.StatusBadRequest)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if _, err := h.store.PutObject(r.Context(), userID, store.BlobObject, blobID, http.MaxBytesReader(w, r.Body, store.MaxObjectBytes), ""); err != nil {
+		writeStoreError(w, err)
 		return
 	}
 
@@ -423,7 +385,7 @@ func (h *Handler) handleListFiles(w http.ResponseWriter, r *http.Request) {
 
 	files, err := h.store.ListFiles(r.Context(), userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeStoreError(w, err)
 		return
 	}
 	if files == nil {
@@ -441,24 +403,18 @@ func (h *Handler) handleGetFile(w http.ResponseWriter, r *http.Request) {
 
 	fileID := r.PathValue("id")
 
-	reader, etag, err := h.store.GetFile(r.Context(), userID, fileID)
-	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if errors.Is(err, store.ErrInvalidID) {
-		http.Error(w, "invalid file id", http.StatusBadRequest)
-		return
-	}
+	reader, etag, err := h.store.GetObject(r.Context(), userID, store.FileObject, fileID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeStoreError(w, err)
 		return
 	}
 	defer reader.Close()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("ETag", `"`+etag+`"`)
-	io.Copy(w, reader)
+	if _, err := io.Copy(w, reader); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func (h *Handler) handlePutFile(w http.ResponseWriter, r *http.Request) {
@@ -469,28 +425,10 @@ func (h *Handler) handlePutFile(w http.ResponseWriter, r *http.Request) {
 
 	fileID := r.PathValue("id")
 
-	ifMatch := strings.Trim(r.Header.Get("If-Match"), `"`)
-	ifNone := strings.TrimSpace(r.Header.Get("If-None-Match"))
-
-	var cas string
-	switch {
-	case ifNone == "*":
-		cas = "*"
-	case ifMatch != "":
-		cas = ifMatch
-	}
-
-	etag, err := h.store.PutFile(r.Context(), userID, fileID, r.Body, cas)
-	if errors.Is(err, store.ErrFileConflict) {
-		http.Error(w, "file conflict", http.StatusPreconditionFailed)
-		return
-	}
-	if errors.Is(err, store.ErrInvalidID) {
-		http.Error(w, "invalid file id", http.StatusBadRequest)
-		return
-	}
+	body := http.MaxBytesReader(w, r.Body, store.MaxObjectBytes)
+	etag, err := h.store.PutObject(r.Context(), userID, store.FileObject, fileID, body, casFromRequest(r))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeStoreError(w, err)
 		return
 	}
 
@@ -506,12 +444,8 @@ func (h *Handler) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 
 	fileID := r.PathValue("id")
 
-	if err := h.store.DeleteFile(r.Context(), userID, fileID); err != nil {
-		if errors.Is(err, store.ErrInvalidID) {
-			http.Error(w, "invalid file id", http.StatusBadRequest)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := h.store.DeleteObject(r.Context(), userID, store.FileObject, fileID, casFromRequest(r)); err != nil {
+		writeStoreError(w, err)
 		return
 	}
 
@@ -526,12 +460,8 @@ func (h *Handler) handleDeleteBlob(w http.ResponseWriter, r *http.Request) {
 
 	blobID := r.PathValue("id")
 
-	if err := h.store.DeleteBlob(r.Context(), userID, blobID); err != nil {
-		if errors.Is(err, store.ErrInvalidID) {
-			http.Error(w, "invalid blob id", http.StatusBadRequest)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := h.store.DeleteObject(r.Context(), userID, store.BlobObject, blobID, ""); err != nil {
+		writeStoreError(w, err)
 		return
 	}
 
@@ -545,7 +475,7 @@ func (h *Handler) handleBackupUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	size, err := h.store.BackupSize(r.Context(), userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeStoreError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

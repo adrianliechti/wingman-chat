@@ -99,6 +99,7 @@ function SettingsViewHeader({
 }
 
 export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }: SettingsDrawerProps) {
+  const onlineBackup = !!getConfig().store;
   const profileNameInputId = useId();
   const profileRoleInputId = useId();
   const profileAboutInputId = useId();
@@ -398,7 +399,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   // Reset (or jump to initial) section when the modal opens
   useEffect(() => {
     if (isOpen) {
-      setSection(initialSection === "sync" ? "backup" : ((initialSection as SectionId) ?? "general"));
+      setSection((initialSection as SectionId) ?? "general");
       setMobileShowList(!initialSection);
     }
   }, [isOpen, initialSection]);
@@ -708,9 +709,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                               <SettingsViewHeader
                                 id="backup-settings-heading"
                                 actions={actions}
-                                title={getConfig().store ? "Online backup" : "Backup"}
+                                title={onlineBackup ? "Online backup" : "Backup"}
                                 description={
-                                  getConfig().store
+                                  onlineBackup
                                     ? "Manage your online backup and restore your data."
                                     : "Download a copy of your data or restore a backup file."
                                 }
@@ -741,7 +742,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                               </>
                             }
                           >
-                            {!getConfig().store && (
+                            {!onlineBackup && (
                               <section aria-labelledby="local-backups-heading" className="space-y-3">
                                 <div className="space-y-1.5">
                                   <h4

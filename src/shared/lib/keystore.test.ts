@@ -3,7 +3,7 @@ import { generateDEK, toBase64 } from "./crypto";
 import * as keystore from "./keystore";
 import * as api from "./storeClient";
 
-vi.mock("./storeClient", () => ({ putKeystore: vi.fn(), getKeystore: vi.fn() }));
+vi.mock("./storeClient", () => ({ putKeystore: vi.fn(), getKeystore: vi.fn(), getPinPepper: vi.fn() }));
 const create = vi.fn();
 const get = vi.fn();
 
@@ -22,21 +22,22 @@ beforeEach(() => {
   create.mockResolvedValue(credential({ enabled: true }));
   get.mockResolvedValue(credential({ results: { first: secret.buffer } }));
   vi.mocked(api.putKeystore).mockResolvedValue("next-etag");
+  vi.mocked(api.getPinPepper).mockResolvedValue(null);
 });
 afterEach(() => vi.unstubAllGlobals());
 
 describe("keystore protection methods", () => {
   it("reports an incorrect PIN clearly when unlocking or changing it", async () => {
     const prepared = await keystore.prepareSetup();
-    const pin = await keystore.setPin(prepared.state, prepared.dek, "123456", "alice");
+    const pin = await keystore.setPin(prepared.state, prepared.dek, "12345678", "alice");
     vi.mocked(api.putKeystore).mockClear();
 
     await expect(keystore.unlockWithPin(pin, "wrong-pin", "alice")).rejects.toThrow("Incorrect PIN. Please try again.");
-    await expect(keystore.changePin(pin, "wrong-pin", "654321", "alice")).rejects.toThrow(
+    await expect(keystore.changePin(pin, "wrong-pin", "87654321", "alice")).rejects.toThrow(
       "Incorrect PIN. Please try again.",
     );
     expect(api.putKeystore).not.toHaveBeenCalled();
-    expect(await keystore.unlockWithPin(pin, "123456", "alice")).toEqual(prepared.dek);
+    expect(await keystore.unlockWithPin(pin, "12345678", "alice")).toEqual(prepared.dek);
   });
 
   it("adds and updates both methods without changing the encryption key or losing either method", async () => {
@@ -54,31 +55,31 @@ describe("keystore protection methods", () => {
     expect(JSON.stringify(passkey.keystore)).not.toContain(toBase64(dek.raw));
     await expect(keystore.unlockWithPin(passkey, "", "alice")).rejects.toThrow(/passkey/);
     expect(await keystore.unlockWithPasskey(passkey, "alice")).toEqual(dek);
-    const pin = await keystore.setPin(passkey, dek, "123456", "alice");
+    const pin = await keystore.setPin(passkey, dek, "12345678", "alice");
     expect(keystore.isPasskeyProtected(pin.keystore)).toBe(true);
     expect(pin.keystore).toMatchObject({ pinProtected: true, passkeyProtected: true });
     expect(pin.keystore).not.toHaveProperty("dek");
-    expect(await keystore.unlockWithPin(pin, "123456", "alice")).toEqual(dek);
+    expect(await keystore.unlockWithPin(pin, "12345678", "alice")).toEqual(dek);
     expect(await keystore.unlockWithPasskey(pin, "alice")).toEqual(dek);
     const again = await keystore.setPasskey(pin, dek, "alice");
     expect(await keystore.unlockWithPasskey(again, "alice")).toEqual(dek);
-    expect(await keystore.unlockWithPin(again, "123456", "alice")).toEqual(dek);
-    const changed = await keystore.changePin(again, "123456", "987654", "alice");
+    expect(await keystore.unlockWithPin(again, "12345678", "alice")).toEqual(dek);
+    const changed = await keystore.changePin(again, "12345678", "98765432", "alice");
     expect(await keystore.unlockWithPasskey(changed, "alice")).toEqual(dek);
-    expect(await keystore.unlockWithPin(changed, "987654", "alice")).toEqual(dek);
-    await expect(keystore.unlockWithPin(changed, "123456", "alice")).rejects.toThrow();
+    expect(await keystore.unlockWithPin(changed, "98765432", "alice")).toEqual(dek);
+    await expect(keystore.unlockWithPin(changed, "12345678", "alice")).rejects.toThrow();
   });
 
   it("preserves a PIN-only backup when adding or replacing a passkey fails", async () => {
     const prepared = await keystore.prepareSetup();
-    const pin = await keystore.setPin(prepared.state, prepared.dek, "123456", "alice");
+    const pin = await keystore.setPin(prepared.state, prepared.dek, "12345678", "alice");
     const original = JSON.stringify(pin);
     vi.mocked(api.putKeystore).mockClear();
     get.mockRejectedValue(new DOMException("Cancelled", "NotAllowedError"));
     await expect(keystore.setPasskey(pin, prepared.dek, "alice")).rejects.toThrow("Cancelled");
     expect(api.putKeystore).not.toHaveBeenCalled();
     expect(JSON.stringify(pin)).toBe(original);
-    expect(await keystore.unlockWithPin(pin, "123456", "alice")).toEqual(prepared.dek);
+    expect(await keystore.unlockWithPin(pin, "12345678", "alice")).toEqual(prepared.dek);
   });
 
   it("does not upload anything when enrollment is cancelled or PRF is unsupported", async () => {
@@ -118,7 +119,7 @@ describe("automatic upload key provisioning", () => {
       etag: "initial",
       keystore: { version: 2, kid: 3, pinProtected: false, dek: toBase64(dek.raw) },
     };
-    const pin = await keystore.setPin(initial, dek, "123456", "alice");
+    const pin = await keystore.setPin(initial, dek, "12345678", "alice");
     const upgraded = await keystore.enableBackupUploads(pin, dek, "alice");
     const publicOnly = await keystore.uploadKey(upgraded.state, "alice");
     expect(publicOnly?.backup.privateKey).toBeUndefined();
@@ -154,19 +155,60 @@ describe("required backup protection", () => {
     await expect(keystore.enableBackupUploads(prepared.state, prepared.dek, "alice")).rejects.toThrow(
       /require a PIN or passkey/,
     );
-    const protectedState = await keystore.setPin(prepared.state, prepared.dek, "123456", "alice");
+    const protectedState = await keystore.setPin(prepared.state, prepared.dek, "12345678", "alice");
     expect(api.putKeystore).toHaveBeenCalledExactlyOnceWith(JSON.stringify(protectedState.keystore), {
       ifNoneMatch: "*",
     });
     expect(protectedState.keystore).not.toHaveProperty("dek");
-    expect(await keystore.unlockWithPin(protectedState, "123456", "alice")).toEqual(prepared.dek);
+    expect(await keystore.unlockWithPin(protectedState, "12345678", "alice")).toEqual(prepared.dek);
   });
 
   it("does not accept an empty or short PIN through the storage API", async () => {
     const prepared = await keystore.prepareSetup();
-    for (const pin of ["", "123", "x".repeat(33)]) {
+    for (const pin of ["", "123", "1234567", "x".repeat(33)]) {
       await expect(keystore.setPin(prepared.state, prepared.dek, pin, "alice")).rejects.toThrow(/PIN/);
     }
+    expect(api.putKeystore).not.toHaveBeenCalled();
+  });
+});
+
+describe("PIN pepper and KDF upgrades", () => {
+  it("requires the server pepper for peppered PINs", async () => {
+    const pepper = crypto.getRandomValues(new Uint8Array(32));
+    vi.mocked(api.getPinPepper).mockResolvedValue(pepper);
+    const prepared = await keystore.prepareSetup();
+    const pin = await keystore.setPin(prepared.state, prepared.dek, "12345678", "alice");
+    expect(pin.keystore).toMatchObject({ kdf: { name: "argon2id", pepper: true } });
+    expect(await keystore.unlockWithPin(pin, "12345678", "alice")).toEqual(prepared.dek);
+    vi.mocked(api.getPinPepper).mockResolvedValue(null);
+    await expect(keystore.unlockWithPin(pin, "12345678", "alice")).rejects.toThrow(/can't unlock PIN-protected/);
+  });
+
+  it("re-wraps older PIN protection after unlock without enforcing the new length", async () => {
+    const prepared = await keystore.prepareSetup();
+    const unpeppered = await keystore.setPin(prepared.state, prepared.dek, "12345678", "alice");
+    vi.mocked(api.putKeystore).mockClear();
+    expect(await keystore.upgradePinProtection(unpeppered, prepared.dek, "12345678", "alice")).toBe(unpeppered);
+    expect(api.putKeystore).not.toHaveBeenCalled();
+
+    const pepper = crypto.getRandomValues(new Uint8Array(32));
+    vi.mocked(api.getPinPepper).mockResolvedValue(pepper);
+    const legacy: keystore.KeystoreState = {
+      ...unpeppered,
+      keystore: { ...unpeppered.keystore, kdf: { name: "pbkdf2-sha256", salt: "", iter: 600_000 } },
+    } as keystore.KeystoreState;
+    const upgraded = await keystore.upgradePinProtection(legacy, prepared.dek, "1234", "alice");
+    expect(upgraded.keystore).toMatchObject({ kdf: { name: "argon2id", pepper: true } });
+    expect(api.putKeystore).toHaveBeenCalledWith(JSON.stringify(upgraded.keystore), { ifMatch: "next-etag" });
+    expect(await keystore.unlockWithPin(upgraded, "1234", "alice")).toEqual(prepared.dek);
+  });
+
+  it("skips the upgrade when the pepper cannot be fetched", async () => {
+    const prepared = await keystore.prepareSetup();
+    const pin = await keystore.setPin(prepared.state, prepared.dek, "12345678", "alice");
+    vi.mocked(api.putKeystore).mockClear();
+    vi.mocked(api.getPinPepper).mockRejectedValue(new Error("offline"));
+    expect(await keystore.upgradePinProtection(pin, prepared.dek, "12345678", "alice")).toBe(pin);
     expect(api.putKeystore).not.toHaveBeenCalled();
   });
 });

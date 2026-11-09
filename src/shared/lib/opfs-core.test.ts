@@ -9,6 +9,33 @@ beforeEach(() => {
 });
 
 describe("OPFS writes", () => {
+  it("serializes a directory deletion after an in-flight conditional file write", async () => {
+    memory.put("agents/one/file.txt", "old");
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    memory.beforeWrite = async (path) => {
+      if (path !== "agents/one/file.txt") return;
+      entered();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    };
+    const write = opfs.replaceFileIfUnchanged("agents/one/file.txt", 1000, { blob: new Blob(["remote"]) });
+    await started;
+    let deleted = false;
+    const deletion = opfs.deleteDirectory("agents/one").then(() => {
+      deleted = true;
+    });
+    await Promise.resolve();
+    expect(deleted).toBe(false);
+    release();
+    await Promise.all([write, deletion]);
+    expect(await opfs.readText("agents/one/file.txt")).toBeUndefined();
+  });
+
   it("serializes log appends and preserves the committed log after a failed append", async () => {
     memory.put("history.jsonl", "first\n");
     await Promise.all([

@@ -21,9 +21,13 @@ func protectedKeystore(data []byte) bool {
 		Wrapped          string          `json:"wrappedDek"`
 		Nonce            string          `json:"nonce"`
 		KDF              struct {
-			Name string `json:"name"`
-			Salt string `json:"salt"`
-			Iter int    `json:"iter"`
+			Name   string `json:"name"`
+			Salt   string `json:"salt"`
+			Iter   int    `json:"iter"`
+			Memory int    `json:"m"`
+			Time   int    `json:"t"`
+			Lanes  int    `json:"p"`
+			Pepper bool   `json:"pepper"`
 		} `json:"kdf"`
 		Passkey struct {
 			CredentialID string `json:"credentialId"`
@@ -37,7 +41,20 @@ func protectedKeystore(data []byte) bool {
 		return false
 	}
 	if key.PIN {
-		if !sizedBase64(key.Wrapped, 48) || !sizedBase64(key.Nonce, 12) || key.KDF.Name != "pbkdf2-sha256" || !sizedBase64(key.KDF.Salt, 16) || key.KDF.Iter < 600000 || key.KDF.Iter > 10000000 {
+		if !sizedBase64(key.Wrapped, 48) || !sizedBase64(key.Nonce, 12) || !sizedBase64(key.KDF.Salt, 16) {
+			return false
+		}
+		switch key.KDF.Name {
+		case "pbkdf2-sha256":
+			if key.KDF.Iter < 600000 || key.KDF.Iter > 10000000 || key.KDF.Pepper {
+				return false
+			}
+		case "argon2id":
+			// Mirrors the browser's accepted range: at least OWASP's minimum, at most 256 MiB.
+			if key.KDF.Memory < 19*1024 || key.KDF.Memory > 256*1024 || key.KDF.Time < 2 || key.KDF.Time > 16 || key.KDF.Lanes < 1 || key.KDF.Lanes > 8 {
+				return false
+			}
+		default:
 			return false
 		}
 	}
@@ -58,14 +75,14 @@ func sizedBase64(value string, size int) bool {
 // Legacy plaintext keystores remain readable for a protected upgrade, but may
 // not be used for backup operations, including by an already-open old frontend.
 func (h *Handler) requireProtection(next http.HandlerFunc) http.HandlerFunc {
-	return h.withUserLock(func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		userID, _, ok := requireUser(w, r)
 		if !ok {
 			return
 		}
 		key, _, err := h.store.GetKeystore(r.Context(), userID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeStoreError(w, err)
 			return
 		}
 		if err != nil || !protectedKeystore(key) {
@@ -83,5 +100,5 @@ func (h *Handler) requireProtection(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		next(w, r)
-	})
+	}
 }

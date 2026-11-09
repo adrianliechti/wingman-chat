@@ -7,7 +7,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { expect, test as base } from "@playwright/test";
 
-// Use the production storage routes and an isolated directory, never the developer's store.
+// Exercise production OneDrive routes with an isolated in-memory Graph service.
 export const test = base.extend<{}, { backupServer: string }>({
   backupServer: [
     // eslint-disable-next-line no-empty-pattern -- Playwright requires fixture arguments to use object destructuring.
@@ -16,7 +16,7 @@ export const test = base.extend<{}, { backupServer: string }>({
       let child: ReturnType<typeof spawn> | undefined;
       try {
         const binary = path.join(directory, "wingman");
-        await promisify(execFile)("go", ["build", "-o", binary, "."], { timeout: 120_000 });
+        await promisify(execFile)("go", ["build", "-o", binary, "./tests/browser/testserver"], { timeout: 120_000 });
         const reservation = createServer();
         reservation.listen(0, "127.0.0.1");
         await once(reservation, "listening");
@@ -30,9 +30,6 @@ export const test = base.extend<{}, { backupServer: string }>({
             ...process.env,
             PORT: String(address.port),
             PREFIX: "/api",
-            ONLINE_BACKUP_ENABLED: "true",
-            STORE_ENABLED: "true",
-            BACKUP_STORE_PATH: path.join(directory, "store"),
             WINGMAN_URL: "http://127.0.0.1:1",
           },
           stdio: "pipe",

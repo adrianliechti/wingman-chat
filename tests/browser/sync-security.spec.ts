@@ -46,11 +46,14 @@ test("PIN and passkey protection survive reload and permit PIN changes", async (
   let rejectNextUpdate = false;
   const files = new Map<string, { bytes: Buffer; etag: string }>();
   let fileDownloads = 0;
-  await context.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+  await context.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+  );
   await context.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
+    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/files"))
       return route.fulfill({
         json: [...files].map(([id, entry]) => ({
@@ -105,8 +108,8 @@ test("PIN and passkey protection survive reload and permit PIN changes", async (
   await expect(page.locator('[aria-current="step"]')).toContainText("Create PIN");
   await expect(page.getByText("Backup is off", { exact: true })).toHaveCount(0);
   expect(stored).toBeNull();
-  await page.getByLabel("New PIN", { exact: true }).fill("123456");
-  await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
+  await page.getByLabel("New PIN", { exact: true }).fill("12345678");
+  await page.getByLabel("Confirm PIN", { exact: true }).fill("12345678");
   await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await page.getByRole("button", { name: "Create passkey", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
@@ -182,9 +185,9 @@ test("PIN and passkey protection survive reload and permit PIN changes", async (
   const credentials = await cdp.send("WebAuthn.getCredentials", { authenticatorId });
   expect(credentials.credentials).toHaveLength(3);
   await page.getByRole("button", { name: "Change PIN", exact: true }).click();
-  await page.getByLabel("Current PIN", { exact: true }).fill("123456");
-  await page.getByLabel("New PIN", { exact: true }).fill("123456");
-  await page.getByLabel("Confirm new PIN", { exact: true }).fill("123456");
+  await page.getByLabel("Current PIN", { exact: true }).fill("12345678");
+  await page.getByLabel("New PIN", { exact: true }).fill("12345678");
+  await page.getByLabel("Confirm new PIN", { exact: true }).fill("12345678");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("button", { name: "Replace passkey", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Change PIN", exact: true }).click();
@@ -207,27 +210,33 @@ test("PIN and passkey protection survive reload and permit PIN changes", async (
   await page.getByLabel("PIN", { exact: true }).fill("wrong-pin");
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Incorrect PIN. Please try again.");
-  await page.getByLabel("PIN", { exact: true }).fill("123456");
+  await page.getByLabel("PIN", { exact: true }).fill("12345678");
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
 });
 
 test("initialization failures show the backend error", async ({ page }) => {
-  await page.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+  await page.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+  );
   await page.route("**/api/v1/me", (route) => route.fulfill({ status: 401, body: "unauthorized" }));
   await page.goto("/tests/browser/fixtures/sync-security.html");
-  await expect(page.getByRole("alert")).toContainText("Sync initialization failed: 401: unauthorized");
+  await page.getByText("Error details", { exact: true }).click();
+  await expect(page.getByText("401: unauthorized", { exact: true })).toBeVisible();
 });
 
 test("new backups stay local until PIN protection is configured", async ({ page }) => {
   let key: Record<string, unknown> | null = null;
   const writes: Record<string, unknown>[] = [];
   let uploads = 0;
-  await page.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+  await page.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+  );
   await page.route("**/api/v1/**", (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
+    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/keystore")) {
       if (request.method() === "GET")
         return key
@@ -260,8 +269,8 @@ test("new backups stay local until PIN protection is configured", async ({ page 
   await expect(page.getByText("Backup is off", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
-  await page.getByLabel("New PIN", { exact: true }).fill("123456");
-  await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
+  await page.getByLabel("New PIN", { exact: true }).fill("12345678");
+  await page.getByLabel("Confirm PIN", { exact: true }).fill("12345678");
   await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
@@ -273,11 +282,14 @@ test("PIN setup recovers when protection saves but backup key provisioning fails
   let key: Record<string, unknown> | null = null;
   let revision = 0;
   let failProvisioning = true;
-  await page.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+  await page.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+  );
   await page.route("**/api/v1/**", (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
+    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (!path.endsWith("/keystore")) return route.fulfill({ json: [] });
     if (request.method() === "GET")
       return key ? route.fulfill({ json: key, headers: { ETag: `"${revision}"` } }) : route.fulfill({ status: 404 });
@@ -293,13 +305,13 @@ test("PIN setup recovers when protection saves but backup key provisioning fails
   });
   await page.goto("http://localhost:4175/tests/browser/fixtures/sync-security.html");
   await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
-  await page.getByLabel("New PIN", { exact: true }).fill("123456");
-  await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
+  await page.getByLabel("New PIN", { exact: true }).fill("12345678");
+  await page.getByLabel("Confirm PIN", { exact: true }).fill("12345678");
   await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await expect(page.getByText("Ready to restore", { exact: true })).toBeVisible();
   await expect(page.getByLabel("PIN", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
-  await page.getByLabel("PIN", { exact: true }).fill("123456");
+  await page.getByLabel("PIN", { exact: true }).fill("12345678");
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   expect(revision).toBe(2);
@@ -314,11 +326,14 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
   let resets = 0;
   let uploads = 0;
   const files = new Map<string, { bytes: Buffer; etag: string }>();
-  await context.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+  await context.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+  );
   await context.route("**/api/v1/**", (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
+    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/backup") && request.method() === "DELETE") {
       expect(request.headers()["x-confirm-backup-reset"]).toBe("true");
       resets++;
@@ -345,8 +360,8 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
   const fixture = "/tests/browser/fixtures/sync-security.html";
   await page.goto(fixture);
   await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
-  await page.getByLabel("New PIN", { exact: true }).fill("123456");
-  await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
+  await page.getByLabel("New PIN", { exact: true }).fill("12345678");
+  await page.getByLabel("Confirm PIN", { exact: true }).fill("12345678");
   await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
@@ -379,8 +394,8 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
   await expect(page.getByText("Backup is off", { exact: true })).toBeVisible();
   expect(uploads).toBe(1);
   await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
-  await page.getByLabel("New PIN", { exact: true }).fill("654321");
-  await page.getByLabel("Confirm PIN", { exact: true }).fill("654321");
+  await page.getByLabel("New PIN", { exact: true }).fill("87654321");
+  await page.getByLabel("Confirm PIN", { exact: true }).fill("87654321");
   await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
@@ -391,10 +406,13 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
 test("a failed reset preserves local data and retries on reload", async ({ page }) => {
   let fail = true;
   let resets = 0;
-  await page.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+  await page.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+  );
   await page.route("**/api/v1/**", (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
+    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/backup")) {
       resets++;
       return fail ? route.fulfill({ status: 500, body: "Reset unavailable" }) : route.fulfill({ status: 204 });
@@ -408,7 +426,8 @@ test("a failed reset preserves local data and retries on reload", async ({ page 
   await page.getByRole("button", { name: "Danger zone", exact: true }).click();
   await page.getByRole("button", { name: "Reset online backup", exact: true }).click();
   await page.getByRole("button", { name: "Delete online backup and reset", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("Reset unavailable");
+  await page.getByText("Error details", { exact: true }).click();
+  await expect(page.getByText("500: Reset unavailable", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => window.syncSecurityE2E.read("agents/keep/AGENTS.md"))).toBe("keep me");
   fail = false;
   await page.reload();
@@ -426,11 +445,14 @@ test("reset waits for a peer upload's local writes and fences the stale tab afte
   const appendHeld = new Promise<void>((resolve) => {
     releaseAppend = resolve;
   });
-  await context.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+  await context.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+  );
   await context.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
+    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/backup")) {
       resets++;
       key = null;
@@ -452,8 +474,8 @@ test("reset waits for a peer upload's local writes and fences the stale tab afte
   });
   await page.goto("/tests/browser/fixtures/sync-security.html");
   await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
-  await page.getByLabel("New PIN", { exact: true }).fill("123456");
-  await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
+  await page.getByLabel("New PIN", { exact: true }).fill("12345678");
+  await page.getByLabel("Confirm PIN", { exact: true }).fill("12345678");
   await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
@@ -504,12 +526,15 @@ test("PIN setup validates before sending data when passkeys are unavailable", as
   let writes = 0;
   await page.setViewportSize({ width: 375, height: 850 });
   await page.addInitScript(() => Object.defineProperty(window, "PublicKeyCredential", { value: undefined }));
-  await page.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+  await page.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+  );
   await page.route("**/api/v1/**", (route) => {
     const request = route.request();
     if (request.method() !== "GET") writes++;
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
+    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/keystore")) return route.fulfill({ status: 404 });
     return route.fulfill({ json: [] });
   });
@@ -519,13 +544,13 @@ test("PIN setup validates before sending data when passkeys are unavailable", as
   await page.keyboard.press("Tab");
   await expect(page.getByLabel("New PIN", { exact: true })).toBeFocused();
   await page.getByRole("button", { name: "Create PIN", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("at least 4 characters");
+  await expect(page.getByRole("alert")).toContainText("at least 8 characters");
   await page.getByLabel("New PIN", { exact: true }).fill("123");
   await page.getByLabel("Confirm PIN", { exact: true }).fill("123");
   await page.getByRole("button", { name: "Create PIN", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("at least 4 characters");
-  await page.getByLabel("New PIN", { exact: true }).fill("123456");
-  await page.getByLabel("Confirm PIN", { exact: true }).fill("654321");
+  await expect(page.getByRole("alert")).toContainText("at least 8 characters");
+  await page.getByLabel("New PIN", { exact: true }).fill("12345678");
+  await page.getByLabel("Confirm PIN", { exact: true }).fill("87654321");
   await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("PINs do not match");
   expect(writes).toBe(0);
@@ -538,10 +563,13 @@ test("PIN setup validates before sending data when passkeys are unavailable", as
 });
 
 test("danger zone stays at the bottom and scrolls with the whole section in short views", async ({ page }) => {
-  await page.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+  await page.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+  );
   await page.route("**/api/v1/**", (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
+    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/keystore")) return route.fulfill({ status: 404 });
     return route.fulfill({ json: [] });
   });
@@ -571,11 +599,14 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
   let stored: Record<string, unknown> | null = null;
   let revision = 0;
   let chatPulls = 0;
-  await page.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+  await page.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+  );
   await page.route("**/api/v1/**", (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: userId } });
+    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/keystore")) {
       if (request.method() === "GET")
         return stored
@@ -591,8 +622,8 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
   await page.goto("/tests/browser/fixtures/sync-security.html");
   await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
   await expect(page.getByRole("checkbox")).toHaveCount(0);
-  await page.getByLabel("New PIN", { exact: true }).fill("123456");
-  await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
+  await page.getByLabel("New PIN", { exact: true }).fill("12345678");
+  await page.getByLabel("Confirm PIN", { exact: true }).fill("12345678");
   await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
@@ -603,11 +634,33 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await expect.poll(() => chatPulls).toBeGreaterThan(beforeReload);
   await expect(page.getByRole("button", { name: "Unlock backup", exact: true })).toHaveCount(0);
+  // The remembered root key is stored as a non-extractable CryptoKey, never as readable bytes.
+  const device = await page.evaluate(
+    () =>
+      new Promise<{ fields: string[]; extractable: boolean; exportable: boolean }>((resolve, reject) => {
+        const open = indexedDB.open("wingman-backup-device", 1);
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const get = open.result.transaction("keys").objectStore("keys").get("device");
+          get.onerror = () => reject(get.error);
+          get.onsuccess = async () => {
+            const key = get.result.key as CryptoKey;
+            const exportable = await crypto.subtle.exportKey("raw", key).then(
+              () => true,
+              () => false,
+            );
+            open.result.close();
+            resolve({ fields: Object.keys(get.result).sort(), extractable: key.extractable, exportable });
+          };
+        };
+      }),
+  );
+  expect(device).toEqual({ fields: ["key", "kid", "protection", "userId"], extractable: false, exportable: false });
 
   await page.getByRole("button", { name: "Change PIN", exact: true }).click();
-  await page.getByLabel("Current PIN", { exact: true }).fill("123456");
-  await page.getByLabel("New PIN", { exact: true }).fill("654321");
-  await page.getByLabel("Confirm new PIN", { exact: true }).fill("654321");
+  await page.getByLabel("Current PIN", { exact: true }).fill("12345678");
+  await page.getByLabel("New PIN", { exact: true }).fill("87654321");
+  await page.getByLabel("Confirm new PIN", { exact: true }).fill("87654321");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByLabel("Current PIN", { exact: true })).toHaveCount(0);
   await page.reload();
@@ -625,7 +678,7 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
   await expect(page.getByRole("button", { name: "Backup options", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
   await expect(page.getByRole("button", { name: "Backup options", exact: true })).toHaveCount(0);
-  await page.getByLabel("PIN", { exact: true }).fill("654321");
+  await page.getByLabel("PIN", { exact: true }).fill("87654321");
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
   await expect(page.getByRole("button", { name: "Backup options", exact: true })).toBeVisible();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
@@ -641,7 +694,7 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
   await page.reload();
   await expect(page.getByRole("button", { name: "Unlock backup", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Unlock backup", exact: true }).click();
-  await page.getByLabel("PIN", { exact: true }).fill("654321");
+  await page.getByLabel("PIN", { exact: true }).fill("87654321");
   await page.getByRole("button", { name: "Unlock backup", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await page.reload();
@@ -657,7 +710,7 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
   await page.reload();
   await expect(page.getByRole("button", { name: "Unlock backup", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Unlock backup", exact: true }).click();
-  await page.getByLabel("PIN", { exact: true }).fill("654321");
+  await page.getByLabel("PIN", { exact: true }).fill("87654321");
   await page.getByRole("button", { name: "Unlock backup", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await page.evaluate(() => window.syncSecurityE2E.clear());

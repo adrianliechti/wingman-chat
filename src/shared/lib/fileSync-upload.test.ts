@@ -1,9 +1,10 @@
 import { beginChatBackupPause, finishChatBackupPause } from "./chatBackupActivity";
 import { beforeEach, expect, it, vi } from "vitest";
-import { FileSync } from "./fileSync";
+import { FileSync, type FileSyncActivity } from "./fileSync";
 import { generateBackupKeys } from "./backupCrypto";
 import { decryptFile, generateDEK } from "./crypto";
 import { writeJson } from "./opfs-core";
+import * as opfs from "./opfs-core";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
 import * as api from "./storeClient";
 
@@ -28,6 +29,31 @@ beforeEach(() => {
   vi.mocked(api.putFile).mockResolvedValue("etag");
 });
 
+it("reports oversized files as pending without blocking other uploads", async () => {
+  const pair = await generateBackupKeys();
+  const path = "agents/large/file.bin";
+  memory.put(path, "small test data");
+  memory.put("agents/other/file.bin", "other");
+  const original = opfs.readFileMetadata;
+  const metadata = vi.spyOn(opfs, "readFileMetadata").mockImplementation(async (requested) => {
+    const result = await original(requested);
+    return requested === path && result ? { ...result, size: 256 * 1024 * 1024 + 1 } : result;
+  });
+  try {
+    const sync = await FileSync.create({ userId: "alice", dek: { kid: 1, backup: { publicKey: pair.publicKey } } });
+    await sync.fullSync();
+    let activity!: FileSyncActivity;
+    sync.subscribeActivity((value) => {
+      activity = value;
+    });
+    expect(activity.pendingCount).toBe(1);
+    expect(activity.lastError).toContain("256 MiB backup limit");
+    expect(api.putFile).toHaveBeenCalledOnce();
+  } finally {
+    metadata.mockRestore();
+  }
+});
+
 it("automatically uploads a local workspace without downloading or decrypting remote files", async () => {
   const pair = await generateBackupKeys();
   memory.put("agents/test/AGENTS.md", "local agent");
@@ -41,6 +67,28 @@ it("automatically uploads a local workspace without downloading or decrypting re
   const restored = await decryptFile<{ path: string }>(root, cipher, "alice", id);
   expect(restored.header.path).toBe("agents/test/AGENTS.md");
   expect(new TextDecoder().decode(restored.bytes)).toBe("local agent");
+});
+
+it("reports the initial file backup total and advances only confirmed uploads", async () => {
+  const pair = await generateBackupKeys();
+  memory.put("agents/first/AGENTS.md", "first");
+  memory.put("agents/second/AGENTS.md", "second");
+  vi.mocked(api.putFile).mockResolvedValueOnce("first").mockRejectedValueOnce(new Error("upload interrupted"));
+  const sync = await FileSync.create({ userId: "alice", dek: { kid: 1, backup: { publicKey: pair.publicKey } } });
+  const activity: FileSyncActivity[] = [];
+  sync.subscribeActivity((value) => activity.push(value));
+  await sync.fullSync();
+  expect(activity.some((a) => a.progress.some((p) => p.direction === "backup" && p.total === null))).toBe(true);
+  expect(
+    activity.some((a) => a.progress.some((p) => p.direction === "backup" && p.total === 2 && p.completed === 1)),
+  ).toBe(true);
+  expect(activity.some((a) => a.progress.some((p) => p.completed === 2))).toBe(false);
+  expect(activity.at(-1)).toMatchObject({
+    syncing: false,
+    progress: [],
+    pendingCount: 1,
+    lastError: "upload interrupted",
+  });
 });
 
 it("retains upload conflicts without fetching or overwriting the remote version", async () => {

@@ -339,11 +339,14 @@ for (const ending of ["finish", "stop", "error"] as const) {
     let key: object | null = null;
     let revision = 0;
     let appends = 0;
-    await page.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+    await page.route("**/config.json", (route) =>
+      route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+    );
     await page.route("**/api/v1/**", (route) => {
       const request = route.request();
       const path = new URL(request.url()).pathname;
       if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
+      if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
       if (path.endsWith("/keystore")) {
         if (request.method() === "GET")
           return key

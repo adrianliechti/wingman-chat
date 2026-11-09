@@ -1,5 +1,6 @@
 import { BackupStatusIcon } from "./BackupStatusIcon";
-import { type SyncHealth, useSyncStatus } from "../hooks/useSyncStatus";
+import { needsAttention, type SyncHealth, useSyncStatus } from "../hooks/useSyncStatus";
+import { describeSyncProgress } from "@/shared/lib/syncProgress";
 
 interface SyncIndicatorProps {
   /** Open the settings drawer at Backup. */
@@ -30,18 +31,21 @@ function describe(health: SyncHealth, pendingCount: number): string {
 /** Small always-visible cloud status in the top bar. Hidden when the
  *  deployment has no sync server. */
 export function SyncIndicator({ onClick }: SyncIndicatorProps) {
-  const { health, pendingCount } = useSyncStatus();
+  const { health, pendingCount, progress } = useSyncStatus();
 
   if (health === "disabled") return null;
 
-  const attention = health === "error" || health === "locked" || health === "setup" || health === "upload-only";
+  const attention = needsAttention(health);
+  const description = progress.length
+    ? progress.map((item) => describeSyncProgress(item, item.unit)).join("; ")
+    : describe(health, pendingCount);
 
   return (
     <button
       type="button"
       onClick={onClick}
-      title={describe(health, pendingCount)}
-      aria-label={describe(health, pendingCount)}
+      title={description}
+      aria-label={description}
       className={`p-2 rounded transition-all duration-150 ease-out ${
         attention
           ? "text-amber-600 dark:text-amber-500 hover:text-amber-700 dark:hover:text-amber-400"

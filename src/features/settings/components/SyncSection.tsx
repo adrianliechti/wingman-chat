@@ -1,11 +1,13 @@
 import { ChevronDown, CloudOff, Download, EllipsisVertical, Lock, Power, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as storeSession from "@/shared/lib/storeSession";
+import { PIN_MAX_LENGTH, PIN_MIN_LENGTH } from "@/shared/lib/keystore";
 import { supportsPasskeys } from "@/shared/lib/passkey";
 import { notify } from "@/shared/lib/notify";
 import { confirm } from "@/shared/lib/confirm";
 import { requestBackupReset } from "@/shared/lib/backupReset";
 import { type SyncHealth, useSyncStatus } from "../hooks/useSyncStatus";
+import { describeSyncProgress } from "@/shared/lib/syncProgress";
 import { BackupSetup, type BackupSetupStep } from "./BackupSetup";
 import { BackupRecoveryMethods } from "./BackupRecoveryMethods";
 import { BackupStatusIcon } from "./BackupStatusIcon";
@@ -15,9 +17,6 @@ import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/Dropdown
 
 import { getBackupSize } from "@/shared/lib/storeClient";
 import { formatBytes } from "@/shared/lib/utils";
-
-const PIN_MIN_LEN = 4;
-const PIN_MAX_LEN = 32;
 
 const ACTIVE_BACKUP_DESCRIPTIONS = {
   error: "Changes are saved on this device. Try syncing again.",
@@ -52,6 +51,7 @@ export function SyncSection({
     session: status,
     health: syncHealth,
     pendingCount,
+    progress,
     lastSyncAt,
     lastError,
     pinProtected,
@@ -76,7 +76,7 @@ export function SyncSection({
     return () => {
       cancelled = true;
     };
-  }, [status, syncHealth, lastSyncAt]);
+  }, [status, lastSyncAt]);
   const [dangerOpen, setDangerOpen] = useState(false);
   const [hasLocalChats, setHasLocalChats] = useState(true);
   useEffect(() => {
@@ -100,7 +100,7 @@ export function SyncSection({
   // Backup setup and PIN form state
   const [setupStep, setSetupStep] = useState<BackupSetupStep>("intro");
   const setupStartRef = useRef<HTMLButtonElement>(null);
-  const [mode, setMode] = useState<"none" | "restore" | "set" | "change">("none");
+  const [mode, setMode] = useState<"none" | "restore" | "set" | "change" | "confirm">("none");
   const [oldPin, setOldPin] = useState("");
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
@@ -153,13 +153,14 @@ export function SyncSection({
   }
 
   function validatePin(pin: string): string | null {
-    if (pin.length < PIN_MIN_LEN) return `PIN must be at least ${PIN_MIN_LEN} characters`;
-    if (pin.length > PIN_MAX_LEN) return `PIN must be at most ${PIN_MAX_LEN} characters`;
+    if (pin.length < PIN_MIN_LENGTH) return `PIN must be at least ${PIN_MIN_LENGTH} characters`;
+    if (pin.length > PIN_MAX_LENGTH) return `PIN must be at most ${PIN_MAX_LENGTH} characters`;
     return null;
   }
 
   async function onUnlock() {
     setError(null);
+    if (!oldPin) return;
     setBusy(true);
     try {
       await storeSession.unlock(oldPin);
@@ -175,37 +176,57 @@ export function SyncSection({
     }
   }
 
-  async function onSetPin() {
+  async function savePin(save: () => Promise<void>, mismatch: string, failure: string): Promise<boolean> {
     setError(null);
-    const v = validatePin(newPin);
-    if (v) return setError(v);
-    if (newPin !== confirmPin) return setError("PINs do not match");
+    const invalid = validatePin(newPin);
+    if (invalid) return (setError(invalid), false);
+    if (newPin !== confirmPin) return (setError(mismatch), false);
     setBusy(true);
     try {
-      await storeSession.setPin(newPin);
+      await save();
       resetForm();
-      if (setupStep === "pin") setSetupStep("passkey");
+      return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to set PIN");
+      setError(err instanceof Error ? err.message : failure);
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
+  async function onSetPin() {
+    if (
+      (await savePin(() => storeSession.setPin(newPin), "PINs do not match", "Failed to set PIN")) &&
+      setupStep === "pin"
+    )
+      setSetupStep("passkey");
+  }
+
   async function onChangePin() {
+    await savePin(() => storeSession.changePin(oldPin, newPin), "New PINs do not match", "Failed to change PIN");
+  }
+
+  async function onConfirmPin() {
     setError(null);
-    const v = validatePin(newPin);
-    if (v) return setError(v);
-    if (newPin !== confirmPin) return setError("New PINs do not match");
+    if (!oldPin) return;
     setBusy(true);
     try {
-      await storeSession.changePin(oldPin, newPin);
-      resetForm();
+      await storeSession.confirmPin(oldPin);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to change PIN");
-    } finally {
+      setError(err instanceof Error && err.message ? err.message : "Couldn’t confirm your PIN. Please try again.");
       setBusy(false);
+      return;
     }
+    setBusy(false);
+    resetForm();
+    await onPasskey("set");
+  }
+
+  function onAddPasskey() {
+    if (storeSession.needsPinToChangeProtection()) {
+      setError(null);
+      setMode("confirm");
+    } else void onPasskey("set");
   }
 
   async function onPasskey(action: "unlock" | "set") {
@@ -239,7 +260,7 @@ export function SyncSection({
         : "Backup is off on this browser. Your online copy is kept. Unlock to resume."
       : status === "initializing"
         ? "Checking your backup status. This should only take a moment."
-        : "Backups could not connect. Retrying automatically.";
+        : "We couldn’t connect to your backup. We’ll retry automatically.";
 
   const lastSynced = lastSyncAt
     ? `Last synced ${new Date(lastSyncAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
@@ -298,7 +319,9 @@ export function SyncSection({
               }
               title={
                 active
-                  ? (BACKUP_HEALTH_TITLES[health] ?? "Checking your backup")
+                  ? health === "syncing" && progress.some((item) => item.direction === "restore")
+                    ? "Restoring your backup"
+                    : (BACKUP_HEALTH_TITLES[health] ?? "Checking your backup")
                   : status === "setup" || status === "locked"
                     ? recovering
                       ? "Ready to restore"
@@ -313,7 +336,26 @@ export function SyncSection({
                   "Your data is saved only in this browser. Turn on backup to keep a copy online."
                 ) : active ? (
                   <>
-                    <span className="block">{syncSummary}</span>
+                    {progress.length > 0 ? (
+                      <span className="block min-h-8 space-y-2" aria-live="polite" aria-atomic="true">
+                        {progress.map((item, index) => {
+                          const label = describeSyncProgress(item, item.unit);
+                          return (
+                            <span key={`${item.unit}-${item.direction}-${index}`} className="block">
+                              <span className="block tabular-nums">{label}</span>
+                              <progress
+                                aria-label={label}
+                                max={item.total || 1}
+                                value={item.total === null ? undefined : item.completed}
+                                className="mt-1 block h-1.5 w-full max-w-64 overflow-hidden rounded-full accent-neutral-600 dark:accent-neutral-400"
+                              />
+                            </span>
+                          );
+                        })}
+                      </span>
+                    ) : (
+                      <span className="block min-h-8">{syncSummary}</span>
+                    )}
                     {description && <span className="block">{description}</span>}
                   </>
                 ) : (
@@ -365,7 +407,16 @@ export function SyncSection({
               }
             />
           )}
-          {active && lastError && <p className="text-xs text-red-600 dark:text-red-400">Sync error: {lastError}</p>}
+          {(active || status === "error") && lastError && (
+            <details className="min-w-0 text-xs text-neutral-500 dark:text-neutral-400">
+              <summary className="w-fit cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500">
+                Error details
+              </summary>
+              <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-neutral-100 p-3 text-[11px] dark:bg-neutral-800">
+                {lastError}
+              </pre>
+            </details>
+          )}
           {status !== "setup" && (
             <>
               {(status === "locked" || status === "upload-only") && pinProtected && passkeyProtected && (
@@ -380,13 +431,6 @@ export function SyncSection({
                 >
                   {mode === "restore" ? "Use passkey instead" : "Use PIN instead"}
                 </button>
-              )}
-
-              {status === "error" && (
-                <p role="alert" className="text-xs text-red-600 dark:text-red-400">
-                  Sync initialization failed: {lastError ?? "Unknown error"}. Check your connection. We’ll retry
-                  automatically.
-                </p>
               )}
 
               {status === "ready" && !remembered && (
@@ -435,7 +479,7 @@ export function SyncSection({
                       setError(null);
                       setMode("set");
                     }}
-                    onAddPasskey={() => void onPasskey("set")}
+                    onAddPasskey={onAddPasskey}
                     onChangePin={() => {
                       setError(null);
                       setMode("change");
@@ -443,7 +487,9 @@ export function SyncSection({
                   />
                 )}
 
-                {(status === "ready" || ((status === "locked" || status === "upload-only") && passkeyProtected)) &&
+                {/* Unprotected devices get this hint from the recovery methods list. */}
+                {passkeyProtected &&
+                  (status === "ready" || status === "locked" || status === "upload-only") &&
                   !supportsPasskeys() && (
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">
                       Passkeys aren’t available in this browser. Try a supported browser or device.
@@ -458,53 +504,20 @@ export function SyncSection({
                   )}
 
                 {(status === "locked" || status === "upload-only") && mode === "restore" && pinProtected && (
-                  <form
-                    className="space-y-2"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void onUnlock();
-                    }}
-                  >
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      {recovering
-                        ? "Enter your PIN to restore your backup."
-                        : "Enter your PIN to unlock automatic sync."}
-                    </p>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                      PIN
-                      <input
-                        type="password"
-                        autoComplete="current-password"
-                        autoFocus
-                        disabled={busy}
-                        value={oldPin}
-                        onChange={(e) => setOldPin(e.target.value)}
-                        className="mt-1 w-full px-3 py-2 text-sm font-normal border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-900"
-                      />
-                    </label>
-                    {error && (
-                      <p role="alert" className="text-xs text-red-600 dark:text-red-400">
-                        {error}
-                      </p>
-                    )}
-                    <div className="flex items-center justify-between gap-3">
-                      <button
-                        type="button"
-                        onClick={resetForm}
-                        disabled={busy}
-                        className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium text-neutral-500 transition-colors hover:text-neutral-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={busy || !oldPin}
-                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 disabled:opacity-50"
-                      >
-                        {busy ? (recovering ? "Restoring…" : "Unlocking…") : unlockLabel}
-                      </button>
-                    </div>
-                  </form>
+                  <PinForm
+                    title={unlockLabel}
+                    description={
+                      recovering ? "Enter your PIN to restore your backup." : "Enter your PIN to unlock automatic sync."
+                    }
+                    fields={[{ label: "PIN", value: oldPin, setter: setOldPin, current: true }]}
+                    error={error}
+                    busy={busy}
+                    autoFocus
+                    onSubmit={onUnlock}
+                    onCancel={resetForm}
+                    confirmLabel={unlockLabel}
+                    busyLabel={recovering ? "Restoring…" : "Unlocking…"}
+                  />
                 )}
 
                 {status === "ready" && mode === "set" && (
@@ -526,7 +539,7 @@ export function SyncSection({
                   <PinForm
                     title="Change PIN"
                     fields={[
-                      { label: "Current PIN", value: oldPin, setter: setOldPin },
+                      { label: "Current PIN", value: oldPin, setter: setOldPin, current: true },
                       { label: "New PIN", value: newPin, setter: setNewPin },
                       { label: "Confirm new PIN", value: confirmPin, setter: setConfirmPin },
                     ]}
@@ -534,6 +547,21 @@ export function SyncSection({
                     busy={busy}
                     onSubmit={onChangePin}
                     onCancel={resetForm}
+                  />
+                )}
+
+                {status === "ready" && mode === "confirm" && (
+                  <PinForm
+                    title="Confirm your PIN"
+                    description="This device remembers your backup without keeping your key readable. Enter your PIN to add a passkey."
+                    fields={[{ label: "PIN", value: oldPin, setter: setOldPin, current: true }]}
+                    error={error}
+                    busy={busy}
+                    autoFocus
+                    onSubmit={onConfirmPin}
+                    onCancel={resetForm}
+                    confirmLabel="Continue"
+                    busyLabel="Checking…"
                   />
                 )}
               </>

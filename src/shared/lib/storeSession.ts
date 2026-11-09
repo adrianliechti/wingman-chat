@@ -12,12 +12,14 @@
  */
 
 import { getConfig } from "@/shared/config";
+import { prepareBackupDestination } from "./backupDestination";
+import { notify } from "./notify";
 import { completePendingBackupReset } from "./backupReset";
 import { invalidateBackupSessions, isBackupSessionCurrent, withBackupStorage } from "./backupLifecycle";
 import { onChatBackupReady } from "./chatBackupActivity";
 import { ChatSync } from "./chatSync";
 import * as api from "./storeClient";
-import type { DEK, StoreKey } from "./crypto";
+import { type DEK, type RootKey, type StoreKey, hasRawKey } from "./crypto";
 import { FileSync } from "./fileSync";
 import { deleteFile } from "./opfs-core";
 import { flushPersistence, withPersistenceLock } from "./persistence";
@@ -37,7 +39,8 @@ interface ReadySession {
   status: "ready";
   remembered: boolean;
   userId: string;
-  dek: DEK;
+  /** Remembered devices hold a non-extractable key until the user unlocks again. */
+  dek: RootKey;
   sync: ChatSync;
   files: FileSync;
   keystore: keystore.KeystoreState;
@@ -59,6 +62,7 @@ interface LockedSession {
 
 interface PendingSession {
   status: "initializing" | "disabled" | "error";
+  userId?: string;
   error?: unknown;
 }
 
@@ -106,14 +110,14 @@ async function engines(userId: string, key: StoreKey) {
   return { sync, files };
 }
 
-async function readySession(userId: string, dek: DEK, ks: keystore.KeystoreState): Promise<ReadySession> {
+async function readySession(userId: string, dek: RootKey, ks: keystore.KeystoreState): Promise<ReadySession> {
   return withBackupStorage(() => {
     if (!isBackupSessionCurrent()) throw new Error("Backup settings changed. Reload before syncing.");
     return readySessionUnlocked(userId, dek, ks);
   });
 }
 
-async function readySessionUnlocked(userId: string, dek: DEK, ks: keystore.KeystoreState): Promise<ReadySession> {
+async function readySessionUnlocked(userId: string, dek: RootKey, ks: keystore.KeystoreState): Promise<ReadySession> {
   const upgraded = await keystore.enableBackupUploads(ks, dek, userId);
   await rememberBackup(userId, upgraded.state, upgraded.dek);
   api.setBackupKey(upgraded.state.keystore.backup!.publicKey);
@@ -246,11 +250,20 @@ export async function initSession(): Promise<Session> {
   initPromise = (async () => {
     try {
       const me = await api.fetchMe();
+      if (!(await prepareBackupDestination(me.id, me.backupDestination ?? "server", me.previousId))) {
+        setSession({ status: "initializing", userId: me.id });
+        // Queued chat saves can be awaiting initSession itself. Resolve first
+        // so they can finish saving locally before this page reloads.
+        void flushPersistence()
+          .then(() => window.location.reload())
+          .catch((error) => notify.error("Couldn't save before backup destination changed", error));
+        return session;
+      }
       await completePendingBackupReset(me.id);
 
       const state = await keystore.loadKeystore();
 
-      let remembered: DEK | null = null;
+      let remembered: RootKey | null = null;
       if (state && keystore.isProtected(state.keystore)) {
         try {
           remembered = await loadRememberedBackup(me.id, state);
@@ -302,26 +315,73 @@ export async function unlock(pin: string): Promise<void> {
   if (session.status !== "locked" && session.status !== "upload-only") {
     throw new Error(`session is not locked (status=${session.status})`);
   }
-  const dek = await keystore.unlockWithPin(session.keystore, pin, session.userId);
-  await activateRestore(session.userId, dek, session.keystore);
+  const { userId, keystore: state } = session;
+  const dek = await keystore.unlockWithPin(state, pin, userId);
+  const upgraded = await keystore.upgradePinProtection(state, dek, pin, userId).catch((error: unknown) => {
+    console.warn("Couldn't upgrade PIN protection", error);
+    return state;
+  });
+  await activateRestore(userId, dek, upgraded);
+}
+
+/** True when a remembered device must confirm the PIN before adding a passkey. */
+export function needsPinToChangeProtection(): boolean {
+  return (
+    session.status === "ready" && !hasRawKey(session.dek) && !keystore.isPasskeyProtected(session.keystore.keystore)
+  );
+}
+
+/** Confirm the PIN on a remembered device so protection can be changed this page session. */
+export async function confirmPin(pin: string): Promise<void> {
+  const current = session;
+  if (current.status !== "ready") throw new Error("Unlock backup to change protection.");
+  const dek = await keystore.unlockWithPin(current.keystore, pin, current.userId);
+  const upgraded = await keystore
+    .upgradePinProtection(current.keystore, dek, pin, current.userId)
+    .catch((error: unknown) => {
+      console.warn("Couldn't upgrade PIN protection", error);
+      return current.keystore;
+    });
+  const root: DEK = { ...dek, backup: current.dek.backup };
+  if (upgraded !== current.keystore) await updateProtection({ ...current, dek: root }, upgraded);
+  else session = { ...current, dek: root };
+}
+
+/**
+ * Protection changes must re-wrap the root key bytes, which a remembered
+ * device's non-extractable key cannot provide. Passkeys re-authenticate inline;
+ * PIN-only devices call confirmPin first.
+ */
+async function rootBytes(current: SetupSession | ReadySession): Promise<DEK> {
+  if (hasRawKey(current.dek)) return current.dek;
+  if (!keystore.isPasskeyProtected(current.keystore.keystore)) {
+    throw new Error("Enter your PIN to change backup protection.");
+  }
+  const dek = await keystore.unlockWithPasskey(current.keystore, current.userId);
+  const root: DEK = { ...dek, backup: current.dek.backup };
+  if (session === current) session = { ...current, dek: root };
+  return root;
 }
 
 /** Configure protection before starting any backup engine. */
 export async function setPin(pin: string): Promise<void> {
   const current = session;
   if (current.status !== "ready" && current.status !== "setup") throw new Error("Unlock backup to change protection.");
-  const newState = await keystore.setPin(current.keystore, current.dek, pin, current.userId);
+  const dek = await rootBytes(current);
+  const newState = await keystore.setPin(current.keystore, dek, pin, current.userId);
   if (current.status === "setup") {
     setSession({ status: "locked", userId: current.userId, keystore: newState });
     await activateRestore(current.userId, current.dek, newState);
-  } else await updateProtection(current, newState);
+  } else await updateProtection({ ...current, dek }, newState);
 }
 
 /** Change the PIN. Requires the old PIN. */
 export async function changePin(oldPin: string, newPin: string): Promise<void> {
   if (session.status !== "ready") throw new Error("session not ready");
-  const newState = await keystore.changePin(session.keystore, oldPin, newPin, session.userId);
-  await updateProtection(session, newState);
+  const current = session;
+  const dek = await keystore.unlockWithPin(current.keystore, oldPin, current.userId);
+  const newState = await keystore.setPin(current.keystore, dek, newPin, current.userId);
+  await updateProtection({ ...current, dek: { ...dek, backup: current.dek.backup } }, newState);
 }
 
 /** Keep local trust bound to the newly committed protection record. */
@@ -400,16 +460,10 @@ export async function unlockPasskey(): Promise<void> {
 export async function setPasskey(): Promise<void> {
   const current = session;
   if (current.status !== "ready" && current.status !== "setup") throw new Error("Unlock backup to change protection.");
-  const newState = await keystore.setPasskey(current.keystore, current.dek, current.userId);
+  const dek = await rootBytes(current);
+  const newState = await keystore.setPasskey(current.keystore, dek, current.userId);
   if (current.status === "setup") {
     setSession({ status: "locked", userId: current.userId, keystore: newState });
     await activateRestore(current.userId, current.dek, newState);
-  } else await updateProtection(current, newState);
-}
-
-/** Local edits/deletions need only public-key upload access. */
-export async function whenUploading(): Promise<ReadySession | UploadSession> {
-  await initSession();
-  if (session.status === "ready" || session.status === "upload-only") return session;
-  return whenReady();
+  } else await updateProtection({ ...current, dek }, newState);
 }

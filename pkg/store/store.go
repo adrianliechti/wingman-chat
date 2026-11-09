@@ -36,19 +36,25 @@ type AppendResult struct {
 	Deduped []string `json:"deduped,omitempty"`
 }
 
+// ObjectKind separates workspace files from attachment blobs, even when IDs match.
+// Providers reject kinds other than FileObject and BlobObject with ErrInvalidID.
+type ObjectKind uint8
+
+const (
+	FileObject ObjectKind = iota + 1
+	BlobObject
+)
+
 // Provider is a pluggable backend for the per-user chat store.
 //
 // The server never decrypts key, frame, or blob contents. Providers must
+// fence stale writes after reset or keystore changes and
 // preserve an existing keystore backup envelope when root-key protection changes.
 type Provider interface {
 	// BackupSize returns approximate stored bytes, including encrypted data and metadata.
 	BackupSize(ctx context.Context, userID string) (int64, error)
 
-	// LockUser coordinates complete API requests with account-wide resets.
-	// Ordinary requests hold a shared lock through validation and streaming.
-	LockUser(ctx context.Context, userID string, exclusive bool) (unlock func(), err error)
-
-	// ResetUser deletes all backup data and keys under an exclusive user lock.
+	// ResetUser removes backup data and keys, fencing concurrent stale writes.
 	ResetUser(ctx context.Context, userID string) error
 
 	// GetKeystore returns the raw keystore bytes and an opaque etag.
@@ -71,11 +77,11 @@ type Provider interface {
 	AppendEvents(ctx context.Context, userID, chatID string, expectedSeq int64, eventIDs []string, frames [][]byte) (AppendResult, error)
 
 	// ReadEvents streams JSONL frames whose seq > fromSeq. The reader yields
-	// the same line format the log uses on disk:
+	// the JSONL envelope format:
 	//   {"seq":<int>,"id":"<uuid>","frame":"<base64>"}\n
 	ReadEvents(ctx context.Context, userID, chatID string, fromSeq int64) (io.ReadCloser, error)
 
-	// DeleteChat removes the entire log and dedup sidecar for the chat.
+	// DeleteChat removes the chat and its event history.
 	DeleteChat(ctx context.Context, userID, chatID string) error
 
 	// CompactChat drops every log entry whose seq < beforeSeq. The head
@@ -85,46 +91,46 @@ type Provider interface {
 	// replay correctly.
 	CompactChat(ctx context.Context, userID, chatID string, beforeSeq int64) error
 
-	// GetBlob streams the raw (still-encrypted) bytes for a blob.
-	GetBlob(ctx context.Context, userID, blobID string) (io.ReadCloser, error)
+	// GetObject streams encrypted content and returns its current ETag.
+	// ErrBackupConflict means a concurrent writer replaced the object; retry.
+	GetObject(ctx context.Context, userID string, kind ObjectKind, id string) (io.ReadCloser, string, error)
 
-	// BlobExists reports whether a blob is present without reading its
-	// body — used as a cheap upload existence check.
+	// PutObject atomically replaces encrypted content. ifMatch is empty for an
+	// unconditional write, "*" for create-only, or an ETag for compare-and-swap.
+	// A failed precondition returns ErrObjectConflict.
+	PutObject(ctx context.Context, userID string, kind ObjectKind, id string, r io.Reader, ifMatch string) (string, error)
+
+	// DeleteObject removes encrypted content. Missing objects return nil.
+	// ifMatch is empty or "*" for an unconditional delete, or an ETag that must
+	// match the current object; a mismatch returns ErrObjectConflict.
+	DeleteObject(ctx context.Context, userID string, kind ObjectKind, id string, ifMatch string) error
+
+	// BlobExists checks attachment availability without downloading its content.
 	BlobExists(ctx context.Context, userID, blobID string) (bool, error)
 
-	// PutBlob writes a blob atomically.
-	PutBlob(ctx context.Context, userID, blobID string, r io.Reader) error
-
-	// DeleteBlob removes a blob. Missing blobs return nil (idempotent).
-	DeleteBlob(ctx context.Context, userID, blobID string) error
-
-	// ListFiles returns the metadata of every synced file the user owns.
+	// ListFiles returns metadata for every synced workspace file.
 	ListFiles(ctx context.Context, userID string) ([]FileMeta, error)
-
-	// GetFile streams the raw (still-encrypted) bytes plus the current etag.
-	GetFile(ctx context.Context, userID, fileID string) (io.ReadCloser, string, error)
-
-	// PutFile writes a file atomically.
-	//   ifMatch == ""     → unconditional replace
-	//   ifMatch == "*"    → create only (ErrFileConflict if it exists)
-	//   ifMatch == "<x>"  → CAS, must match current etag
-	PutFile(ctx context.Context, userID, fileID string, r io.Reader, ifMatch string) (etag string, err error)
-
-	// DeleteFile removes a file. Missing files return nil (idempotent).
-	DeleteFile(ctx context.Context, userID, fileID string) error
 }
 
 var (
+	ErrBackupConflict   = errors.New("store: backup changed; retry with fresh state")
 	ErrNotFound         = errors.New("store: not found")
 	ErrSeqConflict      = errors.New("store: seq conflict")
 	ErrKeystoreConflict = errors.New("store: keystore etag conflict")
-	ErrFileConflict     = errors.New("store: file etag conflict")
+	ErrObjectConflict   = errors.New("store: object etag conflict")
 	ErrInvalidID        = errors.New("store: invalid id")
 	ErrFrameTooLarge    = errors.New("store: frame too large")
 )
 
 // MaxFrameBytes caps a single base64-encoded frame envelope. Blobs go
-// through PutBlob, not event frames. Clients chunk deltas into ~4 MiB
+// through PutObject, not event frames. Clients chunk deltas into ~4 MiB
 // frames, but a chunk cannot split a single log entry — the headroom is
 // for one message carrying megabytes of text (pasted logs, tool results).
 const MaxFrameBytes = 16 << 20 // 16 MiB
+
+// MaxObjectBytes caps one encrypted file or blob upload: the client's 256 MiB
+// plaintext limit plus headroom for per-chunk encryption overhead.
+const MaxObjectBytes = 256<<20 + 1<<20
+
+// MaxAppendBytes caps one append request body (all JSONL event lines).
+const MaxAppendBytes = 64 << 20 // 64 MiB

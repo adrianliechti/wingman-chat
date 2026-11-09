@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as storeSession from "@/shared/lib/storeSession";
 import type { SyncActivity } from "@/shared/lib/chatSync";
 import type { FileSyncActivity } from "@/shared/lib/fileSync";
+import type { SyncProgress } from "@/shared/lib/syncProgress";
 
 export type SessionStatus = "disabled" | "initializing" | "setup" | "locked" | "upload-only" | "ready" | "error";
 
@@ -17,7 +18,13 @@ export type SyncHealth =
   | "upload-only"
   | "synced";
 
+/** States that need the user to act before backups run normally. */
+export function needsAttention(health: SyncHealth): boolean {
+  return health === "error" || health === "locked" || health === "setup" || health === "upload-only";
+}
+
 export interface SyncStatus {
+  progress: (SyncProgress & { unit: "chats" | "files" })[];
   session: SessionStatus;
   health: SyncHealth;
   pendingCount: number;
@@ -74,6 +81,11 @@ export function useSyncStatus(): SyncStatus {
         unsubFiles?.();
         unsubChat = s.sync.subscribeActivity(setChat);
         unsubFiles = s.files.subscribeActivity(setFiles);
+      } else {
+        unsubChat?.();
+        unsubFiles?.();
+        setChat(null);
+        setFiles(null);
       }
     });
     return () => {
@@ -90,6 +102,10 @@ export function useSyncStatus(): SyncStatus {
       .pop() ?? null;
 
   return {
+    progress: [
+      ...(chat?.progress ?? []).map((p) => ({ ...p, unit: "chats" as const })),
+      ...(files?.progress ?? []).map((p) => ({ ...p, unit: "files" as const })),
+    ],
     session,
     health: computeHealth(session, chat, files),
     pendingCount: (chat?.pendingCount ?? 0) + (files?.pendingCount ?? 0),

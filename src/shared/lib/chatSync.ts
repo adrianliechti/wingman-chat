@@ -1,3 +1,4 @@
+import { SyncProgressTracker, type SyncProgress } from "./syncProgress";
 /**
  * Server-synced chat storage with offline-capable OPFS mirror.
  *
@@ -18,17 +19,10 @@
 
 import { isChatBackupPaused, requireChatBackupReady, BackupPausedError } from "./chatBackupActivity";
 import { isBackupSessionCurrent, withBackupStorage } from "./backupLifecycle";
+import { withPersistenceLock } from "./persistence";
 import { normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
 import type { Chat } from "@/shared/types/chat";
-import {
-  applyEntriesInPlace,
-  chunkEntries,
-  decodeLines,
-  diffChat,
-  encodeLines,
-  type LogEntry,
-  replayLog,
-} from "./chatLog";
+import { applyEntries, chunkEntries, decodeLines, diffChat, encodeLines, type LogEntry, replayLog } from "./chatLog";
 import * as api from "./storeClient";
 import {
   type StoreKey,
@@ -52,8 +46,8 @@ import {
   appendBlob,
   deleteDirectory,
   deleteFile,
-  fileExists,
   listDirectories,
+  listFiles,
   readJson,
   readText,
   writeBlob,
@@ -71,25 +65,81 @@ interface SyncState {
   lastFrameHash: Record<string, string>;
   /** Number of events on the server since the last compaction for this chat. */
   entriesSinceCompact?: Record<string, number>;
-  /** Deletions journaled until the server confirms them. */
-  pendingDeletes?: { id: string; blobIds: string[] }[];
 }
 
 /** Threshold of entries that triggers an automatic compaction. Keeps fresh
  *  devices' first pull bounded; the snapshot is paid for once per N saves. */
 const COMPACT_THRESHOLD = 50;
 
-async function loadState(): Promise<SyncState | undefined> {
-  return readJson<SyncState>(STATE_FILE);
+interface PendingDeletion {
+  id: string;
+  token: string;
+}
+const deleteDir = (userId: string) => `_sync/deletes/u-${encodeURIComponent(userId)}`;
+const deletePath = (userId: string, id: string) => `${deleteDir(userId)}/${encodeURIComponent(id)}.json`;
+const withDeletionLock = <T>(userId: string, id: string, operation: () => Promise<T>) =>
+  withPersistenceLock(`chat-deletion:${encodeURIComponent(userId)}:${encodeURIComponent(id)}`, operation);
+
+async function journalDeletion(userId: string, id: string): Promise<void> {
+  await withDeletionLock(userId, id, () => writeJson(deletePath(userId, id), { id, token: crypto.randomUUID() }));
 }
 
-async function saveState(state: SyncState): Promise<void> {
-  await writeJson(STATE_FILE, state);
+async function pendingDeletions(userId: string): Promise<PendingDeletion[]> {
+  const dir = deleteDir(userId);
+  const files = await listFiles(dir);
+  const entries = await Promise.all(
+    files.filter((file) => file.endsWith(".json")).map((file) => readJson<PendingDeletion>(`${dir}/${file}`)),
+  );
+  return entries.filter(
+    (entry): entry is PendingDeletion => !!entry && typeof entry.id === "string" && typeof entry.token === "string",
+  );
+}
+
+async function acknowledgeDeletion(userId: string, deletion: PendingDeletion): Promise<void> {
+  await withDeletionLock(userId, deletion.id, async () => {
+    const path = deletePath(userId, deletion.id);
+    if ((await readJson<PendingDeletion>(path))?.token === deletion.token) await deleteFile(path);
+  });
+}
+
+async function loadState(): Promise<SyncState | undefined> {
+  return withPersistenceLock("chat-sync-state", () => readJson<SyncState>(STATE_FILE));
+}
+
+/** Persist one chat's baseline. Each tab only writes the chats it touched, so a
+ *  stale tab can never roll back heads that another tab advanced. */
+async function saveChatState(state: SyncState, chatId: string): Promise<void> {
+  await withPersistenceLock("chat-sync-state", async () => {
+    const disk = (await readJson<SyncState>(STATE_FILE)) ?? { userId: state.userId, heads: {}, lastFrameHash: {} };
+    if (disk.userId !== state.userId) return;
+    const counts = (disk.entriesSinceCompact ??= {});
+    if (state.heads[chatId] === undefined) {
+      delete disk.heads[chatId];
+      delete disk.lastFrameHash[chatId];
+      delete counts[chatId];
+    } else {
+      disk.heads[chatId] = state.heads[chatId];
+      disk.lastFrameHash[chatId] = state.lastFrameHash[chatId];
+      const count = state.entriesSinceCompact?.[chatId];
+      if (count === undefined) delete counts[chatId];
+      else counts[chatId] = count;
+    }
+    await writeJson(STATE_FILE, disk);
+  });
+}
+
+function forgetChatState(state: SyncState, chatId: string): void {
+  delete state.heads[chatId];
+  delete state.lastFrameHash[chatId];
+  if (state.entriesSinceCompact) delete state.entriesSinceCompact[chatId];
 }
 
 // Per-chat paths in OPFS
 const historyPath = (chatId: string) => `chats/${chatId}/history.jsonl`;
 const targetPath = (chatId: string) => `chats/${chatId}/target.json`;
+/** Shared by unlocked engines and saves from locked/offline tabs. */
+const withTarget = <T>(chatId: string, operation: () => Promise<T>) =>
+  withPersistenceLock(`chat-target:${encodeURIComponent(chatId)}`, operation);
 /** OPFS-only mode stores chats here; promoted to pending targets when
  *  the server store is enabled on a deployment that has local data. */
 const opfsOnlyChatPath = (chatId: string) => `chats/${chatId}/chat.json`;
@@ -142,7 +192,7 @@ export function stashPendingTarget(chat: Chat): Promise<void> {
 
 async function stashPendingTargetUnlocked(chat: Chat): Promise<void> {
   const stored = await extractChatBlobs(chat);
-  await writeJson(targetPath(chat.id), stored);
+  await withTarget(chat.id, () => writeJson(targetPath(chat.id), stored));
 }
 
 /** Keep local deletion usable before backup protection has been configured. */
@@ -158,20 +208,9 @@ async function stashPendingDeletionUnlocked(chatId: string, userId?: string): Pr
     return;
   }
   const state = previous ?? { userId: owner, heads: {}, lastFrameHash: {} };
-  const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
-  const history = await readText(historyPath(chatId));
-  const stored =
-    target ??
-    (history ? replayLog(chatId, decodeLines(history)).chat : null) ??
-    (await readJson<StoredChat | LegacyStoredChat>(opfsOnlyChatPath(chatId)));
-  const blobIds = stored ? collectChatBlobIds(normalizeStoredChat(stored)) : [];
-  state.pendingDeletes = [
-    ...(state.pendingDeletes ?? []).filter((entry) => entry.id !== chatId),
-    { id: chatId, blobIds },
-  ];
-  delete state.heads[chatId];
-  delete state.lastFrameHash[chatId];
-  await saveState(state);
+  await journalDeletion(owner, chatId);
+  forgetChatState(state, chatId);
+  await saveChatState(state, chatId);
   await deleteDirectory(`chats/${chatId}`);
 }
 
@@ -183,6 +222,7 @@ export interface ChatSyncOptions {
 }
 
 export interface SyncActivity {
+  progress: SyncProgress[];
   syncing: boolean;
   /** Chats with local edits not yet confirmed by the server. */
   pendingCount: number;
@@ -196,12 +236,13 @@ export class ChatSync {
   private lastSynced = new Map<string, StoredChat>();
   /** Pending target per chat (in memory; persisted as target.json). */
   private pendingTargets = new Map<string, StoredChat>();
-  private needsNativeSnapshot = new Set<string>();
+  private deletions = new Map<string, PendingDeletion>();
   private flushing = false;
   private readonly userId: string;
   private dek: StoreKey;
 
-  private activity: SyncActivity = { syncing: false, pendingCount: 0, lastSyncAt: null, lastError: null };
+  private activity: SyncActivity = { syncing: false, pendingCount: 0, lastSyncAt: null, lastError: null, progress: [] };
+  private progress = new SyncProgressTracker(() => this.setActivity({}));
   private activityListeners = new Set<(a: SyncActivity) => void>();
   private remoteChangeListeners = new Set<(chats: Chat[]) => void>();
 
@@ -219,6 +260,8 @@ export class ChatSync {
     }
     const sync = new ChatSync(opts.userId, opts.dek, state);
     await sync.hydrateFromOpfs();
+    await sync.refreshDeletions();
+    sync.setActivity({});
     return sync;
   }
 
@@ -243,17 +286,23 @@ export class ChatSync {
     return () => this.remoteChangeListeners.delete(fn);
   }
 
-  private setActivity(patch: Partial<SyncActivity>): void {
-    this.activity = { ...this.activity, pendingCount: this.pendingTargets.size, ...patch };
+  private setActivity(patch: Partial<Omit<SyncActivity, "syncing" | "progress">>): void {
+    const progress = this.progress.snapshot;
+    this.activity = {
+      ...this.activity,
+      pendingCount: new Set([...this.pendingTargets.keys(), ...this.deletions.keys()]).size,
+      ...patch,
+      progress,
+      syncing: progress.length > 0,
+    };
     for (const l of this.activityListeners) l(this.activity);
   }
 
   private pullInFlight: Promise<Chat[]> | null = null;
 
   /** Pull remote changes for every chat into the local mirror; return
-   *  the materialized chat list (lastSynced wins over pending targets
-   *  only for chats with no pending edits). Concurrent calls share one
-   *  in-flight pull — interleaved pulls would double-apply events. */
+   *  the materialized chat list (pending targets win over lastSynced).
+   *  Concurrent calls share one in-flight pull. */
   pull(): Promise<Chat[]> {
     return withBackupStorage(() => (isBackupSessionCurrent() ? this.pullUnlocked() : Promise.resolve([])));
   }
@@ -262,37 +311,41 @@ export class ChatSync {
     if (!canRestore(this.dek)) throw new Error("Unlock with your PIN or passkey to restore server data.");
     if (this.pullInFlight) return this.pullInFlight;
     this.pullInFlight = (async () => {
-      this.setActivity({ syncing: true });
+      const progress = this.progress.begin("restore");
       try {
-        return await this.pullInner();
+        return await this.pullInner(progress);
       } catch (err) {
-        this.setActivity({ syncing: false, lastError: err instanceof Error ? err.message : String(err) });
+        this.setActivity({ lastError: errorMessage(err) });
         throw err;
       } finally {
+        progress.finish();
         this.pullInFlight = null;
       }
     })();
     return this.pullInFlight;
   }
 
-  private async pullInner(): Promise<Chat[]> {
+  private async pullInner(progress: ReturnType<SyncProgressTracker["begin"]>): Promise<Chat[]> {
+    const before = new Map(this.lastSynced);
+    // Other tabs share the OPFS mirror; adopt chats they created or removed.
+    await this.syncKnownChats();
     const headsBeforeListing = { ...this.state.heads };
     const remote = await api.listChats();
-    let changed = false;
+    await this.refreshDeletions();
+    const pending = remote.filter(
+      (meta) => !this.deletions.has(meta.id) && meta.headSeq > (this.state.heads[meta.id] ?? 0),
+    );
+    progress.setTotal(pending.length);
 
-    // Pull events in parallel — server reads are cheap and serial waits
-    // dominate when there are many chats.
-    await Promise.all(
-      remote.map(async (meta) => {
-        // A journaled deletion beats the server copy — don't resurrect it.
-        if (this.state.pendingDeletes?.some((d) => d.id === meta.id)) return;
-        const localHead = this.state.heads[meta.id] ?? 0;
-        if (meta.headSeq > localHead) {
-          await this.applyRemoteEvents(meta.id, localHead);
-          changed = true;
-        }
+    // Pull in parallel; one broken chat must not hide changes to the others.
+    const results = await Promise.allSettled(
+      pending.map(async (meta) => {
+        await this.applyRemoteEvents(meta.id, meta.headSeq);
+        progress.advance();
       }),
     );
+    const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    for (const failure of failures) console.warn("chatSync.pull: chat restore failed", failure.reason);
 
     // Apply remote deletions only to baselines that existed before this listing.
     // A concurrent upload may have created or updated a chat since the request began.
@@ -309,52 +362,43 @@ export class ChatSync {
           await deleteDirectory(`chats/${id}`);
         }
         this.lastSynced.delete(id);
-        this.needsNativeSnapshot.delete(id);
-        delete this.state.heads[id];
-        delete this.state.lastFrameHash[id];
-        if (this.state.entriesSinceCompact) delete this.state.entriesSinceCompact[id];
-        changed = true;
+        forgetChatState(this.state, id);
+        await saveChatState(this.state, id);
       });
     }
 
-    await saveState(this.state);
-
     // Compose the visible chat list: pending target if any, else lastSynced.
+    await this.refreshDeletions();
     const out: Chat[] = [];
-    const seen = new Set<string>();
-    for (const id of this.pendingTargets.keys()) {
-      seen.add(id);
-      const stored = this.pendingTargets.get(id);
+    for (const id of new Set([...this.pendingTargets.keys(), ...this.lastSynced.keys()])) {
+      if (this.deletions.has(id)) continue;
+      const stored = this.pendingTargets.get(id) ?? this.lastSynced.get(id);
       if (stored) out.push(restoreChatManifest(stored));
     }
-    for (const [id, stored] of this.lastSynced) {
-      if (seen.has(id)) continue;
-      out.push(restoreChatManifest(stored));
-    }
 
-    this.setActivity({ syncing: false, lastSyncAt: new Date().toISOString(), lastError: null });
-    if (changed) {
+    // Adopting another tab's baseline changes the view even without a download.
+    if (before.size !== this.lastSynced.size || [...before].some(([id, chat]) => this.lastSynced.get(id) !== chat)) {
       for (const l of this.remoteChangeListeners) l(out);
     }
+    // Healthy chats are applied and published above; report the first broken one.
+    if (failures.length > 0) throw failures[0].reason;
+    this.setActivity({ lastSyncAt: new Date().toISOString(), lastError: null });
     return out;
   }
 
   /** Persist a chat as a delta: local mirror first (offline-safe), then
-   *  flush. Idempotent on retry. */
+   *  flush. Never waits for network work on the same chat. */
   saveChat(chat: Chat): Promise<void> {
-    return withBackupStorage(() =>
-      isBackupSessionCurrent()
-        ? this.withChat(chat.id, () => this.saveChatUnlocked(chat))
-        : stashPendingTargetUnlocked(chat),
-    );
-  }
-
-  private async saveChatUnlocked(chat: Chat): Promise<void> {
-    const stored = await extractChatBlobs(chat);
-    this.pendingTargets.set(chat.id, stored);
-    this.setActivity({});
-    await writeJson(targetPath(chat.id), stored);
-    if (!isChatBackupPaused(chat.id)) void this.flushPending();
+    return withBackupStorage(async () => {
+      if (!isBackupSessionCurrent()) return stashPendingTargetUnlocked(chat);
+      const stored = await extractChatBlobs(chat);
+      await withTarget(chat.id, async () => {
+        await writeJson(targetPath(chat.id), stored);
+        this.pendingTargets.set(chat.id, stored);
+      });
+      this.setActivity({});
+      if (!isChatBackupPaused(chat.id)) void this.flushPending();
+    });
   }
 
   /** Delete a chat: drop local state immediately, journal the server-side
@@ -369,22 +413,11 @@ export class ChatSync {
   }
 
   private async deleteChatUnlocked(chatId: string): Promise<void> {
-    // Blob ids are unique per attachment (never shared across chats), so
-    // the server copies can go with the chat. Collect before dropping state.
-    const blobIds = new Set<string>();
-    for (const stored of [this.pendingTargets.get(chatId), this.lastSynced.get(chatId)]) {
-      if (stored) for (const id of collectChatBlobIds(stored)) blobIds.add(id);
-    }
-
-    this.state.pendingDeletes = [
-      ...(this.state.pendingDeletes ?? []).filter((d) => d.id !== chatId),
-      { id: chatId, blobIds: [...blobIds] },
-    ];
+    await journalDeletion(this.userId, chatId);
     this.pendingTargets.delete(chatId);
     this.lastSynced.delete(chatId);
-    delete this.state.heads[chatId];
-    delete this.state.lastFrameHash[chatId];
-    await saveState(this.state);
+    forgetChatState(this.state, chatId);
+    await saveChatState(this.state, chatId);
     this.setActivity({});
 
     await deleteDirectory(`chats/${chatId}`);
@@ -401,38 +434,55 @@ export class ChatSync {
   private async flushPendingUnlocked(): Promise<void> {
     if (this.flushing) return;
     this.flushing = true;
-    this.setActivity({ syncing: true });
+    try {
+      await this.refreshDeletions();
+    } catch (error) {
+      this.flushing = false;
+      this.setActivity({ lastError: errorMessage(error) });
+      throw error;
+    }
+    const deletes = Array.from(this.deletions.values()).filter((del) => !isChatBackupPaused(del.id));
+    const chats = Array.from(this.pendingTargets.keys()).filter(
+      (id) => !isChatBackupPaused(id) && !this.deletions.has(id),
+    );
+    const progress = this.progress.begin("backup", deletes.length + chats.length);
     let failed = false;
     try {
-      // snapshot: successful deletes rewrite state.pendingDeletes mid-loop
-      for (const del of Array.from(this.state.pendingDeletes ?? [])) {
+      for (const del of deletes) {
         if (isChatBackupPaused(del.id)) continue;
         if (await this.pushDelete(del)) {
-          this.state.pendingDeletes = (this.state.pendingDeletes ?? []).filter((d) => d.id !== del.id);
-          await saveState(this.state);
+          await acknowledgeDeletion(this.userId, del);
+          this.deletions.delete(del.id);
+          this.pendingTargets.delete(del.id);
+          this.lastSynced.delete(del.id);
+          progress.advance();
         } else {
           failed = true;
         }
       }
 
-      // snapshot: flushChat mutates pendingTargets while we iterate.
       // Keep going past failures — one poisoned chat must not block the rest.
-      for (const chatId of Array.from(this.pendingTargets.keys())) {
+      for (const chatId of chats) {
         if (isChatBackupPaused(chatId)) continue;
-        if (!(await this.flushChat(chatId))) failed = true;
+        if (!(await this.withChat(chatId, () => this.flushChat(chatId)))) failed = true;
+        else progress.advance();
       }
+      await this.refreshDeletions();
+    } catch (error) {
+      failed = true;
+      this.setActivity({ lastError: errorMessage(error) });
+      throw error;
     } finally {
+      progress.finish();
       this.flushing = false;
-      this.setActivity(
-        failed ? { syncing: false } : { syncing: false, lastSyncAt: new Date().toISOString(), lastError: null },
-      );
+      this.setActivity(failed ? {} : { lastSyncAt: new Date().toISOString(), lastError: null });
     }
 
     // Work that arrived mid-flush was skipped by the re-entrancy guard.
     if (
       !failed &&
-      ([...this.pendingTargets.keys()].some((id) => !isChatBackupPaused(id)) ||
-        this.state.pendingDeletes?.some((entry) => !isChatBackupPaused(entry.id)))
+      ([...this.pendingTargets.keys()].some((id) => !isChatBackupPaused(id) && !this.deletions.has(id)) ||
+        [...this.deletions.values()].some((entry) => !isChatBackupPaused(entry.id)))
     ) {
       void this.flushPending();
     }
@@ -440,80 +490,105 @@ export class ChatSync {
 
   // internals -----------------------------------------------------------
 
+  private async refreshDeletions(): Promise<void> {
+    this.deletions = new Map((await pendingDeletions(this.userId)).map((entry) => [entry.id, entry]));
+    this.setActivity({});
+  }
+
   private async hydrateFromOpfs(): Promise<void> {
-    const ids = await listDirectories("chats");
-    for (const id of ids) {
+    for (const id of await listDirectories("chats")) {
       const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
-      // A pending edit takes precedence over an older local-only record.
-      if (!(await fileExists(historyPath(id)))) {
+      const history = await readText(historyPath(id));
+      if (!history) {
+        // A pending edit takes precedence over an older local-only record.
         const local = target ?? (await readJson<StoredChat | LegacyStoredChat>(opfsOnlyChatPath(id)));
+        if (this.state.heads[id] !== undefined) {
+          // Without a replayable log, the chat must upload as a fresh snapshot.
+          forgetChatState(this.state, id);
+          await saveChatState(this.state, id);
+        }
         if (local) {
           const stored = normalizeStoredChat(local);
           this.pendingTargets.set(id, stored);
-          // A crash may have removed history before the reset baseline was saved.
-          // Without a replayable log, this target must upload as a fresh snapshot.
-          delete this.state.heads[id];
-          delete this.state.lastFrameHash[id];
-          if (this.state.entriesSinceCompact) delete this.state.entriesSinceCompact[id];
           await writeJson(targetPath(id), stored);
           await deleteFile(opfsOnlyChatPath(id));
-          continue;
         }
+        continue;
       }
-
-      const history = await readText(historyPath(id));
-      if (history) {
-        const entries = decodeLines(history);
-        const { chat } = replayLog(id, entries);
-        if (chat) {
-          const lastInit = entries.findLast((entry) => entry.type === "init");
-          if (lastInit?.type === "init" && lastInit.version === undefined) {
-            // Publish a native snapshot before appending native deltas to an old log.
-            const migrated = normalizeStoredChat(target ?? chat);
-            this.pendingTargets.set(id, migrated);
-            await writeJson(targetPath(id), migrated);
-          } else {
-            this.lastSynced.set(id, chat);
-          }
-        }
-      } else if (this.state.heads[id] !== undefined) {
-        delete this.state.heads[id];
-        delete this.state.lastFrameHash[id];
-      }
+      const { chat } = replayLog(id, decodeLines(history));
+      if (chat) this.lastSynced.set(id, chat);
       if (target) this.pendingTargets.set(id, normalizeStoredChat(target));
     }
   }
 
-  private async pushDelete(del: { id: string; blobIds: string[] }): Promise<boolean> {
+  /** Adopt chats another tab created and forget ones it deleted. */
+  private async syncKnownChats(): Promise<void> {
+    const ids = new Set(await listDirectories("chats"));
+    for (const id of new Set([...this.lastSynced.keys(), ...this.pendingTargets.keys()])) {
+      if (ids.has(id)) continue;
+      this.lastSynced.delete(id);
+      this.pendingTargets.delete(id);
+    }
+    for (const id of ids) {
+      if (!this.lastSynced.has(id) && !this.pendingTargets.has(id)) await this.reloadChat(id);
+    }
+  }
+
+  /** Re-read one chat's baseline and pending target from OPFS. Another tab may
+   *  have advanced either since this tab last looked. */
+  private async reloadChat(chatId: string): Promise<void> {
+    const disk = await loadState();
+    const owned = disk?.userId === this.userId;
+    const head = owned ? disk.heads[chatId] : undefined;
+    const hash = owned ? disk.lastFrameHash[chatId] : undefined;
+    if (head !== this.state.heads[chatId] || hash !== this.state.lastFrameHash[chatId]) {
+      if (head === undefined) {
+        forgetChatState(this.state, chatId);
+      } else {
+        this.state.heads[chatId] = head;
+        this.state.lastFrameHash[chatId] = hash ?? ZERO_HASH;
+        const count = owned ? disk.entriesSinceCompact?.[chatId] : undefined;
+        if (count === undefined) delete this.state.entriesSinceCompact?.[chatId];
+        else (this.state.entriesSinceCompact ??= {})[chatId] = count;
+      }
+      const history = head === undefined ? undefined : await readText(historyPath(chatId));
+      const chat = history ? replayLog(chatId, decodeLines(history)).chat : null;
+      if (chat) this.lastSynced.set(chatId, chat);
+      else this.lastSynced.delete(chatId);
+    }
+    await withTarget(chatId, async () => {
+      const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
+      if (target) this.pendingTargets.set(chatId, normalizeStoredChat(target));
+      else this.pendingTargets.delete(chatId);
+    });
+  }
+
+  private async pushDelete(del: { id: string }): Promise<boolean> {
     try {
       if (!canRestore(this.dek)) throw new Error("Unlock restore before deleting a server backup.");
       requireChatBackupReady(del.id);
       await api.deleteChat(del.id);
-      for (const blobId of del.blobIds) {
-        requireChatBackupReady(del.id);
-        await api.deleteBlob(blobId);
-      }
+      // Content-addressed blobs can be shared by other chats or devices.
+      // Keep them until account reset; deleting without a reference index loses data.
       return true;
     } catch (err) {
       if (err instanceof BackupPausedError) return false;
-      this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
+      this.setActivity({ lastError: errorMessage(err) });
       console.warn(`chatSync: server delete failed for ${del.id}`, err);
       return false;
     }
   }
 
-  /** Serialize sync operations per chat — a pull-apply interleaving with
-   *  a flush post on the same history corrupts the local replay. */
-  private chatOps = new Map<string, Promise<unknown>>();
-
+  /** Serialize network sync per chat across tabs. Each run starts from the
+   *  baseline on disk, since another tab may have posted or pulled meanwhile. */
   private withChat<T>(chatId: string, fn: () => Promise<T>): Promise<T> {
-    const prev = this.chatOps.get(chatId) ?? Promise.resolve();
-    const run = prev.then(fn, fn);
-    this.chatOps.set(
-      chatId,
-      run.catch(() => {}),
+    return withPersistenceLock(
+      `chat-sync:${encodeURIComponent(this.userId)}:${encodeURIComponent(chatId)}`,
+      async () => {
+        await this.reloadChat(chatId);
+        return fn();
+      },
     );
-    return run;
   }
 
   private async uploadMissingBlobs(chatId: string, stored: StoredChat): Promise<void> {
@@ -521,7 +596,7 @@ export class ChatSync {
       requireChatBackupReady(chatId);
       if (await api.headBlob(blobId)) continue;
       const blob = await getChatBlob(chatId, blobId);
-      if (!blob) continue;
+      if (!blob) throw new Error(`Attachment ${blobId} is missing locally and has not been backed up.`);
       const plain = new Uint8Array(await blob.arrayBuffer());
       const cipher = await encryptBlob(this.dek, plain, this.userId, blobId);
       requireChatBackupReady(chatId);
@@ -529,19 +604,13 @@ export class ChatSync {
     }
   }
 
-  /** Compute the delta for one chat and post it. Returns true on
-   *  success (or no-op), false on network/persistent conflict. */
-  private flushChat(chatId: string): Promise<boolean> {
-    return this.withChat(chatId, () => this.flushChatInner(chatId));
-  }
-
-  private async flushChatInner(chatId: string): Promise<boolean> {
+  /** Compute the delta for one chat and post it (caller holds the chat lock).
+   *  Returns true on success (or no-op), false on network/persistent conflict. */
+  private async flushChat(chatId: string): Promise<boolean> {
     const target = this.pendingTargets.get(chatId);
     if (!target) return true;
 
-    const baseline = this.needsNativeSnapshot.has(chatId) ? null : (this.lastSynced.get(chatId) ?? null);
-    const entries = diffChat(baseline, target);
-
+    const entries = diffChat(this.lastSynced.get(chatId) ?? null, target);
     if (entries.length === 0) {
       await this.clearPendingTarget(chatId, target);
       return true;
@@ -555,99 +624,110 @@ export class ChatSync {
       await this.postEntries(chatId, entries);
     } catch (err) {
       if (err instanceof BackupPausedError) return false;
-      this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
-      if (err instanceof PostConflictAfterRetry) return false;
+      this.setActivity({ lastError: errorMessage(err) });
       console.warn(`chatSync.flushChat(${chatId}): post failed`, err);
       return false;
     }
 
     await this.clearPendingTarget(chatId, target);
-    await this.maybeCompactInner(chatId);
+    await this.maybeCompact(chatId);
     return true;
   }
 
   /** Drop the pending target — unless a newer save replaced it while the
-   *  flush was in flight, in which case it must flush again. */
+   *  flush was in flight (in this or another tab), in which case it must flush again. */
   private async clearPendingTarget(chatId: string, flushed: StoredChat): Promise<void> {
-    if (this.pendingTargets.get(chatId) !== flushed) return;
-    this.pendingTargets.delete(chatId);
-    await deleteFile(targetPath(chatId));
+    await withTarget(chatId, async () => {
+      const current = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
+      if (!current) {
+        this.pendingTargets.delete(chatId);
+      } else if (JSON.stringify(current) === JSON.stringify(flushed)) {
+        this.pendingTargets.delete(chatId);
+        await deleteFile(targetPath(chatId));
+      } else {
+        this.pendingTargets.set(chatId, normalizeStoredChat(current));
+      }
+    });
+    this.setActivity({});
   }
 
-  /** Encrypt + post one batch of entries. Handles 409 by pulling and
-   *  re-diffing once. Throws PostConflictAfterRetry if the second
-   *  attempt still conflicts (caller leaves the target in place).
-   *  Returns the posted seq range, or null when the retry re-diff came
-   *  up empty. */
-  private async postEntries(chatId: string, entries: LogEntry[]): Promise<{ firstSeq: number; newSeq: number } | null> {
+  /** Encrypt + post entries, split into requests under the server's append cap.
+   *  Each accepted request is committed locally, so a later failure resumes
+   *  from there. A 409 pulls and re-diffs once; snapshots give up instead,
+   *  since a re-diffed delta must never be mistaken for a compaction base.
+   *  Returns the first posted seq, or null when nothing (more) was posted. */
+  private async postEntries(chatId: string, entries: LogEntry[], snapshot = false): Promise<number | null> {
+    let firstSeq: number | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
-      const expectedSeq = this.state.heads[chatId] ?? 0;
-      let prevHash = this.state.lastFrameHash[chatId] ?? ZERO_HASH;
-
       // One frame per chunk, hash-chained in order. A first-sync snapshot
-      // of a long chat easily exceeds the server's per-frame cap as a
-      // single frame.
-      const events: { id: string; frame: string }[] = [];
-      let seq = expectedSeq;
-      for (const chunk of chunkEntries(entries)) {
+      // of a long chat easily exceeds the server's per-frame cap as a single frame.
+      const chunks = chunkEntries(entries);
+      const frames: { id: string; frame: string; hash: string; entries: LogEntry[] }[] = [];
+      let prevHash = this.state.lastFrameHash[chatId] ?? ZERO_HASH;
+      let seq = this.state.heads[chatId] ?? 0;
+      for (const chunk of chunks) {
         seq += 1;
         const payload = { id: crypto.randomUUID(), ts: new Date().toISOString(), prevHash, body: chunk };
         const frame = await encryptEvent(this.dek, payload, this.userId, chatId, seq);
-        events.push({ id: payload.id, frame });
         prevHash = await hashFrame(frame);
+        frames.push({ id: payload.id, frame, hash: prevHash, entries: chunk });
       }
+
+      let conflict = false;
+      for (const batch of appendBatches(frames)) {
+        const expectedSeq = this.state.heads[chatId] ?? 0;
+        requireChatBackupReady(chatId);
+        const res = await api.appendEvents(
+          chatId,
+          expectedSeq,
+          batch.map(({ id, frame }) => ({ id, frame })),
+        );
+        if (res === null) {
+          conflict = true;
+          break;
+        }
+        firstSeq ??= expectedSeq + 1;
+        await this.commitPosted(
+          chatId,
+          batch.flatMap((item) => item.entries),
+          res.newSeq,
+          batch.at(-1)!.hash,
+        );
+      }
+      if (!conflict) return firstSeq;
+      if (snapshot) return null;
 
       requireChatBackupReady(chatId);
-      const res = await api.appendEvents(chatId, expectedSeq, events);
-
-      if (res === null) {
-        requireChatBackupReady(chatId);
-        if (!canRestore(this.dek))
-          throw new Error("Another device changed this chat. Unlock restore to reconcile before uploading.");
-        // 409 — pull, then retry once with a freshly re-diff'd payload
-        // computed against the new baseline. Inner variant: we already
-        // hold this chat's lock.
-        await this.applyRemoteEventsInner(chatId, expectedSeq);
-        const newTarget = this.pendingTargets.get(chatId);
-        if (!newTarget) return null; // somehow no longer pending
-        const newBaseline = this.needsNativeSnapshot.has(chatId) ? null : (this.lastSynced.get(chatId) ?? null);
-        entries = diffChat(newBaseline, newTarget);
-        if (entries.length === 0) return null;
-        continue;
-      }
-
-      if (entries[0]?.type === "init" && entries[0].version !== undefined) this.needsNativeSnapshot.delete(chatId);
-
-      // Accepted — apply the entries to local state.
-      await appendBlob(historyPath(chatId), new Blob([enc.encode(encodeLines(entries))]));
-      const merged = applyEntriesInPlace(this.lastSynced.get(chatId) ?? null, entries, chatId);
-      if (merged) this.lastSynced.set(chatId, merged);
-      else this.lastSynced.delete(chatId);
-
-      this.state.heads[chatId] = res.newSeq;
-      this.state.lastFrameHash[chatId] = prevHash;
-      this.bumpEntryCount(chatId, entries[0]?.type === "init" ? -Infinity : entries.length);
-      await saveState(this.state);
-      return { firstSeq: expectedSeq + 1, newSeq: res.newSeq };
+      if (!canRestore(this.dek))
+        throw new Error("Another device changed this chat. Unlock restore to reconcile before uploading.");
+      // We already hold this chat's lock.
+      await this.applyRemoteEventsLocked(chatId, this.state.heads[chatId] ?? 0);
+      const target = this.pendingTargets.get(chatId);
+      if (!target) return firstSeq;
+      entries = diffChat(this.lastSynced.get(chatId) ?? null, target);
+      if (entries.length === 0) return firstSeq;
     }
     throw new PostConflictAfterRetry();
   }
 
-  private bumpEntryCount(chatId: string, delta: number): void {
-    if (!this.state.entriesSinceCompact) this.state.entriesSinceCompact = {};
-    if (delta === -Infinity) {
-      // After a compaction event the count resets — the post itself
-      // counts as 1 surviving entry.
-      this.state.entriesSinceCompact[chatId] = 1;
-      return;
-    }
-    const cur = this.state.entriesSinceCompact[chatId] ?? 0;
-    this.state.entriesSinceCompact[chatId] = cur + delta;
+  /** Apply entries the server accepted to the local log, baseline and head. */
+  private async commitPosted(chatId: string, entries: LogEntry[], head: number, hash: string): Promise<void> {
+    await appendBlob(historyPath(chatId), new Blob([enc.encode(encodeLines(entries))]));
+    const merged = applyEntries(this.lastSynced.get(chatId) ?? null, entries, chatId);
+    if (merged) this.lastSynced.set(chatId, merged);
+    else this.lastSynced.delete(chatId);
+
+    this.state.heads[chatId] = head;
+    this.state.lastFrameHash[chatId] = hash;
+    const counts = (this.state.entriesSinceCompact ??= {});
+    // A snapshot resets the count; it survives as one entry.
+    counts[chatId] = entries[0]?.type === "init" ? 1 : (counts[chatId] ?? 0) + entries.length;
+    await saveChatState(this.state, chatId);
   }
 
   /** If the log has grown past the threshold, replace it with a single
    *  init-led snapshot and ask the server to drop the prefix. */
-  private async maybeCompactInner(chatId: string): Promise<void> {
+  private async maybeCompact(chatId: string): Promise<void> {
     const count = this.state.entriesSinceCompact?.[chatId] ?? 0;
     if (count < COMPACT_THRESHOLD) return;
 
@@ -659,24 +739,21 @@ export class ChatSync {
     const entries = diffChat(null, target); // forces init + meta + messages
     if (entries.length === 0) return;
 
-    let posted: { firstSeq: number; newSeq: number } | null;
+    let firstSeq: number | null;
     try {
-      posted = await this.postEntries(chatId, entries);
+      firstSeq = await this.postEntries(chatId, entries, true);
     } catch (err) {
       if (err instanceof BackupPausedError) return;
       console.warn(`chatSync.maybeCompact(${chatId}): post failed`, err);
       return;
     }
-    if (!posted) return;
-
     // Keep the whole snapshot: it may span several frames, and the first
     // one carries the init entry fresh readers replay from.
-    const compactBefore = posted.firstSeq;
-    if (compactBefore < 2) return; // nothing to drop
+    if (firstSeq === null || firstSeq < 2) return; // nothing to drop
 
     try {
       requireChatBackupReady(chatId);
-      await api.compactChat(chatId, compactBefore);
+      await api.compactChat(chatId, firstSeq);
     } catch (err) {
       if (err instanceof BackupPausedError) return;
       console.warn(`chatSync.maybeCompact(${chatId}): server compact failed`, err);
@@ -687,110 +764,132 @@ export class ChatSync {
     await writeBlob(historyPath(chatId), new Blob([enc.encode(encodeLines(entries))]));
   }
 
-  /** Pull events from the server starting after fromSeq and apply them
-   *  to local state (history file + in-memory baseline + head + hash).
-   *  Serialized per chat; postEntries' 409 recovery runs inside its own
-   *  chat lock and uses the inner variant directly. */
-  private applyRemoteEvents(chatId: string, fromSeq: number): Promise<void> {
-    return this.withChat(chatId, () => this.applyRemoteEventsInner(chatId, fromSeq));
+  /** Pull events up to expectedHead and apply them. Returns whether anything changed. */
+  private applyRemoteEvents(chatId: string, expectedHead: number): Promise<boolean> {
+    return this.withChat(chatId, async () => {
+      const head = this.state.heads[chatId] ?? 0;
+      // Another tab may already have pulled this range.
+      if (head >= expectedHead) return false;
+      return this.applyRemoteEventsLocked(chatId, head, expectedHead);
+    });
   }
 
-  private async applyRemoteEventsInner(chatId: string, fromSeq: number): Promise<void> {
-    // The caller's fromSeq may predate ops that ran while we waited for
-    // the chat lock — never refetch what's already applied.
-    fromSeq = Math.max(fromSeq, this.state.heads[chatId] ?? 0);
+  /** Apply events after fromSeq to local state (history file + in-memory
+   *  baseline + head + hash). The caller holds this chat's lock. */
+  private async applyRemoteEventsLocked(chatId: string, fromSeq: number, expectedHead = fromSeq): Promise<boolean> {
+    const applied = await withDeletionLock(this.userId, chatId, async () => {
+      // A journaled deletion beats the server copy — don't resurrect it.
+      if (await readJson(deletePath(this.userId, chatId))) return false;
+      // Another tab may already have applied part of the range.
+      fromSeq = Math.max(fromSeq, this.state.heads[chatId] ?? 0);
 
-    const events = await api.readEvents(chatId, fromSeq);
-    if (events.length === 0) return;
-
-    let head = this.state.heads[chatId] ?? 0;
-    let lastHash = this.state.lastFrameHash[chatId] ?? ZERO_HASH;
-    let baseline = this.lastSynced.get(chatId) ?? null;
-
-    const appendedText: string[] = [];
-    let logWasReset = false;
-
-    for (const e of events) {
-      if (e.seq <= head) continue; // already applied
-
-      type RemotePayload = { id: string; ts: string; prevHash: string; body: LogEntry[] };
-      let payload: RemotePayload;
-      try {
-        payload = await decryptEvent<RemotePayload>(this.dek, e.frame, this.userId, chatId, e.seq);
-      } catch (err) {
-        console.error(`chatSync: failed to decrypt ${chatId}@${e.seq}`, err);
-        return;
+      const events = await api.readEvents(chatId, fromSeq);
+      if (events.length === 0) {
+        if (fromSeq < expectedHead)
+          throw new Error(`Incomplete backup for ${chatId}: expected sequence ${expectedHead}.`);
+        return false;
       }
 
-      const entries = payload.body;
-      const isReset = entries[0]?.type === "init";
+      let head = this.state.heads[chatId] ?? 0;
+      let lastHash = this.state.lastFrameHash[chatId] ?? ZERO_HASH;
+      let baseline = this.lastSynced.get(chatId) ?? null;
 
-      // A gap is expected right after another device compacted the chat
-      // (the server dropped the log prefix) — but only an init snapshot
-      // may bridge it, since it replays from scratch.
-      if (e.seq !== head + 1 && !isReset) {
-        console.warn(`chatSync: gap in ${chatId} log at seq ${e.seq} (expected ${head + 1})`);
-        break;
+      const appendedText: string[] = [];
+      let logWasReset = false;
+      let entryCount = this.state.entriesSinceCompact?.[chatId] ?? 0;
+
+      for (const e of events) {
+        if (e.seq <= head) continue; // already applied
+
+        type RemotePayload = { id: string; ts: string; prevHash: string; body: LogEntry[] };
+        let payload: RemotePayload;
+        try {
+          payload = await decryptEvent<RemotePayload>(this.dek, e.frame, this.userId, chatId, e.seq);
+        } catch (err) {
+          throw new Error(`Could not decrypt backup ${chatId}@${e.seq}.`, { cause: err });
+        }
+
+        const entries = payload.body;
+        const isReset = entries[0]?.type === "init";
+
+        // A gap is expected right after another device compacted the chat
+        // (the server dropped the log prefix) — but only an init snapshot
+        // may bridge it, since it replays from scratch.
+        if (e.seq !== head + 1 && !isReset) {
+          throw new Error(`Incomplete backup for ${chatId}: expected sequence ${head + 1}, received ${e.seq}.`);
+        }
+
+        if (!isReset && payload.prevHash !== lastHash) {
+          throw new Error(`Backup integrity check failed for ${chatId}@${e.seq}.`);
+        }
+
+        if (isReset) {
+          // Compaction snapshot — discard prior state and replay fresh.
+          baseline = null;
+          appendedText.length = 0;
+          logWasReset = true;
+        }
+        baseline = applyEntries(baseline, entries, chatId);
+        appendedText.push(encodeLines(entries));
+        entryCount = isReset ? 1 : entryCount + entries.length;
+
+        lastHash = await hashFrame(e.frame);
+        head = e.seq;
       }
 
-      if (!isReset && payload.prevHash !== lastHash) {
-        console.error(`chatSync: hash chain mismatch for ${chatId}@${e.seq} — possible tampering`);
-        return;
-      }
+      if (head < expectedHead)
+        throw new Error(`Incomplete backup for ${chatId}: expected sequence ${expectedHead}, received ${head}.`);
+      if (appendedText.length === 0) return false;
 
-      if (isReset) {
-        if (entries[0]?.type === "init" && entries[0].version === undefined) this.needsNativeSnapshot.add(chatId);
-        else this.needsNativeSnapshot.delete(chatId);
-        // Compaction snapshot — discard prior state and replay fresh.
-        baseline = null;
-        appendedText.length = 0;
-        logWasReset = true;
-      }
-      baseline = applyEntriesInPlace(baseline, entries, chatId);
-      appendedText.push(encodeLines(entries));
-      this.bumpEntryCount(chatId, isReset ? -Infinity : entries.length);
-
-      lastHash = await hashFrame(e.frame);
-      head = e.seq;
-    }
-
-    if (appendedText.length > 0) {
+      // Confirm attachments before committing history/head so a failed download
+      // retries on the next pull, even if no new events have arrived.
+      if (baseline) await this.downloadMissingBlobs(chatId, baseline);
       const text = new Blob([enc.encode(appendedText.join(""))]);
       if (logWasReset) await writeBlob(historyPath(chatId), text);
       else await appendBlob(historyPath(chatId), text);
 
-      // Download any newly referenced blobs that we don't have locally.
-      if (baseline) {
-        await this.downloadMissingBlobs(chatId, baseline);
-      }
-    }
-
-    if (baseline) this.lastSynced.set(chatId, baseline);
-    else this.lastSynced.delete(chatId);
-
-    this.state.heads[chatId] = head;
-    this.state.lastFrameHash[chatId] = lastHash;
-    await saveState(this.state);
+      (this.state.entriesSinceCompact ??= {})[chatId] = entryCount;
+      if (baseline) this.lastSynced.set(chatId, baseline);
+      else this.lastSynced.delete(chatId);
+      this.state.heads[chatId] = head;
+      this.state.lastFrameHash[chatId] = lastHash;
+      return true;
+    });
+    if (applied) await saveChatState(this.state, chatId);
+    return applied;
   }
 
   private async downloadMissingBlobs(chatId: string, stored: StoredChat): Promise<void> {
-    const blobIds = collectChatBlobIds(stored);
-    for (const blobId of blobIds) {
-      const local = await getChatBlob(chatId, blobId);
-      if (local) continue;
+    for (const blobId of collectChatBlobIds(stored)) {
+      if (await getChatBlob(chatId, blobId)) continue;
       const cipher = await api.getBlob(blobId);
-      if (!cipher) {
-        console.warn(`chatSync: blob ${blobId} referenced by ${chatId} not found on server`);
-        continue;
-      }
-      try {
-        const plain = await decryptBlob(this.dek, cipher, this.userId, blobId);
-        await writeBlob(`chats/${chatId}/blobs/${blobId}.bin`, new Blob([new Uint8Array(plain)]));
-      } catch (err) {
-        console.error(`chatSync: failed to decrypt blob ${blobId}`, err);
-      }
+      if (!cipher) throw new Error(`Attachment ${blobId} is missing from backup ${chatId}.`);
+      const plain = await decryptBlob(this.dek, cipher, this.userId, blobId);
+      await writeBlob(`chats/${chatId}/blobs/${blobId}.bin`, new Blob([new Uint8Array(plain)]));
     }
   }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Stay well below the server's 64 MiB append body cap. */
+const MAX_APPEND_BYTES = 48 * 1024 * 1024;
+
+function appendBatches<T extends { id: string; frame: string }>(frames: T[]): T[][] {
+  const batches: T[][] = [];
+  let size = 0;
+  for (const frame of frames) {
+    const bytes = frame.id.length + frame.frame.length + 32;
+    if (batches.length === 0 || size + bytes > MAX_APPEND_BYTES) {
+      batches.push([]);
+      size = 0;
+    }
+    batches.at(-1)!.push(frame);
+    size += bytes;
+  }
+  return batches;
 }
 
 class PostConflictAfterRetry extends Error {

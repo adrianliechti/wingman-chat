@@ -43,7 +43,9 @@ const test = backupTest.extend<{
 test.use({ actionTimeout: 30_000 });
 
 async function connect(context: BrowserContext, backupServer: string, user: string) {
-  await context.route("**/config.json", (route) => route.fulfill({ json: { models: [], onlineBackup: {} } }));
+  await context.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+  );
   await context.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const response = await route.fetch({
@@ -87,6 +89,42 @@ async function setPin(page: Page, button: string) {
     await expect(page.getByRole("heading", { name: "Create your passkey", exact: true })).toBeVisible();
   } else await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
 }
+
+test("a remembered PIN device confirms the PIN before adding a passkey", async ({
+  page,
+  backupServer,
+  backupUser,
+  ceremonies,
+}) => {
+  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
+  const keystore = await (
+    await page.request.get(`${backupServer}/api/v1/keystore`, { headers: { "X-Forwarded-User": backupUser } })
+  ).json();
+  // The test backend configures a PIN secret, so new PINs are peppered Argon2id wraps.
+  expect(keystore.kdf).toMatchObject({ name: "argon2id", m: 65536, t: 3, p: 1, pepper: true });
+
+  // After reload only the non-extractable device key remains, so adding a method needs the PIN.
+  await page.reload();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add passkey", exact: true }).click();
+  await expect(page.getByRole("form", { name: "Confirm your PIN", exact: true })).toBeVisible();
+  await page.getByLabel("PIN", { exact: true }).fill("wrong-pin");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("Incorrect PIN. Please try again.");
+  await page.getByLabel("PIN", { exact: true }).fill("recovery-123456");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Two ways to unlock your backup", exact: true })).toBeVisible();
+
+  // Replacing the passkey later re-authenticates through the existing passkey instead.
+  await page.reload();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
+  const before = ceremonies.length;
+  await page.getByRole("button", { name: "Replace passkey", exact: true }).click();
+  await expect.poll(() => ceremonies.slice(before)).toEqual(expect.arrayContaining(["get", "create"]));
+  await expect(page.getByRole("button", { name: "Replace passkey", exact: true })).toBeEnabled();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
 
 for (const enrollment of ["during setup", "after skipping"]) {
   test(`adding a passkey ${enrollment} preserves both methods and either can restore encrypted data`, async ({

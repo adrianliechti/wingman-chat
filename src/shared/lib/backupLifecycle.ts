@@ -17,6 +17,7 @@ export function isBackupSessionCurrent(): boolean {
 }
 
 export function invalidateBackupSessions(): void {
+  if (typeof localStorage === "undefined") return;
   localStorage.setItem(BACKUP_GENERATION_KEY, crypto.randomUUID());
 }
 

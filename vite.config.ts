@@ -14,7 +14,8 @@ const wingmanToken = process.env.WINGMAN_TOKEN || "none";
 const wingmanUser = process.env.WINGMAN_USER || "default";
 
 // In production a reverse proxy provides the user identity; the dev proxy
-// impersonates one so the chatstore endpoints work out of the box.
+// impersonates one. OneDrive backup additionally needs WINGMAN_TOKEN to be a
+// Microsoft access token, since the backend forwards it to Graph.
 const wingmanHeaders: Record<string, string> = {
   Authorization: `Bearer ${wingmanToken}`,
   "X-Forwarded-User": wingmanUser,

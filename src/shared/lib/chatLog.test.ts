@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyEntriesInPlace, chunkEntries, decodeLines, diffChat, encodeLines, replayLog } from "./chatLog";
+import { applyEntries, chunkEntries, decodeLines, diffChat, encodeLines, replayLog } from "./chatLog";
 import { STORED_CHAT_VERSION, type StoredChat } from "./opfs-chat";
 
 type StoredMessage = StoredChat["messages"][number];
@@ -23,7 +23,7 @@ function chat(over: Partial<StoredChat> = {}): StoredChat {
 /** apply(diff(prev, next), prev) must equal next. */
 function roundTrip(prev: StoredChat | null, next: StoredChat): void {
   const entries = diffChat(prev, next);
-  const result = applyEntriesInPlace(prev, entries, next.id);
+  const result = applyEntries(prev, entries, next.id);
   expect(result).toEqual(next);
 }
 
@@ -144,34 +144,21 @@ describe("chunkEntries", () => {
 });
 
 describe("replay edge cases", () => {
-  it("migrates the unversioned transcript written by the original store branch", () => {
-    const history = [
-      { type: "init", id: "c1", created: "2026-01-01T00:00:00Z", model: null },
-      { type: "message", role: "user", content: [{ type: "text", text: "saved before main" }] },
-    ];
-    const result = replayLog("c1", decodeLines(history.map((entry) => JSON.stringify(entry)).join("\n"))).chat;
-    expect(result?.version).toBe(STORED_CHAT_VERSION);
-    expect(result?.messages[0]).toMatchObject({
-      role: "user",
-      parts: [{ type: "text", content: "saved before main" }],
-    });
-  });
-
   it("tombstone yields null", () => {
     const entries = [...diffChat(null, chat({ messages: [msg("a")] })), { type: "tombstone" } as const];
     expect(replayLog("c1", entries).chat).toBeNull();
-    expect(applyEntriesInPlace(chat({ messages: [msg("a")] }), [{ type: "tombstone" }], "c1")).toBeNull();
+    expect(applyEntries(chat({ messages: [msg("a")] }), [{ type: "tombstone" }], "c1")).toBeNull();
   });
 
   it("out-of-range replace is ignored", () => {
     const base = chat({ messages: [msg("a")] });
-    const result = applyEntriesInPlace(base, [{ type: "replace", index: 5, message: msg("x") }], "c1");
+    const result = applyEntries(base, [{ type: "replace", index: 5, message: msg("x") }], "c1");
     expect(result?.messages).toEqual([msg("a")]);
   });
 
   it("replace at length appends", () => {
     const base = chat({ messages: [msg("a")] });
-    const result = applyEntriesInPlace(base, [{ type: "replace", index: 1, message: msg("b") }], "c1");
+    const result = applyEntries(base, [{ type: "replace", index: 1, message: msg("b") }], "c1");
     expect(result?.messages).toEqual([msg("a"), msg("b")]);
   });
 
@@ -184,8 +171,6 @@ describe("replay edge cases", () => {
   it("an init snapshot applied over existing state replaces it, not duplicates it", () => {
     const baseline = chat({ title: "old", messages: [msg("a"), msg("b")] });
     const snapshot = diffChat(null, chat({ title: "new", messages: [msg("a"), msg("b")] }));
-    expect(applyEntriesInPlace(baseline, snapshot, "c1")).toEqual(
-      chat({ title: "new", messages: [msg("a"), msg("b")] }),
-    );
+    expect(applyEntries(baseline, snapshot, "c1")).toEqual(chat({ title: "new", messages: [msg("a"), msg("b")] }));
   });
 });

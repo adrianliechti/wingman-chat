@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -350,42 +351,48 @@ func TestTelemetryNameReachesBrowserConfig(t *testing.T) {
 	}
 }
 
-func TestOnlineBackupMode(t *testing.T) {
-	for _, test := range []struct {
-		name, online, store   string
-		wantOnline, wantStore bool
-	}{
-		{name: "default local"},
-		{name: "explicit local", online: "false"},
-		{name: "online enables store", online: "true", wantOnline: true, wantStore: true},
-		{name: "store alone keeps local", store: "true", wantStore: true},
-		{name: "disabled online with store", online: "false", store: "true", wantStore: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Setenv("ONLINE_BACKUP_ENABLED", test.online)
-			t.Setenv("STORE_ENABLED", test.store)
-			t.Setenv("BACKUP_STORE_PATH", "/data/backups")
-			var cfg Config
-			applyEnvOverrides(&cfg)
-			if (cfg.OnlineBackup != nil) != test.wantOnline || (cfg.Store != nil) != test.wantStore {
-				t.Fatalf("online = %+v, store = %+v", cfg.OnlineBackup, cfg.Store)
-			}
-			if cfg.Store != nil && cfg.Store.Path != "/data/backups" {
-				t.Fatalf("store overrides lost: %+v", cfg.Store)
-			}
-			data, err := json.Marshal(cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var browser struct {
-				OnlineBackup *struct{} `json:"onlineBackup"`
-			}
-			if err := json.Unmarshal(data, &browser); err != nil {
-				t.Fatal(err)
-			}
-			if (browser.OnlineBackup != nil) != test.wantOnline {
-				t.Fatalf("browser config lost backup mode: %s", data)
-			}
-		})
+func TestBackupProviderConfiguration(t *testing.T) {
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err := os.WriteFile("backup.yaml", []byte("provider: onedrive\ndrive: personal\npath: /data/locks\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BACKUP_PROVIDER", "")
+	t.Setenv("BACKUP_DRIVE", "")
+	t.Setenv("STORE_ENABLED", "")
+	cfg := Load()
+	if cfg.Backup == nil || cfg.Backup.Provider != "onedrive" || cfg.Backup.Drive != "personal" {
+		t.Fatalf("config: %+v", cfg)
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var browser struct {
+		Backup *Backup `json:"backup"`
+	}
+	if err := json.Unmarshal(data, &browser); err != nil {
+		t.Fatal(err)
+	}
+	if browser.Backup == nil || browser.Backup.Provider != cfg.Backup.Provider || browser.Backup.Drive != cfg.Backup.Drive {
+		t.Fatalf("browser: %s", data)
+	}
+	if strings.Contains(string(data), "/data/locks") {
+		t.Fatal("private lock path exposed")
+	}
+	t.Setenv("BACKUP_PROVIDER", "local")
+	cfg = Load()
+	if cfg.Backup.Provider != "local" {
+		t.Fatalf("environment override: %+v", cfg)
 	}
 }

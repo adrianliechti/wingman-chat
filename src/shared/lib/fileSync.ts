@@ -1,3 +1,4 @@
+import { SyncProgressTracker, type SyncProgress } from "./syncProgress";
 import { isBackupSessionCurrent, withBackupStorage } from "./backupLifecycle";
 /**
  * Whole-OPFS file sync with client-side encryption.
@@ -30,7 +31,7 @@ import {
   readBlob,
   readFileMetadata,
   readJson,
-  writeBlob,
+  replaceFileIfUnchanged,
   writeJson,
 } from "./opfs-core";
 
@@ -44,6 +45,7 @@ const FLUSH_DEBOUNCE_MS = 2_000;
 const MAX_FILE_BYTES = 256 * 1024 * 1024;
 
 export interface FileSyncActivity {
+  progress: SyncProgress[];
   syncing: boolean;
   /** Files with local changes not yet confirmed by the server. */
   pendingCount: number;
@@ -141,6 +143,7 @@ async function scanLocalTree(): Promise<Map<string, number>> {
 }
 
 class RestoreRequiredError extends Error {}
+class FileTooLargeError extends Error {}
 
 export class FileSync {
   private state: FileSyncState;
@@ -149,16 +152,35 @@ export class FileSync {
 
   /** Paths with local changes awaiting push. */
   private dirty = new Set<string>();
+  private mutationVersion = new Map<string, number>();
+  private versionForPath(path: string, versions = this.mutationVersion): number {
+    const parts = path.split("/");
+    let version = 0;
+    for (let i = 1; i <= parts.length; i++) version += versions.get(parts.slice(0, i).join("/")) ?? 0;
+    return version;
+  }
   /** Paths currently being written from remote — their mutations are ours. */
   private applying = new Set<string>();
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
-  private flushing = false;
+  private operation: Promise<void> = Promise.resolve();
+  private serialize(operation: () => Promise<void>): Promise<void> {
+    const result = this.operation.then(operation, operation);
+    this.operation = result.catch(() => {});
+    return result;
+  }
   private unsubMutations: (() => void) | null = null;
   /** Remote applies that failed during the current fullSync — pruning is
    *  unsafe while any item may simply not have arrived yet. */
   private applyFailures = 0;
 
-  private activity: FileSyncActivity = { syncing: false, pendingCount: 0, lastSyncAt: null, lastError: null };
+  private activity: FileSyncActivity = {
+    syncing: false,
+    pendingCount: 0,
+    lastSyncAt: null,
+    lastError: null,
+    progress: [],
+  };
+  private progress = new SyncProgressTracker(() => this.setActivity({}));
   private activityListeners = new Set<(a: FileSyncActivity) => void>();
 
   private constructor(userId: string, dek: StoreKey, state: FileSyncState) {
@@ -196,8 +218,15 @@ export class FileSync {
     return () => this.activityListeners.delete(fn);
   }
 
-  private setActivity(patch: Partial<FileSyncActivity>): void {
-    this.activity = { ...this.activity, pendingCount: this.dirty.size, ...patch };
+  private setActivity(patch: Partial<Omit<FileSyncActivity, "syncing" | "progress">>): void {
+    const progress = this.progress.snapshot;
+    this.activity = {
+      ...this.activity,
+      pendingCount: this.dirty.size,
+      ...patch,
+      progress,
+      syncing: progress.length > 0,
+    };
     for (const l of this.activityListeners) l(this.activity);
   }
 
@@ -207,13 +236,17 @@ export class FileSync {
     this.unsubMutations = onOpfsMutation((path, kind) => {
       if (this.applying.has(path)) return;
       if (kind === "delete-dir") {
+        this.mutationVersion.set(path, (this.mutationVersion.get(path) ?? 0) + 1);
         // Expand over known paths; files never synced need no tombstone.
         const prefix = path ? `${path}/` : "";
-        for (const known of Object.keys(this.state.entries)) {
-          if (known.startsWith(prefix)) this.dirty.add(known);
+        for (const known of new Set([...Object.keys(this.state.entries), ...this.dirty])) {
+          if (known.startsWith(prefix)) {
+            this.dirty.add(known);
+          }
         }
       } else {
         if (isExcluded(path)) return;
+        this.mutationVersion.set(path, (this.mutationVersion.get(path) ?? 0) + 1);
         this.dirty.add(path);
       }
       this.setActivity({});
@@ -235,41 +268,40 @@ export class FileSync {
 
   /** Push every dirty path (uploads, deletions, conflict resolution). */
   flushDirty(): Promise<void> {
-    return withBackupStorage(async () => {
-      if (isBackupSessionCurrent()) await this.flushDirtyUnlocked();
-    });
+    return this.serialize(() =>
+      withBackupStorage(async () => {
+        if (isBackupSessionCurrent()) await this.flushDirtyUnlocked();
+      }),
+    );
   }
 
   private async flushDirtyUnlocked(): Promise<void> {
     if (areFileBackupsPaused()) return;
-    if (this.flushing) {
-      this.scheduleFlush();
-      return;
-    }
-    this.flushing = true;
-    this.setActivity({ syncing: true });
+    const paths = Array.from(this.dirty);
+    const progress = this.progress.begin("backup", paths.length);
     try {
-      for (const path of Array.from(this.dirty)) {
+      for (const path of paths) {
         if (areFileBackupsPaused()) break;
         this.dirty.delete(path);
         try {
           await this.resolvePath(path);
+          progress.advance();
         } catch (err) {
           this.dirty.add(path);
           if (err instanceof BackupPausedError) break;
           this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
           console.warn(`fileSync: flush failed for ${path}`, err);
-          if (!(err instanceof RestoreRequiredError)) break;
+          if (!(err instanceof RestoreRequiredError) && !(err instanceof FileTooLargeError)) break;
         }
       }
       await this.saveState();
       if (this.dirty.size === 0) {
-        this.setActivity({ syncing: false, lastSyncAt: new Date().toISOString(), lastError: null });
+        this.setActivity({ lastSyncAt: new Date().toISOString(), lastError: null });
       } else {
-        this.setActivity({ syncing: false });
+        this.setActivity({});
       }
     } finally {
-      this.flushing = false;
+      progress.finish();
     }
   }
 
@@ -278,9 +310,11 @@ export class FileSync {
 
   async fullSync(): Promise<void> {
     if (this.fullSyncInFlight) return this.fullSyncInFlight;
-    this.fullSyncInFlight = withBackupStorage(async () => {
-      if (isBackupSessionCurrent()) await this.reconcile();
-    }).finally(() => {
+    this.fullSyncInFlight = this.serialize(() =>
+      withBackupStorage(async () => {
+        if (isBackupSessionCurrent()) await this.reconcile();
+      }),
+    ).finally(() => {
       this.fullSyncInFlight = null;
     });
     return this.fullSyncInFlight;
@@ -293,19 +327,25 @@ export class FileSync {
 
   private async reconcile(): Promise<void> {
     if (!canRestore(this.dek) || areFileBackupsPaused()) {
-      const local = await scanLocalTree();
-      for (const [path, mtime] of local) {
-        if (this.state.entries[path]?.mtime !== mtime) this.dirty.add(path);
-      }
-      for (const path of Object.keys(this.state.entries)) {
-        if (!local.has(path)) this.dirty.add(path);
+      const preparing = this.progress.begin("backup");
+      try {
+        const local = await scanLocalTree();
+        for (const [path, mtime] of local) {
+          if (this.state.entries[path]?.mtime !== mtime) this.dirty.add(path);
+        }
+        for (const path of Object.keys(this.state.entries)) {
+          if (!local.has(path)) this.dirty.add(path);
+        }
+      } finally {
+        preparing.finish();
       }
       await this.flushDirtyUnlocked();
       return;
     }
-    this.setActivity({ syncing: true });
+    const progress = this.progress.begin("restore");
     this.applyFailures = 0;
     try {
+      const versions = new Map(this.mutationVersion);
       const [local, remote] = await Promise.all([scanLocalTree(), api.listFiles()]);
       const remoteById = new Map(remote.map((m) => [m.id, m]));
       const stateById = new Map(Object.entries(this.state.entries).map(([path, e]) => [e.id, { path, entry: e }]));
@@ -319,23 +359,22 @@ export class FileSync {
         if (!local.has(path)) this.dirty.add(path);
       }
 
-      // Remote-side changes.
-      for (const meta of remote) {
+      // Count only remote files that need downloading or reconciliation.
+      const changed = remote.filter((meta) => stateById.get(meta.id)?.entry.etag !== meta.etag);
+      progress.setTotal(changed.length);
+      for (const meta of changed) {
+        const failuresBefore = this.applyFailures;
         const known = stateById.get(meta.id);
         if (!known) {
-          await this.applyRemote(meta.id);
-          continue;
-        }
-        if (known.entry.etag === meta.etag) continue;
-
-        const localMtime = local.get(known.path);
-        if (localMtime !== undefined && localMtime !== known.entry.mtime) {
+          await this.applyRemote(meta.id, local, versions);
+        } else if (!local.has(known.path) || local.get(known.path) !== known.entry.mtime) {
           // Both sides changed — LWW inside resolvePath (it downloads and
           // compares mtimes on CAS conflict).
           this.dirty.add(known.path);
         } else {
-          await this.applyRemote(meta.id);
+          await this.applyRemote(meta.id, local, versions);
         }
+        if (this.applyFailures === failuresBefore) progress.advance();
       }
 
       // Remote deletions: known file vanished from the server listing.
@@ -344,35 +383,46 @@ export class FileSync {
         const localMtime = local.get(path);
         if (localMtime !== undefined && localMtime === entry.mtime) {
           // Unchanged locally → the other device's deletion wins.
-          this.applying.add(path);
-          try {
-            await deleteFile(path);
-          } finally {
-            this.applying.delete(path);
+          const version = this.versionForPath(path, versions);
+          if (!(await this.replaceLocal(path, localMtime, undefined, version))) {
+            this.dirty.add(path);
+            continue;
           }
           delete this.state.entries[path];
-          this.dirty.delete(path);
+          if (this.versionForPath(path) === version) this.dirty.delete(path);
+          else this.dirty.add(path);
         } else if (localMtime === undefined) {
           // Gone on both sides.
           delete this.state.entries[path];
-          this.dirty.delete(path);
+          const untouched = this.versionForPath(path) === this.versionForPath(path, versions);
+          if (untouched && !(await readFileMetadata(path))) this.dirty.delete(path);
+          else this.dirty.add(path);
         }
         // else: locally modified after our last sync — keep it; the dirty
         // push below re-uploads it.
       }
 
       await this.saveState();
+      progress.finish(); // the upload below reports its own progress
       await this.flushDirtyUnlocked();
+
+      if (this.applyFailures > 0) {
+        throw new Error(
+          `${this.applyFailures} backup ${this.applyFailures === 1 ? "file" : "files"} could not be restored. Retry after checking the backup.`,
+        );
+      }
 
       // Deletions converge here: after everything applied cleanly, index
       // entries whose backing item no longer exists locally are dropped
       // (the write marks the index dirty, so the pruned copy propagates).
-      if (this.applyFailures === 0 && this.dirty.size === 0) {
+      if (this.dirty.size === 0) {
         await this.pruneIndexes();
       }
     } catch (err) {
-      this.setActivity({ syncing: false, lastError: err instanceof Error ? err.message : String(err) });
+      this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
       throw err;
+    } finally {
+      progress.finish();
     }
   }
 
@@ -398,6 +448,7 @@ export class FileSync {
 
   /** Bring one path in sync: upload, delete remotely, or adopt remote. */
   private async resolvePath(path: string): Promise<void> {
+    const version = this.versionForPath(path);
     const entry = this.state.entries[path];
     const meta = await readFileMetadata(path);
 
@@ -406,19 +457,23 @@ export class FileSync {
       if (entry) {
         if (!canRestore(this.dek)) throw new RestoreRequiredError("Unlock restore before deleting a server backup.");
         requireFileBackupReady();
-        await api.deleteFile(entry.id);
+        try {
+          await api.deleteFile(entry.id, { ifMatch: entry.etag });
+        } catch (err) {
+          // Another device changed the file after our last sync. Its edit beats
+          // this deletion and comes back with the next restore.
+          if (!(err instanceof api.ServerError) || err.status !== 412) throw err;
+        }
         delete this.state.entries[path];
       }
       return;
     }
 
-    if (meta.size > MAX_FILE_BYTES) {
-      console.warn(`fileSync: skipping ${path} (${meta.size} bytes exceeds sync cap)`);
-      return;
-    }
-
     const blob = await readBlob(path);
     if (!blob) return;
+    if (Math.max(meta.size, blob.size) > MAX_FILE_BYTES) {
+      throw new FileTooLargeError(`${path} exceeds the 256 MiB backup limit.`);
+    }
 
     const id = entry?.id ?? (await fileIdFor(path));
     const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -460,7 +515,7 @@ export class FileSync {
           try {
             requireFileBackupReady();
             const etag = await api.putFile(id, mergedCipher, { ifMatch: remote.etag });
-            await this.writeLocal(path, merged, id, etag);
+            await this.writeLocal(path, merged, id, etag, meta.lastModified, version);
           } catch (mergeErr) {
             if (!(mergeErr instanceof api.ServerError) || mergeErr.status !== 412) throw mergeErr;
             this.dirty.add(path); // raced again — re-merge on the next flush
@@ -474,13 +529,13 @@ export class FileSync {
         const etag = await api.putFile(id, cipher, { ifMatch: remote.etag });
         this.state.entries[path] = { id, etag, mtime: header.mtime };
       } else {
-        await this.writeLocal(decrypted.header.path, decrypted.bytes, id, remote.etag);
+        await this.writeLocal(decrypted.header.path, decrypted.bytes, id, remote.etag, meta.lastModified, version);
       }
     }
   }
 
   /** Download one file by id and adopt it locally. */
-  private async applyRemote(id: string): Promise<void> {
+  private async applyRemote(id: string, local: Map<string, number>, versions: Map<string, number>): Promise<void> {
     const remote = await api.getFile(id);
     if (!remote) return;
 
@@ -498,7 +553,14 @@ export class FileSync {
           if (JSON.stringify(merged) !== JSON.stringify(remoteEntries)) {
             // Local has extra/newer entries: adopt merged and push it back.
             const mergedBytes = new TextEncoder().encode(JSON.stringify(merged));
-            await this.writeLocal(header.path, mergedBytes, id, remote.etag);
+            await this.writeLocal(
+              header.path,
+              mergedBytes,
+              id,
+              remote.etag,
+              local.get(header.path),
+              this.versionForPath(header.path, versions),
+            );
             this.dirty.add(header.path);
             return;
           }
@@ -515,29 +577,58 @@ export class FileSync {
         }
       }
 
-      await this.writeLocal(header.path, bytes, id, remote.etag);
+      await this.writeLocal(
+        header.path,
+        bytes,
+        id,
+        remote.etag,
+        local.get(header.path),
+        this.versionForPath(header.path, versions),
+      );
     } catch (err) {
       this.applyFailures++;
       console.error(`fileSync: failed to decrypt/apply file ${id}`, err);
     }
   }
 
-  private async writeLocal(path: string, bytes: Uint8Array, id: string, etag: string): Promise<void> {
-    if (!isSafePath(path) || isExcluded(path)) {
+  private async replaceLocal(path: string, mtime: number | undefined, blob?: Blob, version?: number): Promise<boolean> {
+    return replaceFileIfUnchanged(path, mtime, {
+      blob,
+      notify: (emit) => {
+        this.applying.add(path);
+        try {
+          emit();
+        } finally {
+          this.applying.delete(path);
+        }
+      },
+      unchanged: () => this.versionForPath(path) === (version ?? 0),
+    });
+  }
+
+  private async writeLocal(
+    path: string,
+    bytes: Uint8Array,
+    id: string,
+    etag: string,
+    expectedMtime: number | undefined,
+    version: number | undefined,
+  ): Promise<void> {
+    if (!isSafePath(path) || isExcluded(path) || id !== (await fileIdFor(path))) {
       console.error(`fileSync: refusing to write unsafe path from remote: ${path}`);
       return;
     }
 
-    this.applying.add(path);
-    try {
-      await writeBlob(path, new Blob([new Uint8Array(bytes)]));
-    } finally {
-      this.applying.delete(path);
+    if (!(await this.replaceLocal(path, expectedMtime, new Blob([new Uint8Array(bytes)]), version))) {
+      this.dirty.add(path);
+      return;
     }
 
     const meta = await readFileMetadata(path);
-    this.state.entries[path] = { id, etag, mtime: meta?.lastModified ?? Date.now() };
-    this.dirty.delete(path);
+    const changed = this.versionForPath(path) !== (version ?? 0);
+    this.state.entries[path] = { id, etag, mtime: changed ? -1 : (meta?.lastModified ?? Date.now()) };
+    if (changed) this.dirty.add(path);
+    else this.dirty.delete(path);
   }
 
   private async saveState(): Promise<void> {

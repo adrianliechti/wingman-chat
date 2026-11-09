@@ -7,13 +7,16 @@ async function configure(page: Page, online?: boolean, store = true) {
   let revision = 0;
   await page.addInitScript(() => Object.defineProperty(window, "showSaveFilePicker", { value: undefined }));
   await page.route("**/config.json", (route) =>
-    route.fulfill({ json: { models: [], ...(online ? { onlineBackup: {} } : {}), ...(store ? { store: {} } : {}) } }),
+    route.fulfill({
+      json: { models: [], ...(online ? { backup: { provider: "onedrive" } } : {}), ...(store ? { store: {} } : {}) },
+    }),
   );
   await page.route("**/api/v1/**", (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/backup/usage")) return route.fulfill({ json: { bytes: 12949914 } });
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice", name: "Alice" } });
+    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/keystore")) {
       if (request.method() === "GET") {
         return keystore
@@ -49,8 +52,8 @@ test("PIN setup stays visible until the optional passkey step is ready", async (
   await page.getByRole("button", { name: "Backups disabled — set a PIN or passkey", exact: true }).click();
   await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
   await expect(page.getByText("Without your PIN or a passkey,", { exact: false })).toBeVisible();
-  await page.getByLabel("New PIN", { exact: true }).fill("123456");
-  await page.getByLabel("Confirm PIN", { exact: true }).fill("123456");
+  await page.getByLabel("New PIN", { exact: true }).fill("12345678");
+  await page.getByLabel("Confirm PIN", { exact: true }).fill("12345678");
   await page.getByRole("list", { name: "Backup setup progress" }).evaluate((progress) => {
     const observer = new MutationObserver(() => {
       if (!progress.isConnected) {
@@ -73,6 +76,102 @@ test("PIN setup stays visible until the optional passkey step is ready", async (
   await expect(page.locator("html")).not.toHaveAttribute("data-backup-setup-interrupted");
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
+});
+
+test("initial backup and restore display confirmed file counts and progress bars", async ({ page }, testInfo) => {
+  await configure(page, true);
+  const releases: (() => void)[] = [];
+  const files = new Map<string, Buffer>();
+  await page.route("**/api/v1/files/**", async (route) => {
+    if (route.request().method() === "PUT") {
+      const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+      files.set(id, route.request().postDataBuffer()!);
+      await new Promise<void>((resolve) => releases.push(resolve));
+    }
+    await route.fallback();
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Backups disabled — set a PIN or passkey", exact: true }).click();
+  await page.evaluate(async () => {
+    const modulePath = "/src/shared/lib/opfs-core.ts";
+    const { writeText } = await import(/* @vite-ignore */ modulePath);
+    await writeText("skills/first/SKILL.md", "first skill");
+    await writeText("skills/second/SKILL.md", "second skill");
+  });
+  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
+  await page.getByLabel("New PIN", { exact: true }).fill("12345678");
+  await page.getByLabel("Confirm PIN", { exact: true }).fill("12345678");
+  await page.getByRole("button", { name: "Create PIN", exact: true }).click();
+  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+  const progress = page.getByRole("progressbar", { name: /^Backing up files/ });
+  try {
+    await expect(progress).toBeVisible();
+    await expect(progress).toHaveAttribute("value", "0");
+    const total = Number(await progress.getAttribute("max"));
+    expect(total).toBeGreaterThanOrEqual(2);
+    await expect(page.getByText(`Backing up files · 0 / ${total}`, { exact: true })).toBeVisible();
+    await expect.poll(() => releases.length).toBe(1);
+    releases[0]();
+    await expect(progress).toHaveAttribute("value", "1");
+    await expect(page.getByText(`Backing up files · 1 / ${total}`, { exact: true })).toBeVisible();
+    for (const width of [1280, 375]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.screenshot({ path: testInfo.outputPath(`backup-progress-${width}.png`), animations: "disabled" });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+  } finally {
+    await page.unroute("**/api/v1/files/**");
+    for (const release of releases) release();
+  }
+  await expect(progress).toHaveCount(0);
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
+
+  // A fresh local workspace restores the exact ciphertext uploaded above.
+  await page.getByRole("button", { name: "Backup options", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Deactivate backup", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Backup locked — unlock in Backup", exact: true })).toBeVisible();
+  await page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    for await (const name of root.keys()) await root.removeEntry(name, { recursive: true });
+  });
+  const downloads: (() => void)[] = [];
+  await page.route("**/api/v1/files", (route) =>
+    route.fulfill({
+      json: Array.from(files, ([id, data]) => ({
+        id,
+        etag: '"file"',
+        size: data.length,
+        updated: "2026-11-05T00:00:00Z",
+      })),
+    }),
+  );
+  await page.route("**/api/v1/files/**", async (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    const data = files.get(id);
+    if (route.request().method() !== "GET" || !data) return route.fallback();
+    await new Promise<void>((resolve) => downloads.push(resolve));
+    await route.fulfill({ body: data, contentType: "application/octet-stream", headers: { ETag: '"file"' } });
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Backup locked — unlock in Backup", exact: true }).click();
+  await page.getByRole("button", { name: "Restore backup", exact: true }).click();
+  await page.getByLabel("PIN", { exact: true }).fill("12345678");
+  await page.getByRole("button", { name: "Restore backup", exact: true }).click();
+  const restoring = page.getByRole("progressbar", { name: /^Restoring files/ });
+  try {
+    await expect(restoring).toBeVisible();
+    await expect(restoring).toHaveAttribute("value", "0");
+    await expect(restoring).toHaveAttribute("max", String(files.size));
+    await expect.poll(() => downloads.length).toBe(1);
+    downloads[0]();
+    await expect(restoring).toHaveAttribute("value", "1");
+    await expect(page.getByText(`Restoring files · 1 / ${files.size}`, { exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("restore-progress-375.png"), animations: "disabled" });
+  } finally {
+    await page.unroute("**/api/v1/files/**");
+    for (const release of downloads) release();
+  }
+  await expect(restoring).toHaveCount(0);
 });
 
 test("online backup mode hides local file controls", async ({ page }, testInfo) => {
@@ -112,8 +211,8 @@ test("online backup mode hides local file controls", async ({ page }, testInfo) 
     await page.screenshot({ path: testInfo.outputPath(`backup-pin-${width}.png`), animations: "disabled" });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
-  await protection.getByLabel("New PIN", { exact: true }).fill("123456");
-  await protection.getByLabel("Confirm PIN", { exact: true }).fill("123456");
+  await protection.getByLabel("New PIN", { exact: true }).fill("12345678");
+  await protection.getByLabel("Confirm PIN", { exact: true }).fill("12345678");
   await protection.getByRole("button", { name: "Create PIN", exact: true }).click();
   await expect(protection.getByRole("heading", { name: "Create your passkey", exact: true })).toBeVisible();
   for (const width of [1280, 375]) {
@@ -146,7 +245,7 @@ test("online backup mode hides local file controls", async ({ page }, testInfo) 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
   await settings.getByRole("button", { name: "Restore backup", exact: true }).click();
-  await settings.getByLabel("PIN", { exact: true }).fill("123456");
+  await settings.getByLabel("PIN", { exact: true }).fill("12345678");
   await settings.getByRole("button", { name: "Restore backup", exact: true }).click();
   await expect(settings.getByText("Everything looks fine", { exact: true })).toBeVisible();
 });

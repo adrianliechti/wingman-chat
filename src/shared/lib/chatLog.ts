@@ -11,7 +11,6 @@
  */
 
 import type { Chat } from "@/shared/types/chat";
-import { normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
 import { STORED_CHAT_VERSION, type StoredChat } from "./opfs-chat";
 
 type StoredMessage = StoredChat["messages"][number];
@@ -19,7 +18,7 @@ type StoredMessage = StoredChat["messages"][number];
 export type LogEntry =
   | {
       type: "init";
-      version?: typeof STORED_CHAT_VERSION;
+      version: typeof STORED_CHAT_VERSION;
       id: string;
       created: string | null;
       model: Chat["model"] | null;
@@ -108,7 +107,6 @@ export function replayLog(chatId: string, entries: LogEntry[]): ReplayResult {
     messages: [],
   };
 
-  let legacy = false;
   for (const e of entries) {
     if (e.type === "tombstone") {
       chat = null;
@@ -122,7 +120,6 @@ export function replayLog(chatId: string, entries: LogEntry[]): ReplayResult {
       case "init":
         // init starts a chat from scratch — compaction snapshots rely on
         // this to reset whatever state was replayed before them.
-        legacy = e.version === undefined;
         chat = {
           version: STORED_CHAT_VERSION,
           id: e.id,
@@ -169,12 +166,6 @@ export function replayLog(chatId: string, entries: LogEntry[]): ReplayResult {
     }
   }
 
-  // Unversioned logs contain the pre-native transcript. The same migration
-  // used by local chat storage keeps existing synced conversations readable.
-  if (chat && legacy) {
-    const raw = { ...chat, version: undefined } as unknown as LegacyStoredChat;
-    chat = normalizeStoredChat(raw);
-  }
   return { chat };
 }
 
@@ -296,6 +287,6 @@ export function diffChat(prev: StoredChat | null, next: StoredChat): LogEntry[] 
 
 // Convenience -----------------------------------------------------------
 
-export function applyEntriesInPlace(chat: StoredChat | null, entries: LogEntry[], chatId: string): StoredChat | null {
+export function applyEntries(chat: StoredChat | null, entries: LogEntry[], chatId: string): StoredChat | null {
   return replayLog(chatId, [...(chat ? diffChat(null, chat) : []), ...entries]).chat;
 }

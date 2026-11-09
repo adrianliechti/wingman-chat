@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ChatSync, stashPendingTarget } from "@/shared/lib/chatSync";
+import { generateDEK } from "@/shared/lib/crypto";
+import * as api from "@/shared/lib/storeClient";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import { PersistenceQueue } from "@/shared/lib/persistence";
 import * as opfs from "@/shared/lib/opfs";
@@ -7,6 +10,13 @@ import type { Chat } from "@/shared/types/chat";
 import { loadChat, loadChatIndex, removeChat, storeChat } from "./chatStorage";
 import { createAttachmentLoader } from "./chatAttachments";
 
+vi.mock("@/shared/lib/storeClient", () => ({
+  listChats: vi.fn(),
+  readEvents: vi.fn(),
+  appendEvents: vi.fn(),
+  headBlob: vi.fn(),
+  deleteChat: vi.fn(),
+}));
 const config = vi.hoisted(() => ({ chat: { retentionDays: 0 } }));
 vi.mock("@/shared/config", () => ({ getConfig: () => config }));
 const memory = new MemoryOpfs();
@@ -296,4 +306,54 @@ describe("chat persistence", () => {
       source: { type: "data", value: "YWJj", mimeType: "image/jpeg" },
     });
   });
+});
+
+it("keeps an online-saved chat visible and editable after switching to local backups without server requests", async () => {
+  vi.mocked(api.appendEvents).mockImplementation(async (_id, seq, events) => ({ newSeq: seq + events.length }));
+  vi.mocked(api.headBlob).mockResolvedValue(true);
+  const dek = await generateDEK();
+  const sync = await ChatSync.create({ userId: "user", dek });
+  const value = chat();
+  value.messages = [userMessage("saved online")];
+  await sync.saveChat(value);
+  await vi.waitFor(async () => expect(await opfs.readJson("chats/chat/target.json")).toBeUndefined());
+  expect(await opfs.fileExists("chats/chat/history.jsonl")).toBe(true);
+  expect(await opfs.fileExists("chats/chat/chat.json")).toBe(false);
+  vi.mocked(api.appendEvents).mockClear();
+  expect((await loadChatIndex()).map((entry) => entry.id)).toContain(value.id);
+  expect(await loadChat(value.id)).toMatchObject(value);
+  const edited = {
+    ...value,
+    updated: new Date(Date.now() + 1000),
+    messages: [...value.messages, userMessage("edited locally")],
+  };
+  await storeChat(edited);
+  expect(await loadChat(value.id)).toMatchObject(edited);
+  expect(api.appendEvents).not.toHaveBeenCalled();
+  const resumed = await ChatSync.create({ userId: "user", dek });
+  await resumed.flushPending();
+  expect(api.appendEvents).toHaveBeenCalled();
+});
+
+it("includes pending online chats in local mode even before any sync state was committed", async () => {
+  const value = chat("pending-chat");
+  await stashPendingTarget(value);
+  expect(await opfs.fileExists("_sync/state.json")).toBe(false);
+  expect((await loadChatIndex()).map((entry) => entry.id)).toContain(value.id);
+  expect(await loadChat(value.id)).toMatchObject(value);
+});
+
+it("recovers a local edit from the shared pending target if the native save fails", async () => {
+  const value = chat();
+  await storeChat(value);
+  await stashPendingTarget(value);
+  const edited = { ...value, title: "Pending local edit", messages: [userMessage("recover this edit")] };
+  memory.beforeWrite = async (path) => {
+    if (path === "chats/chat/chat.json") throw new Error("disk full");
+  };
+  await expect(storeChat(edited)).rejects.toThrow("disk full");
+  memory.beforeWrite = undefined;
+  expect(await loadChat(value.id)).toMatchObject(edited);
+  expect((await loadChatIndex()).find((entry) => entry.id === value.id)?.title).toBe(edited.title);
+  expect(await opfs.readJson("chats/chat/target.json")).toMatchObject({ title: edited.title });
 });

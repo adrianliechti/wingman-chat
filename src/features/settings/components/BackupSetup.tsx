@@ -2,6 +2,7 @@ import { Check, KeyRound, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, type RefObject } from "react";
 import { supportsPasskeys } from "@/shared/lib/passkey";
 import { PinForm } from "./PinForm";
+import { PIN_MIN_LENGTH } from "@/shared/lib/keystore";
 
 export type BackupSetupStep = "intro" | "pin" | "passkey";
 
@@ -88,7 +89,7 @@ export function BackupSetup({
       {step === "pin" ? (
         <PinForm
           title="Create your backup PIN"
-          description="Your data is encrypted. You’ll use this PIN to restore it."
+          description={`Your data is encrypted. You’ll use this PIN to restore it. Use at least ${PIN_MIN_LENGTH} characters.`}
           warning="Without your PIN or a passkey, you won’t be able to restore your backup. Don’t forget your PIN. We can’t recover it for you."
           fields={[
             { label: "New PIN", value: pin, setter: onPinChange },

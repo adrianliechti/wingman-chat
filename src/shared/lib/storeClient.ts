@@ -16,13 +16,32 @@ export function setBackupKey(publicKey: string): void {
   backupPublicKey = publicKey;
 }
 
+const REQUEST_TIMEOUT_MS = 60_000;
+/** Blob and file bodies can be large in either direction. */
+const TRANSFER_TIMEOUT_MS = 10 * 60_000;
+
 async function storeFetch(input: string, init?: RequestInit): Promise<Response> {
   if (!isBackupSessionCurrent() && !input.endsWith("/me")) {
     throw new Error("Backup reset in progress. Reload before syncing.");
   }
   const headers = new Headers(init?.headers);
   if (backupPublicKey) headers.set("X-Backup-Key", backupPublicKey);
-  return fetch(input, { ...init, headers });
+  // A hung request would otherwise hold the sync engines' locks indefinitely.
+  const transfer = init?.body !== undefined || /\/(blobs|files)\//.test(input);
+  const signal = init?.signal ?? AbortSignal.timeout(transfer ? TRANSFER_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
+  return fetch(input, { ...init, headers, signal });
+}
+
+async function ensureOk(res: Response, allowNotFound = false): Promise<Response> {
+  if (res.ok || (allowNotFound && res.status === 404)) return res;
+  const body = await res.text().catch(() => "");
+  throw new ServerError(res.status, body || res.statusText);
+}
+
+function conditionalHeaders(opts: ConditionalOptions, base: Record<string, string> = {}): Record<string, string> {
+  if (opts.ifMatch) base["If-Match"] = `"${opts.ifMatch}"`;
+  if (opts.ifNoneMatch) base["If-None-Match"] = opts.ifNoneMatch;
+  return base;
 }
 
 /** Only the signed-in account is needed; restore secrets may have been lost. */
@@ -31,12 +50,14 @@ export async function resetBackup(): Promise<void> {
     method: "DELETE",
     headers: { "X-Confirm-Backup-Reset": "true" },
   });
-  if (!res.ok) throw new ServerError(res.status, (await res.text()) || res.statusText);
+  await ensureOk(res);
 }
 
 export interface ServerUser {
   id: string;
   email?: string;
+  backupDestination?: string;
+  previousId?: string;
 }
 
 export interface ServerChatMeta {
@@ -57,7 +78,11 @@ export interface AppendRequest {
 
 export interface AppendResponse {
   newSeq: number;
-  deduped?: string[];
+}
+
+export interface ConditionalOptions {
+  ifMatch?: string;
+  ifNoneMatch?: "*";
 }
 
 export class ServerError extends Error {
@@ -73,47 +98,41 @@ function unquote(s: string): string {
 }
 
 async function fetchOrThrow(input: string, init?: RequestInit): Promise<Response> {
-  const res = await storeFetch(input, init);
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new ServerError(res.status, body || res.statusText);
-  }
-  return res;
+  return ensureOk(await storeFetch(input, init));
 }
 
 export async function fetchMe(): Promise<ServerUser> {
   const res = await fetchOrThrow(`${PREFIX}/me`);
-  return res.json();
+  const user: ServerUser = await res.json();
+  return { ...user, backupDestination: res.headers.get("X-Backup-Destination") ?? "server" };
 }
 
 export async function getKeystore(): Promise<KeystoreResponse | null> {
-  const res = await storeFetch(`${PREFIX}/keystore`);
+  const res = await ensureOk(await storeFetch(`${PREFIX}/keystore`), true);
   if (res.status === 404) return null;
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new ServerError(res.status, body || res.statusText);
-  }
   const etag = unquote(res.headers.get("ETag") ?? "");
   return { data: await res.text(), etag };
 }
 
-export interface PutKeystoreOptions {
-  ifMatch?: string;
-  ifNoneMatch?: "*";
+/** Per-user secret mixed into PIN key derivation, or null when the server has none configured. */
+export async function getPinPepper(): Promise<Uint8Array<ArrayBuffer> | null> {
+  const res = await ensureOk(await storeFetch(`${PREFIX}/keystore/pepper`), true);
+  if (res.status === 404) return null;
+  const { pepper } = (await res.json()) as { pepper?: unknown };
+  if (typeof pepper !== "string") throw new Error("Invalid PIN pepper response.");
+  const bin = atob(pepper);
+  if (bin.length !== 32) throw new Error("Invalid PIN pepper response.");
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
+
+export type PutKeystoreOptions = ConditionalOptions;
 
 /** Returns the new ETag, or throws ServerError(412) on CAS mismatch. */
 export async function putKeystore(json: string, opts: PutKeystoreOptions = {}): Promise<string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (opts.ifMatch) headers["If-Match"] = `"${opts.ifMatch}"`;
-  if (opts.ifNoneMatch) headers["If-None-Match"] = opts.ifNoneMatch;
-
+  const headers = conditionalHeaders(opts, { "Content-Type": "application/json" });
   const res = await storeFetch(`${PREFIX}/keystore`, { method: "PUT", headers, body: json });
   if (res.status === 412) throw new ServerError(412, "keystore conflict");
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new ServerError(res.status, body || res.statusText);
-  }
+  await ensureOk(res);
   return unquote(res.headers.get("ETag") ?? "");
 }
 
@@ -122,19 +141,16 @@ export async function listChats(): Promise<ServerChatMeta[]> {
   return res.json();
 }
 
-/** Streams the JSONL response as parsed objects. */
 export async function readEvents(
   chatId: string,
   fromSeq: number,
 ): Promise<{ seq: number; id: string; frame: string }[]> {
   const res = await fetchOrThrow(`${PREFIX}/chats/${encodeURIComponent(chatId)}/events?fromSeq=${fromSeq}`);
   const text = await res.text();
-  const out: { seq: number; id: string; frame: string }[] = [];
-  for (const line of text.split("\n")) {
-    if (!line) continue;
-    out.push(JSON.parse(line));
-  }
-  return out;
+  return text
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
 }
 
 /** Returns null on 409 (seq conflict), or the AppendResponse on success. */
@@ -143,82 +159,49 @@ export async function appendEvents(
   expectedSeq: number,
   events: AppendRequest[],
 ): Promise<AppendResponse | null> {
-  const body = events.map((e) => JSON.stringify(e)).join("\n");
-
   const res = await storeFetch(`${PREFIX}/chats/${encodeURIComponent(chatId)}/events`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-ndjson",
       "X-Expected-Seq": String(expectedSeq),
     },
-    body,
+    body: events.map((e) => JSON.stringify(e)).join("\n"),
   });
-
   if (res.status === 409) return null;
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => "");
-    throw new ServerError(res.status, errBody || res.statusText);
-  }
+  await ensureOk(res);
   return res.json();
 }
 
 export async function compactChat(chatId: string, beforeSeq: number): Promise<void> {
-  const res = await storeFetch(`${PREFIX}/chats/${encodeURIComponent(chatId)}/compact?beforeSeq=${beforeSeq}`, {
-    method: "POST",
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new ServerError(res.status, body || res.statusText);
-  }
+  const url = `${PREFIX}/chats/${encodeURIComponent(chatId)}/compact?beforeSeq=${beforeSeq}`;
+  await fetchOrThrow(url, { method: "POST" });
 }
 
 export async function deleteChat(chatId: string): Promise<void> {
-  const res = await storeFetch(`${PREFIX}/chats/${encodeURIComponent(chatId)}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 404) {
-    const body = await res.text().catch(() => "");
-    throw new ServerError(res.status, body || res.statusText);
-  }
+  await ensureOk(await storeFetch(`${PREFIX}/chats/${encodeURIComponent(chatId)}`, { method: "DELETE" }), true);
 }
 
 export async function headBlob(blobId: string): Promise<boolean> {
-  const res = await storeFetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`, { method: "HEAD" });
-  if (res.status === 404) return false;
-  if (!res.ok) {
-    throw new ServerError(res.status, res.statusText);
-  }
-  return true;
+  const res = await ensureOk(
+    await storeFetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`, { method: "HEAD" }),
+    true,
+  );
+  return res.status !== 404;
 }
 
 export async function getBlob(blobId: string): Promise<Uint8Array | null> {
-  const res = await storeFetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`);
+  const res = await ensureOk(await storeFetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`), true);
   if (res.status === 404) return null;
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new ServerError(res.status, body || res.statusText);
-  }
-  const buf = await res.arrayBuffer();
-  return new Uint8Array(buf);
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 export async function putBlob(blobId: string, data: Uint8Array | Blob): Promise<void> {
   const body: BodyInit = data instanceof Blob ? data : new Blob([new Uint8Array(data)]);
-  const res = await storeFetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`, {
+  await fetchOrThrow(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/octet-stream" },
     body,
   });
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => "");
-    throw new ServerError(res.status, errBody || res.statusText);
-  }
-}
-
-export async function deleteBlob(blobId: string): Promise<void> {
-  const res = await storeFetch(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 404) {
-    const body = await res.text().catch(() => "");
-    throw new ServerError(res.status, body || res.statusText);
-  }
 }
 
 export interface ServerFileMeta {
@@ -234,46 +217,34 @@ export async function listFiles(): Promise<ServerFileMeta[]> {
 }
 
 export async function getFile(fileId: string): Promise<{ data: Uint8Array; etag: string } | null> {
-  const res = await storeFetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`);
+  const res = await ensureOk(await storeFetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`), true);
   if (res.status === 404) return null;
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new ServerError(res.status, body || res.statusText);
-  }
   const etag = unquote(res.headers.get("ETag") ?? "");
   return { data: new Uint8Array(await res.arrayBuffer()), etag };
 }
 
-export interface PutFileOptions {
-  ifMatch?: string;
-  ifNoneMatch?: "*";
-}
+export type PutFileOptions = ConditionalOptions;
 
 /** Returns the new ETag, or throws ServerError(412) on CAS mismatch. */
 export async function putFile(fileId: string, data: Uint8Array, opts: PutFileOptions = {}): Promise<string> {
-  const headers: Record<string, string> = { "Content-Type": "application/octet-stream" };
-  if (opts.ifMatch) headers["If-Match"] = `"${opts.ifMatch}"`;
-  if (opts.ifNoneMatch) headers["If-None-Match"] = opts.ifNoneMatch;
-
   const res = await storeFetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`, {
     method: "PUT",
-    headers,
+    headers: conditionalHeaders(opts, { "Content-Type": "application/octet-stream" }),
     body: new Blob([new Uint8Array(data)]),
   });
   if (res.status === 412) throw new ServerError(412, "file conflict");
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new ServerError(res.status, body || res.statusText);
-  }
+  await ensureOk(res);
   return unquote(res.headers.get("ETag") ?? "");
 }
 
-export async function deleteFile(fileId: string): Promise<void> {
-  const res = await storeFetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 404) {
-    const body = await res.text().catch(() => "");
-    throw new ServerError(res.status, body || res.statusText);
-  }
+/** Throws ServerError(412) when `ifMatch` no longer names the current version. */
+export async function deleteFile(fileId: string, opts: Pick<ConditionalOptions, "ifMatch"> = {}): Promise<void> {
+  const res = await storeFetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`, {
+    method: "DELETE",
+    headers: conditionalHeaders(opts),
+  });
+  if (res.status === 412) throw new ServerError(412, "file conflict");
+  await ensureOk(res, true);
 }
 
 /** Stored encrypted data and metadata, excluding filesystem overhead. */

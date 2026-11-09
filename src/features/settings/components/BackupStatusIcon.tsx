@@ -1,8 +1,8 @@
 import { CloudAlert, CloudCheck, CloudSync, CloudUpload } from "lucide-react";
-import type { SyncHealth } from "../hooks/useSyncStatus";
+import { needsAttention, type SyncHealth } from "../hooks/useSyncStatus";
 
 export function BackupStatusIcon({ health, size = 20 }: { health: SyncHealth; size?: number }) {
-  const attention = health === "error" || health === "locked" || health === "setup" || health === "upload-only";
+  const attention = needsAttention(health);
   const syncing = health === "syncing" || health === "connecting";
   const Icon = attention ? CloudAlert : syncing ? CloudSync : health === "pending" ? CloudUpload : CloudCheck;
 
