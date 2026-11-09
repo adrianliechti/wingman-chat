@@ -6,6 +6,7 @@ import {
   type RendererToAgentMessage,
   type SurfaceModel,
   type Subscription,
+  type ActionListener,
 } from "@a2ui/web_core/v1_0";
 import { A2UI_SDK_VERSION, A2UI_VERSION, catalogs, WINGMAN_CATALOG_ID } from "./catalog.ts";
 import { parseMessages, type UiBlock, type UiMessage } from "./protocol.ts";
@@ -40,7 +41,7 @@ export class InlineUiRuntime {
   private messageErrors = new Map<string, string>();
   private applied: string[] = [];
   private listeners = new Set<() => void>();
-  private subscriptions: Subscription[] = [];
+  private subscriptions = new Map<string, Subscription[]>();
   private revision = 0;
   private snapshot = EMPTY_UI_SNAPSHOT;
   private syncing = false;
@@ -56,71 +57,71 @@ export class InlineUiRuntime {
   }
 
   private createProcessor(): MessageProcessor {
-    const processor = new MessageProcessor(
-      catalogs,
-      async (action) => {
-        if (this.disposed || this.processor !== processor) return;
-        const surface = processor.getSurface(action.surfaceId);
-        if (this.actionErrors.delete(action.surfaceId)) this.changed();
-        try {
-          const message = ActionMessageSchema.parse({ version: A2UI_VERSION, action });
-          if (!this.onSubmit) throw new Error("Sending an action is unavailable here");
-          await this.onSubmit({
-            message,
-            metadata: {
-              a2uiRendererCapabilities: processor.getRendererCapabilities({ versions: [A2UI_VERSION] }),
-              ...(processor.getRendererDataModel(A2UI_VERSION) && {
-                a2uiRendererDataModel: processor.getRendererDataModel(A2UI_VERSION),
-              }),
-            },
-          });
-        } catch (error) {
-          // The SDK's EventEmitter logs and swallows listener rejections. Keep
-          // submission failures observable, without replaying the action.
-          if (
-            !this.disposed &&
-            this.processor === processor &&
-            processor.getSurface(action.surfaceId) === surface &&
-            surface
-          ) {
-            this.actionErrors.set(action.surfaceId, error instanceof Error ? error.message : String(error));
-            this.changed();
-          }
+    const onAction: ActionListener = async (action) => {
+      if (this.disposed || this.processor !== processor) return;
+      const surface = processor.getSurface(action.surfaceId);
+      if (this.actionErrors.delete(action.surfaceId)) this.changed();
+      try {
+        const message = ActionMessageSchema.parse({ version: A2UI_VERSION, action });
+        if (!this.onSubmit) throw new Error("Sending an action is unavailable here");
+        await this.onSubmit({
+          message,
+          metadata: {
+            a2uiRendererCapabilities: processor.getRendererCapabilities({ versions: [A2UI_VERSION] }),
+            ...(processor.getRendererDataModel(A2UI_VERSION) && {
+              a2uiRendererDataModel: processor.getRendererDataModel(A2UI_VERSION),
+            }),
+          },
+        });
+      } catch (error) {
+        // The SDK's EventEmitter logs and swallows listener rejections. Keep
+        // submission failures observable, without replaying the action.
+        if (
+          !this.disposed &&
+          this.processor === processor &&
+          processor.getSurface(action.surfaceId) === surface &&
+          surface
+        ) {
+          this.actionErrors.set(action.surfaceId, error instanceof Error ? error.message : String(error));
+          this.changed();
         }
+      }
+    };
+    const processor = new MessageProcessor(catalogs, undefined, {
+      version: A2UI_VERSION,
+      validationConfig: {
+        targetVersion: A2UI_VERSION,
+        allowUnknownElements: false,
+        allowMissingRoot: true,
+        allowDanglingReferences: true,
+        allowOrphanComponents: true,
+        allowedMessages: [
+          "createSurface",
+          "updateComponents",
+          "updateDataModel",
+          "deleteSurface",
+          "agentFunctionResponse",
+        ],
       },
-      {
-        version: A2UI_VERSION,
-        validationConfig: {
-          targetVersion: A2UI_VERSION,
-          allowUnknownElements: false,
-          allowMissingRoot: true,
-          allowDanglingReferences: true,
-          allowOrphanComponents: true,
-          allowedMessages: [
-            "createSurface",
-            "updateComponents",
-            "updateDataModel",
-            "deleteSurface",
-            "agentFunctionResponse",
-          ],
-        },
-      },
-    );
+    });
     processor.onSurfaceCreated((surface) => {
-      this.subscriptions.push(
+      // The SDK's group-level forwarding does not await action listeners.
+      // Subscribe at the surface so controls stay busy until submission ends.
+      this.subscriptions.set(surface.id, [
+        surface.onAction.subscribe(onAction),
         surface.dataModel.subscribe("/", () => {
           if (!this.syncing) this.scheduleSave();
         }),
-      );
-      this.subscriptions.push(
         surface.onError.subscribe((error) => {
           this.errors.set(surface.id, error.message);
           this.changed();
         }),
-      );
+      ]);
       this.resolvers.set(surface.id, new NodeResolver(surface, surface.defaultCatalog));
     });
     processor.onSurfaceDeleted((id) => {
+      for (const subscription of this.subscriptions.get(id) ?? []) subscription.unsubscribe();
+      this.subscriptions.delete(id);
       this.resolvers.get(id)?.dispose();
       this.resolvers.delete(id);
       this.errors.delete(id);
@@ -215,9 +216,8 @@ export class InlineUiRuntime {
           }
         }
       });
-      // The candidate SDK reports intermediate missing dependencies while
-      // installing nested reactive functions. Recheck only affected surfaces
-      // against the settled data model so repaired errors do not linger.
+      // SDK 0.15 still reports transient dependencies while installing nested
+      // reactive functions. Recheck affected surfaces after the batch settles.
       for (const [id, surface] of this.processor.getSurfaces()) {
         if (!this.errors.has(id)) continue;
         this.errors.delete(id);
@@ -291,8 +291,9 @@ export class InlineUiRuntime {
     for (const resolver of this.resolvers.values()) resolver.dispose();
     this.resolvers.clear();
     this.actionErrors.clear();
-    for (const subscription of this.subscriptions) subscription.unsubscribe();
-    this.subscriptions = [];
+    for (const subscriptions of this.subscriptions.values())
+      for (const subscription of subscriptions) subscription.unsubscribe();
+    this.subscriptions.clear();
     this.processor.dispose();
   }
   dispose() {

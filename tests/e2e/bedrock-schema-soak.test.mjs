@@ -176,11 +176,8 @@ function recordArguments(result, toolName, payloadKey) {
 
 function exactBlock(kind, value) {
   return [
-    `Copy the bytes between BEGIN_${kind} and END_${kind} exactly.`,
-    "The marker lines are not part of the value; preserve all quotes, backslashes, Unicode, and line breaks.",
-    `BEGIN_${kind}`,
-    value,
-    `END_${kind}`,
+    "Decode this JSON string as the exact argument value. Preserve its quotes, backslashes, Unicode, and line breaks; do not add a trailing newline.",
+    `${kind}=${JSON.stringify(value)}`,
   ].join("\n");
 }
 
@@ -275,7 +272,7 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
         const observed = recordArguments(result, "execute_script", "code");
         assert.equal(parsedCalls.length, 1);
         const toolResult = contentParts(result.messages, "tool_result").find((part) => part.name === "execute_script");
-        const output = toolResult?.result?.find((part) => part.type === "text")?.text;
+        const output = toolResult?.content.find((part) => part.type === "text")?.content;
         assert.equal(output, fixture.output);
         if (observed.leakedMarkup) stats.recoveredMarkupCalls++;
         stats.functionalPasses++;

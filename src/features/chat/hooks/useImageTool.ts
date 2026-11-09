@@ -7,7 +7,8 @@ import { resolveArtifactFileSystem, type FileSystemManager } from "@/features/ar
 import { getConfig } from "@/shared/config";
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { isDataUrl } from "@/shared/lib/fileContent";
-import { withRendererFallback } from "@/shared/lib/models";
+import { isTextContentType } from "@/shared/lib/fileTypes";
+import { isVideoRenderer, withRendererFallback } from "@/shared/lib/models";
 import { pickModel } from "@/shared/lib/modelSelection";
 import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
 import { readAsDataURL } from "@/shared/lib/utils";
@@ -40,6 +41,15 @@ async function blobFromDataUrl(dataUrl: string): Promise<Blob> {
   return (await fetch(dataUrl)).blob();
 }
 
+/** GPT Image 2.6 animated GIF limits. */
+const GIF_FRAMES = { min: 2, max: 64 };
+const GIF_FRAME_MS = { min: 20, max: 2000 };
+
+/** An integer argument within the given limits, else undefined (the renderer default). */
+function inRange(value: unknown, { min, max }: { min: number; max: number }): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max ? value : undefined;
+}
+
 type Config = ReturnType<typeof getConfig>;
 
 interface ImageToolOptions {
@@ -52,8 +62,16 @@ interface ImageToolOptions {
   fs: FileSystemManager | null;
 }
 
-function createImageTool({ client, catalog, models, rendererModel, elicitation, fs }: ImageToolOptions): Tool {
-  const model = pickModel(catalog, rendererModel, "renderer");
+function createImageTool({ client, catalog, models, rendererModel, elicitation, fs }: ImageToolOptions): Tool | null {
+  const imageCatalog = catalog.filter((entry) => !isVideoRenderer(withRendererFallback(entry)));
+  const configured = rendererModel
+    ? withRendererFallback(
+        catalog.find((entry) => entry.id === rendererModel) ??
+          models.find((entry) => entry.id === rendererModel) ?? { id: rendererModel, name: rendererModel },
+      )
+    : null;
+  const model = pickModel(imageCatalog, isVideoRenderer(configured) ? undefined : rendererModel, "renderer");
+  if (!model && (isVideoRenderer(configured) || catalog.some((entry) => entry.type === "renderer"))) return null;
   // The catalog may not have loaded yet, or may type a configured alias
   // differently — config overrides still carry the renderer's capabilities.
   const entry = catalog.find((m) => m.id === model) ?? models.find((m) => m.id === model);
@@ -106,6 +124,43 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
         'Use "transparent" for cutouts or compositing, or "opaque" for a filled background. Omit for the renderer default.',
       );
   }
+  if (caps.supportedComplexities?.length) {
+    properties.complexity = z
+      .enum(caps.supportedComplexities)
+      .optional()
+      .describe(
+        "How much the renderer plans the composition before drawing, separate from quality. Lower is faster and keeps edits closer to the original; omit for the renderer default.",
+      );
+  }
+  const formats = (caps.supportedFormats ?? []).filter((format) => format !== "mp4");
+  if (formats.length) {
+    const kinds = [
+      formats.includes("svg") && '"svg" for a static vector illustration (logo, icon, flat art)',
+      formats.includes("gif") && '"gif" for a short looping animation',
+    ].filter(Boolean);
+    properties.format = z
+      .enum(["png", ...formats])
+      .optional()
+      .describe(
+        `Output format; defaults to "png". Use ${kinds.join(" or ")}. These can't take reference images: \`images\` must be empty and attachments are not sent, so describe any reference in the prompt.`,
+      );
+  }
+  if (formats.includes("gif")) {
+    properties.frame_count = z
+      .number()
+      .int()
+      .min(GIF_FRAMES.min)
+      .max(GIF_FRAMES.max)
+      .optional()
+      .describe("GIF only: number of animation frames; omit for the renderer default (9).");
+    properties.frame_duration_ms = z
+      .number()
+      .int()
+      .min(GIF_FRAME_MS.min)
+      .max(GIF_FRAME_MS.max)
+      .optional()
+      .describe("GIF only: time each frame is shown, in milliseconds; omit for the renderer default (200).");
+  }
 
   return {
     name: "create_image",
@@ -128,8 +183,9 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
         };
       },
     },
-    description:
-      "Generate or edit raster images such as photos, illustrations, and visual assets. Use for image creation and visual edits; use vision to inspect images and file/code tools for interactive HTML, SVG, or charts. Supply a self-contained prompt and artifact paths for reference images. Current-message image attachments are included automatically. Returns the image inline and saves it to the chat workspace when available.",
+    description: formats.length
+      ? `Generate or edit images such as photos, illustrations, and visual assets${formats.includes("svg") ? ", vector SVG illustrations" : ""}${formats.includes("gif") ? ", or short animated GIFs" : ""}. Use for image creation and visual edits; use vision to inspect images and file/code tools for interactive HTML, charts, diagrams, or SVG that must match exact geometry. Supply a self-contained prompt and artifact paths for reference images. Current-message image attachments are included automatically for PNG output. Returns the image inline and saves it to the chat workspace when available.`
+      : "Generate or edit raster images such as photos, illustrations, and visual assets. Use for image creation and visual edits; use vision to inspect images and file/code tools for interactive HTML, SVG, or charts. Supply a self-contained prompt and artifact paths for reference images. Current-message image attachments are included automatically. Returns the image inline and saves it to the chat workspace when available.",
     inputSchema: z.strictObject(properties),
     execute: async (args: Record<string, unknown>, execution) => {
       const context = execution?.context;
@@ -148,22 +204,34 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
         if (result.action !== "accept") return errorResult("Image generation cancelled by user.", context);
       }
 
+      // SVG and GIF are text-to-image only, so they never carry references.
+      const format = formats.find((value) => value === args.format);
+      const paths = Array.isArray(args.images)
+        ? args.images.filter((p): p is string => typeof p === "string" && !!p.trim())
+        : [];
+      if (format && paths.length) {
+        return errorResult(
+          `${format.toUpperCase()} output can't use reference images. Omit \`images\` and describe the reference in the prompt, or use PNG to edit an image.`,
+          context,
+        );
+      }
+
       try {
         // Reference images to edit or build on: explicit artifact paths, plus
         // any image attached to the current message. None → text-to-image.
         const references: Blob[] = [];
-        const paths = Array.isArray(args.images) ? args.images.filter((p): p is string => typeof p === "string") : [];
         for (const path of paths) {
           const file = activeFs ? await activeFs.getFile(path) : undefined;
           if (!file || !isDataUrl(file.content)) return errorResult(`No image artifact found at ${path}.`, context);
           references.push(await blobFromDataUrl(file.content));
         }
-        for (const part of context?.content?.() ?? []) {
+        for (const part of format ? [] : (context?.content?.() ?? [])) {
           const dataUrl = part.type === "image" ? mediaDataUrl(part) : undefined;
           if (dataUrl) references.push(await blobFromDataUrl(dataUrl));
         }
 
         const options: ImageRenderOptions = {};
+        if (format) options.format = format;
         if (typeof args.aspect_ratio === "string") options.aspectRatio = args.aspect_ratio;
         // Default to a supported tier, including deployments that exclude low.
         if (caps.supportedQualities?.length) {
@@ -177,8 +245,14 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
         ) {
           options.resolution = args.resolution;
         }
-        if (args.background === "transparent" || args.background === "opaque") {
+        // Transparency needs a PNG (or WebP) output.
+        if (!format && (args.background === "transparent" || args.background === "opaque")) {
           options.background = args.background;
+        }
+        options.complexity = caps.supportedComplexities?.find((value) => value === args.complexity);
+        if (format === "gif") {
+          options.frameCount = inRange(args.frame_count, GIF_FRAMES);
+          options.frameDurationMs = inRange(args.frame_duration_ms, GIF_FRAME_MS);
         }
 
         context?.signal?.throwIfAborted();
@@ -195,12 +269,14 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
         if (activeFs) {
           try {
             const ext = mime.getExtension(imageBlob.type) || "png";
+            const contentType = imageBlob.type || `image/${ext}`;
             const saved = await activeFs.ingestFiles(
               [
                 {
                   path: `/${slugify(prompt)}.${ext}`,
-                  content: dataUrl,
-                  contentType: imageBlob.type || `image/${ext}`,
+                  // Artifacts keep SVG as markup, like any text file.
+                  content: isTextContentType(contentType) ? await imageBlob.text() : dataUrl,
+                  contentType,
                 },
               ],
               { origin: { actor: "assistant", runId: context?.runId, reason: "create" } },

@@ -170,7 +170,7 @@ test("fixed choices omit written answers and Skip resumes without submitting def
 
 test("Stop clears a pending question without resuming the model or restoring it on reload", async ({ page }) => {
   const form = await ask(page, [{ id: "answer", label: "Which direction?", type: "text", required: true }]);
-  await page.getByRole("button", { name: "Stop generating (Esc)", exact: true }).click();
+  await page.getByRole("button", { name: "Stop generating", exact: true }).click();
   await expect(form).toHaveCount(0);
   expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
   await page.evaluate(() => window.reactUiE2E.flush());

@@ -32,6 +32,22 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
     if (spacerRef.current) spacerRef.current.style.height = `${next}px`;
   }, []);
 
+  const readScrollIntent = useCallback(() => {
+    if (!scrollElement) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+    const previous = geometryRef.current;
+    const delta = scrollTop - previous.top;
+    const atBottom = scrollHeight - spacerHeightRef.current - scrollTop - clientHeight <= BOTTOM_TOLERANCE;
+    // Scrollbar and accessibility changes may precede WebKit's scroll event.
+    // Observe them before a queued resize update can restore follow mode.
+    if (
+      Math.abs(delta) > 1 &&
+      ((scrollHeight === previous.height && clientHeight === previous.viewport) || (delta < 0 && !atBottom))
+    )
+      modeRef.current = "free";
+    if (modeRef.current === "free" && delta > 0 && atBottom) modeRef.current = "latest";
+  }, [scrollElement]);
+
   const syncScroll = useCallback(() => {
     if (!scrollElement) return;
     if (modeRef.current === "latest") {
@@ -149,14 +165,7 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
       }
     };
     const onScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = scrollElement;
-      const previous = geometryRef.current;
-      const delta = scrollTop - previous.top;
-      // Scrollbar dragging and accessibility scrolling do not produce wheel
-      // events. Ignore movement caused by our writes or a layout clamp.
-      if (Math.abs(delta) > 1 && scrollHeight === previous.height && clientHeight === previous.viewport) release();
-      const atBottom = scrollHeight - spacerHeightRef.current - scrollTop - clientHeight <= BOTTOM_TOLERANCE;
-      if (modeRef.current === "free" && delta > 0 && atBottom) modeRef.current = "latest";
+      readScrollIntent();
       syncScroll();
     };
     scrollElement.addEventListener("scroll", onScroll, { passive: true });
@@ -171,7 +180,7 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
       scrollElement.removeEventListener("touchmove", onTouchMove);
       scrollElement.removeEventListener("keydown", onKey);
     };
-  }, [scrollElement, syncScroll]);
+  }, [scrollElement, syncScroll, readScrollIntent]);
 
   useLayoutEffect(() => {
     const content = scrollElement?.firstElementChild;
@@ -185,6 +194,7 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
       // ResizeObserver can finish its current delivery without a resize loop.
       frame = requestAnimationFrame(() => {
         frame = undefined;
+        readScrollIntent();
         syncScroll();
       });
     });
@@ -197,7 +207,7 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
       observer.disconnect();
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
-  }, [scrollElement, syncScroll]);
+  }, [scrollElement, syncScroll, readScrollIntent]);
 
   return { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest, goToTarget, scrollElement };
 }

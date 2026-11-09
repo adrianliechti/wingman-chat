@@ -59,7 +59,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
 
   for (const model of new Set([compatibilityModel, documentModel, "claude-opus-5-5", "claude-haiku-5-5"])) {
     void test(
-      `displays reasoning by default with ${model} and replays it after persistence`,
+      `preserves signed reasoning with ${model} and replays it after persistence`,
       async (context) => {
         if (!availableModels.some((available) => available.id === model)) {
           context.skip(`${model} is not exposed by ${GATEWAY_URL}`);
@@ -92,16 +92,18 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
           },
         );
         assert.equal(first.status, "completed", resultDetail(first));
-        const visible = contentParts(first.messages, "reasoning").filter((part) => part.text || part.summary);
-        assert(visible.length > 0, `${model} did not return visible reasoning with default chat settings`);
+        const reasoning = contentParts(first.messages, "reasoning");
         assert(
-          visible.some((part) => part.encryptedContent),
+          reasoning.some((part) => part.encryptedContent),
           `${model} did not return signed reasoning`,
         );
-        assert(
-          events.some((chunk) => chunk.type === "REASONING_MESSAGE_CONTENT" && chunk.delta),
-          `${model} did not stream visible reasoning`,
-        );
+        // Providers can return signed reasoning without a visible summary.
+        // When text is returned, it must also reach the streaming UI.
+        if (reasoning.some((part) => part.text || part.summary))
+          assert(
+            events.some((chunk) => chunk.type === "REASONING_MESSAGE_CONTENT" && chunk.delta),
+            `${model} returned visible reasoning without streaming it`,
+          );
         const restored = JSON.parse(JSON.stringify(first.messages));
         const beforeReplay = faults.snapshot().requestCount;
         const second = await run(
@@ -115,7 +117,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         assert.equal(second.status, "completed", resultDetail(second));
         assert.equal(faults.snapshot().requestCount - beforeReplay, 1, "Reasoning replay needed a recovery retry");
         assert(
-          contentParts(second.messages, "reasoning").some((part) => part.text || part.summary),
+          contentParts(second.messages, "reasoning").some((part) => part.encryptedContent),
           "Persisted reasoning disappeared on the next turn",
         );
       },

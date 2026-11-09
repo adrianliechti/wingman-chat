@@ -17,7 +17,7 @@ export function ConfirmHost() {
     <Dialog open className="relative z-200" onClose={() => settleConfirm(false)}>
       <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
 
-      <div className="fixed inset-0 overflow-y-auto">
+      <div className="fixed inset-x-0 app-viewport overflow-y-auto">
         <div className="flex min-h-full items-center justify-center p-4">
           <Dialog.Panel className="w-full max-w-md overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl transition-all">
             <div className="px-6 pt-5 pb-4">

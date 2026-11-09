@@ -8,7 +8,7 @@ The Stepper edits the data model; Metric resolves a reactive calculation with an
 
 ```ui
 {
-  "version": "v1.0",
+  "version": "1.0",
   "createSurface": {
     "surfaceId": "seat_estimate",
     "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -76,7 +76,7 @@ These examples draw on upstream's v1 live-invitation builder and financial grid.
 A later reply can update the estimate above:
 
 ```ui
-{"version":"v1.0","updateDataModel":{"surfaceId":"seat_estimate","path":"/seats","value":12}}
+{"version":"1.0","updateDataModel":{"surfaceId":"seat_estimate","path":"/seats","value":12}}
 ```
 
 To replace layout or content, emit `updateComponents` with complete updated definitions and stable component IDs. To remove the interface, emit `deleteSurface`. A surface ID is unique within the conversation.

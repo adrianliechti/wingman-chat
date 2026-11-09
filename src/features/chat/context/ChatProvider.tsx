@@ -358,7 +358,7 @@ function ChatProviderBody({ children }: ChatProviderProps) {
     chatMemory,
   });
   const { streamingMessage, isHydrating, ...runContext } = run;
-  const chatLoading = !!chatId && (!chat || isHydrating) && !chatError;
+  const chatLoading = isHydrating || (!!chatId && !chat && !chatError);
   // Lets the artifacts viewer send "edit this passage" requests through the active chat.
   const { sendMessage: sendRunMessage } = run;
   useEffect(() => {

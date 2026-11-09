@@ -123,20 +123,30 @@ including live transcription.
 
 ### Translate
 
-A dedicated mode for translating documents (PDF and more) and text, with selectable tone and style
-across many languages. When `translator.yaml` lists more than one provider, users can pick which
-translator to use; each `id` must match a translator configured on the platform. A provider's
-`files` and `languages` override the translator-wide lists:
+A workspace for translating text and whole documents. Text translates as you type; a formality
+(formal or informal address) and a style (plain, professional, natural, technical) revise the
+translation against the source, a free instruction refines it, and any selected passage offers alternatives. Drop one or more
+documents (PDF, Word, PowerPoint, Excel, Markdown, text) to translate each into the chosen language;
+the original and the translation open side by side in the same viewers the artifacts drawer uses, and
+the translation downloads in the original format. Translators that return text for documents (the AI
+translator) show the translated text next to the original and offer a Word export. Every translation is
+kept in a history in the sidebar, so a document can be translated into further languages later.
+
+When `translator.yaml` lists more than one provider, users can pick which translator to use; each `id`
+must match a translator configured on the platform (the gateway's `translators:` section). The first is
+the default. A provider's `files` and `languages` override the translator-wide lists; list only the file
+types a translator accepts, because a dropped document goes to the first translator that takes it:
 
 ```yaml
 providers:
-  - id: azure-translator
-    name: Azure
-  - id: google-translator
-    name: Google
-    languages: [en, de, fr, ja, zh]
+  - id: deepl
+    name: DeepL
+    files: [.docx, .pptx, .xlsx, .pdf, .txt, .html]
+    languages: [en, de, fr, it, es, ja, zh]
+  - id: llm
+    name: AI
 
-files: [.pdf, .docx]
+files: [.pdf]
 languages: [en, de, fr, it, es]
 ```
 
@@ -335,6 +345,32 @@ configuration at `/config.json`; local frontend development uses `public/config.
 **Branding**
 
 - `TITLE`, `DISCLAIMER`, `BRIDGE_URL`
+
+The public `/manifest.json` endpoint reads `dist/manifest.json` by default, using
+shared artwork. `?color-scheme=light` selects `dist/manifest_light.json`, and
+`?color-scheme=dark` selects `dist/manifest_dark.json`. If the selected file is
+missing, Go falls back to the common manifest. Go applies `TITLE` to `name` and
+`short_name`, preserving the icons, colors, install identity, and other fields.
+Mounted replacements are read on the next request. Vite development and preview
+serve the common manifest regardless of the query. All three files are standard
+web manifests; keep their `id`, `start_url`, and `scope` identical.
+
+Run `npm run generate:app-icons` after changing `public/icon.svg` to regenerate
+the PNG favicon fallback and light/dark 192/512-pixel install icons (requires Playwright
+Chromium). The same SVG is used directly for the favicon and chat logo; it has no
+light/dark artwork differences. Run `npm run generate:app-icons -- --check` to verify
+that the generated PNGs are current.
+
+The page selects the manifest and Apple touch icon using the OS appearance at install
+time, independently of the in-app theme. Explicit dark PNGs avoid relying on the
+installer to evaluate the SVG's media query. Existing Dock/Home Screen icons may keep
+their saved appearance; reinstalling or replacing the icon may be required. Automatic
+switching after installation depends on the browser and launcher.
+
+If an authentication proxy protects the app, allow unauthenticated GET/HEAD requests
+to `/manifest.json` (including its `color-scheme` query), `/icon.svg`, `/icon.png`,
+and `/icon_maskable_{light,dark}_{192,512}.png`. Keep these exceptions anchored to
+exact asset paths. Remove obsolete asset exceptions after deploying the new names.
 
 **Account menu links**
 

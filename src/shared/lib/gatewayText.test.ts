@@ -97,6 +97,23 @@ it("replays native widgets without sending their HTML, metadata or structured ap
   expect(JSON.stringify(body)).not.toContain("tool secret");
 });
 
+it("keeps legacy phases separate from native response items with identical text", async () => {
+  fetchMock
+    .mockResolvedValueOnce(finished(response([{ ...textItem("Repeated"), id: "native", phase: "final_answer" }])))
+    .mockResolvedValueOnce(finished(response([textItem("Done")])));
+  const first = await run(new Client(), "model", "", prompt, []);
+  const legacy = assistantMessage([text("Repeated", { phase: "commentary" })]);
+  await run(new Client(), "model", "", [...first.messages, user("Next"), legacy, user("Continue")], []);
+  const input = JSON.parse(fetchMock.mock.calls[1][1].body).input;
+  expect(input).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: "native", phase: "final_answer" }),
+      expect.objectContaining({ role: "assistant", content: "Repeated" }),
+    ]),
+  );
+  expect(input.find((item: { content: unknown }) => item.content === "Repeated")).not.toHaveProperty("phase");
+});
+
 it("parses final-answer JSON when a response also contains commentary", async () => {
   fetchMock.mockResolvedValueOnce(
     finished(
@@ -823,8 +840,16 @@ it("persists streamed phases on text parts and replays them after hydration", as
     await restored.ai.sendMessage("Continue");
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).input).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ role: "assistant", content: "Working", phase: "commentary" }),
-        expect.objectContaining({ role: "assistant", content: "Done", phase: "final_answer" }),
+        expect.objectContaining({
+          id: "commentary",
+          phase: "commentary",
+          content: [{ type: "output_text", text: "Working", annotations: [] }],
+        }),
+        expect.objectContaining({
+          id: "final",
+          phase: "final_answer",
+          content: [{ type: "output_text", text: "Done", annotations: [] }],
+        }),
       ]),
     );
   } finally {

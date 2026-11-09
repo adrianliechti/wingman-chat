@@ -309,7 +309,7 @@ function ToolsOwner({ children }: { children: ReactNode }) {
         {
           providers: [...(enabled ? [skills] : []), ...clients],
           coreProviders: [],
-          getSkillsProvider: () => (enabled ? skills : undefined),
+          getSkillsProvider: () => (enabled ? skills : null),
           isProviderEnabled: () => true,
           getProviderState: (id: string) => (id === "internet" ? getState(id) : "connected"),
         } as unknown as ToolsContextValue

@@ -36,9 +36,13 @@ const LINK_ICONS = new Map<string, LucideIcon>([
   ["link", Link],
 ]);
 
-function AccountLinkIcon({ name }: { name?: string }) {
+function LinkGlyph({ name, size, className }: { name?: string; size: number; className?: string }) {
   const Icon = LINK_ICONS.get(name?.trim().toLowerCase() ?? "") ?? Link;
-  return <Icon size={18} className="mr-1" />;
+  return <Icon size={size} className={className} />;
+}
+
+function AccountLinkIcon({ name }: { name?: string }) {
+  return <LinkGlyph name={name} size={18} className="mr-1" />;
 }
 
 export function AccountMenu({ onOpenSettings }: AccountMenuProps) {
@@ -115,5 +119,34 @@ export function AccountMenu({ onOpenSettings }: AccountMenuProps) {
         Settings
       </DropdownMenuItem>
     </DropdownMenu>
+  );
+}
+
+/**
+ * The account menu's entries laid out flat, for the bottom of the phone drawer:
+ * the configured links, then Settings. 48px rows with the icon on the left.
+ */
+export function AccountLinks({ onOpenSettings }: AccountMenuProps) {
+  const config = getConfig();
+  const rowClass =
+    "press flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-[15px] font-medium text-neutral-800 active:bg-black/5 dark:text-neutral-100 dark:active:bg-white/10";
+  return (
+    <div className="flex flex-col">
+      {config.links.map((link, index) => (
+        <a key={`${link.url}-${index}`} href={link.url} target="_blank" rel="noopener noreferrer" className={rowClass}>
+          <span className="flex size-6 shrink-0 items-center justify-center text-neutral-500 dark:text-neutral-400">
+            <LinkGlyph name={link.icon} size={18} />
+          </span>
+          <span className="min-w-0 flex-1 truncate">{link.title}</span>
+          <ExternalLink size={15} className="shrink-0 text-neutral-400" />
+        </a>
+      ))}
+      <button type="button" onClick={() => onOpenSettings({ advanced: false })} className={rowClass}>
+        <span className="flex size-6 shrink-0 items-center justify-center text-neutral-500 dark:text-neutral-400">
+          <Settings size={18} />
+        </span>
+        <span className="min-w-0 flex-1 truncate">Settings</span>
+      </button>
+    </div>
   );
 }

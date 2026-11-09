@@ -7,6 +7,7 @@ export interface RebuildIndexesResult {
   images: number;
   skills: number;
   projects: number;
+  translations: number;
 }
 
 export async function rebuildAllIndexes(): Promise<RebuildIndexesResult> {

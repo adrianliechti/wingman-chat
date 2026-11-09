@@ -29,6 +29,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { flushSync } from "react-dom";
 import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
+import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
+import { EFFORT_LABEL } from "./effortLabels";
+import { ModelSheet } from "./ModelSheet";
 import type { ModelPreset } from "@/shared/lib/modelPresets";
 import type { Model } from "@/shared/types/chat";
 
@@ -40,17 +43,7 @@ const PANEL_CLASS =
 
 type Effort = NonNullable<Model["effort"]>;
 
-// One name per API level — `xhigh` and `max` are distinct tiers, so they must
-// not share a label. Names follow the vendor consoles (…/Extra/Max).
-export const EFFORT_LABEL: Record<Effort, string> = {
-  none: "None",
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra",
-  max: "Max",
-};
+export { EFFORT_LABEL } from "./effortLabels";
 
 const EFFORT_HINT = "Higher effort means more thorough responses, but takes longer and costs more.";
 
@@ -139,7 +132,7 @@ interface AgentsConfig {
   actions?: AgentAction[];
 }
 
-interface ModelDropdownProps {
+export interface ModelDropdownProps {
   models: Model[];
   value: string;
   onChange: (modelId: string) => void;
@@ -534,24 +527,30 @@ function stepOffset(index: number, count: number) {
 }
 
 // `fallbackLabel` names the value for assistive tech when the selection is off the ladder.
-function PresetSlider({
+// Shared with the phone sheet, which puts it at the top of its root page.
+export function PresetSlider({
   steps,
   value,
   onChange,
   fallbackLabel,
   onPreview,
+  live = false,
 }: PresetsConfig & {
   fallbackLabel: string;
   /** Reports the step under the thumb while dragging, and null when the drag ends. */
-  onPreview: (index: number | null) => void;
+  onPreview?: (index: number | null) => void;
+  /** Commit every step the thumb crosses instead of waiting for release. */
+  live?: boolean;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
-  // Position while dragging; committed on release so a drag across the track
-  // doesn't write every intermediate model to the chat.
+  // Position while dragging. Desktop commits on release so a drag across the
+  // track doesn't write every intermediate model to the chat; the phone sheet
+  // commits live, since there's no caption to preview into.
   const [dragIndex, setDragIndexState] = useState<number | null>(null);
   const setDragIndex = (next: number | null) => {
     setDragIndexState(next);
-    onPreview(next);
+    onPreview?.(next);
+    if (live && next !== null && next !== value) onChange(next);
   };
 
   const index = dragIndex ?? value;
@@ -971,6 +970,9 @@ function ModelDropdownRoot({
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export function ModelDropdown(props: ModelDropdownProps) {
+  // Phones get a bottom sheet with sub-views instead of anchored flyouts.
+  const sheet = !useBreakpoint("md");
+  if (sheet) return <ModelSheet {...props} />;
   return (
     <FloatingTree>
       <ModelDropdownRoot {...props} />

@@ -1,5 +1,6 @@
 import { lazyRouteComponent } from "@tanstack/react-router";
 import {
+  ChevronLeft,
   Code,
   Download,
   Eye,
@@ -14,6 +15,9 @@ import {
 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
+import { FileIcon } from "@/shared/ui/FileIcon";
+import { FileTree } from "./FileTree";
 import { useArtifactEntries, useArtifactFile } from "@/features/artifacts/hooks/useArtifactFiles";
 import {
   artifactKind,
@@ -110,7 +114,12 @@ async function ingestUploads(
 
 export function ArtifactsDrawer() {
   const config = getConfig();
-  const { fs, activeFile, openFile, requestEdit } = useArtifacts();
+  const { fs, activeFile, openFile, requestEdit, setShowArtifactsDrawer } = useArtifacts();
+  // Phones get two pages: the file list, and the open file with a back control.
+  // Opened from a chip the drawer lands on the file; from the plus sheet (which
+  // clears the selection first) on the list.
+  const isMobile = !useBreakpoint("md");
+  const [mobileList, setMobileList] = useState(() => !activeFile);
   const { ensureChat } = useChatActions();
 
   const [isDragOver, setIsDragOver] = useState(false);
@@ -784,48 +793,30 @@ export function ArtifactsDrawer() {
         }}
       />
 
-      {/* Left = top bar + editor; right = the file column when the drawer is wide */}
-      <div className="flex flex-1 min-h-0">
-        <div className="h-full flex-1 min-w-0 flex flex-col overflow-hidden">
-          {/* Top bar — lives inside the left column so the file column spans the full drawer height */}
-          <div className="@container shrink-0 h-12 md:h-10 flex items-center px-2 gap-1">
-            {/* File title */}
-            <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative">
-              {isEmpty && (
-                <span className="text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate">
-                  Artifacts
-                </span>
-              )}
-              {activeFile && fs && (
-                <ArtifactsNavigator
-                  fs={fs}
-                  files={files}
-                  activePath={activeFile}
-                  unsaved={!!currentDraft?.dirty}
-                  onOpen={openFile}
-                  popover={!showFileColumn && files.length > 1}
-                  drives={config.drives}
-                  isProcessing={isProcessing}
-                  onUploadLocal={() => fileInputRef.current?.click()}
-                  onUploadDrive={(drive) => setActiveDrive(drive)}
-                  onDownloadAll={downloadAll}
-                  onDownloadFile={downloadFile}
-                />
-              )}
-              {/* The "Text preview" disclosure for extracted-text rendering
-                  lives inside OfficeMarkdownEditor so it also covers the
-                  fallback paths of the high-fidelity office editors. */}
-            </div>
-
-            {/* Empty-state Upload action — mirrors the Agent drawer's subtle header actions. */}
-            {isEmpty &&
-              (config.drives.length > 0 ? (
+      {isMobile && mobileList ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="relative flex h-13 shrink-0 items-center px-2">
+            <button
+              type="button"
+              onClick={() => setShowArtifactsDrawer(false)}
+              className="press flex h-10 items-center gap-0.5 rounded-full pr-4 pl-2 text-[15px] font-medium text-neutral-700 dark:text-neutral-200"
+            >
+              <ChevronLeft size={20} />
+              <span>Back</span>
+            </button>
+            <span className="pointer-events-none absolute inset-x-0 text-center text-[17px] font-semibold text-neutral-900 dark:text-neutral-50">
+              Artifacts
+            </span>
+            <div className="ml-auto">
+              {config.drives.length > 0 ? (
                 <DropdownMenu
                   anchor="bottom end"
                   trigger={
-                    <MenuButton className="shrink-0 flex items-center gap-1 mr-2 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
-                      <Upload size={12} />
-                      <span className="@[16rem]:inline hidden">Upload</span>
+                    <MenuButton
+                      className="press flex size-10 items-center justify-center rounded-full text-neutral-700 dark:text-neutral-200"
+                      aria-label="Upload files"
+                    >
+                      <Upload size={20} />
                     </MenuButton>
                   }
                 >
@@ -841,263 +832,377 @@ export function ArtifactsDrawer() {
                       {drive.name}
                     </DropdownMenuItem>
                   ))}
+                  {files.length > 0 && (
+                    <DropdownMenuItem icon={<Download size={16} />} onClick={downloadAll}>
+                      Download all
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenu>
               ) : (
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="shrink-0 flex items-center gap-1 mr-2 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-                  title="Upload files"
+                  className="press flex size-10 items-center justify-center rounded-full text-neutral-700 dark:text-neutral-200"
+                  aria-label="Upload files"
                 >
-                  <Upload size={12} />
-                  <span className="@[16rem]:inline hidden">Upload</span>
+                  <Upload size={20} />
                 </button>
-              ))}
-
-            {/* File-specific action group: run, view toggle, word export, download */}
-            {(runHandler || activeFileData) && (
-              <>
-                <div className="flex items-center gap-0.5">
-                  {/* Unsaved edits of the open file */}
-                  {currentDraft?.dirty && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={currentDraft.discard}
-                        title="Discard changes"
-                        aria-label="Discard changes"
-                        className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
-                      >
-                        <Undo2 size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={currentDraft.save}
-                        title="Save (⌘S)"
-                        aria-label="Save"
-                        className="p-2 md:p-1.5 mr-1 rounded transition-all duration-150 ease-out text-neutral-900 dark:text-neutral-50 bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15"
-                      >
-                        <Save size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
-                      </button>
-                    </>
-                  )}
-                  {/* Preview / code toggle, grouped with the other file actions */}
-                  {supportsPreview() && (
-                    <div
-                      ref={viewSliderRef}
-                      className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 mr-1"
-                    >
-                      {/* responsive segmented control */}
-                      {/* Animated slider background */}
-                      {viewSliderStyle.width > 0 && (
-                        <div
-                          className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
-                          style={{
-                            left: `${viewSliderStyle.left}px`,
-                            width: `${viewSliderStyle.width}px`,
-                            height: "calc(100% - 4px)",
-                            top: "2px",
-                          }}
-                        />
-                      )}
-                      <button
-                        type="button"
-                        data-view="preview"
-                        onClick={() => setViewMode("preview")}
-                        title="Preview"
-                        className={cn(
-                          "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
-                          viewMode === "preview"
-                            ? "text-neutral-900 dark:text-neutral-50"
-                            : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                        )}
-                      >
-                        <Eye size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
-                      </button>
-                      <button
-                        type="button"
-                        data-view="code"
-                        onClick={() => setViewMode("code")}
-                        title="Code"
-                        className={cn(
-                          "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
-                          viewMode === "code"
-                            ? "text-neutral-900 dark:text-neutral-50"
-                            : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                        )}
-                      >
-                        <Code size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
-                      </button>
-                    </div>
-                  )}
-                  {/* Revision history */}
-                  {activeFileData && fs && !shownRevision && (
-                    <SaveToProject fs={fs} path={activeFileData.path} disabled={!!currentDraft?.dirty} />
-                  )}
-                  {activeFileData && fs && (
-                    <ArtifactHistoryPopover
-                      fs={fs}
-                      path={activeFileData.path}
-                      onPeek={handlePeekRevision}
-                      onPin={handlePinRevision}
-                    />
-                  )}
-                  {/* Run button (the live file only; an archived revision is read-only) */}
-                  {runHandler && !shownRevision && (
-                    <button
-                      type="button"
-                      onClick={handleRun}
-                      disabled={isRunning}
-                      className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
-                      title={isRunning ? "Running..." : "Run"}
-                    >
-                      {isRunning ? (
-                        <Loader2 size={14} className="w-4 h-4 md:w-3.5 md:h-3.5 animate-spin" />
-                      ) : (
-                        <Play size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
-                      )}
-                    </button>
-                  )}
-
-                  {/* Download dropdown */}
-                  {activeFileData &&
-                    fs &&
-                    (() => {
-                      const isMarkdown = artifactKind(activeFileData.path, activeFileData.contentType) === "markdown";
-                      if (!isMarkdown) {
-                        return (
-                          <button
-                            type="button"
-                            onClick={() => downloadFile(activeFileData.path)}
-                            className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
-                            title={`Download ${getFileName(activeFileData.path)}`}
-                          >
-                            <Download size={13} className="w-4 h-4 md:w-3.25 md:h-3.25" />
-                          </button>
-                        );
-                      }
-                      return (
-                        <Menu>
-                          <MenuButton
-                            className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
-                            title="Download"
-                          >
-                            <Download size={13} className="w-4 h-4 md:w-3.25 md:h-3.25" />
-                          </MenuButton>
-                          <MenuItems
-                            modal={false}
-                            transition
-                            anchor="bottom end"
-                            className="mt-1 origin-top-right rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-44 transition duration-100 ease-out data-closed:scale-95 data-closed:opacity-0"
-                          >
-                            <MenuItem>
-                              <button
-                                type="button"
-                                onClick={() => downloadFile(activeFileData.path)}
-                                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                              >
-                                <Download size={12} className="text-neutral-500" />
-                                Download
-                              </button>
-                            </MenuItem>
-                            <MenuItem>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, "");
-                                  try {
-                                    await downloadMarkdownAsDocx(activeFileData.content, `${baseName}.docx`);
-                                  } catch (error) {
-                                    console.error("Failed to convert to Word:", error);
-                                  }
-                                }}
-                                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                              >
-                                <img
-                                  src="/icons/file-word.svg"
-                                  alt="Word"
-                                  width={12}
-                                  height={12}
-                                  className="dark:invert"
-                                />
-                                Download as Word
-                              </button>
-                            </MenuItem>
-                          </MenuItems>
-                        </Menu>
-                      );
-                    })()}
-                  {/* File column toggle (wide drawers only) */}
-                  {wide && files.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={toggleFileColumn}
-                      aria-pressed={fileColumn}
-                      title={fileColumn ? "Hide file list" : "Show file list"}
-                      aria-label={fileColumn ? "Hide file list" : "Show file list"}
-                      className={cn(
-                        "p-2 md:p-1.5 rounded transition-all duration-150 ease-out hover:bg-black/5 dark:hover:bg-white/5",
-                        fileColumn
-                          ? "text-neutral-800 dark:text-neutral-200"
-                          : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                      )}
-                    >
-                      <PanelRight size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Editor fills the left column */}
-          <div className="flex-1 min-h-0 overflow-hidden relative z-0 flex flex-col">
-            {pinnedRevision && shownRevision === pinnedRevision && (
-              <ArtifactRevisionBanner
-                entry={pinnedRevision.entry}
-                canCompare={canCompareRevision}
-                comparing={compareRevision}
-                restoring={restoringRevision}
-                onToggleCompare={() => setCompareRevision((value) => !value)}
-                onRestore={restoreRevision}
-                onClose={closeRevision}
-              />
-            )}
-            <div className="flex-1 min-h-0 overflow-hidden relative">
-              <Suspense
-                fallback={
-                  <div className="h-full flex items-center justify-center">
-                    <Loader2 className="h-5 w-5 animate-spin text-neutral-400 dark:text-neutral-500" />
-                  </div>
-                }
-              >
-                {compareRevision && pinnedRevision && activeFileData ? (
-                  <ArtifactRevisionDiff before={pinnedRevision.content} after={activeFileData.content} />
-                ) : (
-                  renderFileEditor()
-                )}
-              </Suspense>
+              )}
             </div>
           </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+            {fs && files.length > 0 ? (
+              <FileTree
+                size="lg"
+                expandAll
+                fs={fs}
+                files={files}
+                activePath={null}
+                onOpen={(path) => {
+                  openFile(path);
+                  setMobileList(false);
+                }}
+                onDownload={downloadFile}
+              />
+            ) : (
+              renderFileEditor()
+            )}
+          </div>
         </div>
+      ) : (
+        <div className="flex flex-1 min-h-0">
+          <div className="h-full flex-1 min-w-0 flex flex-col overflow-hidden">
+            {/* Top bar — lives inside the left column so the file column spans the full drawer height */}
+            <div className="@container shrink-0 h-13 md:h-10 flex items-center px-2 gap-1">
+              {/* File title */}
+              <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative">
+                {isEmpty && (
+                  <span className="text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate">
+                    Artifacts
+                  </span>
+                )}
+                {activeFile && fs && isMobile && (
+                  <button
+                    type="button"
+                    onClick={() => setMobileList(true)}
+                    aria-label="Back to files"
+                    className="press -ml-1 flex h-10 min-w-0 items-center gap-1 rounded-full pr-2 text-neutral-900 dark:text-neutral-50"
+                  >
+                    <ChevronLeft size={22} className="shrink-0" />
+                    <FileIcon name={activeFile} size={18} className="shrink-0" />
+                    <span className="truncate text-[15px] font-semibold">{getFileName(activeFile)}</span>
+                    {currentDraft?.dirty && (
+                      <span
+                        role="img"
+                        aria-label="Unsaved changes"
+                        className="size-1.5 shrink-0 rounded-full bg-neutral-500 dark:bg-neutral-400"
+                      />
+                    )}
+                  </button>
+                )}
+                {activeFile && fs && !isMobile && (
+                  <ArtifactsNavigator
+                    fs={fs}
+                    files={files}
+                    activePath={activeFile}
+                    unsaved={!!currentDraft?.dirty}
+                    onOpen={openFile}
+                    popover={!showFileColumn && files.length > 1}
+                    drives={config.drives}
+                    isProcessing={isProcessing}
+                    onUploadLocal={() => fileInputRef.current?.click()}
+                    onUploadDrive={(drive) => setActiveDrive(drive)}
+                    onDownloadAll={downloadAll}
+                    onDownloadFile={downloadFile}
+                  />
+                )}
+                {/* The "Text preview" disclosure for extracted-text rendering
+                  lives inside OfficeMarkdownEditor so it also covers the
+                  fallback paths of the high-fidelity office editors. */}
+              </div>
 
-        {showFileColumn && files.length > 0 && fs && (
-          <ArtifactsBrowser
-            key={fs.chatId}
-            className="w-52 shrink-0"
-            fs={fs}
-            files={files}
-            activePath={activeFile}
-            onOpen={openFile}
-            drives={config.drives}
-            isProcessing={isProcessing}
-            onUploadLocal={() => fileInputRef.current?.click()}
-            onUploadDrive={(drive) => setActiveDrive(drive)}
-            onDownloadAll={downloadAll}
-            onDownloadFile={downloadFile}
-          />
-        )}
-      </div>
+              {/* Empty-state Upload action — mirrors the Agent drawer's subtle header actions. */}
+              {isEmpty &&
+                (config.drives.length > 0 ? (
+                  <DropdownMenu
+                    anchor="bottom end"
+                    trigger={
+                      <MenuButton className="shrink-0 flex items-center gap-1 mr-2 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
+                        <Upload size={12} />
+                        <span className="@[16rem]:inline hidden">Upload</span>
+                      </MenuButton>
+                    }
+                  >
+                    <DropdownMenuItem icon={<Upload size={16} />} onClick={() => fileInputRef.current?.click()}>
+                      Upload
+                    </DropdownMenuItem>
+                    {config.drives.map((drive) => (
+                      <DropdownMenuItem
+                        key={drive.id}
+                        icon={<DriveIcon drive={drive} />}
+                        onClick={() => setActiveDrive(drive)}
+                      >
+                        {drive.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenu>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="shrink-0 flex items-center gap-1 mr-2 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                    title="Upload files"
+                  >
+                    <Upload size={12} />
+                    <span className="@[16rem]:inline hidden">Upload</span>
+                  </button>
+                ))}
+
+              {/* File-specific action group: run, view toggle, word export, download */}
+              {(runHandler || activeFileData) && (
+                <>
+                  <div className="flex items-center gap-0.5">
+                    {/* Unsaved edits of the open file */}
+                    {currentDraft?.dirty && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={currentDraft.discard}
+                          title="Discard changes"
+                          aria-label="Discard changes"
+                          className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                        >
+                          <Undo2 size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={currentDraft.save}
+                          title="Save (⌘S)"
+                          aria-label="Save"
+                          className="p-2 md:p-1.5 mr-1 rounded transition-all duration-150 ease-out text-neutral-900 dark:text-neutral-50 bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15"
+                        >
+                          <Save size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                        </button>
+                      </>
+                    )}
+                    {/* Preview / code toggle, grouped with the other file actions */}
+                    {supportsPreview() && (
+                      <div
+                        ref={viewSliderRef}
+                        className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 mr-1"
+                      >
+                        {/* responsive segmented control */}
+                        {/* Animated slider background */}
+                        {viewSliderStyle.width > 0 && (
+                          <div
+                            className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
+                            style={{
+                              left: `${viewSliderStyle.left}px`,
+                              width: `${viewSliderStyle.width}px`,
+                              height: "calc(100% - 4px)",
+                              top: "2px",
+                            }}
+                          />
+                        )}
+                        <button
+                          type="button"
+                          data-view="preview"
+                          onClick={() => setViewMode("preview")}
+                          title="Preview"
+                          className={cn(
+                            "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
+                            viewMode === "preview"
+                              ? "text-neutral-900 dark:text-neutral-50"
+                              : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                          )}
+                        >
+                          <Eye size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
+                        </button>
+                        <button
+                          type="button"
+                          data-view="code"
+                          onClick={() => setViewMode("code")}
+                          title="Code"
+                          className={cn(
+                            "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
+                            viewMode === "code"
+                              ? "text-neutral-900 dark:text-neutral-50"
+                              : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                          )}
+                        >
+                          <Code size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
+                        </button>
+                      </div>
+                    )}
+                    {/* Revision history */}
+                    {activeFileData && fs && !shownRevision && (
+                      <SaveToProject fs={fs} path={activeFileData.path} disabled={!!currentDraft?.dirty} />
+                    )}
+                    {activeFileData && fs && (
+                      <ArtifactHistoryPopover
+                        fs={fs}
+                        path={activeFileData.path}
+                        onPeek={handlePeekRevision}
+                        onPin={handlePinRevision}
+                      />
+                    )}
+                    {/* Run button (the live file only; an archived revision is read-only) */}
+                    {runHandler && !shownRevision && (
+                      <button
+                        type="button"
+                        onClick={handleRun}
+                        disabled={isRunning}
+                        className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                        title={isRunning ? "Running..." : "Run"}
+                      >
+                        {isRunning ? (
+                          <Loader2 size={14} className="w-4 h-4 md:w-3.5 md:h-3.5 animate-spin" />
+                        ) : (
+                          <Play size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                        )}
+                      </button>
+                    )}
+
+                    {/* Download dropdown */}
+                    {activeFileData &&
+                      fs &&
+                      (() => {
+                        const isMarkdown = artifactKind(activeFileData.path, activeFileData.contentType) === "markdown";
+                        if (!isMarkdown) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => downloadFile(activeFileData.path)}
+                              className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                              title={`Download ${getFileName(activeFileData.path)}`}
+                            >
+                              <Download size={13} className="w-4 h-4 md:w-3.25 md:h-3.25" />
+                            </button>
+                          );
+                        }
+                        return (
+                          <Menu>
+                            <MenuButton
+                              className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                              title="Download"
+                            >
+                              <Download size={13} className="w-4 h-4 md:w-3.25 md:h-3.25" />
+                            </MenuButton>
+                            <MenuItems
+                              modal={false}
+                              transition
+                              anchor="bottom end"
+                              className="mt-1 origin-top-right rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-44 transition duration-100 ease-out data-closed:scale-95 data-closed:opacity-0"
+                            >
+                              <MenuItem>
+                                <button
+                                  type="button"
+                                  onClick={() => downloadFile(activeFileData.path)}
+                                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                                >
+                                  <Download size={12} className="text-neutral-500" />
+                                  Download
+                                </button>
+                              </MenuItem>
+                              <MenuItem>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, "");
+                                    try {
+                                      await downloadMarkdownAsDocx(activeFileData.content, `${baseName}.docx`);
+                                    } catch (error) {
+                                      console.error("Failed to convert to Word:", error);
+                                    }
+                                  }}
+                                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                                >
+                                  <img
+                                    src="/icons/file-word.svg"
+                                    alt="Word"
+                                    width={12}
+                                    height={12}
+                                    className="dark:invert"
+                                  />
+                                  Download as Word
+                                </button>
+                              </MenuItem>
+                            </MenuItems>
+                          </Menu>
+                        );
+                      })()}
+                    {/* File column toggle (wide drawers only) */}
+                    {wide && files.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={toggleFileColumn}
+                        aria-pressed={fileColumn}
+                        title={fileColumn ? "Hide file list" : "Show file list"}
+                        aria-label={fileColumn ? "Hide file list" : "Show file list"}
+                        className={cn(
+                          "p-2 md:p-1.5 rounded transition-all duration-150 ease-out hover:bg-black/5 dark:hover:bg-white/5",
+                          fileColumn
+                            ? "text-neutral-800 dark:text-neutral-200"
+                            : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                        )}
+                      >
+                        <PanelRight size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Editor fills the left column */}
+            <div className="flex-1 min-h-0 overflow-hidden relative z-0 flex flex-col">
+              {pinnedRevision && shownRevision === pinnedRevision && (
+                <ArtifactRevisionBanner
+                  entry={pinnedRevision.entry}
+                  canCompare={canCompareRevision}
+                  comparing={compareRevision}
+                  restoring={restoringRevision}
+                  onToggleCompare={() => setCompareRevision((value) => !value)}
+                  onRestore={restoreRevision}
+                  onClose={closeRevision}
+                />
+              )}
+              <div className="flex-1 min-h-0 overflow-hidden relative">
+                <Suspense
+                  fallback={
+                    <div className="h-full flex items-center justify-center">
+                      <Loader2 className="h-5 w-5 animate-spin text-neutral-400 dark:text-neutral-500" />
+                    </div>
+                  }
+                >
+                  {compareRevision && pinnedRevision && activeFileData ? (
+                    <ArtifactRevisionDiff before={pinnedRevision.content} after={activeFileData.content} />
+                  ) : (
+                    renderFileEditor()
+                  )}
+                </Suspense>
+              </div>
+            </div>
+          </div>
+
+          {showFileColumn && files.length > 0 && fs && (
+            <ArtifactsBrowser
+              key={fs.chatId}
+              className="w-52 shrink-0"
+              fs={fs}
+              files={files}
+              activePath={activeFile}
+              onOpen={openFile}
+              drives={config.drives}
+              isProcessing={isProcessing}
+              onUploadLocal={() => fileInputRef.current?.click()}
+              onUploadDrive={(drive) => setActiveDrive(drive)}
+              onDownloadAll={downloadAll}
+              onDownloadFile={downloadFile}
+            />
+          )}
+        </div>
+      )}
 
       <SelectionActionPopover
         selection={selection}

@@ -220,14 +220,15 @@ it.each([true, false])("resumes a child with its completed work intact (inheritH
   expect(JSON.stringify(complete.mock.calls[2][0].messages)).toContain("[Image: child.png - displayed to user]");
   expect(JSON.stringify(complete.mock.calls[2][0].messages)).not.toContain("AQ==");
   expect(JSON.stringify(complete.mock.calls[2][0].messages)).toContain("Build a report");
-  const children = restored.ai
-    .getMessages()
-    .flatMap((message) => message.parts)
-    .filter((part) => part.type === "subagent");
-  expect(children).toHaveLength(1);
-  expect(children[0].subagent.status).toBe("finished");
-  expect(JSON.stringify(children[0].subagent.messages)).toContain("Child finished");
-  const result = children[0].subagent.messages.flatMap((message) => toolResultFor(message, "child-write") ?? []);
+  const children = () =>
+    restored.ai
+      .getMessages()
+      .flatMap((message) => message.parts)
+      .filter((part) => part.type === "subagent");
+  // The server's completion callback precedes the client's final streamed snapshot.
+  await expect.poll(() => children().map((part) => part.subagent.status)).toEqual(["finished"]);
+  expect(JSON.stringify(children()[0].subagent.messages)).toContain("Child finished");
+  const result = children()[0].subagent.messages.flatMap((message) => toolResultFor(message, "child-write") ?? []);
   expect(result).toHaveLength(1);
   expect(result[0].content).toEqual(richOutput);
   expect(result[0].metadata).not.toHaveProperty("result");

@@ -3,6 +3,7 @@ import { StrictMode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { PanelShell } from "../../../src/features/chat/components/PanelShell";
+import { storeAgent } from "../../../src/features/agent/lib/agentStorage";
 import { storeChat } from "../../../src/features/chat/lib/chatStorage";
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
@@ -14,7 +15,21 @@ import "../../../src/index.css";
 
 const parameters = new URLSearchParams(location.search);
 const root = createRoot(document.getElementById("root")!);
-const state = { effects: 0, calls: 0, tools: [] as string[], instructions: "", input: [] as ModelMessage[] };
+const state = {
+  effects: 0,
+  calls: 0,
+  tools: [] as string[],
+  instructions: "",
+  input: [] as ModelMessage[],
+  renders: [] as {
+    model: string;
+    prompt: string;
+    options?: unknown;
+    images?: number;
+    mask?: number;
+    markup?: number;
+  }[],
+};
 let stream = (_text: string) => {};
 let think = (_text: string) => {};
 let finish = (_text: string) => {};
@@ -111,6 +126,16 @@ if (parameters.has("panels")) {
     name: "Fixture",
     ...(parameters.has("research") ? { tools: { enabled: ["internet"], disabled: [] } } : {}),
   };
+  if (parameters.has("agent")) {
+    await storeAgent({
+      id: "mobile-agent",
+      name: "Mobile agent",
+      model: model.id,
+      skills: [],
+      plugins: [],
+      tools: [],
+    });
+  }
   if (parameters.has("research")) {
     config.mcps = [
       {
@@ -154,6 +179,74 @@ if (parameters.has("panels")) {
     };
   }
   config.client.listModels = async () => [model];
+  if (parameters.has("canvas")) {
+    // A renderer with known capabilities (aspect tiles, quality tiers) and a
+    // synthetic gradient in place of the gateway's image.
+    // `vector` swaps in GPT Image 2.6, which can also return SVG and GIF.
+    const renderer = parameters.has("video")
+      ? { id: "gemini-omni-1.2-flash", name: "Omni", type: "renderer" as const }
+      : parameters.has("vector")
+        ? { id: "gpt-image-2.6-flare", name: "Flare", type: "renderer" as const }
+        : { id: "gpt-image-1", name: "Painter", type: "renderer" as const };
+    config.client.listModels = async () => [model, renderer];
+    config.client.render = async (rendererModel, prompt, images, options) => {
+      // Blobs don't serialize across page.evaluate; record their sizes instead.
+      const { mask, markup, ...rest } = options ?? {};
+      state.renders.push({
+        model: rendererModel,
+        prompt,
+        options: rest,
+        ...(images?.length ? { images: images.length } : {}),
+        ...(mask ? { mask: mask.size } : {}),
+        ...(markup ? { markup: markup.size } : {}),
+      });
+      if (options?.format === "mp4") {
+        // Real browser media exercises decoding, poster capture, playback and OPFS.
+        const canvas = document.createElement("canvas");
+        canvas.width = 160;
+        canvas.height = 90;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = "#1d4ed8";
+        context.fillRect(0, 0, 160, 90);
+        const stream = canvas.captureStream(10);
+        const mimeType = MediaRecorder.isTypeSupported("video/mp4") ? "video/mp4" : "video/webm";
+        const recorder = new MediaRecorder(stream, { mimeType });
+        const chunks: Blob[] = [];
+        recorder.ondataavailable = (event) => chunks.push(event.data);
+        const recorded = new Promise<Blob>((resolve) => {
+          recorder.onstop = () => {
+            stream.getTracks().forEach((track) => track.stop());
+            resolve(new Blob(chunks, { type: "video/mp4" }));
+          };
+        });
+        recorder.start();
+        setTimeout(() => recorder.stop(), 300);
+        return recorded;
+      }
+      if (options?.format === "svg") {
+        const svg =
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200"><rect width="300" height="200" fill="#1d4ed8"/></svg>';
+        return new Blob([svg], { type: "image/svg+xml" });
+      }
+      if (options?.format === "gif") {
+        const gif = Uint8Array.from(atob("R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="), (c) =>
+          c.charCodeAt(0),
+        );
+        return new Blob([gif], { type: "image/gif" });
+      }
+      const [width, height] =
+        options?.aspectRatio === "3:2" ? [384, 256] : options?.aspectRatio === "2:3" ? [256, 384] : [256, 256];
+      const canvas = new OffscreenCanvas(width, height);
+      const context = canvas.getContext("2d")!;
+      const gradient = context.createLinearGradient(0, 0, width, height);
+      gradient.addColorStop(0, "#1d4ed8");
+      gradient.addColorStop(1, "#f97316");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, width, height);
+      return canvas.convertToBlob({ type: "image/png" });
+    };
+  }
+  config.client.generateImage = (...args) => config.client.render(...args);
   config.client.generateTitle = async () => "Fixture";
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
   const provider = testClient(
@@ -236,7 +329,13 @@ if (parameters.has("panels")) {
   history.replaceState(
     null,
     "",
-    parameters.has("seed") ? "/chat/history-119" : parameters.has("chat") ? `/chat/${parameters.get("chat")}` : "/chat",
+    parameters.has("seed")
+      ? "/chat/history-119"
+      : parameters.has("chat")
+        ? `/chat/${parameters.get("chat")}`
+        : parameters.has("canvas")
+          ? "/canvas"
+          : "/chat",
   );
   const { default: App } = await import("../../../src/App");
   root.render(
@@ -249,7 +348,21 @@ if (parameters.has("panels")) {
 declare global {
   interface Window {
     reactUiE2E: {
-      state(): { effects: number; calls: number; tools: string[]; instructions: string; input: ModelMessage[] };
+      state(): {
+        effects: number;
+        calls: number;
+        tools: string[];
+        instructions: string;
+        input: ModelMessage[];
+        renders: {
+          model: string;
+          prompt: string;
+          options?: unknown;
+          images?: number;
+          mask?: number;
+          markup?: number;
+        }[];
+      };
       stream(text: string): void;
       think(text: string): void;
       finish(text: string): void;

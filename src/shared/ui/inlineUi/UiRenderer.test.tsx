@@ -35,7 +35,7 @@ const render = async (source: unknown, props: Partial<Parameters<typeof UiRender
   await act(async () => root.render(<UiRenderer source={JSON.stringify(source)} {...props} />));
 };
 const create = (components: unknown[], dataModel: Record<string, unknown> = {}) => ({
-  version: "v1.0",
+  version: "1.0",
   createSurface: { surfaceId: "main", catalogId: BASIC_CATALOG_ID, components, dataModel },
 });
 const input = (element: HTMLInputElement, value: string) => {
@@ -108,7 +108,7 @@ it("keeps failed action details collapsed and allows an explicit retry", async (
 });
 
 it("keeps invalid surface source behind technical details and recovers after correction", async () => {
-  const invalid = { version: "v1.0", createSurface: { surfaceId: "bad", catalogId: "urn:unknown:catalog" } };
+  const invalid = { version: "1.0", createSurface: { surfaceId: "bad", catalogId: "urn:unknown:catalog" } };
   await render(invalid);
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("This interface could not be displayed.");
   expect(container.querySelector("pre")).toBeNull();
@@ -278,7 +278,7 @@ it("updates the original surface across separate transcript blocks", async () =>
   const second = {
     key: "two",
     source: JSON.stringify({
-      version: "v1.0",
+      version: "1.0",
       updateComponents: { surfaceId: "fixture-Text", components: [{ id: "root", component: "Text", text: "Updated" }] },
     }),
   };

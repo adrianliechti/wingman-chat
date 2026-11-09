@@ -1,5 +1,5 @@
 import { Dialog, DialogPanel, DialogTitle } from "@headlessui/react";
-import { ChevronDown, FolderPlus, Settings2 } from "lucide-react";
+import { ChevronDown, Folder, FolderPlus, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { useChatActions, useChatList } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
@@ -29,10 +29,13 @@ export function ProjectPicker() {
         panelClassName="min-w-52 max-w-80"
         trigger={
           <MenuButton
-            className="inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-neutral-800 hover:bg-black/5 dark:text-neutral-200 dark:hover:bg-white/5"
+            className="inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-neutral-800 hover:bg-black/5 dark:text-neutral-200 dark:hover:bg-white/5 max-md:h-10 max-md:rounded-full max-md:px-2.5 max-md:text-lg max-md:font-semibold"
             aria-label="Choose project"
             title={selected?.name ?? "All chats"}
           >
+            {selected && (
+              <Folder size={14} className="shrink-0 text-neutral-500 dark:text-neutral-400" aria-hidden="true" />
+            )}
             <span className="truncate">{selected?.name ?? "All chats"}</span>
             <ChevronDown size={13} className="shrink-0 opacity-60" />
           </MenuButton>
@@ -43,7 +46,12 @@ export function ProjectPicker() {
         </DropdownMenuItem>
         <div className="max-h-72 overflow-y-auto">
           {projects.map((p) => (
-            <DropdownMenuItem key={p.id} selected={p.id === selected?.id} onClick={() => choose(p.id)}>
+            <DropdownMenuItem
+              key={p.id}
+              icon={<Folder size={14} aria-hidden="true" />}
+              selected={p.id === selected?.id}
+              onClick={() => choose(p.id)}
+            >
               <span className="block truncate">{p.name}</span>
             </DropdownMenuItem>
           ))}
@@ -70,7 +78,7 @@ export function MoveChatDialog({ chatId, onClose }: { chatId: string; onClose: (
   return (
     <Dialog open onClose={onClose} className="relative z-50">
       <div className="fixed inset-0 bg-black/30" />
-      <div className="fixed inset-0 grid place-items-center p-4">
+      <div className="fixed inset-x-0 app-viewport grid place-items-center p-4">
         <DialogPanel className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-5 dark:bg-neutral-950">
           <DialogTitle className="font-medium">Move chat to project</DialogTitle>
           <select

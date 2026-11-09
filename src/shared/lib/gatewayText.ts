@@ -241,18 +241,9 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
   protected override convertMessagesToInput(
     ...args: Parameters<OpenAITextAdapter<TModel>["convertMessagesToInput"]>
   ): ReturnType<OpenAITextAdapter<TModel>["convertMessagesToInput"]> {
-    const phased = new Map<string, TextPart[][]>();
     const reasoning = new Map<string, GatewayReasoning>();
-    const messages = args[0].map((message) => {
-      const parts =
-        message.role === "assistant"
-          ? Array.isArray(message.content) && message.content.every((part) => part.type === "text")
-            ? message.content
-            : this.textParts.get(message.id ?? "")
-          : undefined;
-      const content = parts?.map((part) => part.content).join("");
-      if (message.role === "assistant" && content && parts?.some((part) => textMetadata(part).phase))
-        phased.set(content, [...(phased.get(content) ?? []), parts]);
+    const [history, ...rest] = args;
+    const messages = history.map((message) => {
       let rejected = false;
       // An interrupted response can leave a signed reasoning item without
       // text or a tool call. Keep it visible in history, but do not replay an
@@ -278,7 +269,6 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
       });
       return {
         ...message,
-        ...(Array.isArray(message.content) && parts === message.content ? { content } : {}),
         thinking,
         // Persisted item ids depend on their original reasoning item. call_id
         // still correlates results when the rejected reasoning is removed.
@@ -293,7 +283,7 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
       };
     });
     return super
-      .convertMessagesToInput(messages)
+      .convertMessagesToInput(messages, ...rest)
       .flatMap((item): ReturnType<OpenAITextAdapter<TModel>["convertMessagesToInput"]> => {
         if (item.type === "reasoning") {
           const state = reasoning.get(item.id);
@@ -308,15 +298,7 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
             ];
           return [item];
         }
-        if (item.type !== "message" || item.role !== "assistant" || typeof item.content !== "string") return [item];
-        const parts = phased.get(item.content)?.shift();
-        return parts
-          ? parts.map((part) => ({
-              ...item,
-              content: part.content,
-              ...(textMetadata(part).phase ? { phase: textMetadata(part).phase } : {}),
-            }))
-          : [item];
+        return [item];
       });
   }
 }

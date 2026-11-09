@@ -82,7 +82,7 @@ for algorithm in ("AES-128", "AES-256-R5", "AES-256"):
   ],
   ["stdlib ssl", "import ssl\nssl.create_default_context() is not None"],
   ["stdlib lzma", "import lzma\nlzma.decompress(lzma.compress(b'x'*200))==b'x'*200"],
-  // Base stdlib hashlib ships the common digests + a pure-Python pbkdf2_hmac;
+  // Base stdlib hashlib ships common digests without OpenSSL's pbkdf2_hmac;
   // the OpenSSL-backed digests/HMAC dropped in Pyodide 314 are not available.
   ["stdlib hashlib (base digests)", "import hashlib\nhashlib.sha256(b'abc').hexdigest()[:8]"],
 

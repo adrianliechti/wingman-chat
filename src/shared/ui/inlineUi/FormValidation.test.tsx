@@ -32,7 +32,7 @@ it("tracks descendant validity and custom Select accessibility after submitting"
     {
       key: "form",
       source: JSON.stringify({
-        version: "v1.0",
+        version: "1.0",
         createSurface: {
           surfaceId: "main",
           catalogId: BASIC_CATALOG_ID,

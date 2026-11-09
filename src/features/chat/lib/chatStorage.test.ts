@@ -154,6 +154,35 @@ describe("chat persistence", () => {
     expect(stored).toMatchObject({ resume: value.resume, metadata: value.metadata });
   });
 
+  it("migrates legacy phases at load without inventing provider item ids", async () => {
+    const value = chat();
+    value.messages = [
+      assistantMessage("WorkingDone", {
+        id: "legacy-phases",
+        metadata: {
+          runId: "saved-run",
+          textSegments: [
+            { content: "Working", phase: "commentary" },
+            { content: "Done", phase: "final_answer" },
+          ],
+        },
+      }),
+    ];
+    await storeChat(value);
+    const original = await opfs.readJson("chats/chat/chat.json");
+    const loaded = (await loadChat(value.id))!;
+    expect(loaded.messages[0]).toMatchObject({
+      id: "legacy-phases",
+      parts: [text("Working", { phase: "commentary" }), text("Done", { phase: "final_answer" })],
+      metadata: { runId: "saved-run" },
+    });
+    expect(loaded.messages[0].metadata).not.toHaveProperty("textSegments");
+    expect(loaded.messages[0].metadata?.tanstack?.responseItems).toBeUndefined();
+    expect(await opfs.readJson("chats/chat/chat.legacy.json")).toEqual(original);
+    await storeChat(loaded);
+    expect(await loadChat(value.id)).toEqual(loaded);
+  });
+
   it("a failed manifest save keeps the last committed attachments readable", async () => {
     const value = chat();
     value.messages = [userMessage([image()])];

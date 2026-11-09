@@ -4,45 +4,56 @@
     <meta charset="UTF-8" />
     <title>Wingman</title>
     <meta name="description" content="AI-powered chat assistant" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
 
     <!-- Manifest -->
-    <!-- <link rel="manifest" href="manifest.json" /> -->
+    <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
 
-    <!-- Favicons: fallback first, then theme-aware overrides -->
-    <link rel="icon" type="image/svg+xml" href="icon_light.svg" />
-    <link rel="icon" type="image/png" href="icon_light.png" />
-    <link rel="icon" type="image/svg+xml" href="icon_light.svg" media="(prefers-color-scheme: light)" />
-    <link rel="icon" type="image/png" href="icon_light.png" media="(prefers-color-scheme: light)" />
-    <link rel="icon" type="image/svg+xml" href="icon_dark.svg" media="(prefers-color-scheme: dark)" />
-    <link rel="icon" type="image/png" href="icon_dark.png" media="(prefers-color-scheme: dark)" />
+    <!-- PNG fallback, then the scalable favicon used in both color schemes. -->
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
 
     <!-- Theme colors -->
     <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
 
     <!-- PWA / Mobile -->
-    <link rel="apple-touch-icon" sizes="512x512" href="icon_app.png" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="mobile-web-app-capable" content="yes" />
-
-    <!-- Prevent theme flashing by setting the dark class immediately -->
+    <link rel="apple-touch-icon" sizes="512x512" href="/icon_maskable_light_512.png" />
     <script>
       (() => {
-        // Get stored theme or use system preference
-        const stored = localStorage.getItem("app_theme");
-        const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
+        const manifest = document.querySelector('link[rel="manifest"]');
+        const touchIcon = document.querySelector('link[rel="apple-touch-icon"]');
+        const updateInstallColorScheme = () => {
+          manifest.href = `/manifest.json?color-scheme=${colorScheme.matches ? "dark" : "light"}`;
+          touchIcon.href = colorScheme.matches ? "/icon_maskable_dark_512.png" : "/icon_maskable_light_512.png";
+        };
+        updateInstallColorScheme();
+        colorScheme.addEventListener("change", updateInstallColorScheme);
 
-        // Determine if we should use dark mode
-        const shouldBeDark = stored === "dark" || (stored !== "light" && systemDark);
-
-        // Apply dark class immediately if needed
-        if (shouldBeDark) {
+        // The app may override the OS theme; install artwork follows the OS.
+        let stored;
+        try {
+          stored = localStorage.getItem("app_theme");
+        } catch {
+          // Storage may be unavailable; use the OS preference.
+        }
+        if (stored === "dark" || (stored !== "light" && colorScheme.matches)) {
           document.documentElement.classList.add("dark");
         }
       })();
     </script>
+    <meta name="apple-mobile-web-app-title" content="Wingman" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- Home-screen app: run under the status bar so viewport-fit=cover and the
+         safe-area insets apply. Without this iOS lays the page out below an
+         opaque status bar and leaves a gap at the bottom. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="mobile-web-app-capable" content="yes" />
   </head>
 
   <body>

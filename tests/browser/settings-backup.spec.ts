@@ -259,8 +259,8 @@ for (const mode of [
     await configure(page, mode.enabled, mode.store);
     await page.setViewportSize({ width: 375, height: 740 });
     await page.goto("/");
-    await page.getByRole("button", { name: "Account menu", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await page.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
     const settings = page.getByRole("dialog");
     await settings.getByRole("button", { name: "Backup", exact: true }).click();
     await expect(settings.getByRole("heading", { name: "Backup", exact: true, level: 3 })).toBeVisible();

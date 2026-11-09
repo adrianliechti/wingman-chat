@@ -168,7 +168,7 @@ describe("summarizeToolGroup", () => {
       },
     );
     const reply = assistantMessage(
-      'An explorer:\n\n```ui\n{"version":"v1.0","createSurface":{"surfaceId":"explorer","components":[{"id":"root","component":"Text","text":"Ready"}]}}\n```',
+      'An explorer:\n\n```ui\n{"version":"1.0","createSurface":{"surfaceId":"explorer","components":[{"id":"root","component":"Text","text":"Ready"}]}}\n```',
     );
     const messages = [userMessage("Create an explorer"), generated, reply];
     const original = structuredClone(messages);

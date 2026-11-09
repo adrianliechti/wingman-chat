@@ -1,7 +1,8 @@
 import { Dialog, Transition } from "@headlessui/react";
 import {
-  ArrowLeft,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Coffee,
   Download,
   HardDrive,
@@ -86,7 +87,12 @@ function SettingsViewHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="border-b border-neutral-200/60 pb-4 dark:border-neutral-800/60">
+    <div
+      className={cn(
+        "border-b border-neutral-200/60 pb-4 dark:border-neutral-800/60",
+        id !== "backup-settings-heading" && "max-sm:hidden",
+      )}
+    >
       <div className="flex items-center justify-between gap-3">
         <h3 id={id} className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
           {title}
@@ -130,6 +136,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     agents: false,
     profile: false,
     images: false,
+    translations: false,
     skills: false,
     plugins: false,
     projects: false,
@@ -293,7 +300,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     if (
       !(await confirm({
         title: "Rebuild indexes?",
-        message: "This rescans chats, agents, images, and skills. It may take a moment.",
+        message: "This rescans chats, agents, images, translations, and skills. It may take a moment.",
       }))
     ) {
       return;
@@ -304,7 +311,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
       const result = await rebuildAllIndexes();
       notify.success(
         "Indexes rebuilt",
-        `${result.chats} chats, ${result.projects} projects, ${result.agents} agents, ${result.images} images, ${result.skills} skills.`,
+        `${result.chats} chats, ${result.projects} projects, ${result.agents} agents, ${result.images} images, ${result.translations} translations, ${result.skills} skills.`,
       );
       await loadStorageInfo();
     } catch (error) {
@@ -321,6 +328,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
       ...(backupSelection.agents ? ["agents"] : []),
       ...(backupSelection.profile ? ["profile.json"] : []),
       ...(backupSelection.images ? ["images"] : []),
+      ...(backupSelection.translations ? ["translations"] : []),
       ...(backupSelection.skills ? ["skills"] : []),
       ...(backupSelection.plugins ? ["plugins"] : []),
     ];
@@ -382,10 +390,14 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   const chatStorageSize = storageSizeFor("chats/");
   const agentStorageSize = storageSizeFor("agents/");
   const imageStorageSize = storageSizeFor("images/");
+  const translationStorageSize = storageSizeFor("translations/");
   const skillStorageSize = storageSizeFor("skills/");
   const pluginStorageSize = storageSizeFor("plugins/");
   const imageCount = storageInfo.entries.filter(
     (entry) => entry.path.startsWith("images/") && entry.path.endsWith("/metadata.json"),
+  ).length;
+  const translationCount = storageInfo.entries.filter(
+    (entry) => entry.path.startsWith("translations/") && entry.path.endsWith("/metadata.json"),
   ).length;
   const skillCount = storageInfo.entries.filter(
     (entry) => entry.path.startsWith("skills/") && entry.path.endsWith("/SKILL.md"),
@@ -430,7 +442,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
             <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
           </Transition.Child>
 
-          <div className="fixed inset-0 overflow-y-auto">
+          <div className="fixed inset-x-0 app-viewport overflow-y-auto">
             <div className="flex min-h-full items-end justify-center sm:items-center sm:p-4">
               <Transition.Child
                 as={Fragment}
@@ -441,30 +453,35 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                 leaveFrom="opacity-100 translate-y-0 sm:scale-100"
                 leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
               >
-                <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-3xl">
+                <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[calc(var(--app-height)*0.92)] sm:h-[calc(var(--app-height)*0.75)] sm:max-w-3xl max-sm:rounded-t-[28px] max-sm:bg-(--glass-bg-strong) max-sm:pl-(--safe-left) max-sm:pr-(--safe-right) max-sm:pb-(--safe-bottom) max-sm:backdrop-blur-2xl max-sm:backdrop-saturate-150">
+                  <div
+                    aria-hidden="true"
+                    className="mx-auto mt-2 h-1.5 w-9 shrink-0 rounded-full bg-neutral-400/50 sm:hidden dark:bg-neutral-500/60"
+                  />
                   {/* ── Top bar ── */}
-                  <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 pr-3 pl-3 sm:pl-4 dark:border-neutral-800/60">
+                  <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 pr-3 pl-3 sm:pl-4 dark:border-neutral-800/60 max-sm:h-13 max-sm:border-0">
                     {!mobileShowList && (
                       <button
                         type="button"
                         onClick={() => setMobileShowList(true)}
                         title="Back to sections"
                         aria-label="Back to sections"
-                        className="shrink-0 rounded-md p-2 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-800 sm:hidden dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+                        className="press flex size-9 shrink-0 items-center justify-center rounded-full bg-black/6 text-neutral-700 sm:hidden dark:bg-white/10 dark:text-neutral-200"
                       >
-                        <ArrowLeft size={18} />
+                        <ChevronLeft size={20} />
                       </button>
                     )}
-                    <Dialog.Title className="shrink-0 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                    <Dialog.Title className="shrink-0 text-sm font-semibold text-neutral-900 dark:text-neutral-100 max-sm:pointer-events-none max-sm:absolute max-sm:inset-x-0 max-sm:text-center max-sm:text-[17px]">
                       {isDesktop || mobileShowList || !activeMeta ? "Settings" : activeMeta.label}
                     </Dialog.Title>
                     <button
                       type="button"
                       onClick={onClose}
                       aria-label="Close settings"
-                      className="ml-auto shrink-0 rounded-md p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 sm:p-1.5 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                      className="ml-auto shrink-0 rounded-md p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 sm:p-1.5 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 max-sm:press max-sm:flex max-sm:size-9 max-sm:items-center max-sm:justify-center max-sm:rounded-full max-sm:bg-black/6 max-sm:p-0 max-sm:text-neutral-700 max-sm:dark:bg-white/10 max-sm:dark:text-neutral-200"
                     >
-                      <X size={15} />
+                      <X size={15} className="max-sm:hidden" />
+                      <X size={18} className="sm:hidden" />
                     </button>
                   </div>
 
@@ -475,6 +492,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                       aria-label="Settings sections"
                       className={cn(
                         "w-full shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-neutral-200/60 bg-neutral-50/80 p-2 sm:flex sm:w-52 dark:border-neutral-800/60 dark:bg-neutral-950/20",
+                        "max-sm:mx-3 max-sm:mt-1 max-sm:h-fit max-sm:w-auto max-sm:flex-1 max-sm:gap-0 max-sm:divide-y max-sm:divide-black/8 max-sm:rounded-[22px] max-sm:border-0 max-sm:bg-black/4 max-sm:p-0 max-sm:px-4 max-sm:dark:divide-white/10 max-sm:dark:bg-white/6",
+                        "max-sm:animate-[sheet-pop_280ms_cubic-bezier(0.32,0.72,0,1)] max-sm:motion-reduce:animate-none",
                         mobileShowList ? "flex" : "hidden",
                       )}
                     >
@@ -486,13 +505,17 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                           aria-current={section === s.id ? "page" : undefined}
                           className={cn(
                             "flex min-h-9 items-center gap-2.5 rounded-md px-2.5 text-left text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400",
+                            "max-sm:min-h-14 max-sm:gap-3 max-sm:rounded-none max-sm:px-0 max-sm:text-[17px] max-sm:font-normal max-sm:text-neutral-900 max-sm:dark:text-neutral-50",
                             section === s.id
-                              ? "bg-neutral-200/50 text-neutral-900 dark:bg-neutral-800/60 dark:text-neutral-100"
-                              : "text-neutral-600 hover:bg-neutral-200/40 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-neutral-100",
+                              ? "bg-neutral-200/50 text-neutral-900 max-sm:bg-transparent dark:bg-neutral-800/60 dark:text-neutral-100"
+                              : "text-neutral-600 hover:bg-neutral-200/40 hover:text-neutral-900 max-sm:hover:bg-transparent dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-neutral-100",
                           )}
                         >
-                          <span className="shrink-0 text-neutral-500 dark:text-neutral-400">{s.icon}</span>
-                          {s.label}
+                          <span className="shrink-0 text-neutral-500 dark:text-neutral-400 max-sm:[&>svg]:size-5">
+                            {s.icon}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate">{s.label}</span>
+                          <ChevronRight size={18} className="shrink-0 text-neutral-400 sm:hidden" />
                         </button>
                       ))}
                     </nav>
@@ -500,13 +523,14 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                     {/* ── Main panel ── */}
                     <div
                       className={cn(
-                        "min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5",
+                        "min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5 max-sm:px-4 max-sm:py-3",
+                        "max-sm:animate-[sheet-push_280ms_cubic-bezier(0.32,0.72,0,1)] max-sm:motion-reduce:animate-none",
                         mobileShowList ? "hidden sm:block" : "block",
                       )}
                     >
                       {/* General Section */}
                       {section === "general" && (
-                        <section aria-labelledby="appearance-settings-heading" className="space-y-6">
+                        <section aria-labelledby="appearance-settings-heading" className="space-y-6 max-sm:space-y-4">
                           <SettingsViewHeader
                             id="appearance-settings-heading"
                             title="Appearance"
@@ -659,7 +683,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                 type="text"
                                 value={profile.name || ""}
                                 onChange={(e) => updateProfile({ name: e.target.value })}
-                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors"
+                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 max-sm:rounded-xl max-sm:px-4 max-sm:py-3 max-sm:text-base focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors"
                                 placeholder="Your nickname or name"
                               />
                             </div>
@@ -676,7 +700,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                 type="text"
                                 value={profile.role || ""}
                                 onChange={(e) => updateProfile({ role: e.target.value })}
-                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors"
+                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 max-sm:rounded-xl max-sm:px-4 max-sm:py-3 max-sm:text-base focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors"
                                 placeholder="e.g., Software Developer, Student"
                               />
                             </div>
@@ -692,7 +716,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                 id={profileAboutInputId}
                                 value={profile.profile || ""}
                                 onChange={(e) => updateProfile({ profile: e.target.value })}
-                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none backdrop-blur-sm transition-colors"
+                                className="w-full max-h-[max(3rem,calc(var(--app-height)*0.75-6rem))] px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 max-sm:rounded-xl max-sm:px-4 max-sm:py-3 max-sm:text-base focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none backdrop-blur-sm transition-colors"
                                 rows={5}
                                 placeholder="Brief description about yourself..."
                               />
@@ -761,7 +785,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                     type="button"
                                     onClick={() => void exportEverythingBackup()}
                                     disabled={isExporting || isRestoring}
-                                    className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
+                                    className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-xs font-medium max-sm:press max-sm:rounded-xl max-sm:py-3 max-sm:text-[15px] text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
                                   >
                                     {isExporting && (
                                       <span
@@ -781,7 +805,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                     type="button"
                                     onClick={restoreBackup}
                                     disabled={isExporting || isRestoring}
-                                    className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
+                                    className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-xs font-medium max-sm:press max-sm:rounded-xl max-sm:py-3 max-sm:text-[15px] text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
                                   >
                                     {isRestoring && (
                                       <span
@@ -934,6 +958,30 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                       </label>
                                       <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
                                         <span className="flex items-baseline gap-2">
+                                          <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                                            Translations
+                                          </span>
+                                          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                            {translationCount} translation{translationCount === 1 ? "" : "s"}
+                                          </span>
+                                        </span>
+                                        <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                          {storageInfo.isLoading ? "…" : formatBytes(translationStorageSize)}
+                                        </span>
+                                        <input
+                                          type="checkbox"
+                                          checked={backupSelection.translations}
+                                          onChange={(event) =>
+                                            setBackupSelection((selection) => ({
+                                              ...selection,
+                                              translations: event.target.checked,
+                                            }))
+                                          }
+                                          className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
+                                        />
+                                      </label>
+                                      <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
+                                        <span className="flex items-baseline gap-2">
                                           <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
                                             Skills
                                           </span>
@@ -992,10 +1040,11 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                           !backupSelection.agents &&
                                           !backupSelection.profile &&
                                           !backupSelection.images &&
+                                          !backupSelection.translations &&
                                           !backupSelection.skills &&
                                           !backupSelection.plugins)
                                       }
-                                      className="relative mt-2 w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
+                                      className="relative mt-2 w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-xs font-medium max-sm:press max-sm:rounded-xl max-sm:py-3 max-sm:text-[15px] text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
                                     >
                                       {isExporting && (
                                         <span

@@ -14,6 +14,7 @@ import {
   rendererCapabilities,
   shortModelName,
   supportedEfforts,
+  withRendererFallback,
 } from "./models";
 import type { Model } from "@/shared/types/chat";
 
@@ -110,6 +111,7 @@ describe("model endpoint detection", () => {
     ["mistral-embed", "embedder"],
     ["gemini-embedding-2", "embedder"],
     ["gpt-image-2", "renderer"],
+    ["gpt-image-2.6-flare", "renderer"],
     ["gemini-3.1-flash-image", "renderer"],
     ["imagen-4", "renderer"],
     ["dall-e-3", "renderer"],
@@ -454,6 +456,23 @@ describe("configured model catalogue", () => {
     expect(rendererCapabilities("gemini-3-pro-image").resolutions).toEqual(["1K", "2K", "4K"]);
     expect(rendererCapabilities("gpt-image-20").backgrounds).toBeUndefined();
   });
+
+  it("maps GPT Image 2.6 vector, animation and complexity output", () => {
+    for (const id of ["gpt-image-2.6-flare", "openai/gpt-image-2.6-sunburst", "gpt-image-2-6-flare-2026-10-01"]) {
+      expect(rendererCapabilities(id)).toMatchObject({
+        qualities: ["low", "medium", "high", "xhigh", "max"],
+        backgrounds: ["opaque", "transparent"],
+        formats: ["svg", "gif"],
+        complexities: ["low", "medium", "high"],
+      });
+    }
+    expect(rendererCapabilities("gpt-image-2.5-flare").formats).toBeUndefined();
+    expect(rendererCapabilities("gpt-image-2.5-flare").complexities).toBeUndefined();
+    expect(rendererCapabilities("gpt-image-2").formats).toBeUndefined();
+    const configured = withRendererFallback({ id: "gpt-image-2.6-flare", name: "Flare", supportedFormats: [] });
+    expect(configured.supportedFormats).toEqual([]);
+    expect(configured.supportedComplexities).toEqual(["low", "medium", "high"]);
+  });
 });
 
 describe("sameModelSettings", () => {
@@ -467,5 +486,23 @@ describe("sameModelSettings", () => {
     expect(sameModelSettings(luna, { ...luna, effort: "high" })).toBe(false);
     expect(sameModelSettings(luna, { ...luna, verbosity: "low" })).toBe(false);
     expect(sameModelSettings(luna, { ...luna, id: "sol" })).toBe(false);
+  });
+});
+
+describe("Gemini Omni model mapping", () => {
+  it.each(["gemini-omni-1.2-flash", "google/gemini-omni-1.2-flash"])(
+    "maps %s to a video renderer with versioned capabilities",
+    (id) => {
+      expect(modelType(id)).toBe("renderer");
+      expect(rendererCapabilities(id)).toEqual({
+        formats: ["mp4"],
+        resolutions: ["360p", "720p", "1080p", "4K"],
+        aspectRatios: ["16:9", "9:16"],
+        durations: Array.from({ length: 13 }, (_, i) => i + 3),
+      });
+    },
+  );
+  it("does not apply 1.2 duration limits to other Omni versions", () => {
+    expect(rendererCapabilities("google/gemini-omni-1.1-flash")).toEqual({ formats: ["mp4"] });
   });
 });

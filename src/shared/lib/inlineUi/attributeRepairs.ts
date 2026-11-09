@@ -4,9 +4,9 @@ import { basicCatalog, wingmanCatalog, WINGMAN_CATALOG_ID } from "./catalog.ts";
 import { REFERENCE_GROUPS } from "./registry.ts";
 
 const unknownKeysIssue = z.object({
-  code: z.literal("unrecognized_keys"),
-  path: z.array(z.union([z.string(), z.number()])),
-  keys: z.array(z.string()),
+  code: z.literal("invalid_value"),
+  path: z.string().regex(/^\/[^/]+$/),
+  message: z.string().regex(/^Unrecognized key\(s\) in object:/),
 });
 
 // Derive suggestions from the registered schemas, including future attributes.
@@ -56,7 +56,9 @@ export function attributeRepairHints(error: unknown): string[] {
   for (const detail of details) {
     const parsed = unknownKeysIssue.safeParse(detail);
     // A nested Table column or metadata field is not a component-level prop.
-    if (parsed.success && parsed.data.path.length === 0) for (const key of parsed.data.keys) properties.add(key);
+    // SDK 0.15 reports a JSON Pointer to the first unknown property. Only
+    // direct component properties qualify; nested column errors do not.
+    if (parsed.success) properties.add(parsed.data.path.slice(1).replace(/~1/g, "/").replace(/~0/g, "~"));
   }
   return [...properties].slice(0, 5).map((property) => {
     if (property === "visible")

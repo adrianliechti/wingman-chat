@@ -1,6 +1,6 @@
 # Persistence contracts
 
-The browser stores chats, composer drafts, projects, agents, images, skills, and the profile in OPFS. Theme,
+The browser stores chats, composer drafts, projects, agents, images, translations, skills, and the profile in OPFS. Theme,
 device selection, and OAuth state in localStorage are outside the OPFS backup.
 
 ## Writes and state ownership

@@ -369,6 +369,30 @@ describe("legacy chat migration", () => {
     expect(normalizeStoredChat(normalized)).toBe(normalized);
   });
 
+  it("fills missing native item lengths once at load, including old textSegments", () => {
+    const old = assistantMessage("WorkingDone", {
+      metadata: {
+        textSegments: [
+          { content: "Working", phase: "commentary" },
+          { content: "Done", phase: "final_answer" },
+        ],
+        tanstack: {
+          responseItems: [
+            { id: "work", phase: "commentary" },
+            { id: "done", phase: "final_answer" },
+          ],
+        },
+      },
+    });
+    const normalized = normalizeStoredChat({ ...migrateLegacyChat(legacyChat()), messages: [old] });
+    expect(normalized.messages[0].metadata?.tanstack?.responseItems).toEqual([
+      { id: "work", phase: "commentary", textLength: 7 },
+      { id: "done", phase: "final_answer", textLength: 4 },
+    ]);
+    expect(old.metadata?.tanstack?.responseItems?.[0]).not.toHaveProperty("textLength");
+    expect(normalizeStoredChat(normalized)).toBe(normalized);
+  });
+
   it("migrates legacy tool fields recursively while retaining the original MCP response", () => {
     const output = [text("Failed"), mediaFromDataUrl(BLOB, "report.png", "image")];
     const original = {

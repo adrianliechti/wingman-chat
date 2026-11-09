@@ -1,6 +1,7 @@
 import { expect, test as base, type Page } from "@playwright/test";
 import { Server, createMcpHandler, inputRequired, inputResponse } from "@modelcontextprotocol/server";
 import { mcpToolName } from "../../src/features/settings/lib/mcpToolNames";
+import { isolateOpfs } from "./helpers/opfs";
 
 const test = base.extend({
   context: async ({ browserName, context, playwright, baseURL, viewport }, use, info) => {
@@ -9,9 +10,11 @@ const test = base.extend({
       baseURL,
       viewport,
     });
+    const cleanupOpfs = await isolateOpfs(persistent);
     try {
       await use(persistent);
     } finally {
+      await cleanupOpfs();
       await persistent.close();
     }
   },
@@ -23,8 +26,8 @@ test.afterEach(async () => {
   await Promise.all(handlers.splice(0).map((handler) => handler.close()));
 });
 
-async function setup(page: Page, mode: "plain" | "form" | "url" | "url-hold" | "hold" = "plain") {
-  const requests: { input: unknown; action?: string; content?: unknown }[] = [];
+async function setup(page: Page, mode: "plain" | "form" | "url" | "url-hold" | "url-form" | "hold" = "plain") {
+  const requests: { input: unknown; action?: string; content?: unknown; details?: unknown }[] = [];
   let release: (() => void) | undefined;
   let holdDiscovery = false;
   const discoveryWaiters = new Set<() => void>();
@@ -50,15 +53,20 @@ async function setup(page: Page, mode: "plain" | "form" | "url" | "url-hold" | "
     });
     server.setRequestHandler("tools/call", async (request, ctx) => {
       const response = inputResponse(ctx.mcpReq.inputResponses, "consent");
+      const details = inputResponse(ctx.mcpReq.inputResponses, "details");
       requests.push({
         input: request.params.arguments,
         ...(response.kind === "elicit" ? { action: response.action, content: response.content } : {}),
+        ...(details.kind === "elicit" ? { details: details.content } : {}),
       });
       if (mode === "hold" || (mode === "url-hold" && response.kind === "elicit"))
         await new Promise<void>((resolve) => {
           release = resolve;
         });
-      if ((mode === "form" || mode === "url" || mode === "url-hold") && response.kind === "missing") {
+      if (
+        (mode === "form" || mode === "url" || mode === "url-hold" || mode === "url-form") &&
+        response.kind === "missing"
+      ) {
         return inputRequired({
           inputRequests: {
             consent:
@@ -80,6 +88,18 @@ async function setup(page: Page, mode: "plain" | "form" | "url" | "url-hold" | "
                       url: "https://example.test/consent",
                     },
                   },
+            ...(mode === "url-form"
+              ? {
+                  details: inputRequired.elicit({
+                    message: "Choose a source after connecting",
+                    requestedSchema: {
+                      type: "object",
+                      properties: { source: { type: "string", title: "Source" } },
+                      required: ["source"],
+                    },
+                  }),
+                }
+              : {}),
           },
           requestState: "consent-state",
         });
@@ -364,6 +384,21 @@ test("URL consent is sent without requiring a completion notification", async ({
   await expect.poll(() => server.requests.length).toBe(2);
   expect(server.requests[1].action).toBe("accept");
   await page.waitForFunction(() => window.chatE2E.state().calls.length === 2);
+});
+
+test("URL consent followed by a sibling form submits both answers without cancelling research", async ({ page }) => {
+  const server = await setup(page, "url-form");
+  await start(page);
+  await page.getByRole("button", { name: "Allow", exact: true }).click();
+  await page.getByRole("link", { name: "Open page (opens in a new tab)", exact: true }).click();
+  await expect(page.getByLabel("Source", { exact: false })).toBeVisible();
+  expect(server.requests).toHaveLength(1);
+  await page.getByLabel("Source", { exact: false }).fill("Primary sources");
+  await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await expect.poll(() => server.requests.length).toBe(2);
+  expect(server.requests[1]).toMatchObject({ action: "accept", details: { source: "Primary sources" } });
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 2);
+  expect(await page.evaluate(() => JSON.stringify(window.chatE2E.state().messages))).toContain("Consent: accept");
 });
 
 test("Stop before approval persists cancellation and never contacts the gateway", async ({ page }) => {

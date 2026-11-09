@@ -1,6 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "protocolVersion": "1.0",
   "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+  "instructions": "For layout, use the Row and Column components to organize other components.\n\n## Catalog Guidelines\n\n1. String Concatenation & Formatting: A2UI does not support binary operators like '+' or formatting symbols. To concatenate strings or dynamically inject data bindings into text, you must use the catalog function `formatString(value)` where the value string contains placeholders formatted as `${expression}`:\n   formatString(\"Hello ${/user/name}\")\n\n2. Strict Hierarchy: You must strictly adhere to the requested component nesting and hierarchy. If the prompt specifies that a component is 'inside' or 'contained in' another component, you MUST place it as a child of that specific component, not as a sibling or in a different container.\n\n3. Validation Checks: When components support validation checks, specify any custom error messages directly as the 'message' inside the check. Do NOT create separate text-display components to display validation errors.\n\n## Examples\n\nExample 1: Dynamic text form\n```json\n[\n  {\n    \"version\": \"1.0\",\n    \"createSurface\": {\n      \"surfaceId\": \"main\",\n      \"catalogId\": \"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json\",\n      \"components\": [\n        {\n          \"id\": \"root\",\n          \"component\": \"Column\",\n          \"children\": [\"repField\", \"valueField\"]\n        },\n        {\n          \"id\": \"repField\",\n          \"component\": \"TextField\",\n          \"label\": \"Representative\",\n          \"value\": {\"@path\": \"/form/rep\"},\n          \"placeholder\": \"Enter name\"\n        },\n        {\n          \"id\": \"valueField\",\n          \"component\": \"TextField\",\n          \"label\": \"Deal Value\",\n          \"value\": {\"@path\": \"/form/value\"},\n          \"placeholder\": \"0.00\",\n          \"variant\": \"number\",\n          \"checks\": [\n            {\n              \"condition\": {\n                \"@call\": \"required\",\n                \"args\": {\"value\": {\"@path\": \"/form/value\"}}\n              },\n              \"message\": \"Deal value is required.\"\n            }\n          ]\n        }\n      ],\n      \"dataModel\": {\n        \"form\": {\n          \"rep\": \"John Doe\",\n          \"value\": 1500.00\n        }\n      }\n    }\n  }\n]\n```\n\nExample 2: Dynamic list with templates\n```json\n[\n  {\n    \"version\": \"1.0\",\n    \"createSurface\": {\n      \"surfaceId\": \"main\",\n      \"catalogId\": \"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json\",\n      \"components\": [\n        {\n          \"id\": \"root\",\n          \"component\": \"Card\",\n          \"child\": \"breedList\"\n        },\n        {\n          \"id\": \"breedList\",\n          \"component\": \"List\",\n          \"children\": {\n            \"path\": \"/breeds\",\n            \"componentId\": \"breedTemplate\"\n          },\n          \"direction\": \"horizontal\"\n        },\n        {\n          \"id\": \"breedTemplate\",\n          \"component\": \"Image\",\n          \"url\": {\"@path\": \"url\"}\n        }\n      ],\n      \"dataModel\": {\n        \"breeds\": [\n          {\n            \"url\": \"https://example.com/poodle.jpg\"\n          },\n          {\n            \"url\": \"https://example.com/lab.jpg\"\n          }\n        ]\n      }\n    }\n  }\n]\n```",
   "components": {
     "Text": {
       "type": "object",
@@ -19,10 +21,7 @@
           "description": "A hint for the base text style.",
           "default": "body"
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "Text" }
       },
       "required": ["id", "text", "component"]
@@ -48,10 +47,7 @@
           "description": "A hint for the image size and style.",
           "default": "mediumFeature"
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "Image" }
       },
       "required": ["id", "url", "component"]
@@ -139,10 +135,7 @@
           ],
           "description": "The name of the icon to display."
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "Icon" }
       },
       "required": ["id", "name", "component"]
@@ -159,10 +152,7 @@
           "$ref": "#/$defs/DynamicString",
           "description": "The URL of the poster image to display before the video plays."
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "Video" }
       },
       "required": ["id", "url", "component"]
@@ -179,10 +169,7 @@
           "$ref": "#/$defs/DynamicString",
           "description": "A description of the audio, such as a title or summary."
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "AudioPlayer" }
       },
       "required": ["id", "url", "component"]
@@ -211,10 +198,7 @@
           "description": "Defines the alignment of children along the cross axis (vertically). This is similar to the CSS 'align-items' property, but uses camelCase values (e.g., 'start').",
           "default": "stretch"
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "Row" }
       },
       "required": ["id", "children", "component"]
@@ -243,10 +227,7 @@
           "description": "Defines the alignment of children along the cross axis (horizontally). This is similar to the CSS 'align-items' property.",
           "default": "stretch"
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "Column" }
       },
       "required": ["id", "children", "component"]
@@ -274,10 +255,7 @@
           "description": "Defines the alignment of children along the cross axis.",
           "default": "stretch"
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "List" }
       },
       "required": ["id", "children", "component"]
@@ -293,10 +271,7 @@
           "$ref": "#/$defs/Child",
           "description": "The ID of the single child component to be rendered inside the card. To display multiple elements, you MUST wrap them in a layout component (like Column or Row) and pass that container's ID here. Do NOT pass multiple IDs or a non-existent ID."
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "Card" }
       },
       "required": ["id", "child", "component"]
@@ -322,10 +297,7 @@
           "minItems": 1,
           "description": "An array of objects, where each object defines a tab with a title and a child component."
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "Tabs" }
       },
       "required": ["id", "tabs", "component"]
@@ -345,10 +317,7 @@
           "$ref": "#/$defs/Child",
           "description": "The ID of the component to be displayed inside the modal."
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "Modal" }
       },
       "required": ["id", "content", "trigger", "component"]
@@ -366,10 +335,7 @@
           "description": "The orientation of the divider.",
           "default": "horizontal"
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "Divider" }
       },
       "required": ["id", "component"]
@@ -403,10 +369,7 @@
           "$ref": "#/$defs/Action",
           "description": "Defines an interaction handler that can either trigger an agent-side event or execute a local renderer-side function."
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "Button" }
       },
       "required": ["id", "action", "child", "component"]
@@ -435,10 +398,7 @@
           "description": "The type of input field to display.",
           "default": "shortText"
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "TextField" }
       },
       "required": ["id", "label", "component"]
@@ -463,10 +423,7 @@
           "$ref": "#/$defs/DynamicBoolean",
           "description": "The current state of the checkbox (true for checked, false for unchecked)."
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "CheckBox" }
       },
       "required": ["id", "label", "value", "component"]
@@ -522,10 +479,7 @@
           "description": "If true, displays a search input to filter the options.",
           "default": false
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "ChoicePicker" }
       },
       "required": ["id", "options", "value", "component"]
@@ -554,10 +508,7 @@
           "minimum": 1,
           "description": "The number of discrete divisions in the slider range. If specified, the slider will snap to discrete values."
         },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "Slider" }
       },
       "required": ["id", "max", "value", "component"]
@@ -612,10 +563,7 @@
           "description": "The maximum allowed date/time in ISO 8601 format."
         },
         "label": { "$ref": "#/$defs/DynamicString", "description": "The text label for the input field." },
-        "weight": {
-          "type": "number",
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
-        },
+        "weight": { "$ref": "#/$defs/Weight" },
         "component": { "const": "DateTimeInput" }
       },
       "required": ["id", "value", "component"]
@@ -941,6 +889,24 @@
     }
   },
   "$defs": {
+    "theme": {
+      "type": "object",
+      "properties": {
+        "primaryColor": {
+          "type": "string",
+          "description": "The primary brand color used for highlights (e.g., primary buttons, active borders). Renderers may generate variants of this color for different contexts. Format: Hexadecimal code, named color, or functional notation (e.g., '#00BFFF', 'red', 'rgb(255, 0, 0)')."
+        },
+        "iconUrl": {
+          "type": "string",
+          "description": "A URL for an image that identifies the agent or tool associated with the surface."
+        },
+        "agentDisplayName": {
+          "type": "string",
+          "description": "Text to be displayed next to the surface to identify the agent or tool that created it."
+        }
+      },
+      "additionalProperties": true
+    },
     "anyComponent": {
       "oneOf": [
         { "$ref": "#/components/Text" },
@@ -989,6 +955,10 @@
     "DynamicString": {
       "description": "Represents a string",
       "oneOf": [{ "type": "string" }, { "$ref": "#/$defs/DataBinding" }, { "$ref": "#/$defs/FunctionCall" }]
+    },
+    "Weight": {
+      "type": "number",
+      "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column."
     },
     "DataBinding": {
       "type": "object",
@@ -1146,6 +1116,5 @@
       "unevaluatedProperties": false
     }
   },
-  "$id": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
-  "protocolVersion": "v1.0"
+  "$id": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"
 }
