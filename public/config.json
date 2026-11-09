@@ -266,6 +266,6 @@
     ]
   },
   "backup": {
-    "provider": "onedrive"
+    "provider": "local"
   }
 }

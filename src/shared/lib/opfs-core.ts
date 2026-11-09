@@ -54,7 +54,7 @@ import { isRebuildableCollection, salvageIndexEntries, scanFolderIndex } from ".
 // Mutation notifications
 // ============================================================================
 
-export type OpfsMutationKind = "write" | "delete" | "delete-dir";
+type OpfsMutationKind = "write" | "delete" | "delete-dir";
 export type OpfsMutationListener = (path: string, kind: OpfsMutationKind) => void;
 
 const mutationListeners = new Set<OpfsMutationListener>();
@@ -499,7 +499,7 @@ async function healIndex(collection: string, reason: Error): Promise<IndexEntry[
  * Write the index for a collection.
  */
 /** Lock the complete read/modify/write, including updates from other tabs. */
-export async function updateIndex(collection: string, update: (entries: IndexEntry[]) => IndexEntry[]): Promise<void> {
+async function updateIndex(collection: string, update: (entries: IndexEntry[]) => IndexEntry[]): Promise<void> {
   await withPersistenceLock(`index:${collection}`, async () => {
     await writeJson(`${collection}/index.json`, update(await readIndex(collection)));
   });
@@ -523,7 +523,7 @@ export async function removeIndexEntry(collection: string, id: string): Promise<
 // Storage Usage
 // ============================================================================
 
-export interface StorageEntry {
+interface StorageEntry {
   path: string;
   size: number;
 }

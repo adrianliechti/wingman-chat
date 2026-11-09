@@ -4,8 +4,6 @@ import type { RepositoryFile } from "@/features/repository/types/repository";
 import { queryFileChunks } from "@/features/repository/lib/file-retrieval";
 import { useAgents } from "./useAgents";
 
-export type { FileChunk } from "@/features/repository/lib/file-retrieval";
-export type AgentFilesHook = ReturnType<typeof useAgentFiles>;
 const EMPTY_FILES: RepositoryFile[] = [];
 
 export function useAgentFiles(agentId: string) {

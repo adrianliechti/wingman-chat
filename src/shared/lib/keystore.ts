@@ -41,7 +41,7 @@ import {
 export const PIN_MIN_LENGTH = 8;
 export const PIN_MAX_LENGTH = 32;
 
-export interface PlainKeystore {
+interface PlainKeystore {
   backup?: BackupEnvelope;
   version: 2;
   /** Key id stamped into frame envelopes. */
@@ -51,7 +51,7 @@ export interface PlainKeystore {
   dek: string; // base64 32 bytes
 }
 
-export interface ProtectedKeystore {
+interface ProtectedKeystore {
   backup?: BackupEnvelope;
   version: 2;
   kid: number;
@@ -91,7 +91,7 @@ export interface KeystoreState {
   etag: string;
 }
 
-export function isPinProtected(k: Keystore): k is ProtectedKeystore | DualProtectedKeystore {
+function isPinProtected(k: Keystore): k is ProtectedKeystore | DualProtectedKeystore {
   return k.pinProtected === true;
 }
 

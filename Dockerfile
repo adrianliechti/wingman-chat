@@ -24,7 +24,6 @@ RUN go mod download
 
 COPY *.go ./
 COPY pkg ./pkg
-COPY internal ./internal
 ARG TARGETOS
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o server

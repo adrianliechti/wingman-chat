@@ -59,7 +59,7 @@ async function writeImage(image: Image): Promise<void> {
   }
 }
 
-export async function loadImage(id: string): Promise<Image | undefined> {
+async function loadImage(id: string): Promise<Image | undefined> {
   try {
     const imagePath = `${COLLECTION}/${id}`;
 

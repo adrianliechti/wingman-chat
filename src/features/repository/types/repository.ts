@@ -1,15 +1,3 @@
-export interface Repository {
-  id: string;
-  name: string;
-
-  embedder: string;
-
-  instructions?: string; // instruction for this repository
-  createdAt: Date;
-  updatedAt: Date;
-  files?: RepositoryFile[]; // files are stored with the repository
-}
-
 export interface RepositoryFile {
   id: string;
   /** Original upload name shown to the user. */

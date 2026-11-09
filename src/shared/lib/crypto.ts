@@ -140,13 +140,13 @@ async function importDekForAesGcm(dek: RootKey): Promise<CryptoKey> {
 
 // KEK from PIN -----------------------------------------------------------
 
-export interface Pbkdf2Params {
+interface Pbkdf2Params {
   name: "pbkdf2-sha256";
   salt: string; // base64
   iter: number;
 }
 
-export interface Argon2idParams {
+interface Argon2idParams {
   name: "argon2id";
   salt: string; // base64
   /** Memory cost in KiB. */

@@ -94,7 +94,7 @@ type LegacyContent =
   | { type: "runtime_feedback"; source: "verification" | "guardrail"; text: string }
   | LegacySubagent;
 
-export interface LegacyMessage {
+interface LegacyMessage {
   id?: string;
   runId?: string;
   createdAt?: string;
@@ -234,7 +234,7 @@ function isLegacyMessage(message: unknown): message is LegacyMessage {
   );
 }
 
-export function migrateLegacyMessages(messages: LegacyMessage[], chat: LegacyStoredChat, scope = chat.id): UIMessage[] {
+function migrateLegacyMessages(messages: LegacyMessage[], chat: LegacyStoredChat, scope = chat.id): UIMessage[] {
   if (!Array.isArray(messages)) {
     warn(scope, "dropped messages that are not a list");
     return [];

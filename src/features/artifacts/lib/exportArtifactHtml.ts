@@ -38,8 +38,7 @@ export function findLibraryReferences(html: string, pagePath: string): LibraryRe
 
 export type LibraryLoader = (name: string) => Promise<string | undefined>;
 
-export const loadArtifactLibrary: LibraryLoader = (name) =>
-  findArtifactLibrary(name)?.load() ?? Promise.resolve(undefined);
+const loadArtifactLibrary: LibraryLoader = (name) => findArtifactLibrary(name)?.load() ?? Promise.resolve(undefined);
 
 /** A page as it should appear in a folder export: absolute `/.lib/` references made relative. */
 export function exportArtifactHtmlForFolder(html: string, pagePath: string): string {

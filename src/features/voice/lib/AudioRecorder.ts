@@ -79,7 +79,7 @@ export interface AudioRecorderOptions {
   onError?: (error: Error) => void;
 }
 
-export interface AudioChunk {
+interface AudioChunk {
   mono: ArrayBuffer;
 }
 

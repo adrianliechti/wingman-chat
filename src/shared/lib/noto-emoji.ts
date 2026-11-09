@@ -1,6 +1,6 @@
 import "@fontsource/noto-emoji/emoji-300.css";
 
-export const EMOJI_STORAGE_KEY = "app_emoji";
+const EMOJI_STORAGE_KEY = "app_emoji";
 
 const READY_CLASS = "noto-emoji-ready";
 const NATIVE_CLASS = "emoji-native";

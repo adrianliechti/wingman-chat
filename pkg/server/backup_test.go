@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -11,6 +13,24 @@ import (
 	storesrv "github.com/adrianliechti/wingman-chat/pkg/server/store"
 	storeonedrive "github.com/adrianliechti/wingman-chat/pkg/store/onedrive"
 )
+
+func TestDefaultBackupConfigurationNeedsNoDriveConnection(t *testing.T) {
+	data, err := os.ReadFile("../../public/config.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg config.Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	provider, middleware, err := backupProvider(&cfg)
+	if err != nil {
+		t.Fatalf("default configuration cannot start without drives.yaml: %v", err)
+	}
+	if provider != nil || middleware != nil {
+		t.Fatal("default configuration enabled online backup")
+	}
+}
 
 func TestBackupProviderSelection(t *testing.T) {
 	for _, provider := range []string{"", "local", "server", "onedrive", "typo"} {

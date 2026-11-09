@@ -144,6 +144,28 @@ describe("chunkEntries", () => {
 });
 
 describe("replay edge cases", () => {
+  it("applies deltas without modifying the baseline or serializing unchanged messages", () => {
+    const unchanged = msg("old");
+    const base = chat({ title: "old title", messages: [unchanged] });
+    Object.defineProperty(unchanged, "toJSON", {
+      value: () => {
+        throw new Error("Unchanged messages should not be serialized while applying a delta");
+      },
+    });
+    const result = applyEntries(
+      base,
+      [
+        { type: "meta", title: "new title" },
+        { type: "message", ...msg("new") },
+      ],
+      "c1",
+    );
+    expect(base.title).toBe("old title");
+    expect(base.messages).toHaveLength(1);
+    expect(result?.title).toBe("new title");
+    expect(result?.messages).toEqual([unchanged, msg("new")]);
+  });
+
   it("tombstone yields null", () => {
     const entries = [...diffChat(null, chat({ messages: [msg("a")] })), { type: "tombstone" } as const];
     expect(replayLog("c1", entries).chat).toBeNull();

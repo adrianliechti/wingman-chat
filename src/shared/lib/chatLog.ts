@@ -64,7 +64,7 @@ const encoder = new TextEncoder();
 
 /** Hard ceiling for a single entry: chunking cannot split one entry, and
  *  past this the encrypted frame would exceed the server's cap anyway. */
-export const MAX_ENTRY_PLAINTEXT = 11 * 1024 * 1024;
+const MAX_ENTRY_PLAINTEXT = 11 * 1024 * 1024;
 
 /** Split entries into runs that each fit one encrypted frame. A single
  *  oversized entry (one message with huge tool results) still gets its
@@ -98,14 +98,14 @@ export interface ReplayResult {
 }
 
 export function replayLog(chatId: string, entries: LogEntry[]): ReplayResult {
-  let chat: StoredChat | null = {
-    version: STORED_CHAT_VERSION,
-    id: chatId,
-    created: null,
-    updated: null,
-    model: null,
-    messages: [],
-  };
+  return { chat: applyEntries(null, entries, chatId) };
+}
+
+/** Fold only the delta, keeping the caller's baseline unchanged. */
+export function applyEntries(baseline: StoredChat | null, entries: LogEntry[], chatId: string): StoredChat | null {
+  let chat: StoredChat | null = baseline
+    ? { ...baseline, messages: [...baseline.messages] }
+    : { version: STORED_CHAT_VERSION, id: chatId, created: null, updated: null, model: null, messages: [] };
 
   for (const e of entries) {
     if (e.type === "tombstone") {
@@ -166,7 +166,7 @@ export function replayLog(chatId: string, entries: LogEntry[]): ReplayResult {
     }
   }
 
-  return { chat };
+  return chat;
 }
 
 // Diff -------------------------------------------------------------------
@@ -283,10 +283,4 @@ export function diffChat(prev: StoredChat | null, next: StoredChat): LogEntry[] 
   }
 
   return out;
-}
-
-// Convenience -----------------------------------------------------------
-
-export function applyEntries(chat: StoredChat | null, entries: LogEntry[], chatId: string): StoredChat | null {
-  return replayLog(chatId, [...(chat ? diffChat(null, chat) : []), ...entries]).chat;
 }

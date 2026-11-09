@@ -14,7 +14,7 @@ import type { NodeResolver } from "@a2ui/web_core/v1_0";
 const RuntimeContext = createContext<InlineUiRuntime | null>(null);
 const ProviderContext = createContext(false);
 
-export function conversationUiBlocks(messages: UIMessage[], owner: string, streaming: boolean): UiBlock[] {
+function conversationUiBlocks(messages: UIMessage[], owner: string, streaming: boolean): UiBlock[] {
   return messages.flatMap((message, index) =>
     message.role !== "assistant"
       ? []

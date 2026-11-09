@@ -49,7 +49,7 @@ export function dataUrlDecodedByteLength(dataUrl: string): number | null {
   return completeGroups * 3 - padding + (remainder === 2 ? 1 : remainder === 3 ? 2 : 0);
 }
 
-export function encodeBase64(bytes: Uint8Array): string {
+function encodeBase64(bytes: Uint8Array): string {
   // Native path (Safari 18.2+, Edge/Chrome 140+) — by far the fastest and
   // avoids materializing an intermediate binary string.
   const native = (bytes as Uint8Array & { toBase64?: () => string }).toBase64;

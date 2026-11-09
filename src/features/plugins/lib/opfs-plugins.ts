@@ -197,7 +197,7 @@ async function writePlugin(plugin: InstalledPlugin, icon?: DownloadedIcon): Prom
 }
 
 /** Load one installed plugin by id, including its bundled skills and resources. */
-export async function loadPlugin(id: string): Promise<InstalledPlugin | undefined> {
+async function loadPlugin(id: string): Promise<InstalledPlugin | undefined> {
   const pluginDir = `${COLLECTION}/${id}`;
   const manifest = await readJson<PluginManifest>(`${pluginDir}/plugin.json`);
   if (!manifest) return undefined;
@@ -234,7 +234,7 @@ export async function loadPlugin(id: string): Promise<InstalledPlugin | undefine
   };
 }
 
-export async function listPluginIds(): Promise<string[]> {
+async function listPluginIds(): Promise<string[]> {
   return listDirectories(COLLECTION);
 }
 

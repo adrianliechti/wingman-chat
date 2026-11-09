@@ -1,5 +1,4 @@
 import JSZip from "jszip";
-import { downloadBlob } from "./utils";
 
 interface ConversionResult {
   sheetName: string;
@@ -381,13 +380,4 @@ export function csvToMarkdownTable(csv: string): string {
   const table = [formatRow(rows[0]), separator, ...rows.slice(1).map(formatRow)].join("\n");
 
   return title ? `## ${title}\n\n${table}` : table;
-}
-
-/**
- * Triggers download of a CSV file
- */
-export function downloadCsv(csv: string, filename: string): void {
-  // Prepend UTF-8 BOM so Excel detects encoding correctly
-  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
-  void downloadBlob(blob, filename.endsWith(".csv") ? filename : `${filename}.csv`);
 }

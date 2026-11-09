@@ -4,7 +4,7 @@ import type { SyncActivity } from "@/shared/lib/chatSync";
 import type { FileSyncActivity } from "@/shared/lib/fileSync";
 import type { SyncProgress } from "@/shared/lib/syncProgress";
 
-export type SessionStatus = "disabled" | "initializing" | "setup" | "locked" | "upload-only" | "ready" | "error";
+type SessionStatus = "disabled" | "initializing" | "setup" | "locked" | "upload-only" | "ready" | "error";
 
 /** One word the UI can trust: is everything on the server or not. */
 export type SyncHealth =

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "./DropdownMenu";
 
-export interface SelectorMenuOption {
+interface SelectorMenuOption {
   value: string;
   label: string;
 }

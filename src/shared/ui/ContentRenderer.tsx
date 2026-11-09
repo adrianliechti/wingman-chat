@@ -186,13 +186,6 @@ function MediaDisplay({ media, className }: { media: Media; className?: string }
   return <FileDisplay media={media} className={className} />;
 }
 
-/** One media part: images and previewable documents show a preview; other files a download chip. */
-export function ContentRenderer({ content, className }: { content: ContentPart | MessagePart; className?: string }) {
-  if (!isMediaPart(content)) return null;
-  const media = toMedia(content);
-  return media ? <MediaDisplay media={media} className={className} /> : null;
-}
-
 function isImage(media: Media): boolean {
   return media.kind === "image" || media.mimeType.startsWith("image/");
 }

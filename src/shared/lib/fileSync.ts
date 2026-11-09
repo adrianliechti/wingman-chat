@@ -614,10 +614,10 @@ export class FileSync {
     expectedMtime: number | undefined,
     version: number | undefined,
   ): Promise<void> {
-    if (!isSafePath(path) || isExcluded(path) || id !== (await fileIdFor(path))) {
-      console.error(`fileSync: refusing to write unsafe path from remote: ${path}`);
-      return;
+    if (!isSafePath(path) || id !== (await fileIdFor(path))) {
+      throw new Error(`Refusing to restore a backup file with an unsafe or mismatched path: ${path}`);
     }
+    if (isExcluded(path)) return;
 
     if (!(await this.replaceLocal(path, expectedMtime, new Blob([new Uint8Array(bytes)]), version))) {
       this.dirty.add(path);

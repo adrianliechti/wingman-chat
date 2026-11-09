@@ -66,7 +66,7 @@ type ResolvedShape<S extends z.ZodRawShape> = {
 };
 
 /** Binder metadata is supplied by the SDK, not authored in our catalog. */
-export interface ResolvedMetadata {
+interface ResolvedMetadata {
   isValid?: boolean;
   validationErrors?: string[];
   accessibility?: {

@@ -170,7 +170,10 @@ it.each([undefined, "none", "individual", "delegated"] as const)(
       {
         ...fixture.plugins[0],
         mcpServers: [
-          { ...fixture.plugins[0].mcpServers![0], approval: { mode: mode === "individual" ? "delegated" : "individual" } },
+          {
+            ...fixture.plugins[0].mcpServers![0],
+            approval: { mode: mode === "individual" ? "delegated" : "individual" },
+          },
         ],
       },
     ];

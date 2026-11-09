@@ -32,9 +32,10 @@ afterEach(() => sync?.stop());
 it("does not restore an unknown remote file after its directory is deleted during download", async () => {
   const key = await generateDEK();
   const path = "agents/one/remote.md";
+  const id = await idFor(path);
   memory.put("agents/one/local.md", "local");
-  const data = await encryptFile(key, { path, mtime: 2000 }, new TextEncoder().encode("remote"), "alice", "id");
-  vi.mocked(api.listFiles).mockResolvedValue([{ id: "id", etag: "remote", updated: "2026-01-01", size: data.length }]);
+  const data = await encryptFile(key, { path, mtime: 2000 }, new TextEncoder().encode("remote"), "alice", id);
+  vi.mocked(api.listFiles).mockResolvedValue([{ id, etag: "remote", updated: "2026-01-01", size: data.length }]);
   let release!: (value: { etag: string; data: Uint8Array }) => void;
   vi.mocked(api.getFile).mockImplementation(
     () =>
@@ -54,8 +55,9 @@ it("does not restore an unknown remote file after its directory is deleted durin
 it.each(["update", "deletion"])("preserves a local edit made while a remote %s is being listed", async (kind) => {
   const key = await generateDEK();
   const path = "agents/one/AGENTS.md";
+  const id = await idFor(path);
   memory.put(path, "old");
-  await writeJson("_sync/files.json", { userId: "alice", entries: { [path]: { id: "id", etag: "old", mtime: 1000 } } });
+  await writeJson("_sync/files.json", { userId: "alice", entries: { [path]: { id, etag: "old", mtime: 1000 } } });
   let release!: (value: api.ServerFileMeta[]) => void;
   vi.mocked(api.listFiles).mockImplementation(
     () =>
@@ -65,13 +67,13 @@ it.each(["update", "deletion"])("preserves a local edit made while a remote %s i
   );
   vi.mocked(api.getFile).mockResolvedValue({
     etag: "remote",
-    data: await encryptFile(key, { path, mtime: 2000 }, new TextEncoder().encode("remote"), "alice", "id"),
+    data: await encryptFile(key, { path, mtime: 2000 }, new TextEncoder().encode("remote"), "alice", id),
   });
   sync = await FileSync.create({ userId: "alice", dek: key });
   sync.start();
   await vi.waitFor(() => expect(release).toBeDefined());
   await writeText(path, "local edit");
-  release(kind === "update" ? [{ id: "id", etag: "remote", updated: "2026-01-01T00:00:00Z", size: 1 }] : []);
+  release(kind === "update" ? [{ id, etag: "remote", updated: "2026-01-01T00:00:00Z", size: 1 }] : []);
   await sync.fullSync();
   expect(await readText(path)).toBe("local edit");
   expect(api.putFile).toHaveBeenCalled();
@@ -241,7 +243,7 @@ it("reports a corrupt remote file as an incomplete restore and retries it", asyn
   expect(lastError).toBeNull();
 });
 
-it("refuses a remote file whose id does not belong to its path", async () => {
+it("reports an incomplete restore when a remote file's id does not belong to its path", async () => {
   const key = await generateDEK();
   const data = await encryptFile(
     key,
@@ -253,7 +255,12 @@ it("refuses a remote file whose id does not belong to its path", async () => {
   vi.mocked(api.listFiles).mockResolvedValue([{ id: "id", etag: "remote", updated: "2026-01-01", size: data.length }]);
   vi.mocked(api.getFile).mockResolvedValue({ etag: "remote", data });
   sync = await FileSync.create({ userId: "alice", dek: key });
-  await sync.fullSync();
+  await expect(sync.fullSync()).rejects.toThrow("1 backup file could not be restored");
+  let activity!: FileSyncActivity;
+  sync.subscribeActivity((value) => {
+    activity = value;
+  });
+  expect(activity.lastError).toContain("could not be restored");
   expect(await readText("plugins/x/run.js")).toBeUndefined();
 });
 

@@ -26,8 +26,6 @@ import { flushPersistence, withPersistenceLock } from "./persistence";
 import * as keystore from "./keystore";
 import { forgetBackup, loadRememberedBackup, rememberBackup } from "./rememberedBackup";
 
-export type SessionStatus = "disabled" | "initializing" | "setup" | "locked" | "upload-only" | "ready" | "error";
-
 interface SetupSession {
   status: "setup";
   userId: string;
@@ -99,7 +97,7 @@ export function getSession(): Session {
   return session;
 }
 
-export function isEnabled(): boolean {
+function isEnabled(): boolean {
   return getConfig().store === true;
 }
 
@@ -369,10 +367,7 @@ export async function setPin(pin: string): Promise<void> {
   if (current.status !== "ready" && current.status !== "setup") throw new Error("Unlock backup to change protection.");
   const dek = await rootBytes(current);
   const newState = await keystore.setPin(current.keystore, dek, pin, current.userId);
-  if (current.status === "setup") {
-    setSession({ status: "locked", userId: current.userId, keystore: newState });
-    await activateRestore(current.userId, current.dek, newState);
-  } else await updateProtection({ ...current, dek }, newState);
+  await updateProtection({ ...current, dek }, newState);
 }
 
 /** Change the PIN. Requires the old PIN. */
@@ -385,7 +380,12 @@ export async function changePin(oldPin: string, newPin: string): Promise<void> {
 }
 
 /** Keep local trust bound to the newly committed protection record. */
-async function updateProtection(current: ReadySession, state: keystore.KeystoreState): Promise<void> {
+async function updateProtection(current: SetupSession | ReadySession, state: keystore.KeystoreState): Promise<void> {
+  if (current.status === "setup") {
+    setSession({ status: "locked", userId: current.userId, keystore: state });
+    await activateRestore(current.userId, current.dek, state);
+    return;
+  }
   setSession({ ...current, keystore: state, remembered: false });
   await withBackupStorage(async () => {
     if (!isBackupSessionCurrent()) throw new Error("Backup settings changed. Reload before syncing.");
@@ -425,7 +425,7 @@ export async function syncNow(): Promise<void> {
 }
 
 /** Resolve when the session is ready, or reject if disabled/error. */
-export async function whenReady(): Promise<ReadySession> {
+async function whenReady(): Promise<ReadySession> {
   await initSession();
   if (session.status === "ready") return session;
   return new Promise((resolve, reject) => {
@@ -462,8 +462,5 @@ export async function setPasskey(): Promise<void> {
   if (current.status !== "ready" && current.status !== "setup") throw new Error("Unlock backup to change protection.");
   const dek = await rootBytes(current);
   const newState = await keystore.setPasskey(current.keystore, dek, current.userId);
-  if (current.status === "setup") {
-    setSession({ status: "locked", userId: current.userId, keystore: newState });
-    await activateRestore(current.userId, current.dek, newState);
-  } else await updateProtection({ ...current, dek }, newState);
+  await updateProtection({ ...current, dek }, newState);
 }

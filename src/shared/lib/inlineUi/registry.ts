@@ -158,8 +158,8 @@ export function componentReference(group: ReferenceGroup): string {
   return sections.join("\n");
 }
 
-export const REFERENCE_START = "<!-- A2UI-CATALOG:START -->";
-export const REFERENCE_END = "<!-- A2UI-CATALOG:END -->";
+const REFERENCE_START = "<!-- A2UI-CATALOG:START -->";
+const REFERENCE_END = "<!-- A2UI-CATALOG:END -->";
 export function updateComponentReference(source: string, group: ReferenceGroup): string {
   const start = source.indexOf(REFERENCE_START),
     end = source.indexOf(REFERENCE_END);

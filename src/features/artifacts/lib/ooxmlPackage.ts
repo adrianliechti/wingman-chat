@@ -24,10 +24,10 @@ export interface OoxmlIssue {
   message: string;
 }
 
-export const fail = (id: string, message: string): OoxmlIssue => ({ id, severity: "fail", message });
-export const warn = (id: string, message: string): OoxmlIssue => ({ id, severity: "warn", message });
+const fail = (id: string, message: string): OoxmlIssue => ({ id, severity: "fail", message });
+const warn = (id: string, message: string): OoxmlIssue => ({ id, severity: "warn", message });
 
-export const MAX_OOXML_ISSUES = 12;
+const MAX_OOXML_ISSUES = 12;
 
 export class OoxmlIssueCollector {
   readonly issues: OoxmlIssue[] = [];
@@ -60,7 +60,7 @@ export class OoxmlIssueCollector {
 
 export type OoxmlFormat = "docx" | "pptx" | "xlsx";
 
-export interface OoxmlLogicalUnit {
+interface OoxmlLogicalUnit {
   ordinal: number;
   name?: string;
   path?: string;

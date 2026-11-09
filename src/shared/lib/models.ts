@@ -301,7 +301,7 @@ const MODEL_TYPE_CUES: [ModelType, RegExp][] = [
   ["renderer", /(?:^|[^a-z0-9])(?:image|imagen|flux|dall-e|stable-diffusion|midjourney|nano-banana)(?:$|[^a-z0-9])/],
 ];
 
-export function isModelType(value: unknown): value is ModelType {
+function isModelType(value: unknown): value is ModelType {
   return value === "completer" || MODEL_TYPE_CUES.some(([type]) => type === value);
 }
 

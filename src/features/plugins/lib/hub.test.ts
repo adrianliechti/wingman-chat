@@ -15,11 +15,14 @@ async function download(server: Record<string, unknown>) {
   return downloadHubPlugin("https://hub.example.test", { id: "test", source: "test" });
 }
 
-it.each([undefined, "none", "individual", "delegated"] as const)("preserves plugin MCP approval mode %s", async (mode) => {
-  const approval = mode === undefined ? undefined : { mode };
-  const result = await download({ approval });
-  expect(result.mcpServers[0].approval).toEqual(approval);
-});
+it.each([undefined, "none", "individual", "delegated"] as const)(
+  "preserves plugin MCP approval mode %s",
+  async (mode) => {
+    const approval = mode === undefined ? undefined : { mode };
+    const result = await download({ approval });
+    expect(result.mcpServers[0].approval).toEqual(approval);
+  },
+);
 
 it.each([{ approval: "prompt" }, { approval: { mode: "always" } }, { needsApproval: true }])(
   "rejects invalid plugin approval instead of losing it: %j",

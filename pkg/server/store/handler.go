@@ -48,15 +48,15 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 	handle("POST "+prefix+"/v1/chats/{id}/compact", h.requireProtection(h.handleCompactChat))
 	handle("DELETE "+prefix+"/v1/chats/{id}", h.requireProtection(h.handleDeleteChat))
 
-	handle("GET "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleGetBlob))
+	handle("GET "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleGetObject(store.BlobObject)))
 	handle("HEAD "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleHeadBlob))
-	handle("PUT "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handlePutBlob))
-	handle("DELETE "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleDeleteBlob))
+	handle("PUT "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handlePutObject(store.BlobObject)))
+	handle("DELETE "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleDeleteObject(store.BlobObject)))
 
 	handle("GET "+prefix+"/v1/files", h.requireProtection(h.handleListFiles))
-	handle("GET "+prefix+"/v1/files/{id}", h.requireProtection(h.handleGetFile))
-	handle("PUT "+prefix+"/v1/files/{id}", h.requireProtection(h.handlePutFile))
-	handle("DELETE "+prefix+"/v1/files/{id}", h.requireProtection(h.handleDeleteFile))
+	handle("GET "+prefix+"/v1/files/{id}", h.requireProtection(h.handleGetObject(store.FileObject)))
+	handle("PUT "+prefix+"/v1/files/{id}", h.requireProtection(h.handlePutObject(store.FileObject)))
+	handle("DELETE "+prefix+"/v1/files/{id}", h.requireProtection(h.handleDeleteObject(store.FileObject)))
 }
 
 // auth -------------------------------------------------------------------
@@ -340,43 +340,6 @@ func (h *Handler) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
-	userID, _, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	blobID := r.PathValue("id")
-
-	reader, _, err := h.store.GetObject(r.Context(), userID, store.BlobObject, blobID)
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	defer reader.Close()
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-	if _, err := io.Copy(w, reader); err != nil {
-		panic(http.ErrAbortHandler)
-	}
-}
-
-func (h *Handler) handlePutBlob(w http.ResponseWriter, r *http.Request) {
-	userID, _, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	blobID := r.PathValue("id")
-
-	if _, err := h.store.PutObject(r.Context(), userID, store.BlobObject, blobID, http.MaxBytesReader(w, r.Body, store.MaxObjectBytes), ""); err != nil {
-		writeStoreError(w, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func (h *Handler) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	userID, _, ok := requireUser(w, r)
 	if !ok {
@@ -395,77 +358,70 @@ func (h *Handler) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(files)
 }
 
-func (h *Handler) handleGetFile(w http.ResponseWriter, r *http.Request) {
-	userID, _, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
+// Files use ETags for conflict resolution; content-addressed blobs are immutable
+// from the client's perspective and retain unconditional upload/delete semantics.
+func (h *Handler) handleGetObject(kind store.ObjectKind) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, _, ok := requireUser(w, r)
+		if !ok {
+			return
+		}
+		reader, etag, err := h.store.GetObject(r.Context(), userID, kind, r.PathValue("id"))
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		defer reader.Close()
 
-	fileID := r.PathValue("id")
-
-	reader, etag, err := h.store.GetObject(r.Context(), userID, store.FileObject, fileID)
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	defer reader.Close()
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("ETag", `"`+etag+`"`)
-	if _, err := io.Copy(w, reader); err != nil {
-		panic(http.ErrAbortHandler)
+		w.Header().Set("Content-Type", "application/octet-stream")
+		if kind == store.FileObject {
+			w.Header().Set("ETag", `"`+etag+`"`)
+		}
+		if _, err := io.Copy(w, reader); err != nil {
+			panic(http.ErrAbortHandler)
+		}
 	}
 }
 
-func (h *Handler) handlePutFile(w http.ResponseWriter, r *http.Request) {
-	userID, _, ok := requireUser(w, r)
-	if !ok {
-		return
+func (h *Handler) handlePutObject(kind store.ObjectKind) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, _, ok := requireUser(w, r)
+		if !ok {
+			return
+		}
+		ifMatch := ""
+		if kind == store.FileObject {
+			ifMatch = casFromRequest(r)
+		}
+		body := http.MaxBytesReader(w, r.Body, store.MaxObjectBytes)
+		etag, err := h.store.PutObject(r.Context(), userID, kind, r.PathValue("id"), body, ifMatch)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		if kind == store.FileObject {
+			w.Header().Set("ETag", `"`+etag+`"`)
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
-
-	fileID := r.PathValue("id")
-
-	body := http.MaxBytesReader(w, r.Body, store.MaxObjectBytes)
-	etag, err := h.store.PutObject(r.Context(), userID, store.FileObject, fileID, body, casFromRequest(r))
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-
-	w.Header().Set("ETag", `"`+etag+`"`)
-	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handler) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
-	userID, _, ok := requireUser(w, r)
-	if !ok {
-		return
+func (h *Handler) handleDeleteObject(kind store.ObjectKind) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, _, ok := requireUser(w, r)
+		if !ok {
+			return
+		}
+		ifMatch := ""
+		if kind == store.FileObject {
+			ifMatch = casFromRequest(r)
+		}
+		if err := h.store.DeleteObject(r.Context(), userID, kind, r.PathValue("id"), ifMatch); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
-
-	fileID := r.PathValue("id")
-
-	if err := h.store.DeleteObject(r.Context(), userID, store.FileObject, fileID, casFromRequest(r)); err != nil {
-		writeStoreError(w, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *Handler) handleDeleteBlob(w http.ResponseWriter, r *http.Request) {
-	userID, _, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	blobID := r.PathValue("id")
-
-	if err := h.store.DeleteObject(r.Context(), userID, store.BlobObject, blobID, ""); err != nil {
-		writeStoreError(w, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) handleBackupUsage(w http.ResponseWriter, r *http.Request) {
