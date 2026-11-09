@@ -1,12 +1,12 @@
 # Inline UI
 
-Inline UI embeds native interactive surfaces in assistant replies. Its wire contract is **A2UI v1.0 candidate**, pinned to `@a2ui/web_core@0.14.0`. AG-UI remains the agent event transport; A2UI owns UI messages, catalogs, bindings, data models and actions.
+Inline UI embeds native interactive surfaces in assistant replies. Its wire contract is **A2UI v1.0 candidate**, pinned to `@a2ui/web_core@0.15.0`. AG-UI remains the agent event transport; A2UI owns UI messages, catalogs, bindings, data models and actions.
 
 The Basic Catalog supplies 18 standard components. Wingman's versioned catalog supplies 24 extensions, including Chart, Table, Metric, Grid, Svg, Timeline, Form and richer controls. These use A2UI component naming and value bindings. Chart/table payloads are Wingman catalog contracts; A2UI does not standardize their data format.
 
 ## Authoring
 
-Emit strict JSON in a `ui` or `a2ui` fence: one message, an array of messages, or newline-separated messages. Each carries `version: "v1.0"`. Use `createSurface` with a unique surface ID and a flat component list containing `root`. Child references are IDs. Bind inputs with `{"@path":"/seats"}` and calculations with `{"@call":"evaluate","catalogId":"urn:wingman:inline-ui:catalog:1","args":{"expression":"seats * 12","values":{"seats":{"@path":"/seats"}}}}`.
+Emit strict JSON in a `ui` or `a2ui` fence: one message, an array of messages, or newline-separated messages. Each carries `version: "1.0"`. Use `createSurface` with a unique surface ID and a flat component list containing `root`. Child references are IDs. Bind inputs with `{"@path":"/seats"}` and calculations with `{"@call":"evaluate","catalogId":"urn:wingman:inline-ui:catalog:1","args":{"expression":"seats * 12","values":{"seats":{"@path":"/seats"}}}}`.
 
 Load the [inline-ui skill](../skills/studio/inline-ui/SKILL.md), which routes to focused references for protocol, layout/content, controls/forms, data display and functions. Read only the groups needed for the current interface; examples and full JSON schemas remain separate resources. Markdown explains the answer; Inline UI lets users explore assumptions or choose a next step. Requested deliverables or arbitrary applications use artifacts.
 
@@ -24,7 +24,7 @@ Load the [inline-ui skill](../skills/studio/inline-ui/SKILL.md), which routes to
 
 ## Architecture and persistence
 
-`src/shared/lib/inlineUi/catalog.ts` registers upstream schemas/functions and Wingman extensions. `protocol.ts` parses bounded strict messages and uses the same Markdown parser as display. `runtime.ts` owns one SDK MessageProcessor per conversation, its resolvers and local persistence. `src/shared/ui/inlineUi` renders resolved nodes with native React components. `diagnostics.ts` supplies bounded diagnostics and structured interaction context to the model.
+`src/shared/lib/inlineUi/catalog.ts` reuses the SDK's Basic catalog and registers Wingman extensions. The SDK supplies the complete Basic definitions, catalog instructions and theme schema. `protocol.ts` parses bounded strict messages and uses the same Markdown parser as display. `runtime.ts` owns one SDK MessageProcessor per conversation, its resolvers and local persistence. Surface subscriptions are released when each surface is deleted. `src/shared/ui/inlineUi` renders resolved nodes with native React components. `diagnostics.ts` supplies bounded diagnostics and structured interaction context to the model.
 
 Both catalogs have explicit renderer maps checked against their schemas, including nested props and control write types. `rendererTypes.ts` infers resolved values from schema branches before the SDK's dynamic-expression `any` can erase their types; child references become SDK ComponentNodes. One dispatch boundary connects SDK nodes to these typed renderers. Type regression tests and catalog coverage tests guard this mapping alongside the existing wire-format snapshots.
 
@@ -48,9 +48,9 @@ This follows the useful pattern in [CopilotKit's skill](https://github.com/Copil
 
 Tests cover all 42 registered components with explicit wire fixtures, resolution snapshots and renderer dispatch. Schema tests lock required properties, unknown-property rejection, structured data, function inputs and protocol envelopes. Runtime tests cover relative template bindings, actions, replay, transcript edits, storage isolation and unsafe paths. Browser tests exercise real charts, keyboard controls, validation and reload persistence.
 
-The pinned SDK includes 43 upstream examples, all processed unchanged. Catalog snapshots and upstream examples must be reviewed whenever the SDK version changes; update the constant, persistence contract and generated references together. SDK 0.14 uses wire function-call schemas in `validationSchema`; generated signatures read their `args` schemas. The reserved `@index` function belongs to the protocol and must omit `catalogId`.
+The pinned SDK includes 43 upstream examples, all processed unchanged. Catalog snapshots and upstream examples must be reviewed whenever the SDK version changes; update the constant, persistence contract and generated references together. The SDK uses wire function-call schemas in `validationSchema`; generated signatures read their `args` schemas. The reserved `@index` function belongs to the protocol and must omit `catalogId`.
 
-SDK 0.14.0 still rejects structured ValidationResult operands in its logical function invoker. A narrow BasicCatalog adapter normalizes only execution-time and/or/not operands. Wire schemas remain upstream-owned. Remove it when the SDK fixes the issue. The runtime also rechecks intermediate binding errors against settled model state.
+SDK 0.15 accepts structured ValidationResult operands in its logical function invoker, so no local coercion adapter is needed. Saved messages with the former `"v1.0"` marker are normalized to `"1.0"` before validation. The runtime subscribes directly to surface actions so controls stay busy until submission completes, and rechecks intermediate binding errors against settled model state.
 
 Run `npm run check`, `npx vp test run`, `npx playwright test tests/browser/markdown.spec.ts tests/browser/inline-ui-gallery.spec.ts`, and `npm run build` when updating this integration.
 

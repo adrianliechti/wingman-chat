@@ -29,6 +29,7 @@ config.client.listModels = async () => [model];
 const provider = testClient(async () => assistantMessage("Done"));
 config.client.textAdapter = (model, signal) => provider.textAdapter(model, signal);
 config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
+config.client.generateTitle = async () => "Fixture";
 
 const releaseReads: Array<() => void> = [];
 let readHeld = false;
@@ -168,7 +169,9 @@ createRoot(document.getElementById("root")!).render(
     <ThemeProvider>
       <AgentContext value={{ currentAgent: null } as AgentContextType}>
         <ProfileContext value={{ generateInstructions: () => "" } as ProfileContextType}>
-          <ToolsContext value={{ providers: [], coreProviders: [] } as unknown as ToolsContextValue}>
+          <ToolsContext
+            value={{ providers: [], coreProviders: [], getSkillsProvider: () => null } as unknown as ToolsContextValue}
+          >
             <AppContext value={{ closeApp: async () => {} } as AppContextType}>
               <ArtifactsProvider>
                 <ChatProvider>

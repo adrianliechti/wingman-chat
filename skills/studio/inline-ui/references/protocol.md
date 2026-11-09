@@ -4,7 +4,7 @@ A `ui` or `a2ui` fence accepts strict JSON: one message, an array of messages, o
 
 ```json
 {
-  "version": "v1.0",
+  "version": "1.0",
   "createSurface": {
     "surfaceId": "estimate",
     "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -65,7 +65,7 @@ Use a local function for interaction that does not need a model request:
 
 <!-- A2UI-CATALOG:START -->
 
-A2UI v1.0; SDK 0.14.0. Generated signatures; `?` means optional.
+A2UI 1.0; SDK 0.15.0. Generated signatures; `?` means optional.
 
 ### Basic catalog
 

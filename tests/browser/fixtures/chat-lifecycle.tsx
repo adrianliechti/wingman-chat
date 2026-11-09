@@ -250,7 +250,18 @@ function Fixture() {
 function AgentOwner({ children }: { children: ReactNode }) {
   const [currentAgent, setCurrentAgent] = useState<Agent | null>(null);
   window.setChatAgent = setCurrentAgent;
-  return <AgentContext value={{ currentAgent } as AgentContextType}>{children}</AgentContext>;
+  return (
+    <AgentContext
+      value={
+        {
+          currentAgent,
+          getAgent: (id: string) => (currentAgent?.id === id ? currentAgent : undefined),
+        } as AgentContextType
+      }
+    >
+      {children}
+    </AgentContext>
+  );
 }
 
 const skills = createSkillsProvider(
@@ -290,6 +301,7 @@ function ToolsOwner({ children }: { children: ReactNode }) {
         {
           providers: [...(enabled ? [skills] : []), ...clients],
           coreProviders: [],
+          getSkillsProvider: () => (enabled ? skills : null),
           isProviderEnabled: () => true,
           getProviderState: (id: string) => (id === "internet" ? getState(id) : "connected"),
         } as unknown as ToolsContextValue

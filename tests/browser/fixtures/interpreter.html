@@ -51,7 +51,7 @@
           const fs = window.interpreterMemoryWorkspace ? memoryWorkspace() : new FileSystemManager(chatId);
           await fs.applyOverlaySnapshot(files, { deleteMissing: true });
           const providerId = "browser-script-skills";
-          createSkillsProvider(
+          const provider = createSkillsProvider(
             [
               {
                 name: "test-script",
@@ -64,6 +64,7 @@
             ],
             { id: providerId, name: "Script fixture", description: "Script fixture" },
           );
+          setSkillResourceResolver(providerId, provider?.loadFiles ?? null);
           try {
             const results = [];
             for (const args of requests) {

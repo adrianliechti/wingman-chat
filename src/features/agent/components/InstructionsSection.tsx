@@ -82,7 +82,7 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
           >
             <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
           </Transition.Child>
-          <div className="fixed inset-0 overflow-y-auto">
+          <div className="fixed inset-x-0 app-viewport overflow-y-auto">
             <div className="flex min-h-full items-center justify-center p-4">
               <Transition.Child
                 as={Fragment}

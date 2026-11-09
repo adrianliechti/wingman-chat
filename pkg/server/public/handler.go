@@ -42,6 +42,8 @@ func cacheControl(p string) string {
 }
 
 func (h *Handler) Attach(mux *http.ServeMux) {
+	mux.HandleFunc("GET /manifest.json", h.serveManifest)
+
 	mux.HandleFunc("GET /config.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", cacheRevalidate)

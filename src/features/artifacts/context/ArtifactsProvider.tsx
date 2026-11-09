@@ -74,6 +74,10 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     });
   }, []);
 
+  const clearActiveFile = useCallback(() => {
+    setWorkspace((current) => (current.activeFile === null ? current : { ...current, activeFile: null }));
+  }, []);
+
   const toggleArtifactsDrawer = useCallback(() => {
     setShowArtifactsDrawer((prev) => !prev);
   }, []);
@@ -85,6 +89,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     activeFile,
     showArtifactsDrawer,
     openFile,
+    clearActiveFile,
     setShowArtifactsDrawer,
     toggleArtifactsDrawer,
     setFileSystem,

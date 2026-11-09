@@ -41,6 +41,7 @@ export function chatCompaction(
               { role: "user", content: "Summarize the preceding conversation." },
             ],
             systemPrompts: [instructions],
+            ...client.chatOptions(model),
             middleware: [telemetry],
             stream: false,
             abortController,

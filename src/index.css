@@ -2,6 +2,164 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ─── Mobile shell tokens ────────────────────────────────────────────────────
+   Safe areas (status bar, home indicator) and the floating top-bar region used
+   by every page. `--app-keyboard` tracks the on-screen
+   keyboard height (see useVisualViewport) so fixed bottom chrome rides above it. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --app-topbar: calc(var(--safe-top) + 3.75rem);
+  --app-keyboard: 0px;
+  --app-height: 100dvh;
+  --app-viewport-top: 0px;
+
+  /* Liquid-glass material (light). Surfaces reference only these tokens. */
+  --app-bg: #fafafa;
+  --glass-bg: rgba(255, 255, 255, 0.62);
+  --glass-bg-strong: rgba(250, 250, 250, 0.94);
+  --glass-tint: rgba(255, 255, 255, 0.35);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-hi: rgba(255, 255, 255, 0.95);
+  --glass-shadow: rgba(0, 0, 0, 0.14);
+  --glass-blur: 20px;
+}
+
+@media (min-width: 48rem) {
+  :root {
+    /* Desktop navigation: 42px tabs, 16px vertical padding and a 1px border. */
+    --app-topbar: calc(var(--safe-top) + 3.6875rem);
+  }
+}
+
+/* The keyboard covers the home indicator, so bottom chrome sits flush on it. */
+.keyboard-open {
+  --safe-bottom: 0px;
+}
+
+/* Use on fixed shells, including dialogs portaled outside the application root. */
+@utility app-viewport {
+  top: var(--app-viewport-top);
+  bottom: var(--app-keyboard);
+}
+
+/* iPhone zooms small form controls on focus. Cover landscape and tablets too,
+   without disabling the user's pinch zoom. Keep non-text controls their size. */
+@media (any-pointer: coarse) {
+  textarea,
+  select,
+  input:not(
+    [type="checkbox"],
+    [type="radio"],
+    [type="range"],
+    [type="color"],
+    [type="file"],
+    [type="hidden"],
+    [type="button"],
+    [type="submit"],
+    [type="reset"]
+  ) {
+    font-size: max(16px, 1rem);
+  }
+}
+
+.dark {
+  --app-bg: #0a0a0a;
+  --glass-bg: rgba(32, 32, 34, 0.58);
+  --glass-bg-strong: rgba(18, 18, 20, 0.94);
+  --glass-tint: rgba(255, 255, 255, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-hi: rgba(255, 255, 255, 0.22);
+  --glass-shadow: rgba(0, 0, 0, 0.6);
+}
+
+/* Translucent control surface: blurred, saturated, with a specular top edge.
+   For bars, capsules, the composer and sheets — never for content, never nested. */
+@utility glass {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(to bottom, var(--glass-tint), transparent 45%), var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi),
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 10px 30px var(--glass-shadow);
+}
+
+/* Denser variant for sheets and the history drawer, where text sits on top. */
+@utility glass-strong {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(to bottom, var(--glass-tint), transparent 30%), var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi),
+    0 -1px 2px rgba(0, 0, 0, 0.04),
+    0 -16px 40px var(--glass-shadow);
+}
+
+/* Fade that lets content scroll beneath a floating bar: the page colour
+   dissolves into the content, so no hard edge is drawn. */
+@utility scroll-edge-top {
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    var(--app-bg) 0%,
+    color-mix(in srgb, var(--app-bg) 70%, transparent) 55%,
+    transparent 100%
+  );
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  -webkit-mask-image: linear-gradient(to bottom, black 35%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 35%, transparent 100%);
+}
+
+@utility scroll-edge-bottom {
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    var(--app-bg) 0%,
+    color-mix(in srgb, var(--app-bg) 70%, transparent) 55%,
+    transparent 100%
+  );
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  -webkit-mask-image: linear-gradient(to top, black 35%, transparent 100%);
+  mask-image: linear-gradient(to top, black 35%, transparent 100%);
+}
+
+/* Finger feedback instead of hover: a quick squash on press. */
+@utility press {
+  transition:
+    transform 150ms var(--ease-out),
+    opacity 150ms var(--ease-out),
+    background-color 150ms var(--ease-out),
+    color 150ms var(--ease-out);
+  &:active {
+    transform: scale(0.94);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &:active {
+      transform: none;
+    }
+  }
+}
+
+@media (prefers-contrast: more) {
+  .glass,
+  .glass-strong {
+    background: var(--app-bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 ::highlight(chat-search) {
   background-color: #fde68a;
   color: #171717;
@@ -20,6 +178,8 @@
 
   html {
     color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
     @apply bg-neutral-50 dark:bg-neutral-950;
   }
 
@@ -343,6 +503,29 @@ ol.task-list > li:not(.task-list-item) {
 
   to {
     width: 100%;
+  }
+}
+
+/* Sheet pages slide in from the side they come from (push) or return to (pop). */
+@keyframes sheet-push {
+  from {
+    opacity: 0;
+    transform: translateX(2rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sheet-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-2rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 

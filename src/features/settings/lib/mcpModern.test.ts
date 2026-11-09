@@ -254,6 +254,86 @@ describe("MCP over the 2026-07-28 protocol with the real SDK", () => {
     ]);
   });
 
+  it("shows sibling SDK input requests one at a time and returns both answers", async () => {
+    call.mockImplementation((_name, ctx) => {
+      if (inputResponse(ctx.mcpReq.inputResponses, "first").kind === "missing")
+        return inputRequired({
+          inputRequests: {
+            first: inputRequired.elicit({ message: "First", requestedSchema: schema }),
+            second: inputRequired.elicit({ message: "Second", requestedSchema: schema }),
+          },
+          requestState: "two-answers",
+        });
+      const answers = ["first", "second"].map((key) => inputResponse(ctx.mcpReq.inputResponses, key));
+      return text(answers.map((answer) => (answer.kind === "elicit" ? answer.content?.name : "missing")).join(":"));
+    });
+    await provider.connect();
+    let answer!: (value: { action: "accept"; content: { name: string } }) => void;
+    const elicit = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ action: "accept", content: { name: "B" } });
+    const execution = tool("ask").execute({}, { context: { elicit }, emitCustomEvent() {} });
+    await vi.waitFor(() => expect(elicit).toHaveBeenCalledOnce());
+    expect(elicit.mock.calls[0][0].message).toBe("First");
+    answer({ action: "accept", content: { name: "A" } });
+    expect(await execution).toEqual([{ type: "text", content: "A:B" }]);
+    expect(elicit.mock.calls.map(([request]) => request.message)).toEqual(["First", "Second"]);
+    expect(retries()).toHaveLength(2);
+    expect(retries()[1].id).not.toBe(retries()[0].id);
+  });
+
+  it("does not show queued sibling input after Stop", async () => {
+    call.mockImplementation(() =>
+      inputRequired({
+        inputRequests: {
+          first: inputRequired.elicit({ message: "First", requestedSchema: schema }),
+          second: inputRequired.elicit({ message: "Second", requestedSchema: schema }),
+        },
+      }),
+    );
+    await provider.connect();
+    let answer!: (value: { action: "accept"; content: { name: string } }) => void;
+    const elicit = vi.fn(
+      () =>
+        new Promise<{ action: "accept"; content: { name: string } }>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const controller = new AbortController();
+    const execution = tool("ask").execute({}, { context: { elicit, signal: controller.signal }, emitCustomEvent() {} });
+    const rejected = expect(execution).rejects.toThrow();
+    await vi.waitFor(() => expect(elicit).toHaveBeenCalledOnce());
+    controller.abort();
+    await rejected;
+    answer({ action: "accept", content: { name: "late" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(elicit).toHaveBeenCalledOnce();
+    expect(retries()).toHaveLength(1);
+  });
+
+  it("uses the SDK round limit instead of retrying input requests indefinitely", async () => {
+    call.mockImplementation(() =>
+      inputRequired({
+        inputRequests: {
+          name: inputRequired.elicit({ message: "Again", requestedSchema: schema }),
+        },
+      }),
+    );
+    await provider.connect();
+    const elicit = vi.fn().mockResolvedValue({ action: "accept", content: { name: "Ada" } });
+    await expect(tool("ask").execute({}, { context: { elicit }, emitCustomEvent() {} })).rejects.toMatchObject({
+      code: "INPUT_REQUIRED_ROUNDS_EXCEEDED",
+    });
+    expect(elicit).toHaveBeenCalledTimes(10);
+    expect(retries()).toHaveLength(11);
+  });
+
   it.each(["stop", "disconnect"])("does not send a late input answer after %s", async (action) => {
     call.mockImplementation(askOnce(() => text("must not retry")));
     await provider.connect();

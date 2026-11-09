@@ -30,21 +30,23 @@ export function SegmentedControl<T extends string>({
       aria-errormessage={errorId}
     >
       {label && (
-        <Label className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}</Label>
+        <Label className="mb-1.5 block text-xs font-medium text-neutral-500 max-sm:text-[15px] max-sm:text-neutral-700 dark:text-neutral-400 max-sm:dark:text-neutral-200">
+          {label}
+        </Label>
       )}
       {description && (
         <Description className="mb-2.5 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
           {description}
         </Description>
       )}
-      <div className="flex w-full flex-wrap gap-1 rounded-xl border border-neutral-200/70 bg-neutral-100/70 p-1 dark:border-neutral-700/60 dark:bg-neutral-800/60">
+      <div className="flex w-full flex-wrap gap-1 rounded-xl border border-neutral-200/70 bg-neutral-100/70 p-1 max-sm:rounded-full max-sm:border-0 max-sm:bg-black/6 dark:border-neutral-700/60 dark:bg-neutral-800/60 max-sm:dark:bg-white/10">
         {options.map((option) => (
           <Radio
             as="button"
             type="button"
             key={option.value}
             value={option.value}
-            className="min-w-0 flex-1 break-words rounded-lg px-3 py-1.5 text-xs font-medium text-neutral-500 transition-colors hover:text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 data-checked:bg-white data-checked:text-neutral-900 data-checked:shadow-sm data-checked:ring-1 data-checked:ring-black/5 data-disabled:cursor-not-allowed data-disabled:opacity-50 dark:text-neutral-400 dark:hover:text-neutral-200 dark:focus-visible:ring-neutral-500/60 dark:data-checked:bg-neutral-700 dark:data-checked:text-neutral-50 dark:data-checked:ring-white/10"
+            className="min-w-0 flex-1 break-words rounded-lg px-3 py-1.5 text-xs font-medium text-neutral-500 max-sm:press max-sm:rounded-full max-sm:py-2.5 max-sm:text-sm transition-colors hover:text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 data-checked:bg-white data-checked:text-neutral-900 data-checked:shadow-sm data-checked:ring-1 data-checked:ring-black/5 data-disabled:cursor-not-allowed data-disabled:opacity-50 dark:text-neutral-400 dark:hover:text-neutral-200 dark:focus-visible:ring-neutral-500/60 dark:data-checked:bg-neutral-700 dark:data-checked:text-neutral-50 dark:data-checked:ring-white/10"
           >
             {option.label}
           </Radio>

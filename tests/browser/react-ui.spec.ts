@@ -1,7 +1,20 @@
 import { expect, test as base, type Page } from "@playwright/test";
 import { mcpToolName } from "../../src/features/settings/lib/mcpToolNames";
+import { isolateOpfs } from "./helpers/opfs";
 
 const AGENT_TOOL_NAME = mcpToolName("internet", "@agent");
+
+base("native TanStack phases survive prebundling and a persisted wire round trip", async ({ page }) => {
+  await page.goto("/tests/browser/fixtures/markdown.html");
+  const replay = await page.evaluate(async (modulePath) => {
+    const { nativePhaseReplay } = await import(/* @vite-ignore */ modulePath);
+    return (await nativePhaseReplay()).replay;
+  }, "/src/shared/lib/test-support/tanstackPhases.ts");
+  expect(replay).toMatchObject([
+    { id: "commentary", phase: "commentary", content: [{ text: "Working" }] },
+    { id: "final", phase: "final_answer", content: [{ text: "Done" }] },
+  ]);
+});
 
 const test = base.extend({
   context: async ({ browserName, context, playwright, baseURL, viewport }, use, info) => {
@@ -12,9 +25,11 @@ const test = base.extend({
       baseURL,
       viewport,
     });
+    const cleanupOpfs = await isolateOpfs(persistent);
     try {
       await use(persistent);
     } finally {
+      await cleanupOpfs();
       await persistent.close();
     }
   },
@@ -35,6 +50,14 @@ async function open(page: Page, query = "") {
   await page.goto(`/tests/browser/fixtures/react-ui.html${query}`, { waitUntil: "domcontentloaded" });
 }
 
+test("chat input receives focus after initial loading and page refresh", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await expect(input).toBeFocused();
+  await page.reload();
+  await expect(input).toBeFocused();
+});
+
 test("invalid inline UI repairs automatically and stays repaired after reload", async ({ page }) => {
   await open(page);
   const input = page.getByRole("textbox", { name: "Chat message input" });
@@ -42,7 +65,7 @@ test("invalid inline UI repairs automatically and stays repaired after reload", 
   await input.press("Enter");
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
   const surface = {
-    version: "v1.0",
+    version: "1.0",
     createSurface: {
       surfaceId: "pairing",
       catalogId: "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
@@ -258,10 +281,431 @@ test("Canvas loads optional image styles from the shared design reference", asyn
   });
   await open(page);
   await page.getByRole("link", { name: "Canvas", exact: true }).click();
-  await page.getByRole("button", { name: "Style", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Watercolor", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Watercolor", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "New creation" }).first().click();
+  await page.getByRole("button", { name: "All styles", exact: true }).click();
+  const watercolor = page.getByRole("button", { name: "Watercolor", exact: true });
+  await watercolor.click();
+  await expect(watercolor).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Style · Watercolor")).toBeVisible();
   expect(loaded).toEqual(["/skills/studio/canvas-design/references/image-styles.md"]);
+});
+
+test("Canvas generates into the filmstrip, develops on the GPU and keeps the recipe", async ({ page }) => {
+  // WebKit runs in a persistent profile, so earlier images may still be in the
+  // library: open the dialog from whichever "New image" button is shown and
+  // use a prompt unique to this run.
+  const prompt = `A fox in the snow ${Date.now()}`;
+  await open(page, "?canvas");
+  await page.getByRole("button", { name: "New creation" }).first().click();
+  await page.getByRole("textbox", { name: "Prompt" }).fill(prompt);
+  await page.getByRole("radio", { name: "3:2", exact: true }).click();
+  await page.getByRole("button", { name: "Generate" }).click();
+
+  const stage = page.locator(`canvas[aria-label="${prompt}"]`);
+  await expect(stage).toBeVisible();
+  expect(await page.evaluate(() => window.reactUiE2E.state().renders)).toEqual([
+    { model: "gpt-image-1", prompt, options: { aspectRatio: "3:2", quality: "medium" } },
+  ]);
+  await expect(page.getByRole("option", { name: prompt })).toHaveAttribute("aria-selected", "true");
+  // The 3:2 request became a 384×256 image rendered at that size.
+  await expect
+    .poll(() => stage.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]))
+    .toEqual([384, 256]);
+
+  // The develop pipeline must actually change pixels: render the same source
+  // through the export path with and without an exposure cut.
+  const brightness = await page.evaluate(async (alt) => {
+    // Served by the dev server; variables keep TypeScript from resolving the paths here.
+    const exportModule = "/src/features/canvas/lib/exportImage.ts";
+    const recipeModule = "/src/features/canvas/lib/recipe.ts";
+    const { renderExport } = (await import(exportModule)) as typeof import("../../src/features/canvas/lib/exportImage");
+    const { DEFAULTS } = (await import(recipeModule)) as typeof import("../../src/features/canvas/lib/recipe");
+    const thumbnail = document.querySelector<HTMLImageElement>(`img[alt="${alt}"]`)!;
+    const source = await (await fetch(thumbnail.src)).blob();
+    const mean = async (recipe: typeof DEFAULTS) => {
+      const bitmap = await createImageBitmap(await renderExport(source, recipe, "png"));
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const context = canvas.getContext("2d")!;
+      context.drawImage(bitmap, 0, 0);
+      const data = context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) sum += data[i] + data[i + 1] + data[i + 2];
+      return sum / (data.length / 4) / 3;
+    };
+    return [await mean(DEFAULTS), await mean({ ...DEFAULTS, exposure: -3 }), await mean({ ...DEFAULTS, exposure: 2 })];
+  }, prompt);
+  expect(brightness[0]).toBeGreaterThan(60);
+  expect(brightness[1]).toBeLessThan(brightness[0] * 0.5);
+  expect(brightness[2]).toBeGreaterThan(brightness[0] * 1.2);
+
+  const exposure = page.getByRole("slider", { name: "Exposure", exact: true });
+  const value = page.getByRole("spinbutton", { name: "Exposure value" });
+  await value.fill("1.5");
+  await value.press("Enter");
+  await expect(exposure).toHaveValue("1.5");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(exposure).toHaveValue("0");
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await expect(exposure).toHaveValue("1.5");
+
+  await page.getByRole("button", { name: "Reset adjustments" }).click();
+  await expect(exposure).toHaveValue("0");
+  await expect(page.getByRole("button", { name: "Reset adjustments" })).toBeDisabled();
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(exposure).toHaveValue("1.5");
+
+  // A GPU reset must wait for restoration and then rebuild on the same canvas.
+  await stage.evaluate(
+    (canvas: HTMLCanvasElement) =>
+      new Promise<void>((resolve) => {
+        const extension = canvas.getContext("webgl2")!.getExtension("WEBGL_lose_context")!;
+        canvas.addEventListener("webglcontextlost", () => setTimeout(() => extension.restoreContext(), 100), {
+          once: true,
+        });
+        canvas.addEventListener("webglcontextrestored", () => resolve(), { once: true });
+        extension.loseContext();
+      }),
+  );
+  await expect(exposure).toBeEnabled();
+  await expect(stage).toBeVisible();
+
+  // Crop mode shows the whole picture with a frame; Done applies the crop.
+  const size = () => stage.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]);
+  await page.getByRole("tab", { name: "Crop" }).click();
+  await expect(page.getByRole("button", { name: "Move crop" })).toBeVisible();
+  await page.getByRole("radio", { name: "1:1", exact: true }).click();
+  await expect.poll(size).toEqual([384, 256]);
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(size).toEqual([256, 256]);
+  await page.keyboard.press("c");
+  await page.getByRole("button", { name: "Rotate right" }).click();
+  await expect.poll(size).toEqual([256, 384]);
+  await page.keyboard.press("Escape");
+  await expect.poll(size).toEqual([256, 256]);
+  await page.getByRole("tab", { name: "Crop" }).click();
+  await page.getByRole("button", { name: "Reset crop and rotation" }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(size).toEqual([384, 256]);
+
+  // Retouch: a rectangle selection becomes the mask of an inpainting request,
+  // the result is a new version, and restoring the first version drops it.
+  await page.keyboard.press("r");
+  await page.getByRole("radio", { name: "Rectangle" }).click();
+  await expect(page.getByRole("button", { name: "Remove selection" })).toBeDisabled();
+  const box = (await stage.boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.7, { steps: 4 });
+  await page.mouse.up();
+  await page.getByRole("button", { name: "Remove selection" }).click();
+  await expect(page.getByText("Retouching…")).toBeVisible();
+  await expect(page.getByText("Retouching…")).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.reactUiE2E.state().renders.at(-1)))
+    .toMatchObject({ model: "gpt-image-1", images: 1, prompt: expect.stringContaining("Remove everything inside") });
+  expect((await page.evaluate(() => window.reactUiE2E.state().renders.at(-1)!.mask)) ?? 0).toBeGreaterThan(0);
+  // Retouch keeps the matching source aspect instead of requesting the default square.
+  expect(await page.evaluate(() => window.reactUiE2E.state().renders.at(-1)!.options)).toMatchObject({
+    aspectRatio: "3:2",
+  });
+  await expect.poll(size).toEqual([384, 256]);
+  await page.getByRole("tab", { name: "Versions" }).click();
+  await expect(page.getByText("AI retouch", { exact: true })).toBeVisible();
+  await expect(page.getByText("Removed selection")).toBeVisible();
+  await page.getByRole("button", { name: "Restore" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(page.getByText("AI retouch", { exact: true })).toHaveCount(0);
+  await expect.poll(size).toEqual([384, 256]);
+  await page.getByRole("tab", { name: "Light" }).click();
+
+  await expect(exposure).toHaveValue("0");
+  await page.getByRole("spinbutton", { name: "Exposure value" }).fill("1.5");
+  await page.getByRole("spinbutton", { name: "Exposure value" }).press("Enter");
+
+  await page.getByRole("button", { name: "Show original" }).click();
+  await expect(page.getByText("Original", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Export" }).click();
+  await expect(page.getByRole("menuitem", { name: /^PNG/ })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: /^JPEG/ })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: /^WebP/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // The recipe persists with the image (debounced, then flushed) and survives a reload.
+  await page.waitForTimeout(500);
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.reload();
+  await expect(page.locator(`canvas[aria-label="${prompt}"]`)).toBeVisible();
+  await expect(page.getByRole("slider", { name: "Exposure", exact: true })).toHaveValue("1.5");
+});
+
+test("Canvas generates SVG and GIF from the prompt into a view-only viewer", async ({ page }) => {
+  const stamp = Date.now();
+  const svgPrompt = `A paper boat ${stamp}`;
+  const gifPrompt = `A bouncing ball ${stamp}`;
+  await open(page, "?canvas&vector");
+  const generate = async (prompt: string, format: "SVG" | "GIF", frames?: string) => {
+    await page.getByRole("button", { name: "New creation" }).first().click();
+    await page.getByRole("textbox", { name: "Prompt" }).fill(prompt);
+    await page.getByRole("button", { name: "Flare", exact: true }).click();
+    await page.getByRole("menuitem", { name: /^Format/ }).hover();
+    await page.getByRole("menuitemradio", { name: new RegExp(`^${format}`) }).click();
+    if (frames) {
+      await page.getByRole("button", { name: "Flare", exact: true }).click();
+      await page.getByRole("menuitem", { name: /^Frames/ }).hover();
+      await page.getByRole("menuitemradio", { name: new RegExp(`^${frames}`) }).click();
+    }
+    // Vector and animated output can't take references.
+    await expect(page.getByRole("button", { name: "Reference", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Generate" }).click();
+  };
+  const expectViewer = async (prompt: string, badge: string) => {
+    await expect(page.getByRole("img", { name: prompt })).toHaveCount(2); // viewer + filmstrip
+    await expect(page.getByText(badge, { exact: true })).toBeVisible();
+    await expect(page.locator(`canvas[aria-label="${prompt}"]`)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Adjustments" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
+    // The bytes decode as their own format, so the content type was kept.
+    await expect
+      .poll(() =>
+        page
+          .getByRole("img", { name: prompt })
+          .first()
+          .evaluate((image: HTMLImageElement) => image.naturalWidth),
+      )
+      .toBeGreaterThan(0);
+  };
+
+  await generate(svgPrompt, "SVG");
+  await expectViewer(svgPrompt, "SVG");
+  await generate(gifPrompt, "GIF", "16");
+  await expectViewer(gifPrompt, "Animated GIF");
+  expect(await page.evaluate(() => window.reactUiE2E.state().renders)).toEqual([
+    { model: "gpt-image-2.6-flare", prompt: svgPrompt, options: { quality: "medium", format: "svg" } },
+    { model: "gpt-image-2.6-flare", prompt: gifPrompt, options: { quality: "medium", format: "gif", frameCount: 16 } },
+  ]);
+
+  // Both survive a reload and still open in the viewer.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("option", { name: svgPrompt }).getByRole("button", { name: svgPrompt }).click();
+  await expectViewer(svgPrompt, "SVG");
+});
+
+test("Canvas keeps a live adjustment when switching photos immediately", async ({ page }) => {
+  await open(page, "?canvas");
+  const png = await page.evaluate(async () => {
+    const canvas = new OffscreenCanvas(16, 16);
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#807060";
+    context.fillRect(0, 0, 16, 16);
+    return Array.from(new Uint8Array(await (await canvas.convertToBlob()).arrayBuffer()));
+  });
+  const first = `First-${Date.now()}`;
+  const second = `Second-${Date.now()}`;
+  const photo = (name: string) => ({ name: `${name}.png`, mimeType: "image/png", buffer: Buffer.from(png) });
+  await page.getByLabel("Photos to open").setInputFiles([photo(first)]);
+  await expect(page.getByRole("option", { name: first })).toHaveAttribute("aria-selected", "true");
+  // With pictures in the strip, more photos are opened from its "Open photo" tile.
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("listbox", { name: "Images" }).getByRole("button", { name: "Open photo" }).click();
+  await (await chooser).setFiles([photo(second)]);
+  await expect(page.getByRole("option", { name: second })).toHaveAttribute("aria-selected", "true");
+  const value = page.getByRole("spinbutton", { name: "Exposure value" });
+  await expect(value).toBeEnabled();
+  await value.fill("1.75");
+  await page.getByRole("button", { name: first, exact: true }).click();
+  await page.getByRole("button", { name: second, exact: true }).click();
+  await expect(value).toHaveValue("1.75");
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.reload();
+  await expect(value).toHaveValue("1.75");
+});
+
+test("Canvas crop locks and retouch rectangles follow rotated and straightened geometry", async ({ page }) => {
+  await open(page, "?canvas");
+  const title = `Geometry-${Date.now()}`;
+  const png = await page.evaluate(async () => {
+    const canvas = new OffscreenCanvas(300, 200);
+    canvas.getContext("2d")!.fillRect(0, 0, 300, 200);
+    return Array.from(new Uint8Array(await (await canvas.convertToBlob()).arrayBuffer()));
+  });
+  await page
+    .getByLabel("Photos to open")
+    .setInputFiles({ name: `${title}.png`, mimeType: "image/png", buffer: Buffer.from(png) });
+  await expect(page.getByRole("option", { name: title })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("slider", { name: "Exposure", exact: true })).toBeEnabled();
+  await page.getByRole("tab", { name: "Crop" }).click();
+  await page.getByRole("radio", { name: "3:2", exact: true }).click();
+  await page.getByRole("button", { name: "Rotate right", exact: true }).click();
+  await expect(page.getByRole("radio", { name: "2:3", exact: true })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.getByRole("radio", { name: "3:2", exact: true })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await page.getByRole("button", { name: "Crop right", exact: true }).press("ArrowLeft");
+  const frame = (await page.getByRole("button", { name: "Move crop", exact: true }).boundingBox())!;
+  expect(frame.width / frame.height).toBeCloseTo(2 / 3, 2);
+  await page.getByRole("button", { name: "Reset crop and rotation" }).click();
+  await page.getByRole("spinbutton", { name: "Straighten value" }).fill("30");
+  await page.getByRole("spinbutton", { name: "Straighten value" }).press("Enter");
+  await page.getByRole("tab", { name: "Retouch" }).click();
+  await page.getByRole("radio", { name: "Rectangle" }).click();
+  const selection = page.getByRole("img", { name: "Selection", exact: true });
+  const box = (await selection.boundingBox())!;
+  const draw = async (a: number, b: number) => {
+    await page.mouse.move(box.x + box.width * a, box.y + box.height * a);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * b, box.y + box.height * b, { steps: 4 });
+    await page.mouse.up();
+    await page.mouse.move(0, 0);
+  };
+  await draw(0.25, 0.75);
+  await expect(page.getByRole("button", { name: "Remove selection", exact: true })).toBeEnabled();
+  const samples = await selection.locator("canvas").evaluate((canvas: HTMLCanvasElement) => {
+    const ctx = canvas.getContext("2d")!;
+    return [0.1, 0.3, 0.5, 0.7, 0.9].flatMap((u) =>
+      [0.1, 0.3, 0.5, 0.7, 0.9].map((v) => ({
+        selected: u > 0.25 && u < 0.75 && v > 0.25 && v < 0.75,
+        alpha: ctx.getImageData(Math.floor(u * canvas.width), Math.floor(v * canvas.height), 1, 1).data[3],
+      })),
+    );
+  });
+  for (const sample of samples) expect(sample.alpha > 50).toBe(sample.selected);
+  await page.getByRole("radio", { name: "Erase", exact: true }).click();
+  await draw(0.2, 0.8);
+  await expect(page.getByRole("button", { name: "Remove selection", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Invert", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Remove selection", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Invert", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Remove selection", exact: true })).toBeDisabled();
+});
+
+test("Canvas flatten remains atomic after switching photos and previews the original before restore", async ({
+  page,
+}) => {
+  await open(page, "?canvas");
+  const png = await page.evaluate(async () => {
+    const canvas = new OffscreenCanvas(64, 48);
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#6080a0";
+    ctx.fillRect(0, 0, 64, 48);
+    return Array.from(new Uint8Array(await (await canvas.convertToBlob()).arrayBuffer()));
+  });
+  const other = `Other-${Date.now()}`;
+  const title = `Flatten-${Date.now()}`;
+  await page
+    .getByLabel("Photos to open")
+    .setInputFiles(
+      [other, title].map((name) => ({ name: `${name}.png`, mimeType: "image/png", buffer: Buffer.from(png) })),
+    );
+  await expect(page.getByRole("option", { name: title })).toHaveAttribute("aria-selected", "true");
+  const exposure = page.getByRole("spinbutton", { name: "Exposure value" });
+  await expect(exposure).toBeEnabled();
+  await exposure.fill("1.5");
+  await exposure.press("Enter");
+  await page.getByRole("tab", { name: "Crop" }).click();
+  await page.getByRole("radio", { name: "1:1", exact: true }).click();
+  await page.getByRole("tab", { name: "Retouch" }).click();
+  // Hold the finished GPU export until the editor that started it has unmounted.
+  await page.evaluate(() => {
+    // oxlint-disable-next-line typescript/unbound-method -- Invoked with its canvas receiver below.
+    const encode = OffscreenCanvas.prototype.convertToBlob;
+    OffscreenCanvas.prototype.convertToBlob = function (options) {
+      const result = encode.call(this, options);
+      if (!this.getContext("webgl2")) return result;
+      Reflect.set(window, "flattenHeld", true);
+      return result.then(
+        (blob) =>
+          new Promise<Blob>((resolve) => {
+            Reflect.set(window, "releaseFlatten", () => {
+              OffscreenCanvas.prototype.convertToBlob = encode;
+              resolve(blob);
+            });
+          }),
+      );
+    };
+  });
+  await page.getByRole("button", { name: "Flatten adjustments into the image" }).click();
+  await page.waitForFunction(() => typeof Reflect.get(window, "releaseFlatten") === "function");
+  await page.getByRole("button", { name: other, exact: true }).click();
+  await page.evaluate(() => Reflect.get(window, "releaseFlatten")());
+  await page.getByRole("button", { name: title, exact: true }).click();
+  await expect(exposure).toHaveValue("0");
+  await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
+  await page.getByRole("tab", { name: "Versions" }).click();
+  await expect(page.getByText("Flattened adjustments", { exact: true })).toBeVisible();
+  const stage = page.locator(`canvas[aria-label="${title}"]`);
+  const size = () => stage.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]);
+  await expect.poll(size).toEqual([48, 48]);
+  await page.getByRole("button", { name: "Preview Opened photo", exact: true }).click();
+  await expect(page.getByText("Version preview", { exact: true })).toBeVisible();
+  await expect.poll(size).toEqual([64, 48]);
+  await expect(page.getByText("Flattened adjustments", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Preview Current", exact: true }).click();
+  await expect.poll(size).toEqual([48, 48]);
+  await page.getByRole("button", { name: "Preview Opened photo", exact: true }).click();
+  await expect.poll(size).toEqual([64, 48]);
+  await page.getByRole("button", { name: "Restore", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(page.getByText("Flattened adjustments", { exact: true })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Light" }).click();
+  await expect(exposure).toHaveValue("0");
+  await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.reload();
+  await expect(exposure).toHaveValue("0");
+  await expect.poll(size).toEqual([64, 48]);
+});
+
+test("Canvas separates Current edits from the opened photo and previews without restoring", async ({ page }) => {
+  await open(page, "?canvas");
+  const title = `Versions-${Date.now()}`;
+  const png = await page.evaluate(async () => {
+    const canvas = new OffscreenCanvas(64, 48);
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#6080a0";
+    context.fillRect(0, 0, 64, 48);
+    return Array.from(new Uint8Array(await (await canvas.convertToBlob()).arrayBuffer()));
+  });
+  await page
+    .getByLabel("Photos to open")
+    .setInputFiles({ name: `${title}.png`, mimeType: "image/png", buffer: Buffer.from(png) });
+  await expect(page.getByRole("option", { name: title })).toHaveAttribute("aria-selected", "true");
+  const exposure = page.getByRole("spinbutton", { name: "Exposure value" });
+  await expect(exposure).toBeEnabled();
+  await exposure.fill("1.5");
+  await exposure.press("Enter");
+  await page.getByRole("tab", { name: "Crop" }).click();
+  await page.getByRole("radio", { name: "1:1", exact: true }).click();
+  await page.getByRole("tab", { name: "Versions" }).click();
+  const current = page.getByRole("button", { name: "Preview Current", exact: true });
+  const original = page.getByRole("button", { name: "Preview Opened photo", exact: true });
+  await expect(current).toHaveAttribute("aria-pressed", "true");
+  await expect(original).toBeVisible();
+  await expect(current.locator("img")).toBeVisible();
+  const stage = page.locator(`canvas[aria-label="${title}"]`);
+  const size = () => stage.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]);
+  await expect.poll(size).toEqual([48, 48]);
+  await original.click();
+  await expect(page.getByText("Version preview", { exact: true })).toBeVisible();
+  await expect.poll(size).toEqual([64, 48]);
+  await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
+  await current.click();
+  await expect(page.getByText("Version preview", { exact: true })).toHaveCount(0);
+  await expect.poll(size).toEqual([48, 48]);
+  await page.getByRole("tab", { name: "Light" }).click();
+  await expect(exposure).toHaveValue("1.5");
+  await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeEnabled();
+  await page.getByRole("tab", { name: "Versions" }).click();
+  await original.click();
+  await expect(page.getByText("Version preview", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Restore", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(page.getByText("Version preview", { exact: true })).toHaveCount(0);
+  await expect(current).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Restore", exact: true })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Light" }).click();
+  await expect(exposure).toHaveValue("0");
+  await expect.poll(size).toEqual([64, 48]);
+  await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
 });
 
 test("Activity retains drafts, stops hidden effects and portals, and leaves persistent iframes alive", async ({
@@ -340,7 +784,7 @@ for (const existingChat of [false, true]) {
     await input.press("Enter");
     await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
     await expect(activity).toBeVisible();
-    await page.getByRole("button", { name: "Stop generating (Esc)", exact: true }).click();
+    await page.getByRole("button", { name: "Stop generating", exact: true }).click();
     await expect(activity).toHaveCount(0);
   });
 }
@@ -380,7 +824,7 @@ test("Stop clears subagent loading activity and keeps it stopped after reload", 
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
   const card = page.locator('[class~="group/subagent"]');
   await expect(card.locator("summary .animate-spin")).toHaveCount(1);
-  await page.getByRole("button", { name: "Stop generating (Esc)", exact: true }).click();
+  await page.getByRole("button", { name: "Stop generating", exact: true }).click();
   await expect(card.locator("summary")).toContainText("Stopped");
   await expect(card.locator(".animate-spin")).toHaveCount(0);
   await page.evaluate(() => window.reactUiE2E.finish("Late child reply"));
@@ -588,7 +1032,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
       // Stop while the newly received burst is still being revealed.
       setTimeout(() => document.querySelector<HTMLButtonElement>('button[title="Stop generating (Esc)"]')?.click(), 30);
     }, final);
-    await expect(page.getByRole("button", { name: "Stop generating (Esc)", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Stop generating", exact: true })).toHaveCount(0);
     await expect(page.locator('[data-role="assistant"]').last()).toContainText(final.trim());
     await page.evaluate(() => window.reactUiE2E.finish("Late provider completion"));
     await expect(page.locator('[data-role="assistant"]').last()).toContainText(final.trim());
@@ -812,8 +1256,12 @@ test("search targets stay below a resized top bar on mobile", async ({ page }) =
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, "?search");
   await page.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
-  await page.getByRole("button", { name: "Search chats", exact: true }).click();
-  await page.getByRole("textbox", { name: "Search chats", exact: true }).fill("copper compass");
+  // The phone search field is tucked above the list until the reader scrolls up.
+  const search = page.getByRole("searchbox", { name: "Search chats", exact: true });
+  await page.locator("aside .overflow-y-auto").hover();
+  await page.mouse.wheel(0, -300);
+  await expect(search).toBeInViewport();
+  await search.fill("copper compass");
   await page.getByRole("button", { name: "Planning notes", exact: true }).click();
   const message = page.locator('[data-message-id="search-followup"]');
   await expect(message).toBeInViewport();
@@ -828,6 +1276,74 @@ test("search targets stay below a resized top bar on mobile", async ({ page }) =
     (element as HTMLElement).style.minHeight = "100px";
   });
   await expect.poll(gap).toBeGreaterThanOrEqual(20);
+});
+
+test("mobile chat keeps the latest response and Latest control above the keyboard", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, "?seed");
+  const response = page.locator('[data-role="assistant"]').last();
+  await expect(response).toContainText("A long answer.");
+  const scroll = page.locator("main > div.overflow-auto");
+  await scroll.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  const gap = () =>
+    response.evaluate(
+      (element) =>
+        document.querySelector("footer")!.getBoundingClientRect().top - element.getBoundingClientRect().bottom,
+    );
+  await expect.poll(gap).toBeGreaterThanOrEqual(0);
+  await page.evaluate(() => {
+    // iOS shrinks only the visual viewport when its software keyboard opens.
+    Object.defineProperty(window.visualViewport, "height", {
+      configurable: true,
+      get: () => window.innerHeight - 320,
+    });
+    window.visualViewport!.dispatchEvent(new Event("resize"));
+  });
+  await expect(page.locator("footer")).toHaveCSS("bottom", "320px");
+  await expect.poll(gap).toBeGreaterThanOrEqual(0);
+  await expect.poll(() => scroll.evaluate((element) => element.getBoundingClientRect().bottom)).toBe(524);
+  // A restored multiline draft can cover the center of the scroll viewport.
+  // Wheel over the exposed history, below the floating top bar.
+  await scroll.hover({ position: { x: 20, y: 100 } });
+  await page.mouse.wheel(0, -400);
+  const latest = page.getByRole("button", { name: "Latest", exact: true });
+  await expect(latest).toBeVisible();
+  await expect
+    .poll(() =>
+      latest.evaluate(
+        (element) =>
+          document.querySelector("footer")!.getBoundingClientRect().top - element.getBoundingClientRect().bottom,
+      ),
+    )
+    .toBeGreaterThanOrEqual(0);
+  await latest.click();
+  await expect.poll(gap).toBeGreaterThanOrEqual(0);
+  await page.evaluate(() => {
+    Reflect.deleteProperty(window.visualViewport!, "height");
+    window.visualViewport!.dispatchEvent(new Event("resize"));
+  });
+  await expect(page.locator("footer")).toHaveCSS("bottom", "0px");
+  await expect.poll(() => scroll.evaluate((element) => element.getBoundingClientRect().bottom)).toBe(844);
+  await expect.poll(gap).toBeGreaterThanOrEqual(0);
+});
+
+test("mobile agent model picker switches between text and Real-time Voice", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, "?agent");
+  await page.getByRole("button", { name: "Fixture", exact: true }).click();
+  await expect(page.getByRole("menuitemradio", { name: "Real-time Voice", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Agent None", exact: true }).click();
+  await page.getByRole("button", { name: "Open Mobile agent", exact: true }).click();
+  const model = page.getByRole("button", { name: "Fixture", exact: true });
+  await model.click();
+  const voice = page.getByRole("menuitemradio", { name: "Real-time Voice", exact: true });
+  await voice.click();
+  await page.getByRole("button", { name: "Real-time Voice", exact: true }).click();
+  await expect(voice).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("menuitemradio", { name: "Fixture", exact: true }).click();
+  await expect(model).toBeVisible();
 });
 
 test("hi then long Markdown keeps the start readable; Latest follows until the reader scrolls up", async ({ page }) => {
@@ -996,8 +1512,29 @@ test("composer skill picker loads disabled skills with resources on follow-ups a
   await expect(page.getByText("Checklist complete", { exact: true })).toBeVisible();
   await page.evaluate(() => window.reactUiE2E.flush());
   const id = new URL(page.url()).pathname.split("/").pop();
+  await page.addInitScript(() => {
+    const fixture = window as typeof window & { skillReadHeld: boolean; releaseSkillRead: () => void };
+    const getFile = Object.getOwnPropertyDescriptor(FileSystemFileHandle.prototype, "getFile")!
+      .value as FileSystemFileHandle["getFile"];
+    const ready = new Promise<void>((resolve) => {
+      fixture.releaseSkillRead = resolve;
+    });
+    FileSystemFileHandle.prototype.getFile = async function () {
+      const file = await getFile.call(this);
+      if (this.name === "SKILL.md" && document.querySelector('[aria-label="Chat message input"]')) {
+        fixture.skillReadHeld = true;
+        await ready;
+      }
+      return file;
+    };
+  });
   await page.goto(`/tests/browser/fixtures/react-ui.html?composer&chat=${id}`);
+  await page.waitForFunction(() => (window as typeof window & { skillReadHeld: boolean }).skillReadHeld);
+  await expect(input).toBeDisabled();
+  await page.evaluate(() => (window as typeof window & { releaseSkillRead: () => void }).releaseSkillRead());
+  await expect(input).toBeFocused();
   await input.fill("Use that checklist again");
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
   await input.press("Enter");
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
   await page.evaluate(() =>
@@ -1063,4 +1600,54 @@ test("composer can send an attachment without typed text", async ({ page }) => {
   await page.evaluate(() => window.reactUiE2E.finish("Document received"));
   await expect(page.getByText("Document received", { exact: true })).toBeVisible();
   await expect(send).toHaveCount(0);
+});
+
+test("Canvas generates video, downloads its bytes and restores playback after reload", async ({ page }) => {
+  test.setTimeout(60_000);
+  page.setDefaultTimeout(15_000);
+  await page.addInitScript(() =>
+    Object.defineProperty(window, "showSaveFilePicker", { value: undefined, configurable: true }),
+  );
+  const prompt = `A fox running ${Date.now()}`;
+  await open(page, "?canvas&video");
+  await page.getByRole("button", { name: "New creation" }).first().click();
+  await expect(page.getByRole("button", { name: "Omni", exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "Prompt" }).fill(prompt);
+  await expect(page.getByRole("button", { name: "Reference", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Omni", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Duration/ }).hover();
+  await page.getByRole("menuitemradio", { name: "15s", exact: true }).click();
+  await page.getByRole("button", { name: "Omni", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Resolution/ }).hover();
+  await page.getByRole("menuitemradio", { name: /^720p/ }).click();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  const video = page.locator(`video[aria-label="${prompt}"]`);
+  await expect(video).toBeVisible();
+  await video.evaluate((element: HTMLVideoElement) => element.play());
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThanOrEqual(2);
+  await expect(page.locator(`canvas[aria-label="${prompt}"]`)).toHaveCount(0);
+  expect(await page.evaluate(() => window.reactUiE2E.state().renders)).toEqual([
+    { model: "gemini-omni-1.2-flash", prompt, options: { format: "mp4", durationSeconds: 15, resolution: "720p" } },
+  ]);
+  const bytes = await video.evaluate(async (element: HTMLVideoElement) =>
+    Array.from(new Uint8Array(await (await fetch(element.src)).arrayBuffer())),
+  );
+  expect(bytes.length).toBeGreaterThan(100);
+  await page.reload();
+  await expect(video).toBeVisible();
+  await expect
+    .poll(() => video.evaluate((element: HTMLVideoElement) => [element.videoWidth, element.videoHeight]))
+    .toEqual([160, 90]);
+  const restored = await video.evaluate(async (element: HTMLVideoElement) =>
+    Array.from(new Uint8Array(await (await fetch(element.src)).arrayBuffer())),
+  );
+  expect(restored).toEqual(bytes);
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download", exact: true }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toMatch(/\.mp4$/);
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  expect(Buffer.concat(chunks)).toEqual(Buffer.from(bytes));
 });

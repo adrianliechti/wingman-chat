@@ -1,3 +1,4 @@
+import { translateFile } from "@/features/translate/lib/translator";
 import { getConfig } from "@/shared/config";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
@@ -57,14 +58,18 @@ export async function runTranslateFile(
   const type = inferContentTypeFromPath(name) ?? "application/octet-stream";
   const file = new File([bytes as BlobPart], name, { type });
 
-  const result = await config.client.translate(defaultProvider(config), lang, file, requestOptions);
-  // Some formats (e.g. plain text) come back as text rather than a file blob.
-  if (typeof result === "string") {
-    return new TextEncoder().encode(result);
+  // Translators that only produce text (the gateway's 406) are retried in text
+  // mode, so the sandbox still gets a translation of the document's content.
+  const result = await translateFile(
+    config.client,
+    { maxFileSize: config.translator?.maxFileSize },
+    file,
+    defaultProvider(config),
+    lang,
+    requestOptions.signal,
+  );
+  if (result.kind === "text") {
+    return new TextEncoder().encode(result.text);
   }
-  const data = new Uint8Array(await result.arrayBuffer());
-  if (data.length === 0) {
-    throw new Error("translate: service returned an empty file");
-  }
-  return data;
+  return new Uint8Array(await result.blob.arrayBuffer());
 }

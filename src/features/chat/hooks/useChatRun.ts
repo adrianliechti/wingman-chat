@@ -1,6 +1,6 @@
 import { EventType, type AGUIEvent } from "@ag-ui/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { useChat } from "@tanstack/ai-react";
+import { stream, useChat } from "@tanstack/ai-react";
 import type { ChatInterruptState, ChatPersistedState, RunAgentInputContext } from "@tanstack/ai-client";
 import { normalizeToUIMessage, isContentPart, type ContentPart, type UIMessage, type ModelMessage } from "@tanstack/ai";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
@@ -107,9 +107,10 @@ export function useChatRun({
     };
   }, [session]);
   const tools = useMemo(() => approvalTools(chatTools()), [chatTools]);
-  const { providers, getProviderState, isProviderEnabled, getSkillsProvider } = useToolsContext();
+  const { providers, getProviderState, isProviderEnabled, getSkillsProvider, skillsLoading } = useToolsContext();
   const toolNames = new Set(tools.map((tool) => tool.name));
   const isAwaitingTools = (names: string[]) =>
+    skillsLoading ||
     names.some(
       (name) =>
         !toolNames.has(name) &&
@@ -313,16 +314,15 @@ export function useChatRun({
     threadId: session.id,
     tools,
     queue: { whenBusy: "queue", drain: "batch" },
-    connection: {
-      connect: (messages, _data, signal, context) => connectRef.current(session, messages, signal, context),
-    },
+    connection: stream((messages, _data, signal, context) => connectRef.current(session, messages, signal, context)),
     persistence: {
       getItem: async () => {
         const saved = getChat(session.id) ?? (chatId === session.id ? await loadChat(session.id) : undefined);
-        if (!saved) return null;
+        // Keep sends gated until personal/plugin skills are available, including
+        // resources explicitly selected in a saved conversation.
         // TanStack binds persisted approvals once at hydration. Its current
         // updateTools does not rebind an approval hydrated before MCP discovery.
-        const pendingIds = new Set(saved.resume?.pendingInterrupts?.map((interrupt) => interrupt.toolCallId));
+        const pendingIds = new Set(saved?.resume?.pendingInterrupts?.map((interrupt) => interrupt.toolCallId));
         const names: string[] = [];
         const collect = (messages: UIMessage[]) => {
           for (const message of messages)
@@ -331,12 +331,13 @@ export function useChatRun({
               if (part.type === "subagent") collect(part.subagent.messages);
             }
         };
-        collect(saved.messages);
+        if (saved) collect(saved.messages);
         await Promise.resolve();
         while (storageOwnerRef.current === session && awaitingTools.current(names))
           await new Promise<void>((resolve) => {
             session.toolWaiters.add(resolve);
           });
+        if (!saved) return null;
         session.hydrated = { messages: saved.messages, resume: saved.resume };
         session.native = saved.messages;
         return session.hydrated;
@@ -393,7 +394,7 @@ export function useChatRun({
   useEffect(() => {
     for (const resolve of session.toolWaiters) resolve();
     session.toolWaiters.clear();
-  }, [session, tools, providers, getProviderState]);
+  }, [session, tools, providers, getProviderState, skillsLoading]);
   useEffect(() => {
     setStreamingMessage(null);
     clearElicitation();
@@ -531,13 +532,17 @@ export function useChatRun({
     await append(retry.resend);
   }, [chatIdRef, session, isLoading, ai.isHydrating, setMessages, append]);
 
+  const subagentsRef = useRef(ai.subagents);
+  useLayoutEffect(() => {
+    subagentsRef.current = ai.subagents;
+  }, [ai.subagents]);
   const stopStreaming = useCallback(() => {
-    for (const subagent of ai.subagents) subagent.stop?.();
+    for (const subagent of subagentsRef.current) subagent.stop?.();
     stop();
     clearElicitation();
     setStreamingMessage(null);
     setRunPhase("idle");
-  }, [ai.subagents, stop, clearElicitation]);
+  }, [stop, clearElicitation]);
   const setVoiceToolCall = useCallback(
     (name: string | null, callId?: string) => {
       const id = chatIdRef.current;

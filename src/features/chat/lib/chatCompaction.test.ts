@@ -125,6 +125,7 @@ it("reuses native checkpoints across tool turns and stored transcripts, invalida
     if (options.systemPrompts?.includes(instructions)) {
       summaries++;
       expect(options.threadId).toBe("chat:compaction");
+      expect(options.modelOptions).toMatchObject({ max_output_tokens: 1234 });
       expect(JSON.stringify(options.messages)).not.toContain("Current workspace");
       expect(options.messages.at(-1)).toMatchObject({ role: "user", content: "Summarize the preceding conversation." });
       return assistant("Earlier evidence was verified.");
@@ -138,6 +139,11 @@ it("reuses native checkpoints across tool turns and stored transcripts, invalida
     return turns < 3 ? calls([`read-${turns}`, "read"]) : assistant("Done");
   });
   const client = testClient(complete);
+  const chatOptions = client.chatOptions.bind(client);
+  client.chatOptions = (...args) => {
+    const options = chatOptions(...args);
+    return { ...options, modelOptions: { ...options.modelOptions, max_output_tokens: 1234 } };
+  };
   const execute = (messages: UIMessage[], model = "model") =>
     run(
       client,

@@ -20,6 +20,8 @@ export interface ToolsContextValue {
   setSkillSources: (sources: SkillSources) => void;
   /** Extend automatic skills with this conversation's explicit selections. */
   getSkillsProvider: (names: readonly string[]) => SkillsToolProvider | null;
+  /** Personal and plugin skill libraries must load before restoring a chat run. */
+  skillsLoading: boolean;
   companionAvailable: boolean;
   companionEnabled: boolean;
   toggleCompanion: () => void;

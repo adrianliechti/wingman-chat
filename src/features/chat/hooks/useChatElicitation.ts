@@ -17,13 +17,17 @@ export function useChatElicitation() {
     },
     { wait: 1500 },
   );
-  const clearElicitation = useCallback(() => {
-    hideCompleted.cancel();
-    const current = pending.current;
-    publish(null);
-    current?.resolve({ action: "cancel" });
-    if (current?.waiting) current.onCancel?.();
-  }, [hideCompleted, publish]);
+  const clearElicitation = useCallback(
+    (cancelTool = true) => {
+      hideCompleted.cancel();
+      const current = pending.current;
+      publish(null);
+      current?.cleanup?.();
+      current?.resolve({ action: "cancel" });
+      if (cancelTool && current?.waiting) current.onCancel?.();
+    },
+    [hideCompleted, publish],
+  );
 
   const requestElicitation = useCallback(
     (
@@ -33,7 +37,8 @@ export function useChatElicitation() {
       signal?: AbortSignal,
       onCancel?: () => void,
     ): Promise<ElicitationResult> => {
-      clearElicitation();
+      // A follow-up request replaces accepted URL status without cancelling its tool.
+      clearElicitation(false);
       if (signal?.aborted) return Promise.resolve({ action: "cancel" });
       return new Promise((resolve) => {
         const finish = (result: ElicitationResult) => {

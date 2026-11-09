@@ -4,3 +4,8 @@ export const ACTION_ICON_SIZE = 12;
 
 export const actionButtonClassName =
   "flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-500 dark:hover:bg-neutral-800/60 dark:hover:text-neutral-200 disabled:pointer-events-none disabled:opacity-40";
+
+// Icon buttons in the app's top bar, shared by the pages that put actions there.
+// Phones get a 40px round target that sits inside the glass capsule; desktop keeps the compact square.
+export const navButtonClassName =
+  "flex size-10 items-center justify-center rounded-full press text-neutral-700 dark:text-neutral-300 md:size-auto md:rounded md:p-2 md:text-neutral-600 md:dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 md:transition-all md:duration-150 md:ease-out disabled:opacity-30 disabled:pointer-events-none";

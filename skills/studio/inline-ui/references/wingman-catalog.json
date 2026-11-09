@@ -308,11 +308,11 @@
         },
         "weight": { "type": "number" },
         "items": {
-          "oneOf": [
+          "anyOf": [
             {
               "type": "array",
               "items": {
-                "oneOf": [
+                "anyOf": [
                   { "type": "string" },
                   {
                     "type": "object",
@@ -339,7 +339,7 @@
           ]
         },
         "active": {
-          "oneOf": [
+          "anyOf": [
             { "type": ["string", "number"] },
             { "$ref": "#/$defs/DataBinding" },
             {
@@ -369,7 +369,7 @@
         },
         "weight": { "type": "number" },
         "items": {
-          "oneOf": [
+          "anyOf": [
             {
               "type": "array",
               "items": {
@@ -418,7 +418,7 @@
         },
         "weight": { "type": "number" },
         "items": {
-          "oneOf": [
+          "anyOf": [
             {
               "type": "array",
               "items": { "$ref": "#/$defs/DynamicString", "description": "Represents a string" },
@@ -456,7 +456,7 @@
         },
         "weight": { "type": "number" },
         "rows": {
-          "oneOf": [
+          "anyOf": [
             {
               "type": "array",
               "items": {
@@ -526,7 +526,7 @@
         "weight": { "type": "number" },
         "kind": { "type": "string", "enum": ["line", "area", "bar", "pie", "donut", "scatter"] },
         "data": {
-          "oneOf": [
+          "anyOf": [
             {
               "type": "array",
               "items": {
@@ -550,7 +550,7 @@
         "series": {
           "type": "array",
           "items": {
-            "oneOf": [
+            "anyOf": [
               { "type": "string" },
               {
                 "type": "object",
@@ -879,7 +879,7 @@
         "items": {
           "type": "array",
           "items": {
-            "oneOf": [
+            "anyOf": [
               { "type": "string" },
               {
                 "type": "object",
@@ -1201,5 +1201,5 @@
     }
   },
   "$id": "urn:wingman:inline-ui:catalog:1",
-  "protocolVersion": "v1.0"
+  "protocolVersion": "1.0"
 }

@@ -283,7 +283,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
           />
         ) : (
           <>
-            <div className="rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 overflow-hidden min-w-0 w-full">
+            <div className="rounded-[20px] py-2.5 px-4 bg-neutral-200/80 dark:bg-neutral-800/90 dark:text-neutral-200 overflow-hidden min-w-0 w-full">
               <div className="[overflow-wrap:anywhere] min-w-0">
                 <Markdown compact>{textContent}</Markdown>
               </div>

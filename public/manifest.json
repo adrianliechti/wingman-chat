@@ -1,1 +1,15 @@
-{}
+{
+  "id": "/",
+  "name": "Wingman",
+  "short_name": "Wingman",
+  "description": "AI-powered chat assistant",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fafafa",
+  "theme_color": "#fafafa",
+  "icons": [
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

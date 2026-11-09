@@ -20,7 +20,7 @@ const run = (messages: UIMessage[]) => {
 it("forwards structured action context on every model request without changing visible history", () => {
   const submission: UiSubmission = {
     message: {
-      version: "v1.0",
+      version: "1.0",
       action: {
         name: "save",
         userMessage: "Save my choices",
@@ -30,7 +30,7 @@ it("forwards structured action context on every model request without changing v
         context: { seats: 12 },
       },
     },
-    metadata: { a2uiRendererCapabilities: { supportedVersions: ["v1.0"] } },
+    metadata: { a2uiRendererCapabilities: { supportedVersions: ["1.0"] } },
   };
   expect(submissionText(submission)).toBe("Save my choices");
   const messages = [userMessage(submissionText(submission), { metadata: { a2ui: submission } })];
@@ -91,7 +91,7 @@ it("forwards a missing Heading catalog repair once without rewriting the transcr
 it("retains action values throughout a real tool continuation", async () => {
   const submission: UiSubmission = {
     message: {
-      version: "v1.0",
+      version: "1.0",
       action: {
         name: "save",
         surfaceId: "main",
@@ -100,7 +100,7 @@ it("retains action values throughout a real tool continuation", async () => {
         context: { destination: "Vaduz", seats: 12 },
       },
     },
-    metadata: { a2uiRendererCapabilities: { supportedVersions: ["v1.0"] } },
+    metadata: { a2uiRendererCapabilities: { supportedVersions: ["1.0"] } },
   };
   const messages = [userMessage("Save", { metadata: { a2ui: submission } })];
   const requests: string[] = [];

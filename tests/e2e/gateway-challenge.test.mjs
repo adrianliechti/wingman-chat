@@ -61,7 +61,7 @@ function assertEventContract(events, result) {
 function resultTexts(messages, toolName) {
   return contentParts(messages, "tool_result")
     .filter((part) => !toolName || part.name === toolName)
-    .flatMap((part) => part.metadata?.result ?? [])
+    .flatMap((part) => part.content)
     .filter((part) => part.type === "text")
     .map((part) => part.content);
 }

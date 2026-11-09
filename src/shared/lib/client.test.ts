@@ -340,6 +340,49 @@ describe("raw request lifetime", () => {
     expect(new Uint8Array(await rendered.arrayBuffer())).toEqual(new Uint8Array([1, 2]));
     expect(vi.getTimerCount()).toBe(0);
   });
+  it("sends edit guides as the backend's mask and markup files", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([3]), { headers: { "content-type": "image/png" } }));
+    const image = new Blob([new Uint8Array([9])], { type: "image/jpeg" });
+    const mask = new Blob([new Uint8Array([8])], { type: "image/png" });
+    const markup = new Blob([new Uint8Array([7])], { type: "image/png" });
+    await new Client().generateImage("model", "Remove the sign", [image], { mask, markup, background: "transparent" });
+    const body = fetchMock.mock.calls.at(-1)![1].body as FormData;
+    expect(body.get("input")).toBe("Remove the sign");
+    expect((body.get("file") as File).name).toBe("image_0.jpg");
+    expect((body.get("mask") as File).name).toBe("mask.png");
+    expect((body.get("markup") as File).name).toBe("markup.png");
+    expect(body.get("background")).toBe("transparent");
+    expect(body.get("aspect_ratio")).toBeNull();
+  });
+  it.each([
+    ["svg", "image/svg+xml", undefined],
+    ["gif", "image/gif", 12],
+  ] as const)("negotiates %s output and forwards GIF and complexity fields", async (format, accept, frameCount) => {
+    fetchMock.mockResolvedValueOnce(new Response("out", { headers: { "content-type": accept } }));
+    await new Client().generateImage("gpt-image-2.6-flare", "Alpaca", [], { format, complexity: "low", frameCount });
+    const [, init] = fetchMock.mock.calls.at(-1)!;
+    expect(new Headers(init.headers).get("Accept")).toBe(accept);
+    const body = init.body as FormData;
+    expect(body.get("complexity")).toBe("low");
+    expect(body.get("frame_count")).toBe(frameCount === undefined ? null : String(frameCount));
+    expect(body.get("frame_duration_ms")).toBeNull();
+  });
+
+  it("negotiates MP4 and sends duration in seconds while preserving GIF wire units", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("video", { headers: { "content-type": "video/mp4" } }));
+    const blob = await new Client().render("gemini-omni-1.2-flash", "A fox", [], {
+      format: "mp4",
+      durationSeconds: 15,
+      resolution: "720p",
+    });
+    expect(blob.type).toBe("video/mp4");
+    const [, init] = fetchMock.mock.calls.at(-1)!;
+    expect(new Headers(init.headers).get("Accept")).toBe("video/mp4");
+    const body = init.body as FormData;
+    expect(body.get("duration_seconds")).toBe("15");
+    expect(body.get("resolution")).toBe("720p");
+    expect(body.get("frame_duration_ms")).toBeNull();
+  });
 
   function stalledBody(status = 200) {
     fetchMock.mockImplementationOnce(
@@ -797,8 +840,16 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     await runMessages(client, "model", "", [...prompt, restored], []);
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).input).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ role: "assistant", content: "Working", phase: "commentary" }),
-        expect.objectContaining({ role: "assistant", content: "Done", phase: "final_answer" }),
+        expect.objectContaining({
+          id: "msg_commentary",
+          phase: "commentary",
+          content: [{ type: "output_text", text: "Working", annotations: [] }],
+        }),
+        expect.objectContaining({
+          id: "msg_final",
+          phase: "final_answer",
+          content: [{ type: "output_text", text: "Done", annotations: [] }],
+        }),
       ]),
     );
   });
@@ -947,18 +998,30 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
   it("preserves replacement tokens in custom rewrite instructions", async () => {
     const instruction = "Keep the regex replacement tokens $&, $`, $', and $$ verbatim.";
     fetchMock.mockResolvedValueOnce(finished(response([textItem('{"rewrittenText":"Rewritten"}')])));
-    expect(await new Client().rewriteText("model", "Original", "en", undefined, undefined, instruction)).toBe(
+    expect(await new Client().rewriteText("model", "Original", { lang: "en", instruction, source: "$1 & $2" })).toBe(
       "Rewritten",
     );
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(request.instructions).toContain(instruction);
-    expect(request.instructions).not.toContain("{finalInstructions}");
+    expect(request.instructions).toContain("<source>\n$1 & $2\n</source>");
+    expect(request.instructions).toContain("translation into English");
+    expect(request.instructions).not.toContain("{instructions}");
   });
 
   it("preserves regional spelling returned by the rewrite model", async () => {
     const rewrittenText = "Die Straße führt zum großen Gebäude.";
     fetchMock.mockResolvedValueOnce(finished(response([textItem(JSON.stringify({ rewrittenText }))])));
-    expect(await new Client().rewriteText("model", "Eine Straße", "de-DE")).toBe(rewrittenText);
+    expect(await new Client().rewriteText("model", "Eine Straße", { lang: "de-DE", formality: "formal" })).toBe(
+      rewrittenText,
+    );
+    const request = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(request.instructions).toContain("German (Germany)");
+    expect(request.instructions).toContain("polite form of address");
+  });
+
+  it("returns the text untouched when no revision is requested", async () => {
+    expect(await new Client().rewriteText("model", "Unchanged", { lang: "de" })).toBe("Unchanged");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("stops an in-flight stream on cancellation", async () => {

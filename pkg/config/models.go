@@ -74,11 +74,14 @@ type ModelTools struct {
 }
 
 type Model struct {
-	ID                string      `json:"id,omitempty" yaml:"id,omitempty"`
-	Name              string      `json:"name,omitempty" yaml:"name,omitempty"`
-	Replaces          []string    `json:"replaces,omitempty" yaml:"replaces,omitempty"`
-	Caption           string      `json:"caption,omitempty" yaml:"caption,omitempty"`
-	Description       string      `json:"description,omitempty" yaml:"description,omitempty"`
+	// Essential.
+	ID          string   `json:"id,omitempty" yaml:"id,omitempty"`
+	Name        string   `json:"name,omitempty" yaml:"name,omitempty"`
+	Replaces    []string `json:"replaces,omitempty" yaml:"replaces,omitempty"`
+	Caption     string   `json:"caption,omitempty" yaml:"caption,omitempty"`
+	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
+
+	// Text.
 	Instructions      string      `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 	Effort            string      `json:"effort,omitempty" yaml:"effort,omitempty"`
 	SupportedEfforts  []string    `json:"supportedEfforts,omitempty" yaml:"supportedEfforts,omitempty"`
@@ -88,6 +91,14 @@ type Model struct {
 	OutputTokenBudget *int        `json:"outputTokenBudget,omitempty" yaml:"outputTokenBudget,omitempty"`
 	CompactThreshold  *int        `json:"compactThreshold,omitempty" yaml:"compactThreshold,omitempty"`
 	Tools             *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
+
+	// Image. Formats, resolutions and aspect ratios also apply to video.
+	SupportedFormats      []string `json:"supportedFormats,omitempty" yaml:"supportedFormats,omitempty"`
+	SupportedResolutions  []string `json:"supportedResolutions,omitempty" yaml:"supportedResolutions,omitempty"`
+	SupportedAspectRatios []string `json:"supportedAspectRatios,omitempty" yaml:"supportedAspectRatios,omitempty"`
+
+	// Video.
+	SupportedDurations []int `json:"supportedDurations,omitempty" yaml:"supportedDurations,omitempty"`
 }
 
 type TTS struct {

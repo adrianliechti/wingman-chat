@@ -16,7 +16,7 @@ const storage = {
 };
 
 export function SkillsProvider({ children }: { children: ReactNode }) {
-  const { items: skills, put, update, remove, getItems } = usePersistentCollection(storage);
+  const { items: skills, isLoaded, put, update, remove, getItems } = usePersistentCollection(storage);
   const addSkill = useCallback(
     (data: Omit<Skill, "id">): Skill => {
       const previous = getItems().find((skill) => skill.name === data.name);
@@ -59,6 +59,7 @@ export function SkillsProvider({ children }: { children: ReactNode }) {
     <SkillsContext
       value={{
         skills,
+        isLoaded,
         addSkill,
         updateSkill,
         removeSkill,

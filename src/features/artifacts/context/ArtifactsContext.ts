@@ -19,6 +19,8 @@ export interface ArtifactsContextType {
   showArtifactsDrawer: boolean;
   /** Async callers pass their workspace so a late completion cannot select a file in another chat. */
   openFile: (path: string, origin?: FileSystemManager) => void;
+  /** Deselects the open file, e.g. so the phone drawer opens on its file list. */
+  clearActiveFile: () => void;
   setShowArtifactsDrawer: (show: boolean) => void;
   toggleArtifactsDrawer: () => void;
   /**

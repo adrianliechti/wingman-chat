@@ -1,6 +1,52 @@
-import { Deflate, Inflate, type DeflateOptions } from "pako";
+import {
+  Deflate,
+  Inflate,
+  type DeflateOptions,
+  Z_NO_FLUSH,
+  Z_PARTIAL_FLUSH,
+  Z_SYNC_FLUSH,
+  Z_FULL_FLUSH,
+  Z_FINISH,
+  Z_BLOCK,
+  Z_TREES,
+  Z_OK,
+  Z_STREAM_END,
+  Z_NEED_DICT,
+  Z_ERRNO,
+  Z_STREAM_ERROR,
+  Z_DATA_ERROR,
+  Z_MEM_ERROR,
+  Z_BUF_ERROR,
+  Z_FILTERED,
+  Z_HUFFMAN_ONLY,
+  Z_RLE,
+  Z_FIXED,
+  Z_DEFAULT_STRATEGY,
+} from "pako";
 
-export { constants } from "pako";
+// Pako 3 exports constants individually; just-bash expects Node's namespace.
+export const constants = {
+  Z_NO_FLUSH,
+  Z_PARTIAL_FLUSH,
+  Z_SYNC_FLUSH,
+  Z_FULL_FLUSH,
+  Z_FINISH,
+  Z_BLOCK,
+  Z_TREES,
+  Z_OK,
+  Z_STREAM_END,
+  Z_NEED_DICT,
+  Z_ERRNO,
+  Z_STREAM_ERROR,
+  Z_DATA_ERROR,
+  Z_MEM_ERROR,
+  Z_BUF_ERROR,
+  Z_FILTERED,
+  Z_HUFFMAN_ONLY,
+  Z_RLE,
+  Z_FIXED,
+  Z_DEFAULT_STRATEGY,
+};
 
 interface Options {
   level?: DeflateOptions["level"];
