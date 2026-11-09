@@ -23,6 +23,7 @@ interface DraftSnapshot {
   loaded: boolean;
   error?: string;
   sending?: boolean;
+  sendingDraft?: ComposerDraft;
 }
 const UNLOADED: DraftSnapshot = { draft: EMPTY_DRAFT, loaded: false };
 interface StoredFile {
@@ -153,7 +154,7 @@ export class ComposerDraftStore {
     const state = this.get(key);
     if (!state.loaded) throw new Error("Draft is still loading");
     const draft = edit(state.draft);
-    this.publish(key, { loaded: true, draft, sending: state.sending });
+    this.publish(key, { ...state, loaded: true, draft });
     this.queue.schedule(key, () => this.storage.save(key, draft));
   };
   clearIfUnchanged(key: string, draft: ComposerDraft) {
@@ -163,15 +164,23 @@ export class ComposerDraftStore {
     }
   }
   setSending(key: string, sending: boolean) {
-    this.publish(key, { ...this.get(key), sending });
+    const state = this.get(key);
+    this.publish(key, { ...state, sending, sendingDraft: sending ? state.draft : undefined });
   }
   finishSending(draft: ComposerDraft) {
-    for (const [key, state] of this.states) if (state.sending && state.draft === draft) this.setSending(key, false);
+    // The send owns its original snapshot even if a late input/file update
+    // replaces the visible draft. Unlock it without clearing newer content.
+    for (const [key, state] of this.states) {
+      if (state.sending && state.sendingDraft === draft) {
+        this.setSending(key, false);
+      }
+    }
   }
   async transfer(from: string, to: string) {
     await this.load(from);
-    const draft = this.get(from).draft;
-    this.publish(to, { loaded: true, draft, sending: this.get(from).sending });
+    const state = this.get(from);
+    const draft = state.draft;
+    this.publish(to, { ...state, loaded: true, draft });
     this.queue.schedule(to, () => this.storage.save(to, draft));
     // Keep the source durable until the destination has been committed.
     await this.queue.flushRecord(to);

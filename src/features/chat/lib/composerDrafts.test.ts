@@ -11,6 +11,52 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("composer drafts", () => {
+  it.each([
+    { outcome: "accepted", transfer: false },
+    { outcome: "failed", transfer: false },
+    { outcome: "accepted", transfer: true },
+    { outcome: "failed", transfer: true },
+  ])("unlocks a changed draft after $outcome (transfer=$transfer)", async ({ outcome, transfer }) => {
+    const queue = new PersistenceQueue(() => {}, 60_000);
+    const store = new ComposerDraftStore(queue);
+    await store.load("new-chat");
+    store.update("new-chat", () => ({ ...EMPTY_DRAFT, content: "Submitted text" }));
+    const sent = store.get("new-chat").draft;
+    store.setSending("new-chat", true);
+    // A delayed input/file update replaces the snapshot while the send is pending.
+    store.update("new-chat", (draft) => ({ ...draft, content: "Unsent changes" }));
+    if (transfer) await store.transfer("new-chat", "chat-created");
+    const key = transfer ? "chat-created" : "new-chat";
+    store.finishSending(sent);
+    if (outcome === "accepted") store.clearIfUnchanged(key, sent);
+    expect(store.get(key).sending).toBe(false);
+    expect(store.get(key).draft.content).toBe("Unsent changes");
+    await queue.flush();
+    expect((await loadComposerDraft(key)).content).toBe("Unsent changes");
+    await queue.stop();
+  });
+
+  it("does not unlock a newer submission when an older send finishes again", async () => {
+    const queue = new PersistenceQueue(() => {}, 60_000);
+    const store = new ComposerDraftStore(queue);
+    await store.load("chat-one");
+    store.update("chat-one", () => ({ ...EMPTY_DRAFT, content: "First" }));
+    const first = store.get("chat-one").draft;
+    store.setSending("chat-one", true);
+    store.finishSending(first);
+    store.clearIfUnchanged("chat-one", first);
+    store.update("chat-one", (draft) => ({ ...draft, content: "Second" }));
+    const second = store.get("chat-one").draft;
+    store.setSending("chat-one", true);
+    store.finishSending(first);
+    store.clearIfUnchanged("chat-one", first);
+    expect(store.get("chat-one").sending).toBe(true);
+    expect(store.get("chat-one").draft).toBe(second);
+    store.finishSending(second);
+    expect(store.get("chat-one").sending).toBe(false);
+    await queue.stop();
+  });
+
   it("persists skill-only drafts and clears them only after acceptance", async () => {
     const queue = new PersistenceQueue(() => {}, 60_000);
     const store = new ComposerDraftStore(queue);
