@@ -1,5 +1,5 @@
 import { Dialog, DialogPanel, DialogTitle } from "@headlessui/react";
-import { ChevronDown, FolderPlus, Settings2 } from "lucide-react";
+import { ChevronDown, Folder, FolderPlus, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { useChatActions, useChatList } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
@@ -33,6 +33,9 @@ export function ProjectPicker() {
             aria-label="Choose project"
             title={selected?.name ?? "All chats"}
           >
+            {selected && (
+              <Folder size={14} className="shrink-0 text-neutral-500 dark:text-neutral-400" aria-hidden="true" />
+            )}
             <span className="truncate">{selected?.name ?? "All chats"}</span>
             <ChevronDown size={13} className="shrink-0 opacity-60" />
           </MenuButton>
@@ -43,7 +46,12 @@ export function ProjectPicker() {
         </DropdownMenuItem>
         <div className="max-h-72 overflow-y-auto">
           {projects.map((p) => (
-            <DropdownMenuItem key={p.id} selected={p.id === selected?.id} onClick={() => choose(p.id)}>
+            <DropdownMenuItem
+              key={p.id}
+              icon={<Folder size={14} aria-hidden="true" />}
+              selected={p.id === selected?.id}
+              onClick={() => choose(p.id)}
+            >
               <span className="block truncate">{p.name}</span>
             </DropdownMenuItem>
           ))}

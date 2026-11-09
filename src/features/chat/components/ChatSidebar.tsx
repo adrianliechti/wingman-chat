@@ -1,6 +1,7 @@
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  Folder,
   FolderInput,
   GitBranch,
   MoreVertical,
@@ -313,6 +314,9 @@ export function ChatSidebar() {
   // Shared chat item row renderer
   const renderChatItem = (chatItem: ChatEntry, options?: { draggable?: boolean }) => {
     const displayTitle = chatItem.customTitle ?? chatItem.title ?? "Untitled";
+    const project = !projects.some((p) => p.id === selectedProjectId)
+      ? projects.find((p) => p.id === chatItem.projectId)
+      : undefined;
     const match = query && searchResult?.query === query ? searchResult.matches.get(chatItem.id) : undefined;
     const showExcerpt = match && (match.messageId || match.excerpt !== displayTitle);
     const isActive = chatItem.id === chatId;
@@ -359,13 +363,27 @@ export function ChatSidebar() {
                 setShowSidebar(false);
               }
             }}
-            className={`flex-1 min-w-0 pr-8 text-left text-base md:text-sm ${isActive ? "font-medium" : "text-neutral-700 dark:text-neutral-300"}`}
+            className={`flex-1 min-w-0 pr-8 text-left text-base md:pr-0 md:group-hover:pr-8 md:group-focus-within:pr-8 md:text-sm ${isActive ? "font-medium" : "text-neutral-700 dark:text-neutral-300"}`}
             title={displayTitle}
             aria-label={displayTitle}
-            aria-describedby={showExcerpt ? `search-excerpt-${chatItem.id}` : undefined}
+            aria-describedby={
+              [project && `chat-project-${chatItem.id}`, showExcerpt && `search-excerpt-${chatItem.id}`]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
           >
-            <span className="block truncate">
-              <SearchHighlight text={displayTitle} query={query} />
+            <span className="flex items-center gap-1.5">
+              {project && (
+                <span title={`Project: ${project.name}`} className="shrink-0 text-neutral-500 dark:text-neutral-400">
+                  <Folder size={14} aria-hidden="true" />
+                  <span id={`chat-project-${chatItem.id}`} className="sr-only">
+                    Project: {project.name}
+                  </span>
+                </span>
+              )}
+              <span className="truncate">
+                <SearchHighlight text={displayTitle} query={query} />
+              </span>
             </span>
             {showExcerpt && (
               <span
@@ -383,7 +401,7 @@ export function ChatSidebar() {
             trigger={
               <MenuButton
                 aria-label={`Chat options for ${displayTitle}`}
-                className="absolute right-1.5 top-2 md:top-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-2 -m-1 rounded hover:bg-neutral-200/60 dark:hover:bg-white/10 max-md:top-1/2 max-md:m-0 max-md:flex max-md:size-10 max-md:-translate-y-1/2 max-md:items-center max-md:justify-center max-md:rounded-full max-md:p-0"
+                className="absolute right-1.5 top-2 md:top-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-2 -m-1 rounded hover:bg-neutral-200/60 dark:hover:bg-white/10 max-md:top-1/2 max-md:m-0 max-md:flex max-md:size-10 max-md:-translate-y-1/2 max-md:items-center max-md:justify-center max-md:rounded-full max-md:p-0"
                 onClick={(e) => e.stopPropagation()}
               >
                 <MoreVertical size={16} />
