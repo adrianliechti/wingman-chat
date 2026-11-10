@@ -363,6 +363,35 @@ describe("reasoning effort levels", () => {
   });
 
   it.each([
+    "claude-fable-5-2",
+    "claude-fable-5.2",
+    "anthropic.claude-fable-5-2",
+    "eu.anthropic.claude-fable-5-2",
+    "global.anthropic.claude-fable-5-2-v1:0",
+    "claude-mythos-5-2",
+  ])("resolves Fable/Mythos 5.2 capabilities for %s", (id) => {
+    expect(supportedEfforts(id)).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(defaultEffort(id)).toBe("high");
+    expect(minimalEffort(id)).toBe("low");
+    expect(modelMaxOutputTokens(id)).toBe(128_000);
+    expect(compactThreshold(id)).toBe(272_000);
+    expect(configureModels([{ id, name: "Claude", type: "completer" }], [])[0]).toMatchObject({
+      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+      defaultEffort: "high",
+      maxOutputTokens: 128_000,
+    });
+  });
+
+  it.each(["claude-fable-5-3", "claude-fable-5-20", "claude-fable-6", "claude-mythos-5-3"])(
+    "does not infer capabilities for unrecognized version %s",
+    (id) => {
+      expect(supportedEfforts(id)).toBeUndefined();
+      expect(defaultEffort(id)).toBeUndefined();
+      expect(modelMaxOutputTokens(id)).toBeUndefined();
+    },
+  );
+
+  it.each([
     "claude-haiku-5-5",
     "claude-haiku-5.5",
     "anthropic.claude-haiku-5-5",

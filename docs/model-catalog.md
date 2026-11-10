@@ -122,6 +122,22 @@ own supported efforts instead of inheriting a vendor profile.
   has low through max with a high default, plus none, which the gateway sends as
   `between_tools` to turn off up-front thinking. Mythos Preview and Opus/Sonnet 4.6 have
   max but no xhigh. Haiku 4.5 and older Sonnet models do not inherit Opus's efforts.
+- [Claude Fable 5.2](https://platform.claude.com/docs/en/models/fable-5-2/overview)
+  (reviewed November 10, 2026): low, medium, high (default), xhigh, max;
+  thinking is always adaptive, so none/minimal are not offered. Fable and its
+  verified-access counterpart Mythos 5.2 have 1M context and 128,000-token output
+  capacity. Their default chat allowance is 64,000 tokens; the existing
+  272,000-token operational compaction threshold still applies.
+  The [migration guide](https://platform.claude.com/docs/en/models/fable-5-2/migration-guide)
+  requires omission of sampling parameters and prohibits forced tool calls.
+  Wingman's Responses requests already follow these restrictions. The gateway
+  must support the model and expose its ID in `/v1/models`; adding a frontend
+  profile does not provision it. Fable 5.2 also requires 30-day account retention
+  unless Anthropic authorizes an exception.
+  Its stricter prefix checks can reject thinking after history, tools, or system
+  instructions change. Wingman's existing bounded retry removes rejected
+  signatures from replay and saved history; this recovery is covered by the
+  documented prefix-mismatch error regression, alongside signed tool round trips.
 - [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview)
   (reviewed October 8, 2026): low, medium (default), high, xhigh, max, plus
   gateway `none` to disable thinking. Adaptive thinking is on by default;
