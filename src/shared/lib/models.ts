@@ -82,7 +82,7 @@ const MODEL_PROFILES: ModelProfile[] = [
   [/\bgpt-?5(?:-(?:mini|nano))?(?=$|[/:]|-\d{4})/, ["minimal", "low", "medium", "high"], undefined, 128_000],
   [/\bgpt-oss\b|\bo[13](?:-mini)?(?=$|[/:]|-\d{4})|\bo4-mini\b/, ["low", "medium", "high"]],
 
-  [/\b(?:fable|mythos)-5(?:\.1)?(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "high", 128_000],
+  [/\b(?:fable|mythos)-5(?:\.[12])?(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "high", 128_000],
   // Unlike Opus 5, Opus 5.5 documents medium as its default effort.
   [/\bopus-5\.5(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "medium", 128_000],
   // Sonnet 5.5 can turn off up-front thinking (between_tools), unlike Opus 5.5.

@@ -52,6 +52,7 @@ describe("chat reasoning display", () => {
     ["claude-opus-4-8", "high"],
     ["claude-sonnet-5-5", undefined],
     ["claude-haiku-5-5", undefined],
+    ["claude-fable-5-2", "high"],
     ["bedrock-sonnet-4-6", "high"],
     ["team-chat", undefined],
     ["", undefined],
@@ -134,6 +135,11 @@ describe("chat output allowances", () => {
     ["claude-haiku-5-5", "high"],
     ["claude-haiku-5-5", "xhigh"],
     ["claude-haiku-5-5", "max"],
+    ["claude-fable-5-2", "low"],
+    ["claude-fable-5-2", "medium"],
+    ["claude-fable-5-2", "high"],
+    ["claude-fable-5-2", "xhigh"],
+    ["claude-fable-5-2", "max"],
   ] as const)("sends %s at %s effort with tools through Responses", async (model, effort) => {
     fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
     const tool: Tool = {
@@ -155,6 +161,7 @@ describe("chat output allowances", () => {
     expect(body).not.toHaveProperty("top_p");
     expect(body).not.toHaveProperty("top_k");
     expect(body).not.toHaveProperty("thinking");
+    expect(body.tool_choice ?? "auto").toBe("auto");
   });
 
   it("sends tool schemas unchanged instead of OpenAI's null-widened strict form", async () => {
@@ -184,6 +191,7 @@ describe("chat output allowances", () => {
     ["gpt-6-sol", 64_000],
     ["gpt-6-luna", 64_000],
     ["claude-haiku-5-5", 64_000],
+    ["claude-fable-5-2", 64_000],
     ["gpt-4.1", 32_768],
     ["gpt-4o", 16_384],
     ["gemini-2.0-flash", 8_192],

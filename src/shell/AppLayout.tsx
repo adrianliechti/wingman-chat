@@ -157,14 +157,14 @@ export function AppLayout() {
       </Transition>
 
       {/* Generic sidebar - pushes content normally, becomes overlay when panels are open.
-          A tinted, translucent surface sets it apart from the content instead of a border,
-          so it reads as one column from the top bar to the bottom edge. */}
+          Desktop uses a tinted surface; mobile matches the app background so the
+          drawer blends into Safari's browser bars and safe areas. */}
       {hasDrawer && (
         <aside
           className={cn(
-            "fixed app-viewport left-0 z-50 flex w-full flex-col overflow-hidden pl-(--safe-left) pr-(--safe-right) md:pt-(--safe-top) md:pb-(--safe-bottom) bg-neutral-100/85 backdrop-blur-xl transition-transform duration-500 ease-in-out md:right-auto dark:bg-neutral-900/85",
-            // Phones: a frosted page that starts under the status bar and slides with an iOS curve.
-            "max-md:bg-(--glass-bg-strong) max-md:pt-(--safe-top) max-md:backdrop-blur-2xl max-md:backdrop-saturate-150 max-md:duration-400 max-md:ease-[cubic-bezier(0.32,0.72,0,1)]",
+            "fixed app-viewport left-0 z-50 flex w-full flex-col overflow-hidden pl-(--safe-left) pr-(--safe-right) md:pt-(--safe-top) md:pb-(--safe-bottom) bg-(--app-bg) md:bg-neutral-100/85 md:backdrop-blur-xl transition-transform duration-500 ease-in-out md:right-auto md:dark:bg-neutral-900/85",
+            // Phones: a solid page that starts under the status bar and slides with an iOS curve.
+            "max-md:pt-(--safe-top) max-md:duration-400 max-md:ease-[cubic-bezier(0.32,0.72,0,1)]",
             showSidebar ? "translate-x-0" : "-translate-x-full",
             hasPanelOpen && "md:shadow-2xl md:shadow-black/15 dark:md:shadow-black/50",
           )}

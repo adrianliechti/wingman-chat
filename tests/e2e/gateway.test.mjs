@@ -57,7 +57,13 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
     assert(availableModels.some((model) => model.id === selectedModel));
   });
 
-  for (const model of new Set([compatibilityModel, documentModel, "claude-opus-5-5", "claude-haiku-5-5"])) {
+  for (const model of new Set([
+    compatibilityModel,
+    documentModel,
+    "claude-opus-5-5",
+    "claude-haiku-5-5",
+    "claude-fable-5-2",
+  ])) {
     void test(
       `preserves signed reasoning with ${model} and replays it after persistence`,
       async (context) => {
