@@ -50,3 +50,14 @@ it("preserves the pending reset when server deletion fails", async () => {
   expect(JSON.parse(localStorage.getItem(BACKUP_RESET_KEY)!).phase).toBe("delete");
   expect(resetLocalBackupState).not.toHaveBeenCalled();
 });
+
+it("reuses the same reset ID after an uncertain server response", async () => {
+  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete" }));
+  vi.mocked(resetBackup).mockRejectedValueOnce(new Error("connection lost"));
+  await expect(completePendingBackupReset("alice")).rejects.toThrow("connection lost");
+  const resetId = JSON.parse(localStorage.getItem(BACKUP_RESET_KEY)!).resetId;
+  expect(resetId).toBeTruthy();
+  await completePendingBackupReset("alice");
+  expect(resetBackup).toHaveBeenNthCalledWith(1, resetId);
+  expect(resetBackup).toHaveBeenNthCalledWith(2, resetId);
+});

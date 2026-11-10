@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 )
@@ -34,4 +35,33 @@ func TestResetBackup(t *testing.T) {
 	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files/file-1234", "", nil), http.StatusNotFound)
 	wantStatus(t, do(t, srv, "bob", "GET", "/v1/blobs/blob-1234", "", nil), http.StatusOK)
 	wantStatus(t, do(t, srv, "bob", "GET", "/v1/files/file-1234", "", nil), http.StatusOK)
+}
+
+func TestBackupGenerationRejectsOldDeviceAfterReset(t *testing.T) {
+	srv := newTestServer(t)
+	makeKey := func(generation string) string {
+		var key map[string]any
+		if err := json.Unmarshal([]byte(protectedTestKey("")), &key); err != nil {
+			t.Fatal(err)
+		}
+		key["backup"] = map[string]string{"generation": generation, "publicKey": "public", "encryptedPrivateKey": "encrypted"}
+		data, err := json.Marshal(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", makeKey("old-generation"), nil), http.StatusNoContent)
+	wantStatus(t, do(t, srv, "alice", "DELETE", "/v1/backup", "", map[string]string{"X-Confirm-Backup-Reset": "true"}), http.StatusNoContent)
+	var incomplete map[string]any
+	if err := json.Unmarshal([]byte(protectedTestKey("")), &incomplete); err != nil {
+		t.Fatal(err)
+	}
+	delete(incomplete, "backup")
+	setupKey, _ := json.Marshal(incomplete)
+	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", string(setupKey), nil), http.StatusNoContent)
+	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/blobs/blob-1234", "old ciphertext", map[string]string{"X-Backup-Generation": "old-generation"}), http.StatusConflict)
+	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", makeKey("new-generation"), nil), http.StatusNoContent)
+	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/blobs/blob-1234", "old ciphertext", map[string]string{"X-Backup-Generation": "old-generation"}), http.StatusConflict)
+	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/blobs/blob-1234", "new ciphertext", map[string]string{"X-Backup-Generation": "new-generation"}), http.StatusNoContent)
 }

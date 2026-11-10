@@ -13,8 +13,9 @@ func PreservesBackupKey(current, next []byte) bool {
 		return false
 	}
 	var oldKey, newKey struct {
+		Generation          string `json:"generation"`
 		PublicKey           string `json:"publicKey"`
 		EncryptedPrivateKey string `json:"encryptedPrivateKey"`
 	}
-	return json.Unmarshal(previous["backup"], &oldKey) == nil && json.Unmarshal(replacement["backup"], &newKey) == nil && oldKey == newKey
+	return json.Unmarshal(previous["backup"], &oldKey) == nil && json.Unmarshal(replacement["backup"], &newKey) == nil && oldKey.PublicKey == newKey.PublicKey && oldKey.EncryptedPrivateKey == newKey.EncryptedPrivateKey && (oldKey.Generation == "" || oldKey.Generation == newKey.Generation)
 }

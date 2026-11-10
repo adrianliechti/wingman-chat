@@ -118,6 +118,7 @@ async function readySession(userId: string, dek: RootKey, ks: keystore.KeystoreS
 async function readySessionUnlocked(userId: string, dek: RootKey, ks: keystore.KeystoreState): Promise<ReadySession> {
   const upgraded = await keystore.enableBackupUploads(ks, dek, userId);
   await rememberBackup(userId, upgraded.state, upgraded.dek);
+  api.setBackupGeneration(upgraded.state.keystore.backup!.generation!);
   const wasUploading = session.status === "upload-only" && session.userId === userId;
   const active =
     session.status === "upload-only" && session.userId === userId
@@ -167,7 +168,8 @@ async function uploadSessionUnlocked(
   ks: keystore.KeystoreState,
 ): Promise<UploadSession | LockedSession> {
   const key = await keystore.uploadKey(ks, userId);
-  if (!key) return { status: "locked", userId, keystore: ks };
+  if (!key || !ks.keystore.backup?.generation) return { status: "locked", userId, keystore: ks };
+  api.setBackupGeneration(ks.keystore.backup.generation);
   const active = await engines(userId, key);
   const s: UploadSession = { status: "upload-only", userId, ...active, keystore: ks };
   startAutoSync(s);

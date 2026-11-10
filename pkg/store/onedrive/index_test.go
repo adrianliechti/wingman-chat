@@ -155,7 +155,7 @@ func TestResetFencesInFlightUpload(t *testing.T) {
 				finished <- err
 			}()
 			<-input.started
-			resetErr := p.ResetUser(testSession(), "alice")
+			resetErr := p.ResetUser(testSession(), "alice", newObject())
 			if resetErr != nil {
 				close(input.resume)
 				<-finished
@@ -302,7 +302,7 @@ func TestResetCleansOrphansAndPreservesNewBackup(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession(), "alice"); err != nil {
+	if err := p.ResetUser(testSession(), "alice", newObject()); err != nil {
 		t.Fatal(err)
 	}
 	files, err := p.ListFiles(testSession(), "alice")
@@ -327,7 +327,7 @@ func TestResetRejectsUntrustedListingContinuation(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession(), "alice"); err == nil {
+	if err := p.ResetUser(testSession(), "alice", newObject()); err == nil {
 		t.Fatal("untrusted continuation accepted")
 	}
 }
@@ -387,7 +387,7 @@ func TestResetFollowsListingPages(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession(), "alice"); err != nil {
+	if err := p.ResetUser(testSession(), "alice", newObject()); err != nil {
 		t.Fatal(err)
 	}
 	if pages != 2 {

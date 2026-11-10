@@ -18,6 +18,7 @@ import { readJson, writeJson } from "./opfs-core";
 import { generateBackupKeys, importBackupPublicKey, importBackupPrivateKey } from "./backupCrypto";
 
 interface BackupEnvelope {
+  generation?: string;
   publicKey: string;
   encryptedPrivateKey: string;
 }
@@ -244,10 +245,17 @@ export async function enableBackupUploads<K extends RootKey>(
     const encryptedPrivateKey = toBase64(await encryptBlob(root, privateBytes, userId, `backup-private:${dek.kid}`));
     privateBytes.fill(0);
     const backup = {
+      generation: crypto.randomUUID(),
       publicKey: toBase64(new Uint8Array(await crypto.subtle.exportKey("spki", pair.publicKey))),
       encryptedPrivateKey,
     };
     const ks = { ...current.keystore, backup };
+    const etag = await api.putKeystore(JSON.stringify(ks), { ifMatch: current.etag });
+    current = { keystore: ks, etag };
+  }
+  // Older experimental backups can acquire a generation without changing keys.
+  if (!current.keystore.backup!.generation) {
+    const ks = { ...current.keystore, backup: { ...current.keystore.backup!, generation: crypto.randomUUID() } };
     const etag = await api.putKeystore(JSON.stringify(ks), { ifMatch: current.etag });
     current = { keystore: ks, etag };
   }

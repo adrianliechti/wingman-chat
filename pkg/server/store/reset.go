@@ -54,7 +54,7 @@ func (h *Handler) handleResetBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Backup reset confirmation required", http.StatusBadRequest)
 		return
 	}
-	if err := h.store.ResetUser(r.Context(), userID); err != nil {
+	if err := h.store.ResetUser(r.Context(), userID, r.Header.Get("X-Backup-Reset-ID")); err != nil {
 		writeStoreError(w, err)
 		return
 	}

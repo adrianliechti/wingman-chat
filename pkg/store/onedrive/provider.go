@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -94,6 +95,7 @@ type chat struct {
 }
 type index struct {
 	Generation string            `json:"generation,omitempty"`
+	ResetIDs   map[string]bool   `json:"resetIds,omitempty"`
 	Version    int               `json:"version"`
 	Keystore   []byte            `json:"keystore,omitempty"`
 	Chats      map[string]chat   `json:"chats"`
@@ -101,8 +103,11 @@ type index struct {
 	Blobs      map[string]object `json:"blobs"`
 }
 
-func (p *Provider) ResetUser(ctx context.Context, userID string) error {
-	// Reset needs only the control item, so damaged index contents cannot
+func (p *Provider) ResetUser(ctx context.Context, userID, resetID string) error {
+	if !resourceID.MatchString(resetID) {
+		return store.ErrInvalidID
+	}
+	// Read the control item separately so damaged index contents cannot
 	// prevent recovery.
 	if _, err := p.folder(ctx, userID); err != nil {
 		return err
@@ -113,22 +118,49 @@ func (p *Provider) ResetUser(ctx context.Context, userID string) error {
 		return err
 	}
 
+	// Remember completed reset IDs across subsequent backups and resets. A retry
+	// after an uncertain response must never erase a newly enrolled backup.
+	previous, observed, readErr := p.readIndex(ctx, userID)
+	if readErr == nil {
+		if observed.ID != control.ID || observed.ETag != control.ETag {
+			return store.ErrBackupConflict
+		}
+		if previous.ResetIDs[resetID] {
+			return nil
+		}
+	} else {
+		if !errors.Is(readErr, errInvalidIndex) {
+			return readErr
+		}
+		previous = emptyIndex()
+	}
+
 	names, err := p.resetObjects(ctx, userID)
 	if err != nil {
 		return err
 	}
 	empty := emptyIndex()
 	empty.Generation = newObject()
+	empty.ResetIDs = previous.ResetIDs
+	if empty.ResetIDs == nil {
+		empty.ResetIDs = map[string]bool{}
+	}
+	empty.ResetIDs[resetID] = true
 	// Keep the index item: deleting/recreating it would let stale writers
 	// resurrect a backup. Publishing a fresh generation fences all old requests.
 	if err := p.commit(ctx, userID, empty, control); err != nil {
 		return err
 	}
 	s.index, s.snapshot = empty, cloneIndex(empty)
+	failed := 0
 	for _, name := range names {
+		// Cleanup is best effort; resetting again can reclaim leftovers.
 		if err := p.remove(ctx, userID, name); err != nil {
-			return err
+			failed++
 		}
+	}
+	if failed > 0 {
+		log.Printf("OneDrive backup: reset left %d encrypted objects for later cleanup", failed)
 	}
 	return nil
 }

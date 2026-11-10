@@ -407,7 +407,12 @@ export function SyncSection({
               }
             />
           )}
-          {(active || status === "error") && lastError && (
+          {status === "error" && lastError && (
+            <p role="alert" className="text-xs text-neutral-600 dark:text-neutral-300">
+              {lastError}
+            </p>
+          )}
+          {active && lastError && (
             <details className="min-w-0 text-xs text-neutral-500 dark:text-neutral-400">
               <summary className="w-fit cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500">
                 Error details

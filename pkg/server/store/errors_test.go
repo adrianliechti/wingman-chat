@@ -102,6 +102,7 @@ func TestRequestBodyLimits(t *testing.T) {
 	send := func(method, path string, body io.Reader, headers map[string]string) int {
 		req := httptest.NewRequest(method, path, body)
 		req.Header.Set("X-Forwarded-User", "alice")
+		req.Header.Set("X-Backup-Generation", "test-generation")
 		for k, v := range headers {
 			req.Header.Set(k, v)
 		}

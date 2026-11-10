@@ -1,5 +1,6 @@
 import { withPersistenceLock } from "./persistence";
 
+export const WORKSPACE_OWNER_KEY = "wingman:workspace-owner";
 export const BACKUP_RESET_KEY = "wingman:backup-reset";
 export const BACKUP_GENERATION_KEY = "wingman:backup-generation";
 
@@ -23,7 +24,7 @@ export function invalidateBackupSessions(): void {
 
 export function markBackupReset(userId: string): void {
   invalidateBackupSessions();
-  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId, phase: "delete" }));
+  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId, phase: "delete", resetId: crypto.randomUUID() }));
 }
 
 /** Shared by whole sync operations, including their local response continuations.

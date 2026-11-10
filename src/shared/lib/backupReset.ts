@@ -31,10 +31,13 @@ export async function completePendingBackupReset(userId: string): Promise<void> 
   await withPersistenceLock("backup-reset", async () => {
     const pending = localStorage.getItem(BACKUP_RESET_KEY);
     if (!pending) return;
-    const request = JSON.parse(pending) as { userId: string; phase: "delete" | "local" };
+    const request = JSON.parse(pending) as { userId: string; phase: "delete" | "local"; resetId?: string };
     if (request.userId !== userId) throw new Error("Sign in to the account that requested the backup reset.");
     if (request.phase === "delete") {
-      await resetBackup();
+      // Older pending resets acquire an ID before the first network request.
+      const resetId = request.resetId ?? crypto.randomUUID();
+      if (!request.resetId) localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ ...request, resetId }));
+      await resetBackup(resetId);
       // A local cleanup retry must never erase a newly configured remote backup.
       localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId, phase: "local" }));
     } else if (request.phase !== "local") {

@@ -117,7 +117,7 @@ func TestBackupRoundTripAndConflicts(t *testing.T) {
 		}
 	})
 	ctx := WithToken(context.Background(), "graph-token")
-	if err := p.ResetUser(ctx, user); err != nil {
+	if err := p.ResetUser(ctx, user, newObject()); err != nil {
 		t.Fatal(err)
 	}
 	withSession(func(ctx context.Context) {
@@ -275,8 +275,10 @@ func TestBackupHTTPAPI(t *testing.T) {
 		t.Helper()
 		r := httptest.NewRequest(method, "/api/v1/"+path, strings.NewReader(body))
 		r.Header.Set("X-Forwarded-User", "alice")
+		r.Header.Set("X-Backup-Generation", "test-generation")
 		r.Header.Set("X-Expected-Seq", "0")
 		r.Header.Set("X-Confirm-Backup-Reset", "true")
+		r.Header.Set("X-Backup-Reset-ID", "test-reset-1234")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
 		if w.Code != expected {
@@ -290,7 +292,7 @@ func TestBackupHTTPAPI(t *testing.T) {
 	key, _ := json.Marshal(map[string]any{
 		"version": 2, "kid": 1, "pinProtected": true, "wrappedDek": encode(48), "nonce": encode(12),
 		"kdf":    map[string]any{"name": "pbkdf2-sha256", "salt": encode(16), "iter": 600000},
-		"backup": map[string]any{"publicKey": "public", "encryptedPrivateKey": "private"},
+		"backup": map[string]any{"generation": "test-generation", "publicKey": "public", "encryptedPrivateKey": "private"},
 	})
 	call("PUT", "keystore", string(key), 204)
 	call("POST", "chats/chat-1234/events", `{"id":"event-1234","frame":"ciphertext"}`, 200)
@@ -340,7 +342,7 @@ func TestMissingRemoteBlobCanBeReuploaded(t *testing.T) {
 func TestHTTPRestoreRejectsInterruptedSegmentDownload(t *testing.T) {
 	p, graph := newTestProvider(t)
 	withSession(func(ctx context.Context) {
-		key := []byte(`{"version":2,"kid":1,"passkeyProtected":true,"passkey":{"credentialId":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","rpId":"localhost","salt":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","nonce":"AAAAAAAAAAAAAAAA","wrappedDek":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}`)
+		key := []byte(`{"version":2,"kid":1,"backup":{"generation":"test-generation"},"passkeyProtected":true,"passkey":{"credentialId":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","rpId":"localhost","salt":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","nonce":"AAAAAAAAAAAAAAAA","wrappedDek":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}`)
 		if _, err := p.PutKeystore(ctx, "alice", key, "*"); err != nil {
 			t.Fatal(err)
 		}
@@ -368,6 +370,7 @@ func TestHTTPRestoreRejectsInterruptedSegmentDownload(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set("X-Forwarded-User", "alice")
+	req.Header.Set("X-Backup-Generation", "test-generation")
 	res, err := server.Client().Do(req)
 	if err != nil {
 		return

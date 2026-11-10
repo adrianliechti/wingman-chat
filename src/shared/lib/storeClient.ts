@@ -10,6 +10,12 @@ import { isBackupSessionCurrent } from "./backupLifecycle";
 
 const PREFIX = "/api/v1";
 
+let backupGeneration: string | undefined;
+
+export function setBackupGeneration(generation: string): void {
+  backupGeneration = generation;
+}
+
 const REQUEST_TIMEOUT_MS = 60_000;
 /** Blob and file bodies can be large in either direction. */
 const TRANSFER_TIMEOUT_MS = 10 * 60_000;
@@ -19,6 +25,7 @@ async function storeFetch(input: string, init?: RequestInit): Promise<Response> 
     throw new Error("Backup reset in progress. Reload before syncing.");
   }
   const headers = new Headers(init?.headers);
+  if (backupGeneration) headers.set("X-Backup-Generation", backupGeneration);
   // A hung request would otherwise hold the sync engines' locks indefinitely.
   const transfer = init?.body !== undefined || /\/(blobs|files)\//.test(input);
   const signal = init?.signal ?? AbortSignal.timeout(transfer ? TRANSFER_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
@@ -38,10 +45,10 @@ function conditionalHeaders(opts: ConditionalOptions, base: Record<string, strin
 }
 
 /** Only the signed-in account is needed; restore secrets may have been lost. */
-export async function resetBackup(): Promise<void> {
+export async function resetBackup(resetId: string): Promise<void> {
   const res = await fetch(`${PREFIX}/backup`, {
     method: "DELETE",
-    headers: { "X-Confirm-Backup-Reset": "true" },
+    headers: { "X-Confirm-Backup-Reset": "true", "X-Backup-Reset-ID": resetId },
   });
   await ensureOk(res);
 }

@@ -220,7 +220,6 @@ test("initialization failures show the backend error", async ({ page }) => {
   );
   await page.route("**/api/v1/me", (route) => route.fulfill({ status: 401, body: "unauthorized" }));
   await page.goto("/tests/browser/fixtures/sync-security.html");
-  await page.getByText("Error details", { exact: true }).click();
   await expect(page.getByText("401: unauthorized", { exact: true })).toBeVisible();
 });
 
@@ -695,14 +694,11 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
   userId = "bob";
   const beforeAccountChange = chatPulls;
   await page.reload();
-  await expect.poll(() => page.evaluate(() => window.syncSecurityE2E.sessionStatus())).toBe("locked");
+  await expect.poll(() => page.evaluate(() => window.syncSecurityE2E.sessionStatus())).toBe("error");
+  await expect(page.getByText(/another account.s local workspace/)).toBeVisible();
   expect(chatPulls).toBe(beforeAccountChange);
   userId = "alice";
   await page.reload();
-  await expect(page.getByRole("button", { name: "Unlock backup", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Unlock backup", exact: true }).click();
-  await page.getByLabel("PIN", { exact: true }).fill("87654321");
-  await page.getByRole("button", { name: "Unlock backup", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await page.evaluate(() => window.syncSecurityE2E.clear());
   await page.reload();

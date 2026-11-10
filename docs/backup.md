@@ -147,7 +147,8 @@ backend verifies that isolated probe writes reject both duplicate creation and
 stale ETags; it refuses index writes if either check fails. Unrelated resource
 changes merge and retry; concurrent
 changes to the same resource return a conflict. A changed keystore or reset
-generation rejects uploads that started before that change. No lock files, persistent volume, or shared
+generation rejects uploads that started before that change. Each configured backup
+also has a generation identifier that rejects requests from devices using an older backup. No lock files, persistent volume, or shared
 filesystem are required. Encrypted upload
 spools use the backend's temporary directory and are removed after each request.
 
@@ -158,9 +159,9 @@ Reset also works when the index contents are corrupt or unsupported. It atomical
 with a fresh generation to fence stale writers. It then deletes a snapshot of
 existing encrypted objects, including objects left by earlier failed commits.
 An upload already in progress can leave an unpublished object after reset; it
-cannot publish into the new backup. An old device that starts a request after
-reset and re-enrollment is not fenced by this mechanism. Cleanup failures can be retried with another
-reset. Concurrent deletion or reset can interrupt a download; restore reports the
+cannot publish into the new backup. Each reset has an ID, so retrying an
+unacknowledged reset does not remove a newer backup. Object cleanup is best-effort;
+a later reset can reclaim objects left behind. Concurrent deletion or reset can interrupt a download; restore reports the
 failure and must be retried rather than accepting a partial backup. OneDrive's recycle
 bin and version-history policies still apply: a reset or PIN change cannot revoke
 historical copies already retained by OneDrive. Restoring backups uses Wingman's
@@ -192,8 +193,9 @@ accessible when online backup is locked or offline.
 
 **In OneDrive:** encrypted backup objects and the index live in the app folder.
 Chats use encrypted event segments; attachments and workspace files are separate
-encrypted objects. Paths stay inside the encrypted payload. The backend can see
-account identity, resource IDs, sizes, and update timing.
+encrypted objects. Paths stay inside the encrypted payload, but file IDs are
+unsalted hashes of paths: anyone with the index can test guesses for likely
+paths. The backend can also see account identity, sizes, and update timing.
 
 ## How is it encrypted?
 
@@ -250,6 +252,11 @@ other; ordinary file conflicts use modification times. Remote deletion removes
 unchanged local copies, while pending local edits survive and can upload again.
 Pending chat deletions use a separate per-chat local journal so simultaneous
 offline deletions in different tabs cannot overwrite each other.
+
+When a different account signs in on a browser with an existing local workspace,
+online backup stops rather than deleting the previous account’s data. The local
+workspace remains plaintext and accessible in the browser profile. Sign back
+into the original account and export any needed data before clearing local data.
 
 **Deactivate backup** removes this browser's remembered keys and stops sync across
 its open tabs, retaining local data and the online copy. **Reset online backup**

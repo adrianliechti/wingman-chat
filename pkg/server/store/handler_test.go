@@ -38,6 +38,10 @@ func do(t *testing.T, srv *httptest.Server, user, method, path, body string, hea
 	if user != "" {
 		req.Header.Set("X-Forwarded-User", user)
 	}
+	if method == "DELETE" && path == "/v1/backup" {
+		req.Header.Set("X-Backup-Reset-ID", "test-reset-1234")
+	}
+	req.Header.Set("X-Backup-Generation", "test-generation")
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -92,6 +96,7 @@ func protectedTestKey(note string) string {
 		"nonce":      base64.StdEncoding.EncodeToString(make([]byte, 12)),
 		"kdf":        map[string]any{"name": "pbkdf2-sha256", "salt": base64.StdEncoding.EncodeToString(make([]byte, 16)), "iter": 600000},
 		"note":       note,
+		"backup":     map[string]string{"generation": "test-generation", "publicKey": "public", "encryptedPrivateKey": "encrypted"},
 	}
 	data, _ := json.Marshal(key)
 	return string(data)

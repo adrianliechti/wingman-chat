@@ -17,7 +17,7 @@ type ChatMeta struct {
 
 // FileMeta describes one entry of a user's synced file tree. The file id
 // is derived client-side (hash of the OPFS path); the real path travels
-// only inside the encrypted body, so the server never learns it.
+// only inside the encrypted body, though the server can guess common paths from their hashes.
 type FileMeta struct {
 	ID      string    `json:"id"`
 	ETag    string    `json:"etag"`
@@ -55,7 +55,7 @@ type Provider interface {
 	BackupSize(ctx context.Context, userID string) (int64, error)
 
 	// ResetUser removes backup data and keys, fencing concurrent stale writes.
-	ResetUser(ctx context.Context, userID string) error
+	ResetUser(ctx context.Context, userID, resetID string) error
 
 	// GetKeystore returns the raw keystore bytes and an opaque etag.
 	// Returns ErrNotFound if no keystore exists yet for the user.

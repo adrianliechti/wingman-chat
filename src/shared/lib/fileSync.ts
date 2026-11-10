@@ -8,7 +8,7 @@ import { isBackupSessionCurrent, withBackupStorage } from "./backupLifecycle";
  * images, profile.json, …) syncs here as encrypted files. Each file is
  * addressed on the server by sha256(path) and stored as one opaque
  * envelope whose plaintext carries the real path + mtime, so the server
- * never learns the tree structure.
+ * can test guesses for common paths against the unkeyed hashes.
  *
  * Change tracking is event-driven: every OPFS write/delete funnels
  * through opfs-core, which notifies this engine; a debounced flush
@@ -21,12 +21,8 @@ import { areFileBackupsPaused, requireFileBackupReady, BackupPausedError } from 
 import * as api from "./storeClient";
 import { type StoreKey, canRestore, decryptFile, encryptFile } from "./crypto";
 import {
-  deleteDirectory,
-  deleteFile,
   getRoot,
   type IndexEntry,
-  listDirectories,
-  listFiles,
   onOpfsMutation,
   readBlob,
   readFileMetadata,
@@ -91,8 +87,7 @@ function isSafePath(path: string): boolean {
 // `{collection}/index.json` files are shared mutable lists — last-write-
 // wins would silently drop an entry when two devices create items in
 // parallel. They merge by entry id instead (newer `updated` wins), and
-// entries whose backing item no longer exists get pruned after a full
-// reconcile so deletions still converge.
+// deletion of backing files propagates independently.
 
 function isCollectionIndex(path: string): boolean {
   return /^[A-Za-z0-9_-]+\/index\.json$/.test(path);
@@ -169,8 +164,7 @@ export class FileSync {
     return result;
   }
   private unsubMutations: (() => void) | null = null;
-  /** Remote applies that failed during the current fullSync — pruning is
-   *  unsafe while any item may simply not have arrived yet. */
+  /** Remote applies that failed during the current fullSync. */
   private applyFailures = 0;
 
   private activity: FileSyncActivity = {
@@ -190,19 +184,11 @@ export class FileSync {
   }
 
   static async create(opts: { userId: string; dek: StoreKey }): Promise<FileSync> {
-    let state = await readJson<FileSyncState>(STATE_FILE);
+    const state = await readJson<FileSyncState>(STATE_FILE);
     if (state && state.userId !== opts.userId) {
-      // Different user on this browser: their files must not bleed into
-      // this account. Clear the workspace (chats are handled by ChatSync)
-      // and start from the server's copy.
-      for (const dir of await listDirectories("")) {
-        if (dir === "chats" || isExcluded(`${dir}/`)) continue;
-        await deleteDirectory(dir);
-      }
-      for (const file of await listFiles("")) {
-        await deleteFile(file);
-      }
-      state = undefined;
+      throw new Error(
+        "This browser contains another account's local workspace. Sign back in to export it before clearing local data.",
+      );
     }
     return new FileSync(opts.userId, opts.dek, state ?? { userId: opts.userId, entries: {} });
   }
@@ -411,36 +397,11 @@ export class FileSync {
           `${this.applyFailures} backup ${this.applyFailures === 1 ? "file" : "files"} could not be restored. Retry after checking the backup.`,
         );
       }
-
-      // Deletions converge here: after everything applied cleanly, index
-      // entries whose backing item no longer exists locally are dropped
-      // (the write marks the index dirty, so the pruned copy propagates).
-      if (this.dirty.size === 0) {
-        await this.pruneIndexes();
-      }
     } catch (err) {
       this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
       throw err;
     } finally {
       progress.finish();
-    }
-  }
-
-  private async pruneIndexes(): Promise<void> {
-    for (const dir of await listDirectories("")) {
-      const path = `${dir}/index.json`;
-      if (isExcluded(path) || !isCollectionIndex(path)) continue;
-
-      const entries = await readJson<IndexEntry[]>(path);
-      if (!Array.isArray(entries)) continue;
-
-      const subdirs = new Set(await listDirectories(dir));
-      const files = new Set(await listFiles(dir));
-      const kept = entries.filter((e) => subdirs.has(e.id) || files.has(`${e.id}.json`) || files.has(e.id));
-
-      if (kept.length !== entries.length) {
-        await writeJson(path, kept);
-      }
     }
   }
 

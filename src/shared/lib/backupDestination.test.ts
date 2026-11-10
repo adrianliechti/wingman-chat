@@ -11,7 +11,11 @@ vi.mock("./rememberedBackup", () => ({ forgetBackup: vi.fn() }));
 vi.mock("./persistence", () => ({
   withPersistenceLock: (_key: string, operation: () => Promise<unknown>) => operation(),
 }));
-vi.mock("./backupLifecycle", () => ({ BACKUP_RESET_KEY: "pending-reset", invalidateBackupSessions: vi.fn() }));
+vi.mock("./backupLifecycle", () => ({
+  BACKUP_RESET_KEY: "pending-reset",
+  WORKSPACE_OWNER_KEY: "wingman:workspace-owner",
+  invalidateBackupSessions: vi.fn(),
+}));
 
 const reload = vi.fn();
 
@@ -60,9 +64,9 @@ it("retries failed local migration without advancing the destination marker", as
   expect(resetLocalBackupState).toHaveBeenCalledTimes(2);
 });
 
-it("leaves different-account ownership intact for the existing account-switch cleanup", async () => {
+it("blocks a different account while preserving local ownership", async () => {
   vi.mocked(readJson).mockResolvedValue({ userId: "bob" });
-  expect(await prepareBackupDestination("alice", "onedrive-app")).toBe(false);
+  await expect(prepareBackupDestination("alice", "onedrive-app")).rejects.toThrow(/another account/);
   expect(resetLocalBackupState).not.toHaveBeenCalled();
   expect(forgetBackup).not.toHaveBeenCalled();
 });
@@ -96,9 +100,9 @@ it("does not rebuild stable-user tracking after another email change", async () 
   expect(forgetBackup).not.toHaveBeenCalled();
 });
 
-it("preserves another account's ownership markers during the identity transition", async () => {
+it("blocks another account during the identity transition", async () => {
   vi.mocked(readJson).mockResolvedValue({ userId: "another-account" });
-  expect(await prepareBackupDestination("stable-user", "server-new", "email-user")).toBe(false);
+  await expect(prepareBackupDestination("stable-user", "server-new", "email-user")).rejects.toThrow(/another account/);
   expect(resetLocalBackupState).not.toHaveBeenCalled();
 });
 
@@ -109,12 +113,16 @@ it("rebinds only completed resets to the stable identity", async () => {
   expect(JSON.parse(localStorage.getItem(BACKUP_RESET_KEY)!)).toEqual({ userId: "stable-user", phase: "local" });
 });
 
-it("does not repeatedly reload when old identity tracking is mixed with another account", async () => {
+it("blocks mixed ownership rather than clearing either account", async () => {
   vi.mocked(readJson).mockImplementation(async (path) => ({
     userId: path === "_sync/state.json" ? "email-user" : "another-account",
   }));
-  expect(await prepareBackupDestination("stable-user", "server-new", "email-user")).toBe(false);
+  await expect(prepareBackupDestination("stable-user", "server-new", "email-user")).rejects.toThrow(/another account/);
   expect(resetLocalBackupState).not.toHaveBeenCalled();
-  expect(await prepareBackupDestination("stable-user", "server-new", "email-user")).toBe(true);
-  expect(invalidateBackupSessions).toHaveBeenCalledOnce();
+});
+
+it("retains ownership even before sync tracking has been written", async () => {
+  expect(await prepareBackupDestination("alice", "server")).toBe(true);
+  await expect(prepareBackupDestination("bob", "server")).rejects.toThrow(/another account/);
+  expect(localStorage.getItem("wingman:workspace-owner")).toBe("alice");
 });

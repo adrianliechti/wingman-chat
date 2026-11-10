@@ -17,6 +17,8 @@ import (
 
 const indexAttempts = 5
 
+var errInvalidIndex = errors.New("OneDrive backup: invalid backup index")
+
 func emptyIndex() *index {
 	return &index{Version: 1, Chats: map[string]chat{}, Files: map[string]object{}, Blobs: map[string]object{}}
 }
@@ -24,6 +26,7 @@ func emptyIndex() *index {
 func cloneIndex(state *index) *index {
 	copy := *state
 	copy.Keystore = slices.Clone(state.Keystore)
+	copy.ResetIDs = maps.Clone(state.ResetIDs)
 	copy.Chats = maps.Clone(state.Chats)
 	for id, ch := range copy.Chats {
 		ch.Segments = slices.Clone(ch.Segments)
@@ -108,7 +111,7 @@ func (p *Provider) readIndex(ctx context.Context, userID string) (*index, driveI
 		}
 		state := emptyIndex()
 		if len(data) > 64<<20 || json.Unmarshal(data, state) != nil || state.Version != 1 || state.Chats == nil || state.Files == nil || state.Blobs == nil {
-			return nil, driveItem{}, errors.New("OneDrive backup: invalid backup index")
+			return nil, driveItem{}, errInvalidIndex
 		}
 		return state, after, nil
 	}

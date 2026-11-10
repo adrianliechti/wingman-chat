@@ -128,7 +128,7 @@ it("defers server deletions until restore is unlocked", async () => {
   expect(api.deleteFile).not.toHaveBeenCalled();
 });
 
-it("keeps the file owner marker until account switching clears the previous workspace", async () => {
+it("preserves the previous account workspace when another account signs in", async () => {
   const { ChatSync } = await import("./chatSync");
   const pair = await generateBackupKeys();
   memory.put("agents/private/AGENTS.md", "previous account data");
@@ -136,11 +136,9 @@ it("keeps the file owner marker until account switching clears the previous work
   await writeJson("_sync/files.json", { userId: "alice", entries: {} });
   await writeJson("_sync/upload-key.json", { userId: "bob", publicKey: "pinned" });
   const key = { kid: 1, backup: { publicKey: pair.publicKey } };
-  await ChatSync.create({ userId: "bob", dek: key });
-  const files = await FileSync.create({ userId: "bob", dek: key });
-  await files.fullSync();
-  expect(memory.files.has("agents/private/AGENTS.md")).toBe(false);
-  expect(memory.files.has("_sync/upload-key.json")).toBe(true);
+  await expect(ChatSync.create({ userId: "bob", dek: key })).rejects.toThrow(/another account/);
+  await expect(FileSync.create({ userId: "bob", dek: key })).rejects.toThrow(/another account/);
+  expect(memory.files.has("agents/private/AGENTS.md")).toBe(true);
   expect(api.putFile).not.toHaveBeenCalled();
 });
 

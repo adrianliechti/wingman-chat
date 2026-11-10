@@ -40,6 +40,7 @@ func TestObjectDownloadsRejectInterruptedStreams(t *testing.T) {
 				t.Fatal(err)
 			}
 			req.Header.Set("X-Forwarded-User", "alice")
+			req.Header.Set("X-Backup-Generation", "test-generation")
 			res, err := server.Client().Do(req)
 			if err != nil {
 				return // A reset before headers reach the client also rejects the download.

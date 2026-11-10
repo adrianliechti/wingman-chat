@@ -253,10 +253,11 @@ export class ChatSync {
   }
 
   static async create(opts: ChatSyncOptions): Promise<ChatSync> {
-    let state = await loadState();
+    const state = await loadState();
     if (state && state.userId !== opts.userId) {
-      await wipeLocalMirror();
-      state = undefined;
+      throw new Error(
+        "This browser contains another account's local chats. Sign back in to export them before clearing local data.",
+      );
     }
     const sync = new ChatSync(opts.userId, opts.dek, state);
     await sync.hydrateFromOpfs();
@@ -895,19 +896,5 @@ function appendBatches<T extends { id: string; frame: string }>(frames: T[]): T[
 class PostConflictAfterRetry extends Error {
   constructor() {
     super("chatSync: still 409 after retry");
-  }
-}
-
-async function wipeLocalMirror(): Promise<void> {
-  try {
-    await deleteDirectory("chats");
-  } catch {
-    /* empty */
-  }
-  try {
-    // File sync owns its user marker and must see it to clear the old workspace.
-    await deleteFile(STATE_FILE);
-  } catch {
-    /* empty */
   }
 }

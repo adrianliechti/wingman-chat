@@ -193,8 +193,9 @@ for (const upload of ["chat", "file"] as const) {
         headers: { "X-Forwarded-User": user },
       });
       expect(keystore.ok()).toBe(true);
+      const { backup } = await keystore.json();
       const remote = await page.request.get(`${backupServer}/api/v1/${upload === "chat" ? "chats" : "files"}`, {
-        headers: { "X-Forwarded-User": user },
+        headers: { "X-Forwarded-User": user, "X-Backup-Generation": backup.generation },
       });
       expect(remote.ok()).toBe(true);
       expect(await remote.json()).toHaveLength(committed ? 1 : 0);

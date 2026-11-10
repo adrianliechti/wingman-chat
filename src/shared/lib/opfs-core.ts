@@ -1,6 +1,6 @@
 import { contentToBlob } from "./fileContent";
 import { forgetBackup } from "./rememberedBackup";
-import { invalidateBackupSessions } from "./backupLifecycle";
+import { invalidateBackupSessions, WORKSPACE_OWNER_KEY } from "./backupLifecycle";
 import { inferContentTypeFromPath } from "./fileTypes";
 import { stopPersistence, withPersistenceLock } from "./persistence";
 import { decodeDataURL, readAsDataURL } from "./utils";
@@ -447,6 +447,7 @@ export async function clearAll(): Promise<void> {
       notifyMutation(name, "delete-dir");
     }
   });
+  if (typeof localStorage !== "undefined") localStorage.removeItem(WORKSPACE_OWNER_KEY);
 }
 
 // ============================================================================

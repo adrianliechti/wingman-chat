@@ -285,3 +285,13 @@ it("keeps a newer remote edit when a stale local deletion conflicts", async () =
   await sync.fullSync();
   expect(await readText(path)).toBe("remote edit");
 });
+
+it("preserves skill index entries whose IDs differ from their folder names", async () => {
+  const key = await generateDEK();
+  const index = JSON.stringify([{ id: "skill-uuid", title: "my-skill", updated: "2026-01-01" }]);
+  memory.put("skills/index.json", index);
+  memory.put("skills/my-skill/SKILL.md", "skill content");
+  sync = await FileSync.create({ userId: "alice", dek: key });
+  await sync.fullSync();
+  expect(await readText("skills/index.json")).toBe(index);
+});

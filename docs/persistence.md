@@ -315,8 +315,9 @@ local edits remain usable. A failed local cleanup retries without repeating an
 acknowledged online deletion.
 
 Conditional index commits reject requests that began before a reset or
-keystore change. Requests started by an old device after a reset are not fenced
-by that mechanism.
+keystore change. A backup generation in the protected keystore also rejects
+requests started later by an old device. Reset IDs make a retried reset safe
+after another device has configured a new backup.
 
 ## Verification
 

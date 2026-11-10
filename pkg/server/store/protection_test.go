@@ -64,6 +64,7 @@ func TestLegacyUnprotectedStoreRequiresUpgrade(t *testing.T) {
 	request := func(method, path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("X-Forwarded-User", "alice")
+		req.Header.Set("X-Backup-Generation", "test-generation")
 		req.Header.Set("If-Match", `"`+etag+`"`)
 		res := httptest.NewRecorder()
 		mux.ServeHTTP(res, req)
