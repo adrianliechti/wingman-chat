@@ -1,24 +1,27 @@
-import { readLocalChat, readLocalMirror, stashPendingTarget, stashPendingDeletion } from "@/shared/lib/chatSync";
 import * as storeSession from "@/shared/lib/storeSession";
 import type { Chat } from "@/shared/types/chat";
-import { chatEntry } from "./chatStorage";
+import { loadChat, loadChatIndex, removeChat, storeChat } from "./chatStorage";
 
-/** The server log supplies manifests; attachments remain lazy, as in local storage. */
+/** Backup starts after local persistence and never delays its queue. */
+function uploadPending(): void {
+  void storeSession
+    .initSession()
+    .then(async (session) => {
+      if (session.status === "ready" || session.status === "upload-only") await session.sync.flushPending();
+    })
+    .catch((error) => console.warn("Couldn't back up pending chats", error));
+}
+
+/** Local persistence owns durability and retention; backup consumes its outbox. */
 export const syncedChatStorage = {
-  index: async () => (await readLocalMirror(false)).map(chatEntry),
-  load: (id: string) => readLocalChat(id, false),
+  index: loadChatIndex,
+  load: (id: string) => loadChat(id, false),
   store: async (chat: Chat): Promise<void> => {
-    const session = await storeSession.initSession();
-    if (session.status !== "ready" && session.status !== "upload-only") return stashPendingTarget(chat);
-    try {
-      await session.sync.saveChat(chat);
-    } catch {
-      await stashPendingTarget(chat);
-    }
+    await storeChat(chat);
+    uploadPending();
   },
   remove: async (id: string): Promise<void> => {
-    const session = await storeSession.initSession();
-    if (session.status === "ready" || session.status === "upload-only") return session.sync.deleteChat(id);
-    await stashPendingDeletion(id, "userId" in session ? session.userId : undefined);
+    await removeChat(id);
+    uploadPending();
   },
 };

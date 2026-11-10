@@ -1,5 +1,7 @@
 import { SyncProgressTracker, type SyncProgress } from "./syncProgress";
 import { isBackupSessionCurrent, withBackupStorage } from "./backupLifecycle";
+import { withPersistenceLock } from "./persistence";
+import { publishStorageChanges } from "./storageChanges";
 /**
  * Whole-OPFS file sync with client-side encryption.
  *
@@ -31,8 +33,8 @@ import {
   writeJson,
 } from "./opfs-core";
 
-/** Chat manifests and blobs belong to ChatSync; revision history stays local. */
-const CHAT_FILE_PREFIX = /^chats\/[^/]+\/(artifacts|artifact-state)\//;
+/** Chat manifests and blobs belong to ChatSync; immutable revisions preserve sent attachments. */
+const CHAT_FILE_PREFIX = /^chats\/[^/]+\/(artifacts|artifact-state|artifact-versions)\//;
 const STATE_FILE = "_sync/files.json";
 const FLUSH_DEBOUNCE_MS = 2_000;
 /** Files above this are kept local-only (encryption buffers the whole
@@ -67,6 +69,8 @@ interface FileSyncState {
 
 function isExcluded(path: string): boolean {
   if (path === "_sync" || path.startsWith("_sync/")) return true;
+  // The revision listing is derived from immutable revision files on restore.
+  if (/^chats\/[^/]+\/artifact-versions\/[^/]+\/history\.json$/.test(path)) return true;
   if (path === "chats" || path.startsWith("chats/")) return !CHAT_FILE_PREFIX.test(path);
   return false;
 }
@@ -147,6 +151,8 @@ export class FileSync {
 
   /** Paths with local changes awaiting push. */
   private dirty = new Set<string>();
+  private removedDirectories = new Set<string>();
+  private restoredPaths = new Set<string>();
   private mutationVersion = new Map<string, number>();
   private versionForPath(path: string, versions = this.mutationVersion): number {
     const parts = path.split("/");
@@ -159,7 +165,31 @@ export class FileSync {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private operation: Promise<void> = Promise.resolve();
   private serialize(operation: () => Promise<void>): Promise<void> {
-    const result = this.operation.then(operation, operation);
+    const run = () =>
+      withBackupStorage(() =>
+        withPersistenceLock(`file-sync:${this.userId}`, async () => {
+          if (!isBackupSessionCurrent()) return;
+          const state = await readJson<FileSyncState>(STATE_FILE);
+          if (state && state.userId !== this.userId)
+            throw new Error("The local backup account changed. Reload before syncing.");
+          this.state = state ?? { userId: this.userId, entries: {} };
+          for (const directory of this.removedDirectories) {
+            for (const path of Object.keys(this.state.entries)) {
+              if (path.startsWith(`${directory}/`)) this.dirty.add(path);
+            }
+          }
+          this.removedDirectories.clear();
+          try {
+            await operation();
+          } finally {
+            if (this.restoredPaths.size) {
+              publishStorageChanges([...this.restoredPaths]);
+              this.restoredPaths.clear();
+            }
+          }
+        }),
+      );
+    const result = this.operation.then(run, run);
     this.operation = result.catch(() => {});
     return result;
   }
@@ -222,6 +252,7 @@ export class FileSync {
     this.unsubMutations = onOpfsMutation((path, kind) => {
       if (this.applying.has(path)) return;
       if (kind === "delete-dir") {
+        this.removedDirectories.add(path);
         this.mutationVersion.set(path, (this.mutationVersion.get(path) ?? 0) + 1);
         // Expand over known paths; files never synced need no tombstone.
         const prefix = path ? `${path}/` : "";
@@ -254,11 +285,7 @@ export class FileSync {
 
   /** Push every dirty path (uploads, deletions, conflict resolution). */
   flushDirty(): Promise<void> {
-    return this.serialize(() =>
-      withBackupStorage(async () => {
-        if (isBackupSessionCurrent()) await this.flushDirtyUnlocked();
-      }),
-    );
+    return this.serialize(() => this.flushDirtyUnlocked());
   }
 
   private async flushDirtyUnlocked(): Promise<void> {
@@ -296,11 +323,7 @@ export class FileSync {
 
   async fullSync(): Promise<void> {
     if (this.fullSyncInFlight) return this.fullSyncInFlight;
-    this.fullSyncInFlight = this.serialize(() =>
-      withBackupStorage(async () => {
-        if (isBackupSessionCurrent()) await this.reconcile();
-      }),
-    ).finally(() => {
+    this.fullSyncInFlight = this.serialize(() => this.reconcile()).finally(() => {
       this.fullSyncInFlight = null;
     });
     return this.fullSyncInFlight;
@@ -553,7 +576,7 @@ export class FileSync {
   }
 
   private async replaceLocal(path: string, mtime: number | undefined, blob?: Blob, version?: number): Promise<boolean> {
-    return replaceFileIfUnchanged(path, mtime, {
+    const replaced = await replaceFileIfUnchanged(path, mtime, {
       blob,
       notify: (emit) => {
         this.applying.add(path);
@@ -565,6 +588,8 @@ export class FileSync {
       },
       unchanged: () => this.versionForPath(path) === (version ?? 0),
     });
+    if (replaced) this.restoredPaths.add(path);
+    return replaced;
   }
 
   private async writeLocal(

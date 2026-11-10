@@ -21,6 +21,12 @@ vi.mock("./chatSync", () => ({
   stashPendingDeletion: mocks.stashDeletion,
 }));
 vi.mock("./notify", () => ({ notify: { error: mocks.notifyError } }));
+vi.mock("@/features/chat/lib/chatStorage", () => ({
+  storeChat: mocks.stash,
+  removeChat: mocks.stashDeletion,
+  loadChatIndex: vi.fn(),
+  loadChat: vi.fn(),
+}));
 
 beforeEach(() => {
   vi.resetModules();
@@ -30,7 +36,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-it("lets a queued save waiting on initialization persist before reloading for a changed destination", async () => {
+it("persists a queued local save before initializing and reloading for a changed destination", async () => {
   const { PersistenceQueue, registerPersistenceQueue } = await import("./persistence");
   const { syncedChatStorage } = await import("@/features/chat/lib/syncedChatStorage");
   const queue = new PersistenceQueue(vi.fn(), 60_000);
@@ -58,6 +64,8 @@ it("keeps the page open if a queued local edit cannot be saved before destinatio
   mocks.stash.mockRejectedValue(new Error("disk full"));
   try {
     queue.schedule("local-chat", () => syncedChatStorage.store({ id: "local-chat" } as Chat));
+    const { initSession } = await import("./storeSession");
+    void initSession();
     await expect(queue.flush()).rejects.toThrow("Some changes could not be saved");
     await vi.waitFor(() => expect(mocks.notifyError).toHaveBeenCalled());
     expect(mocks.reload).not.toHaveBeenCalled();
@@ -67,7 +75,7 @@ it("keeps the page open if a queued local edit cannot be saved before destinatio
   }
 });
 
-it("keeps deletion ownership available while resolving initialization before a destination reload", async () => {
+it("persists local deletion before initializing and reloading a changed destination", async () => {
   const { PersistenceQueue, registerPersistenceQueue } = await import("./persistence");
   const { syncedChatStorage } = await import("@/features/chat/lib/syncedChatStorage");
   const queue = new PersistenceQueue(vi.fn(), 60_000);
@@ -76,7 +84,8 @@ it("keeps deletion ownership available while resolving initialization before a d
     queue.schedule("removed-chat", () => syncedChatStorage.remove("removed-chat"));
     await queue.flush();
     await vi.waitFor(() => expect(mocks.reload).toHaveBeenCalledOnce());
-    expect(mocks.stashDeletion).toHaveBeenCalledWith("removed-chat", "alice");
+    expect(mocks.stashDeletion).toHaveBeenCalledWith("removed-chat");
+    expect(mocks.stashDeletion.mock.invocationCallOrder[0]).toBeLessThan(mocks.reload.mock.invocationCallOrder[0]);
   } finally {
     unregister();
     await queue.stop();

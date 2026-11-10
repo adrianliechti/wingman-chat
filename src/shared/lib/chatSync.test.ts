@@ -66,6 +66,52 @@ beforeEach(() => {
   vi.mocked(api.headBlob).mockResolvedValue(true);
 });
 
+it("expires an incoming old backup without reviving its chat or draft", async () => {
+  const dek = await generateDEK();
+  const old = { ...chat(), updated: new Date("2000-01-01") };
+  const frame = await encryptEvent(
+    dek,
+    {
+      prevHash: ZERO_HASH,
+      body: diffChat(null, await extractChatBlobs(old)),
+    },
+    "user",
+    old.id,
+    1,
+  );
+  vi.mocked(api.listChats).mockResolvedValue([{ id: old.id, headSeq: 1, updated: "2000-01-01" }]);
+  vi.mocked(api.readEvents).mockResolvedValue([{ seq: 1, id: "event", frame }]);
+  await writeJson("drafts/chat-chat/draft.json", { content: "old draft" });
+  const sync = await ChatSync.create({ userId: "user", dek, retentionDays: 1 });
+  expect(await sync.pull()).toEqual([]);
+  expect(await readLocalChat(old.id, false)).toBeUndefined();
+  expect(await readJson("drafts/chat-chat/draft.json")).toBeUndefined();
+  await vi.waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith(old.id));
+});
+
+it("picks up another locally committed chat while an earlier upload is in flight", async () => {
+  stubWebLocks();
+  const sync = await ChatSync.create({ userId: "user", dek: await generateDEK() });
+  let release!: () => void;
+  vi.mocked(api.appendEvents).mockImplementationOnce(async (_id, seq, events) => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { newSeq: seq + events.length };
+  });
+  await stashPendingTarget({ ...chat(), id: "first" });
+  const posting = sync.flushPending();
+  await vi.waitFor(() => expect(release).toBeDefined());
+  await stashPendingTarget({ ...chat(), id: "second" });
+  await sync.flushPending();
+  release();
+  await posting;
+  await vi.waitFor(async () => {
+    expect(await readJson("chats/second/target.json")).toBeUndefined();
+    expect(api.appendEvents).toHaveBeenCalledWith("second", 0, expect.any(Array));
+  });
+});
+
 it("reports completed chats during initial backup and clears progress afterwards", async () => {
   for (const id of ["first", "second"]) {
     await writeJson(`chats/${id}/chat.json`, await extractChatBlobs({ ...chat(), id }));
@@ -144,6 +190,8 @@ it("saves and reloads the native transcript, resume pointer and metadata through
   const dek = await generateDEK();
   const sync = await ChatSync.create({ userId: "user", dek });
   const value = chat();
+  value.projectId = "project";
+  value.agentId = "agent";
   await sync.saveChat(value);
   await vi.waitFor(async () => {
     expect(api.appendEvents).toHaveBeenCalledOnce();

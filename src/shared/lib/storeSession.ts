@@ -102,7 +102,7 @@ function isEnabled(): boolean {
 }
 
 async function engines(userId: string, key: StoreKey) {
-  const sync = await ChatSync.create({ userId, dek: key });
+  const sync = await ChatSync.create({ userId, dek: key, retentionDays: getConfig().chat?.retentionDays });
   const files = await FileSync.create({ userId, dek: key });
   files.start();
   return { sync, files };

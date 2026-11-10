@@ -17,7 +17,7 @@ vi.mock("@/shared/lib/storeClient", () => ({
   headBlob: vi.fn(),
   deleteChat: vi.fn(),
 }));
-const config = vi.hoisted(() => ({ chat: { retentionDays: 0 } }));
+const config = vi.hoisted(() => ({ chat: { retentionDays: 0 }, store: false }));
 vi.mock("@/shared/config", () => ({ getConfig: () => config }));
 const memory = new MemoryOpfs();
 const chat = (id = "chat"): Chat => ({
@@ -32,6 +32,7 @@ const image = (value = "YWJj", name?: string) => mediaFromDataUrl(`data:image/jp
 beforeEach(() => {
   memory.reset();
   config.chat.retentionDays = 0;
+  config.store = false;
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => memory.root } });
   vi.stubGlobal(
     "FileReader",
@@ -347,7 +348,7 @@ it("keeps an online-saved chat visible and editable after switching to local bac
   await sync.saveChat(value);
   await vi.waitFor(async () => expect(await opfs.readJson("chats/chat/target.json")).toBeUndefined());
   expect(await opfs.fileExists("chats/chat/history.jsonl")).toBe(true);
-  expect(await opfs.fileExists("chats/chat/chat.json")).toBe(false);
+  expect(await opfs.fileExists("chats/chat/chat.json")).toBe(true);
   vi.mocked(api.appendEvents).mockClear();
   expect((await loadChatIndex()).map((entry) => entry.id)).toContain(value.id);
   expect(await loadChat(value.id)).toMatchObject(value);
@@ -370,6 +371,31 @@ it("includes pending online chats in local mode even before any sync state was c
   expect(await opfs.fileExists("_sync/state.json")).toBe(false);
   expect((await loadChatIndex()).map((entry) => entry.id)).toContain(value.id);
   expect(await loadChat(value.id)).toMatchObject(value);
+});
+
+it("expires online chats through the same retention and draft cleanup as local chats", async () => {
+  config.store = true;
+  config.chat.retentionDays = 1;
+  const expired = { ...chat("expired"), updated: new Date("2000-01-01") };
+  await storeChat(expired);
+  await storeChat(chat("recent"));
+  await opfs.writeJson("_sync/state.json", { userId: "user", heads: { expired: 1 }, lastFrameHash: {} });
+  await opfs.writeText("drafts/chat-expired/draft.json", "{}");
+  expect((await loadChatIndex()).map((entry) => entry.id)).toEqual(["recent"]);
+  expect(await opfs.fileExists("chats/expired/chat.json")).toBe(false);
+  expect(await opfs.fileExists("drafts/chat-expired/draft.json")).toBe(false);
+  expect(await opfs.readJson("_sync/deletes/u-user/expired.json")).toMatchObject({ id: "expired" });
+  const sync = await ChatSync.create({ userId: "user", dek: await generateDEK() });
+  vi.mocked(api.deleteChat).mockResolvedValue(undefined);
+  await sync.flushPending();
+  expect(api.deleteChat).toHaveBeenCalledWith("expired");
+});
+
+it("does not resurrect stale chat index entries after an online deletion", async () => {
+  config.store = true;
+  await storeChat(chat("deleted"));
+  await opfs.deleteDirectory("chats/deleted");
+  expect(await loadChatIndex()).toEqual([]);
 });
 
 it("recovers a local edit from the shared pending target if the native save fails", async () => {

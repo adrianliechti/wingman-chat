@@ -100,7 +100,6 @@ test("missing backup routes report 404 and recover when routing is fixed", async
   await page.route("**/api/v1/me", (route) => route.fulfill({ status: 404, body: "404 page not found" }));
   await page.goto(fixture);
   await expect(page.getByText("Backup needs attention", { exact: true })).toBeVisible();
-  await page.getByText("Error details", { exact: true }).click();
   await expect(page.getByText(/404: 404 page not found/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Turn on backup", exact: true })).toHaveCount(0);
   await page.unroute("**/api/v1/me");

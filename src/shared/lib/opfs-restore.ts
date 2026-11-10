@@ -218,6 +218,8 @@ export async function restoreFiles(
     validated += 1;
     onProgress?.(input.size ? validated / input.size : 1);
     validatePath(path);
+    // Device ownership, encryption trust, and upload baselines never transfer in a ZIP.
+    if (path === "_sync" || path.startsWith("_sync/")) continue;
     if (isSkipped(path)) continue;
     if (/^agents\/[^/]+\/servers\.json$/.test(path)) {
       skipped.push({ path, reason: "Custom agent MCP servers are no longer supported." });
@@ -302,6 +304,11 @@ export async function restoreFiles(
     .map((key) => `${key}/index.json`);
   const apply = async () => {
     const changes = new Map<string, Blob | undefined>(files);
+    // Imported snapshots replace a conversation locally and enter its outbox.
+    // An old pending target must not hide the newly imported native record.
+    for (const [path, blob] of files) {
+      if (/^chats\/[^/]+\/chat\.json$/.test(path)) changes.set(path.replace(/chat\.json$/, "target.json"), blob);
+    }
     for (const path of removals) changes.set(path, undefined);
     await prepareAgentFileImport(changes);
     await prepareMemoryImport(changes);

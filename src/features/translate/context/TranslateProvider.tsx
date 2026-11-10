@@ -140,6 +140,7 @@ export function TranslateProvider({ children }: { children: ReactNode }) {
   const translator = config.translator;
   const { items, isLoaded, create, update, remove, getItems } = usePersistentCollection(
     translator ? storage : noStorage,
+    "translations",
   );
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TranslateDraft>(initialDraft);

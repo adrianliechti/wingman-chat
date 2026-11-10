@@ -4,6 +4,14 @@ import { decryptFile, encryptFile, generateDEK } from "./crypto";
 import { deleteDirectory, deleteFile, readText, writeJson, writeText } from "./opfs-core";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
 import * as api from "./storeClient";
+import {
+  archiveArtifactRevision,
+  loadArtifactRevision,
+  readArtifact,
+  writeArtifact,
+  listArtifactRevisionEntries,
+} from "./opfs-artifacts";
+import { artifactRevision } from "@/shared/types/artifact";
 
 vi.mock("./storeClient", async (importOriginal) => ({
   ServerError: (await importOriginal<typeof import("./storeClient")>()).ServerError,
@@ -28,6 +36,41 @@ beforeEach(() => {
   vi.mocked(api.putFile).mockResolvedValue("etag");
 });
 afterEach(() => sync?.stop());
+
+it("restores an attachment's pinned revision even when its live artifact has changed", async () => {
+  const key = await generateDEK();
+  const remote = new Map<string, { data: Uint8Array; etag: string }>();
+  vi.mocked(api.putFile).mockImplementation(async (id, data) => {
+    remote.set(id, { data, etag: "etag" });
+    return "etag";
+  });
+  vi.mocked(api.listFiles).mockImplementation(async () =>
+    [...remote].map(([id, file]) => ({
+      id,
+      etag: file.etag,
+      size: file.data.length,
+      updated: "2026-01-01",
+    })),
+  );
+  vi.mocked(api.getFile).mockImplementation(async (id) => remote.get(id) ?? null);
+  const revision = await artifactRevision("original attachment", "text/plain");
+  await archiveArtifactRevision("chat", {
+    path: "/doc.txt",
+    revision,
+    content: "original attachment",
+    contentType: "text/plain",
+    createdAt: "2026-01-01T00:00:00Z",
+  });
+  await writeArtifact("chat", "/doc.txt", "edited artifact", "text/plain");
+  sync = await FileSync.create({ userId: "alice", dek: key });
+  await sync.fullSync();
+  memory.reset();
+  sync = await FileSync.create({ userId: "alice", dek: key });
+  await sync.fullSync();
+  expect(await readArtifact("chat", "/doc.txt")).toMatchObject({ content: "edited artifact" });
+  expect(await loadArtifactRevision("chat", "/doc.txt", revision)).toMatchObject({ content: "original attachment" });
+  expect(await listArtifactRevisionEntries("chat", "/doc.txt")).toMatchObject([{ revision }]);
+});
 
 it("does not restore an unknown remote file after its directory is deleted during download", async () => {
   const key = await generateDEK();
@@ -79,12 +122,13 @@ it.each(["update", "deletion"])("preserves a local edit made while a remote %s i
   expect(api.putFile).toHaveBeenCalled();
 });
 
-it("backs up current artifact bytes, saved app data, and other collections without chat internals or revisions", async () => {
+it("backs up current artifacts, immutable revisions, and workspace data without chat internals", async () => {
   const key = await generateDEK();
   const paths = [
     "chats/one/artifacts/nested/report.html",
     "chats/one/artifacts/chart.png",
     "chats/two/artifact-state/%2Freport.html.json",
+    "chats/one/artifact-versions/report/revision.json",
     "projects/one/project.json",
     "projects/one/files/original",
     "drafts/chat-one/draft.json",
@@ -107,7 +151,6 @@ it("backs up current artifact bytes, saved app data, and other collections witho
     "chats/one/history.jsonl",
     "chats/one/target.json",
     "chats/one/blobs/attachment.bin",
-    "chats/one/artifact-versions/report/revision.json",
     "chats/one/artifact-versions/report/history.json",
     "_sync/upload-key.json",
   ];
@@ -124,7 +167,7 @@ it("backs up current artifact bytes, saved app data, and other collections witho
   expect(uploaded.sort()).toEqual(paths.sort());
 });
 
-it("restores artifacts and saved app data on a fresh browser while refusing revision history and chat manifests", async () => {
+it("restores artifacts, immutable revisions, and saved app data while refusing chat manifests", async () => {
   const key = await generateDEK();
   const paths = [
     "chats/one/artifacts/nested/report.html",
@@ -145,8 +188,8 @@ it("restores artifacts and saved app data on a fresh browser while refusing revi
   const activity: FileSyncActivity[] = [];
   sync.subscribeActivity((value) => activity.push(value));
   await sync.fullSync();
-  for (const path of paths.slice(0, 2)) expect(await readText(path)).toBe(path);
-  for (const path of paths.slice(2)) expect(await readText(path)).toBeUndefined();
+  for (const path of paths.slice(0, 3)) expect(await readText(path)).toBe(path);
+  for (const path of paths.slice(3)) expect(await readText(path)).toBeUndefined();
   expect(api.putFile).not.toHaveBeenCalled();
   expect(
     activity.some((a) => a.progress.some((p) => p.direction === "restore" && p.total === 4 && p.completed === 1)),
@@ -161,7 +204,7 @@ it("tracks artifact edits and file/folder/chat deletions through OPFS mutations"
   await sync.fullSync();
   const file = "chats/one/artifacts/report.txt";
   await writeText(file, "final artifact");
-  await writeText("chats/one/artifact-versions/report/revision.json", "local history");
+  await writeText("chats/one/artifact-versions/report/history.json", "derived listing");
   await sync.flushDirty();
   expect(api.putFile).toHaveBeenCalledOnce();
   const id = vi.mocked(api.putFile).mock.calls[0][0];

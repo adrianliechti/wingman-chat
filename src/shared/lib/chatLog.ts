@@ -25,6 +25,7 @@ export type LogEntry =
     }
   | {
       type: "meta";
+      settings?: Pick<StoredChat, "projectId" | "agentId">;
       title?: string | null;
       customTitle?: string | null;
       customIndex?: number | null;
@@ -130,6 +131,10 @@ export function applyEntries(baseline: StoredChat | null, entries: LogEntry[], c
         };
         break;
       case "meta":
+        if (e.settings !== undefined) {
+          chat.projectId = e.settings.projectId;
+          chat.agentId = e.settings.agentId;
+        }
         if (e.title !== undefined) chat.title = e.title ?? undefined;
         if (e.customTitle !== undefined) chat.customTitle = e.customTitle ?? undefined;
         if (e.customIndex !== undefined) chat.customIndex = e.customIndex ?? undefined;
@@ -200,6 +205,8 @@ export function diffChat(prev: StoredChat | null, next: StoredChat): LogEntry[] 
     out.push({ type: "init", version: STORED_CHAT_VERSION, id: next.id, created: next.created, model: next.model });
     if (
       next.title ||
+      next.projectId !== undefined ||
+      next.agentId !== undefined ||
       next.customTitle ||
       next.customIndex !== undefined ||
       next.updated ||
@@ -208,6 +215,9 @@ export function diffChat(prev: StoredChat | null, next: StoredChat): LogEntry[] 
     ) {
       out.push({
         type: "meta",
+        ...(next.projectId !== undefined || next.agentId !== undefined
+          ? { settings: { projectId: next.projectId, agentId: next.agentId } }
+          : {}),
         title: next.title,
         customTitle: next.customTitle,
         customIndex: next.customIndex,
@@ -225,6 +235,10 @@ export function diffChat(prev: StoredChat | null, next: StoredChat): LogEntry[] 
   // Meta diff
   const meta: Extract<LogEntry, { type: "meta" }> = { type: "meta" };
   let metaDirty = false;
+  if (prev.projectId !== next.projectId || prev.agentId !== next.agentId) {
+    meta.settings = { projectId: next.projectId, agentId: next.agentId };
+    metaDirty = true;
+  }
   if (prev.title !== next.title) {
     meta.title = next.title ?? null;
     metaDirty = true;

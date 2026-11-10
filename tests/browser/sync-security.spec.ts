@@ -420,7 +420,6 @@ test("a failed reset preserves local data and retries on reload", async ({ page 
   await page.getByRole("button", { name: "Danger zone", exact: true }).click();
   await page.getByRole("button", { name: "Reset online backup", exact: true }).click();
   await page.getByRole("button", { name: "Delete online backup and reset", exact: true }).click();
-  await page.getByText("Error details", { exact: true }).click();
   await expect(page.getByText("500: Reset unavailable", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => window.syncSecurityE2E.read("agents/keep/AGENTS.md"))).toBe("keep me");
   fail = false;

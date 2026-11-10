@@ -44,6 +44,18 @@ describe("codec", () => {
 });
 
 describe("diff + replay round-trips", () => {
+  it("preserves, changes, and clears project and agent assignments over the wire", () => {
+    const first = chat({ projectId: "project", agentId: "agent" });
+    const next = chat({ projectId: "other-project", agentId: null });
+    for (const [previous, target] of [
+      [null, first],
+      [first, next],
+      [next, chat()],
+    ] as const) {
+      const entries = decodeLines(encodeLines(diffChat(previous, target)));
+      expect(applyEntries(previous, entries, target.id)).toEqual(target);
+    }
+  });
   it("preserves native resume state and chat metadata through snapshots and deltas", () => {
     const first = chat({
       resume: { resumeState: { threadId: "thread", runId: "run-one" } },

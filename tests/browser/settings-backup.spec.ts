@@ -173,7 +173,7 @@ test("initial backup and restore display confirmed file counts and progress bars
   await expect(restoring).toHaveCount(0);
 });
 
-test("online backup mode hides local file controls", async ({ page }, testInfo) => {
+test("online backup keeps local recovery controls available", async ({ page }, testInfo) => {
   await configure(page, true);
   await page.goto("/");
   await page.getByRole("button", { name: "Backups disabled — set a PIN or passkey", exact: true }).click();
@@ -181,9 +181,9 @@ test("online backup mode hides local file controls", async ({ page }, testInfo) 
   await expect(settings.getByRole("heading", { name: "Online backup", exact: true, level: 3 })).toBeVisible();
   await expect(settings.getByRole("heading", { name: "Online backup", exact: true })).toBeVisible();
   await expect(settings.getByRole("button", { name: "Turn on backup", exact: true })).toBeVisible();
-  await expect(settings.getByRole("button", { name: "Download backup", exact: true })).toHaveCount(0);
-  await expect(settings.getByRole("button", { name: "Restore from file", exact: true })).toHaveCount(0);
-  await expect(settings.getByRole("region", { name: "Local backup files", exact: true })).toHaveCount(0);
+  await expect(settings.getByRole("button", { name: "Download backup", exact: true })).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Restore from file", exact: true })).toBeVisible();
+  await expect(settings.getByRole("region", { name: "Local backup files", exact: true })).toBeVisible();
   const danger = settings.getByRole("region", { name: "Danger zone", exact: true });
   const toggle = danger.getByRole("button", { name: "Danger zone", exact: true });
   await expect(toggle).toHaveAttribute("aria-expanded", "false");

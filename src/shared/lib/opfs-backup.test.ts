@@ -32,6 +32,31 @@ beforeEach(() => {
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => memory.root } });
 });
 
+it("exports native chat snapshots without device sync tracking and imports them into the outbox", async () => {
+  const snapshot = storedChat("chat", { projectId: "project", agentId: "agent" });
+  memory.put("chats/chat/chat.json", storedChat("chat", { title: "older native snapshot" }));
+  memory.put("chats/chat/target.json", snapshot);
+  memory.put("chats/chat/history.jsonl", "internal log");
+  memory.put("_sync/state.json", "private baselines");
+  memory.put("_sync/upload-key.json", "device trust");
+  const zip = await JSZip.loadAsync(await (await opfs.exportFolderAsZip("/")).arrayBuffer());
+  expect(zip.file("chats/chat/chat.json")).not.toBeNull();
+  expect(await zip.file("chats/chat/chat.json")!.async("string")).toBe(snapshot);
+  expect(zip.file("chats/chat/target.json")).toBeNull();
+  expect(zip.file("chats/chat/history.jsonl")).toBeNull();
+  expect(Object.keys(zip.files).some((path) => path.startsWith("_sync/"))).toBe(false);
+  memory.put("chats/chat/target.json", storedChat("chat", { title: "stale" }));
+  const result = await restoreFiles(
+    new Map([
+      ["chats/chat/chat.json", new Blob([snapshot])],
+      ["_sync/state.json", new Blob(["foreign baselines"])],
+    ]),
+  );
+  expect(result.restoredFiles).toBe(1);
+  expect(await opfs.readJson("chats/chat/target.json")).toMatchObject({ projectId: "project", agentId: "agent" });
+  expect(await opfs.readText("_sync/state.json")).toBe("private baselines");
+});
+
 describe("backup and restore", () => {
   it("flushes pending edits before exporting and round-trips a full backup", async () => {
     memory.put("chats/one/chat.json", storedChat("one", { customTitle: "Title", customIndex: 8 }));

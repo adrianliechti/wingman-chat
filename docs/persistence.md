@@ -251,9 +251,15 @@ keys already held by another unlocked browser.
 ## Online backup coverage
 
 ChatSync backs up chat metadata, transcripts, and referenced message attachments.
+Both backup modes keep the native `chat.json` snapshot locally. Online saves
+commit an outbox snapshot before starting backup initialization or network work;
+confirmed event logs are backup baselines rather than the UI's storage format.
+Retention applies to local chats and to older chats restored from online backup.
 FileSync backs up current artifact files under `chats/<id>/artifacts/` and saved
-HTML artifact app data under `chats/<id>/artifact-state/`. Artifact revision
-history (`artifact-versions/`) stays local. Startup reconciliation picks up
+HTML artifact app data under `chats/<id>/artifact-state/`. Immutable artifact
+revisions under `artifact-versions/` are also backed up, preserving sent attachment
+references even after a file is edited. The derived revision listing stays local
+and is rebuilt from restored revision files. Startup reconciliation picks up
 existing artifacts as well as new ones; ordinary writes and file, folder, or chat
 deletions propagate through the file sync engine. Artifacts use the same encrypted
 file envelopes, conflict handling, and request-time upload pauses as other files.

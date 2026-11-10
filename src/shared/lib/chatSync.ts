@@ -2,24 +2,24 @@ import { SyncProgressTracker, type SyncProgress } from "./syncProgress";
 /**
  * Server-synced chat storage with offline-capable OPFS mirror.
  *
- * Wire format: each chat is an append-only log. Both on the server
- * (`{chatId}.jsonl`) and locally in OPFS (`chats/{id}/history.jsonl`), the
- * physical file is one event per line. The *plaintext* of each encrypted
- * frame is itself JSON-Lines — one or more LogEntry records describing
+ * Local chat.json snapshots remain usable independently of backup. The
+ * confirmed backup baseline lives in history.jsonl; target.json is its outbox.
+ * Each encrypted remote frame contains one or more LogEntry records describing
  * the delta (init / meta / message / replace / truncate / tombstone).
  *
  * Save flow is delta-based: each save diffs the in-memory chat against
  * the last-server-confirmed StoredChat, emits only the changed entries,
  * encrypts that JSONL string, and posts. No full-chat snapshots.
  *
- * Reading: the local log is replayed into a StoredChat, then blobs are
- * rehydrated. lastSynced is held in memory after bootstrap so save
+ * Reading uses the native snapshot (with log replay for older local records).
+ * lastSynced is held in memory after bootstrap so backup
  * doesn't need to hit OPFS to compute the diff.
  */
 
 import { isChatBackupPaused, requireChatBackupReady, BackupPausedError } from "./chatBackupActivity";
-import { isBackupSessionCurrent, withBackupStorage } from "./backupLifecycle";
+import { isBackupSessionCurrent, withBackupStorage, WORKSPACE_OWNER_KEY } from "./backupLifecycle";
 import { withPersistenceLock } from "./persistence";
+import { chatRetentionCutoff } from "./chatRetention";
 import { normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
 import type { Chat } from "@/shared/types/chat";
 import { applyEntries, chunkEntries, decodeLines, diffChat, encodeLines, type LogEntry, replayLog } from "./chatLog";
@@ -140,9 +140,8 @@ const targetPath = (chatId: string) => `chats/${chatId}/target.json`;
 /** Shared by unlocked engines and saves from locked/offline tabs. */
 const withTarget = <T>(chatId: string, operation: () => Promise<T>) =>
   withPersistenceLock(`chat-target:${encodeURIComponent(chatId)}`, operation);
-/** OPFS-only mode stores chats here; promoted to pending targets when
- *  the server store is enabled on a deployment that has local data. */
-const opfsOnlyChatPath = (chatId: string) => `chats/${chatId}/chat.json`;
+/** The native local snapshot is kept in both local-only and online modes. */
+const localChatPath = (chatId: string) => `chats/${chatId}/chat.json`;
 
 /** Preserve local snapshots and attachments, but start the next backup from seq 0. */
 export async function resetLocalBackupState(): Promise<void> {
@@ -151,9 +150,12 @@ export async function resetLocalBackupState(): Promise<void> {
     const history = await readText(historyPath(id));
     const stored =
       target ??
-      (history ? replayLog(id, decodeLines(history)).chat : null) ??
-      (await readJson<StoredChat | LegacyStoredChat>(opfsOnlyChatPath(id)));
-    if (stored) await writeJson(targetPath(id), normalizeStoredChat(stored));
+      (await readJson<StoredChat | LegacyStoredChat>(localChatPath(id))) ??
+      (history ? replayLog(id, decodeLines(history)).chat : null);
+    if (stored) {
+      await writeJson(targetPath(id), normalizeStoredChat(stored));
+      await writeJson(localChatPath(id), normalizeStoredChat(stored));
+    }
     await deleteFile(historyPath(id));
   }
   await deleteDirectory(SYNC_DIR);
@@ -164,13 +166,13 @@ export async function resetLocalBackupState(): Promise<void> {
  *  UI show chats while the session is still locked. */
 export async function readLocalChat(id: string, hydrateBlobs = true): Promise<Chat | undefined> {
   let stored = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
+  if (!stored) stored = await readJson<StoredChat | LegacyStoredChat>(localChatPath(id));
   if (!stored) {
     const history = await readText(historyPath(id));
     if (history) stored = replayLog(id, decodeLines(history)).chat ?? undefined;
   }
-  if (!stored) stored = await readJson<StoredChat | LegacyStoredChat>(opfsOnlyChatPath(id));
   if (!stored) return undefined;
-  const normalized = normalizeStoredChat(stored);
+  const normalized = normalizeStoredChat({ ...stored, id });
   return hydrateBlobs ? rehydrateChatBlobs(normalized) : restoreChatManifest(normalized);
 }
 
@@ -187,12 +189,23 @@ export async function readLocalMirror(hydrateBlobs = true): Promise<Chat[]> {
  *  store session is locked or errored, so edits survive the tab. The next
  *  ChatSync hydration picks the target up and flushes it. */
 export function stashPendingTarget(chat: Chat): Promise<void> {
-  return withBackupStorage(() => stashPendingTargetUnlocked(chat));
+  return withBackupStorage(async () => {
+    await stashPendingTargetUnlocked(chat);
+  });
 }
 
-async function stashPendingTargetUnlocked(chat: Chat): Promise<void> {
+async function stashPendingTargetUnlocked(chat: Chat): Promise<StoredChat> {
   const stored = await extractChatBlobs(chat);
-  await withTarget(chat.id, () => writeJson(targetPath(chat.id), stored));
+  await writeLocalChatSnapshot(stored, true);
+  return stored;
+}
+
+/** Share the snapshot commit with native local storage and its durable outbox. */
+export function writeLocalChatSnapshot(stored: StoredChat, pending: boolean): Promise<void> {
+  return withTarget(stored.id, async () => {
+    if (pending) await writeJson(targetPath(stored.id), stored);
+    await writeJson(localChatPath(stored.id), stored);
+  });
 }
 
 /** Keep local deletion usable before backup protection has been configured. */
@@ -202,7 +215,10 @@ export function stashPendingDeletion(chatId: string, userId?: string): Promise<v
 
 async function stashPendingDeletionUnlocked(chatId: string, userId?: string): Promise<void> {
   const previous = await loadState();
-  const owner = userId ?? previous?.userId;
+  const owner =
+    userId ??
+    previous?.userId ??
+    (typeof localStorage === "undefined" ? undefined : localStorage.getItem(WORKSPACE_OWNER_KEY));
   if (!owner || (previous && previous.userId !== owner)) {
     await deleteDirectory(`chats/${chatId}`);
     return;
@@ -219,6 +235,7 @@ async function stashPendingDeletionUnlocked(chatId: string, userId?: string): Pr
 export interface ChatSyncOptions {
   userId: string;
   dek: StoreKey;
+  retentionDays?: number;
 }
 
 export interface SyncActivity {
@@ -238,7 +255,9 @@ export class ChatSync {
   private pendingTargets = new Map<string, StoredChat>();
   private deletions = new Map<string, PendingDeletion>();
   private flushing = false;
+  private flushAgain = false;
   private readonly userId: string;
+  private readonly retentionDays?: number;
   private dek: StoreKey;
 
   private activity: SyncActivity = { syncing: false, pendingCount: 0, lastSyncAt: null, lastError: null, progress: [] };
@@ -246,8 +265,9 @@ export class ChatSync {
   private activityListeners = new Set<(a: SyncActivity) => void>();
   private remoteChangeListeners = new Set<(chats: Chat[]) => void>();
 
-  constructor(userId: string, dek: StoreKey, initialState?: SyncState) {
+  constructor(userId: string, dek: StoreKey, initialState?: SyncState, retentionDays?: number) {
     this.userId = userId;
+    this.retentionDays = retentionDays;
     this.dek = dek;
     this.state = initialState ?? { userId, heads: {}, lastFrameHash: {} };
   }
@@ -259,7 +279,7 @@ export class ChatSync {
         "This browser contains another account's local chats. Sign back in to export them before clearing local data.",
       );
     }
-    const sync = new ChatSync(opts.userId, opts.dek, state);
+    const sync = new ChatSync(opts.userId, opts.dek, state, opts.retentionDays);
     await sync.hydrateFromOpfs();
     await sync.refreshDeletions();
     sync.setActivity({});
@@ -368,6 +388,19 @@ export class ChatSync {
       });
     }
 
+    // Expiration also applies to an old backup restored on a fresh browser.
+    const cutoff = chatRetentionCutoff(this.retentionDays);
+    if (cutoff) {
+      for (const id of new Set([...this.pendingTargets.keys(), ...this.lastSynced.keys()])) {
+        await this.withChat(id, async () => {
+          const stored = this.pendingTargets.get(id) ?? this.lastSynced.get(id);
+          if (stored?.updated && new Date(stored.updated) < cutoff && !isChatBackupPaused(id)) {
+            await this.deleteChatUnlocked(id);
+          }
+        });
+      }
+    }
+
     // Compose the visible chat list: pending target if any, else lastSynced.
     await this.refreshDeletions();
     const out: Chat[] = [];
@@ -391,12 +424,9 @@ export class ChatSync {
    *  flush. Never waits for network work on the same chat. */
   saveChat(chat: Chat): Promise<void> {
     return withBackupStorage(async () => {
-      if (!isBackupSessionCurrent()) return stashPendingTargetUnlocked(chat);
-      const stored = await extractChatBlobs(chat);
-      await withTarget(chat.id, async () => {
-        await writeJson(targetPath(chat.id), stored);
-        this.pendingTargets.set(chat.id, stored);
-      });
+      const stored = await stashPendingTargetUnlocked(chat);
+      if (!isBackupSessionCurrent()) return;
+      this.pendingTargets.set(chat.id, stored);
       this.setActivity({});
       if (!isChatBackupPaused(chat.id)) void this.flushPending();
     });
@@ -422,6 +452,9 @@ export class ChatSync {
     this.setActivity({});
 
     await deleteDirectory(`chats/${chatId}`);
+    await withPersistenceLock("collection:drafts", () =>
+      deleteDirectory(`drafts/${encodeURIComponent(`chat-${chatId}`)}`),
+    );
     void this.flushPending();
   }
 
@@ -433,9 +466,22 @@ export class ChatSync {
   }
 
   private async flushPendingUnlocked(): Promise<void> {
-    if (this.flushing) return;
+    if (this.flushing) {
+      this.flushAgain = true;
+      return;
+    }
+    this.flushAgain = false;
     this.flushing = true;
     try {
+      await this.syncKnownChats();
+      // Local saves need no initialized engine; adopt their durable outbox now.
+      for (const id of await listDirectories("chats")) {
+        await withTarget(id, async () => {
+          const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
+          if (target) this.pendingTargets.set(id, normalizeStoredChat(target));
+          else this.pendingTargets.delete(id);
+        });
+      }
       await this.refreshDeletions();
     } catch (error) {
       this.flushing = false;
@@ -481,9 +527,10 @@ export class ChatSync {
 
     // Work that arrived mid-flush was skipped by the re-entrancy guard.
     if (
-      !failed &&
-      ([...this.pendingTargets.keys()].some((id) => !isChatBackupPaused(id) && !this.deletions.has(id)) ||
-        [...this.deletions.values()].some((entry) => !isChatBackupPaused(entry.id)))
+      this.flushAgain ||
+      (!failed &&
+        ([...this.pendingTargets.keys()].some((id) => !isChatBackupPaused(id) && !this.deletions.has(id)) ||
+          [...this.deletions.values()].some((entry) => !isChatBackupPaused(entry.id))))
     ) {
       void this.flushPending();
     }
@@ -498,27 +545,32 @@ export class ChatSync {
 
   private async hydrateFromOpfs(): Promise<void> {
     for (const id of await listDirectories("chats")) {
-      const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
-      const history = await readText(historyPath(id));
-      if (!history) {
-        // A pending edit takes precedence over an older local-only record.
-        const local = target ?? (await readJson<StoredChat | LegacyStoredChat>(opfsOnlyChatPath(id)));
-        if (this.state.heads[id] !== undefined) {
-          // Without a replayable log, the chat must upload as a fresh snapshot.
-          forgetChatState(this.state, id);
-          await saveChatState(this.state, id);
-        }
-        if (local) {
-          const stored = normalizeStoredChat(local);
-          this.pendingTargets.set(id, stored);
-          await writeJson(targetPath(id), stored);
-          await deleteFile(opfsOnlyChatPath(id));
-        }
-        continue;
-      }
-      const { chat } = replayLog(id, decodeLines(history));
-      if (chat) this.lastSynced.set(id, chat);
-      if (target) this.pendingTargets.set(id, normalizeStoredChat(target));
+      await this.withChat(id, () =>
+        withTarget(id, async () => {
+          const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
+          const history = await readText(historyPath(id));
+          if (!history) {
+            // A pending edit takes precedence over an older local-only record.
+            const local = target ?? (await readJson<StoredChat | LegacyStoredChat>(localChatPath(id)));
+            if (this.state.heads[id] !== undefined) {
+              // Without a replayable log, the chat must upload as a fresh snapshot.
+              forgetChatState(this.state, id);
+              await saveChatState(this.state, id);
+            }
+            if (local) {
+              const stored = normalizeStoredChat(local);
+              this.pendingTargets.set(id, stored);
+              await writeJson(targetPath(id), stored);
+              await writeJson(localChatPath(id), stored);
+            }
+            return;
+          }
+          const { chat } = replayLog(id, decodeLines(history));
+          if (chat) this.lastSynced.set(id, chat);
+          if (target) this.pendingTargets.set(id, normalizeStoredChat(target));
+          else if (!(await readJson(localChatPath(id))) && chat) await writeJson(localChatPath(id), chat);
+        }),
+      );
     }
   }
 
@@ -854,6 +906,9 @@ export class ChatSync {
       else this.lastSynced.delete(chatId);
       this.state.heads[chatId] = head;
       this.state.lastFrameHash[chatId] = lastHash;
+      await withTarget(chatId, async () => {
+        if (baseline && !(await readJson(targetPath(chatId)))) await writeJson(localChatPath(chatId), baseline);
+      });
       return true;
     });
     if (applied) await saveChatState(this.state, chatId);

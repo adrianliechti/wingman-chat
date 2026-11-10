@@ -8,7 +8,7 @@
 import type JSZip from "jszip";
 import { withArtifactWorkspaceLock } from "@/features/artifacts/lib/workspaceCoordinator";
 import { parseSkillFileForImport } from "@/features/skills/lib/skillParser";
-import { getDirectory, getRoot } from "./opfs-core";
+import { fileExists, getDirectory, getRoot } from "./opfs-core";
 import { downloadZip, generateZipBlob } from "./zipStreams";
 import { flushForBackup, withPersistenceLock } from "./persistence";
 import { STORAGE_COLLECTIONS } from "./opfs-index";
@@ -53,8 +53,18 @@ async function readFileForZip(
 export async function addDirectoryToZip(handle: FileSystemDirectoryHandle, zipFolder: JSZip, path = ""): Promise<void> {
   for await (const [name, entryHandle] of handle.entries()) {
     const childPath = path ? `${path}/${name}` : name;
+    if (!path && name === "_sync") continue;
+    if (
+      /^chats\/[^/]+$/.test(path) &&
+      ["target.json", "history.jsonl"].includes(name) &&
+      (await fileExists(`${path}/chat.json`))
+    )
+      continue;
     if (entryHandle.kind === "file") {
-      const bytes = await readFileForZip(handle, entryHandle as FileSystemFileHandle, childPath);
+      // A failed native write can leave a newer, durable outbox snapshot.
+      const pending = /^chats\/[^/]+$/.test(path) && name === "chat.json" && (await fileExists(`${path}/target.json`));
+      const source = pending ? await handle.getFileHandle("target.json") : (entryHandle as FileSystemFileHandle);
+      const bytes = await readFileForZip(handle, source, childPath);
       if (bytes !== undefined) zipFolder.file(name, bytes);
     } else {
       const subFolder = zipFolder.folder(name);

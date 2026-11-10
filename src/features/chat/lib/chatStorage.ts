@@ -1,5 +1,6 @@
-import { readLocalChat, stashPendingDeletion } from "@/shared/lib/chatSync";
+import { readLocalChat, stashPendingDeletion, writeLocalChatSnapshot } from "@/shared/lib/chatSync";
 import { getConfig } from "@/shared/config";
+import { chatRetentionCutoff } from "@/shared/lib/chatRetention";
 import {
   collectLegacyChatBlobIds,
   isLegacyStoredChat,
@@ -20,13 +21,12 @@ export async function storeChat(chat: Chat): Promise<void> {
     const stored = await opfs.extractChatBlobs(chat);
     // Commit the shared pending target first so interrupted native writes
     // remain recoverable locally and when online sync resumes.
-    if (
+    const pending = Boolean(
+      getConfig().store ||
       (await opfs.fileExists(`chats/${chat.id}/history.jsonl`)) ||
-      (await opfs.fileExists(`chats/${chat.id}/target.json`))
-    ) {
-      await opfs.writeJson(`chats/${chat.id}/target.json`, stored);
-    }
-    await opfs.writeJson(`chats/${chat.id}/chat.json`, stored);
+      (await opfs.fileExists(`chats/${chat.id}/target.json`)),
+    );
+    await writeLocalChatSnapshot(stored, pending);
     await opfs.upsertIndexEntry("chats", {
       id: chat.id,
       projectId: chat.projectId,
@@ -48,7 +48,7 @@ export async function storeChat(chat: Chat): Promise<void> {
 }
 
 async function removeChatFiles(id: string): Promise<void> {
-  if (await opfs.fileExists("_sync/state.json")) await stashPendingDeletion(id);
+  if (getConfig().store || (await opfs.fileExists("_sync/state.json"))) await stashPendingDeletion(id);
   await opfs.deleteDirectory(`chats/${id}`);
   await opfs.deleteFile(`chats/${id}.json`);
   await opfs.removeIndexEntry("chats", id);
@@ -106,11 +106,15 @@ export async function loadChat(id: string, hydrateBlobs = true): Promise<Chat | 
 export async function loadChatIndex(): Promise<ChatEntry[]> {
   return withPersistenceLock("collection:chats", async () => {
     let index = await opfs.readIndex("chats");
-    // Online mode keeps its local manifests in event logs and pending targets.
-    // Include them when returning to local ZIP backups, without contacting a server.
-    const entries = new Map(index.map((entry) => [entry.id, entry]));
+    // Native snapshots are shared by both modes. Older online mirrors may still
+    // need their pending snapshot or log, without contacting a backup server.
+    const entries = new Map((getConfig().store ? [] : index).map((entry) => [entry.id, entry]));
     for (const id of await opfs.listDirectories("chats")) {
-      if (!(await opfs.fileExists(`chats/${id}/target.json`)) && !(await opfs.fileExists(`chats/${id}/history.jsonl`)))
+      if (
+        !getConfig().store &&
+        !(await opfs.fileExists(`chats/${id}/target.json`)) &&
+        !(await opfs.fileExists(`chats/${id}/history.jsonl`))
+      )
         continue;
       const chat = await readLocalChat(id, false);
       if (!chat) continue;
@@ -128,9 +132,7 @@ export async function loadChatIndex(): Promise<ChatEntry[]> {
       }
     }
     index = [...entries.values()];
-    const retentionDays = getConfig().chat?.retentionDays;
-    const cutoff = new Date();
-    if (retentionDays && retentionDays > 0) cutoff.setDate(cutoff.getDate() - retentionDays);
+    const cutoff = chatRetentionCutoff(getConfig().chat?.retentionDays);
     const summaries: ChatEntry[] = [];
     for (const entry of index) {
       let summary: ChatEntry = {
@@ -140,7 +142,7 @@ export async function loadChatIndex(): Promise<ChatEntry[]> {
       };
       // Only retention candidates need a manifest read. Verify the saved date
       // before deletion: an interrupted index update can leave an older date.
-      if (retentionDays && retentionDays > 0 && summary.updated && summary.updated < cutoff) {
+      if (cutoff && summary.updated && summary.updated < cutoff) {
         try {
           const chat = await loadChat(entry.id, false);
           if (!chat) continue;

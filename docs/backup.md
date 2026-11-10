@@ -16,8 +16,9 @@ flowchart LR
 
 ## Choose a provider
 
-The default provider is `local`, which uses the existing ZIP download and restore
-controls. Omitting the provider or using `"backup": {}` selects local backups.
+The default provider is `local`, which uses ZIP download and restore controls.
+These controls also remain available when online backup is enabled. Omitting the
+provider or using `"backup": {}` selects local backups.
 
 ```json
 {
@@ -237,7 +238,9 @@ upload-only operation; restoring or reconciling conflicts requires unlocking.
 
 Online backup covers chats, referenced attachments, current artifacts and app
 state, projects, drafts, agents, skills, plugins, images, memory, and the profile.
-It excludes internal sync tracking, local artifact revision history, browser
+Immutable artifact revisions are included so attachments pinned to an earlier
+version remain usable after restore. Revision listings are rebuilt locally.
+It excludes internal sync tracking, browser
 preferences and OAuth credentials in localStorage, and remembered-device keys.
 Workspace files larger than 256 MiB stay local and remain pending with an explicit size-limit error.
 
