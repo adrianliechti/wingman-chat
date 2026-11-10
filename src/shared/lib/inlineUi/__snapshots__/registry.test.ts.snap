@@ -2,7 +2,7 @@
 
 exports[`advertises only our pinned protocol version and registered catalogs 1`] = `
 {
-  "v1.0": {
+  "1.0": {
     "supportedCatalogIds": [
       "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
       "urn:wingman:inline-ui:catalog:1",
@@ -307,6 +307,10 @@ exports[`locks the published catalog schemas and generated references to registe
       "type": "object",
       "unevaluatedProperties": false,
     },
+    "Weight": {
+      "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
+      "type": "number",
+    },
     "anyComponent": {
       "discriminator": {
         "propertyName": "component",
@@ -414,6 +418,24 @@ exports[`locks the published catalog schemas and generated references to registe
         },
       ],
     },
+    "theme": {
+      "additionalProperties": true,
+      "properties": {
+        "agentDisplayName": {
+          "description": "Text to be displayed next to the surface to identify the agent or tool that created it.",
+          "type": "string",
+        },
+        "iconUrl": {
+          "description": "A URL for an image that identifies the agent or tool associated with the surface.",
+          "type": "string",
+        },
+        "primaryColor": {
+          "description": "The primary brand color used for highlights (e.g., primary buttons, active borders). Renderers may generate variants of this color for different contexts. Format: Hexadecimal code, named color, or functional notation (e.g., '#00BFFF', 'red', 'rgb(255, 0, 0)').",
+          "type": "string",
+        },
+      },
+      "type": "object",
+    },
   },
   "$id": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -437,8 +459,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "The URL of the audio to be played.",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -484,8 +505,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "type": "string",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -510,8 +530,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -547,8 +566,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "The current state of the checkbox (true for checked, false for unchecked).",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -631,8 +649,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "type": "string",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -683,8 +700,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "type": "string",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -784,8 +800,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "The selected date and/or time value in ISO 8601 format. If not yet set, initialize with an empty string.",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -814,8 +829,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -919,8 +933,7 @@ exports[`locks the published catalog schemas and generated references to registe
           ],
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -973,8 +986,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "type": "string",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -1018,8 +1030,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -1047,8 +1058,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "The ID of the component that opens the modal when interacted with (e.g., a button).",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -1099,8 +1109,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "type": "string",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -1150,8 +1159,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "The current value of the slider.",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -1195,8 +1203,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "type": "array",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -1229,8 +1236,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "type": "string",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -1281,8 +1287,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "type": "string",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -1310,8 +1315,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "The URL of the video to display.",
         },
         "weight": {
-          "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
-          "type": "number",
+          "$ref": "#/$defs/Weight",
         },
       },
       "required": [
@@ -1838,7 +1842,113 @@ Examples:
       "type": "object",
     },
   },
-  "protocolVersion": "v1.0",
+  "instructions": "For layout, use the Row and Column components to organize other components.
+
+## Catalog Guidelines
+
+1. String Concatenation & Formatting: A2UI does not support binary operators like '+' or formatting symbols. To concatenate strings or dynamically inject data bindings into text, you must use the catalog function \`formatString(value)\` where the value string contains placeholders formatted as \`\${expression}\`:
+   formatString("Hello \${/user/name}")
+
+2. Strict Hierarchy: You must strictly adhere to the requested component nesting and hierarchy. If the prompt specifies that a component is 'inside' or 'contained in' another component, you MUST place it as a child of that specific component, not as a sibling or in a different container.
+
+3. Validation Checks: When components support validation checks, specify any custom error messages directly as the 'message' inside the check. Do NOT create separate text-display components to display validation errors.
+
+## Examples
+
+Example 1: Dynamic text form
+\`\`\`json
+[
+  {
+    "version": "1.0",
+    "createSurface": {
+      "surfaceId": "main",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "components": [
+        {
+          "id": "root",
+          "component": "Column",
+          "children": ["repField", "valueField"]
+        },
+        {
+          "id": "repField",
+          "component": "TextField",
+          "label": "Representative",
+          "value": {"@path": "/form/rep"},
+          "placeholder": "Enter name"
+        },
+        {
+          "id": "valueField",
+          "component": "TextField",
+          "label": "Deal Value",
+          "value": {"@path": "/form/value"},
+          "placeholder": "0.00",
+          "variant": "number",
+          "checks": [
+            {
+              "condition": {
+                "@call": "required",
+                "args": {"value": {"@path": "/form/value"}}
+              },
+              "message": "Deal value is required."
+            }
+          ]
+        }
+      ],
+      "dataModel": {
+        "form": {
+          "rep": "John Doe",
+          "value": 1500.00
+        }
+      }
+    }
+  }
+]
+\`\`\`
+
+Example 2: Dynamic list with templates
+\`\`\`json
+[
+  {
+    "version": "1.0",
+    "createSurface": {
+      "surfaceId": "main",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "components": [
+        {
+          "id": "root",
+          "component": "Card",
+          "child": "breedList"
+        },
+        {
+          "id": "breedList",
+          "component": "List",
+          "children": {
+            "path": "/breeds",
+            "componentId": "breedTemplate"
+          },
+          "direction": "horizontal"
+        },
+        {
+          "id": "breedTemplate",
+          "component": "Image",
+          "url": {"@path": "url"}
+        }
+      ],
+      "dataModel": {
+        "breeds": [
+          {
+            "url": "https://example.com/poodle.jpg"
+          },
+          {
+            "url": "https://example.com/lab.jpg"
+          }
+        ]
+      }
+    }
+  }
+]
+\`\`\`",
+  "protocolVersion": "1.0",
 }
 `;
 
@@ -2332,7 +2442,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "Represents a string",
         },
         "data": {
-          "oneOf": [
+          "anyOf": [
             {
               "items": {
                 "additionalProperties": {
@@ -2393,7 +2503,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "series": {
           "items": {
-            "oneOf": [
+            "anyOf": [
               {
                 "type": "string",
               },
@@ -2482,7 +2592,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "items": {
           "items": {
-            "oneOf": [
+            "anyOf": [
               {
                 "type": "string",
               },
@@ -2802,7 +2912,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "items": {
-          "oneOf": [
+          "anyOf": [
             {
               "items": {
                 "additionalProperties": false,
@@ -3476,7 +3586,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "rows": {
-          "oneOf": [
+          "anyOf": [
             {
               "items": {
                 "additionalProperties": {
@@ -3530,7 +3640,7 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "items": {
-          "oneOf": [
+          "anyOf": [
             {
               "items": {
                 "$ref": "#/$defs/DynamicString",
@@ -3570,7 +3680,7 @@ exports[`locks the published catalog schemas and generated references to registe
     "Timeline": {
       "properties": {
         "active": {
-          "oneOf": [
+          "anyOf": [
             {
               "type": [
                 "string",
@@ -3598,10 +3708,10 @@ exports[`locks the published catalog schemas and generated references to registe
           "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "items": {
-          "oneOf": [
+          "anyOf": [
             {
               "items": {
-                "oneOf": [
+                "anyOf": [
                   {
                     "type": "string",
                   },
@@ -3801,7 +3911,7 @@ exports[`locks the published catalog schemas and generated references to registe
       "type": "object",
     },
   },
-  "protocolVersion": "v1.0",
+  "protocolVersion": "1.0",
 }
 `;
 
@@ -3938,6 +4048,16 @@ exports[`published SDK reference fixtures > processes 00_incremental.json withou
             "text": "456 Shoreline Dr",
             "type": "Text",
           },
+          {
+            "action": "<Action>",
+            "child": {
+              "id": "rc_button_label",
+              "text": "Book now",
+              "type": "Text",
+            },
+            "id": "rc_button",
+            "type": "Button",
+          },
         ],
         "id": "restaurant_card",
         "type": "Column",
@@ -3958,6 +4078,16 @@ exports[`published SDK reference fixtures > processes 00_incremental.json withou
             "id": "rc_address",
             "text": "789 Napoli Way",
             "type": "Text",
+          },
+          {
+            "action": "<Action>",
+            "child": {
+              "id": "rc_button_label",
+              "text": "Book now",
+              "type": "Text",
+            },
+            "id": "rc_button",
+            "type": "Button",
           },
         ],
         "id": "restaurant_card",
@@ -5109,17 +5239,18 @@ exports[`published SDK reference fixtures > processes 09_login-form.json without
           "placeholder": undefined,
           "type": "TextField",
           "validationErrors": [
-            "This field is required.",
-            "Must be a valid email address.",
+            "Email is required",
+            "Please enter a valid email address",
           ],
           "validationResults": [
             {
-              "message": "This field is required.",
+              "message": "Email is required",
               "severity": "error",
               "valid": false,
             },
             {
-              "message": "Must be a valid email address.",
+              "code": "INVALID_EMAIL",
+              "message": "Please enter a valid email address",
               "severity": "error",
               "valid": false,
             },
@@ -5158,17 +5289,17 @@ exports[`published SDK reference fixtures > processes 09_login-form.json without
           "placeholder": undefined,
           "type": "TextField",
           "validationErrors": [
-            "This field is required.",
-            "Minimum length is 8.",
+            "Password is required",
+            "Password must be at least 8 characters long",
           ],
           "validationResults": [
             {
-              "message": "This field is required.",
+              "message": "Password is required",
               "severity": "error",
               "valid": false,
             },
             {
-              "message": "Minimum length is 8.",
+              "message": "Password must be at least 8 characters long",
               "severity": "error",
               "valid": false,
             },
@@ -7754,11 +7885,12 @@ exports[`published SDK reference fixtures > processes 32_advanced-form-validator
           "placeholder": undefined,
           "type": "TextField",
           "validationErrors": [
-            "Must be a valid email address.",
+            "Invalid email format",
           ],
           "validationResults": [
             {
-              "message": "Must be a valid email address.",
+              "code": "INVALID_EMAIL",
+              "message": "Invalid email format",
               "severity": "error",
               "valid": false,
             },
@@ -7786,11 +7918,11 @@ exports[`published SDK reference fixtures > processes 32_advanced-form-validator
           "placeholder": undefined,
           "type": "TextField",
           "validationErrors": [
-            "Value does not match required pattern.",
+            "Invalid phone format",
           ],
           "validationResults": [
             {
-              "message": "Value does not match required pattern.",
+              "message": "Invalid phone format",
               "severity": "error",
               "valid": false,
             },
@@ -7818,11 +7950,11 @@ exports[`published SDK reference fixtures > processes 32_advanced-form-validator
           "placeholder": undefined,
           "type": "TextField",
           "validationErrors": [
-            "Value does not match required pattern.",
+            "Must be exactly 5 digits",
           ],
           "validationResults": [
             {
-              "message": "Value does not match required pattern.",
+              "message": "Must be exactly 5 digits",
               "severity": "error",
               "valid": false,
             },

@@ -36,7 +36,7 @@ test("the file column defaults to hidden, remembers showing it, and hands over t
   await expect(page.getByText("Files", { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem("app_artifacts_browser"))).toBeNull();
   await page.getByTitle("Browse files").click();
-  await page.getByRole("button", { name: "two.txt", exact: true }).click();
+  await page.locator('button[title="/two.txt"]').click();
   await expect(page.locator("pre")).toHaveText("Second");
 
   // The choice survives a reload.

@@ -85,7 +85,7 @@ export function fileMatchesTypeList(name: string, type: string, list: string[]):
 }
 
 /**
- * Syntax-highlight language id for a file path. Returns the raw extension (shiki
+ * Syntax-highlight language id for a file path. Returns the raw extension (TanStack Highlight
  * accepts extension aliases like `py` / `ts`), with special-cases for the common
  * extensionless build files.
  */

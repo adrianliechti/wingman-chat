@@ -13,7 +13,7 @@ const compressible = new Set([".html", ".js", ".mjs", ".css", ".json", ".svg", "
 // Deployments replace branding files after the build (mounts, derived images).
 // A replacement can carry an older mtime than the build's variants, so the
 // server would keep serving the default logo; never precompress these.
-const replaceable = /^(?:(?:logo|icon)_[^/]+\.svg|manifest\.json|config\.json)$/;
+const replaceable = /^(?:(?:logo|icon)(?:_[^/]+)?\.svg|manifest(?:_(?:light|dark))?\.json|config\.json)$/;
 
 export async function compressAssets(root) {
   const totals = { files: 0, original: 0, brotli: 0, gzip: 0 };

@@ -109,7 +109,7 @@ it("retains completed tool work without repeating tools during repair", async ()
 
 it("validates updates against earlier surfaces and replaces only the failed update", async () => {
   const update = {
-    version: "v1.0",
+    version: "1.0",
     updateComponents: {
       surfaceId: valid.createSurface.surfaceId,
       components: invalid.createSurface.components,

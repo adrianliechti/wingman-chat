@@ -21,7 +21,7 @@ export function ChatConsentBanner() {
   const Icon = isRisk ? ShieldAlert : ShieldQuestion;
 
   return (
-    <div className="pointer-events-auto fixed inset-x-0 bottom-0 z-[60] bg-neutral-50/85 dark:bg-neutral-950/85 backdrop-blur-sm border-t border-neutral-200/60 dark:border-neutral-800/60 shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.08)]">
+    <div className="pointer-events-auto fixed inset-x-0 bottom-(--app-keyboard) z-[60] bg-neutral-50/85 dark:bg-neutral-950/85 backdrop-blur-sm border-t border-neutral-200/60 dark:border-neutral-800/60 shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.08)]">
       <div
         className={cn(
           "px-3 pt-5 pb-10 relative",

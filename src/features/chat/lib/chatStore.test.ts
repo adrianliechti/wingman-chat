@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersistenceQueue } from "@/shared/lib/persistence";
-import { userMessage } from "@/shared/lib/messages";
+import { assistantMessage, userMessage } from "@/shared/lib/messages";
 import type { Chat } from "@/shared/types/chat";
 import { ChatStore } from "./chatStore";
 import { chatEntry } from "./chatStorage";
@@ -103,13 +103,17 @@ describe("lazy chat collection", () => {
 
   it("searches unloaded text without filling the conversation cache and includes unsaved edits", async () => {
     await store.initialize();
-    expect(await store.searchChats("Body of two", new AbortController().signal)).toEqual(new Set(["two"]));
+    expect(await store.searchChats("Body of two", new AbortController().signal)).toEqual(
+      new Map([["two", { messageId: "two-prompt", excerpt: "Body of two" }]]),
+    );
     expect(store.getChat("two")).toBeUndefined();
     await store.loadChat("one");
     store.updateChat("one", () => ({
-      messages: [userMessage("unsaved needle")],
+      messages: [userMessage("unsaved needle", { id: "edited" })],
     }));
-    expect(await store.searchChats("needle", new AbortController().signal)).toEqual(new Set(["one"]));
+    expect(await store.searchChats("needle", new AbortController().signal)).toEqual(
+      new Map([["one", { messageId: "edited", excerpt: "unsaved needle" }]]),
+    );
     expect(storage.store).not.toHaveBeenCalled();
   });
 
@@ -168,7 +172,35 @@ describe("lazy chat collection", () => {
       await store.deleteChat("one");
       return chat(id);
     });
-    expect(await store.searchChats("one", new AbortController().signal)).toEqual(new Set());
+    expect(await store.searchChats("one", new AbortController().signal)).toEqual(new Map());
+  });
+
+  it("prefers the first visible passage over a matching title and skips hidden feedback", async () => {
+    await store.initialize();
+    await store.loadChat("one");
+    store.updateChat("one", () => ({
+      title: "Needle planning",
+      messages: [
+        userMessage("Hidden needle", { metadata: { kind: "runtime_feedback" } }),
+        assistantMessage("Summarized needle", { metadata: { kind: "summary" } }),
+        assistantMessage("First NEEDLE passage", { id: "first" }),
+        userMessage("Later needle", { id: "later" }),
+      ],
+    }));
+    expect(await store.searchChats("  needle  ", new AbortController().signal)).toEqual(
+      new Map([["one", { messageId: "first", excerpt: "First NEEDLE passage" }]]),
+    );
+  });
+
+  it("keeps title-only results and does not read manifests for empty queries", async () => {
+    await store.initialize();
+    expect(await store.searchChats(" \n ", new AbortController().signal)).toEqual(new Map());
+    expect(storage.load).not.toHaveBeenCalled();
+    await store.loadChat("two");
+    store.updateChat("two", () => ({ customTitle: "Annual review" }));
+    expect(await store.searchChats("annual", new AbortController().signal)).toEqual(
+      new Map([["two", { excerpt: "Annual review" }]]),
+    );
   });
 
   it("retries a failed lazy read without losing queued edits", async () => {

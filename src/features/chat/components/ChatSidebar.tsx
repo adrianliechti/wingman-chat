@@ -1,7 +1,21 @@
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { GitBranch, MoreVertical, PanelRightOpen, Pencil, Pin, PinOff, Search, Trash, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Folder,
+  FolderInput,
+  GitBranch,
+  MoreVertical,
+  PanelRightOpen,
+  Pencil,
+  Pin,
+  PinOff,
+  Search,
+  Trash,
+  X,
+} from "lucide-react";
+import { ProjectPicker, MoveChatDialog } from "@/features/projects/components/ProjectPicker";
+import { useProjects } from "@/features/projects/context/ProjectsContext";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useChatActions, useChatList } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { createAttachmentLoader } from "../lib/chatAttachments";
@@ -10,14 +24,18 @@ import { cn } from "@/shared/lib/cn";
 import { type ChatEntry } from "@/shared/types/chat";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { useSidebar } from "@/shell/hooks/useSidebar";
+import type { ChatSearchMatch } from "../lib/chatSearch";
+import { SearchHighlight } from "./SearchHighlight";
 
 type SidebarGroup = { category: string; chats: ChatEntry[] };
 type FlatSidebarItem = { type: "header"; group: SidebarGroup; groupIndex: number } | { type: "item"; chat: ChatEntry };
 
 export function ChatSidebar() {
+  const { selectedProjectId, projects } = useProjects();
+  const [movingChat, setMovingChat] = useState<string | null>(null);
   const { chats, chatId } = useChatList();
   const { deleteChat, createChat, updateChat, loadChat, searchChats } = useChatActions();
-  const { setShowSidebar } = useSidebar();
+  const { setShowSidebar, showSidebar } = useSidebar();
   const { newChat, openChat } = useChatNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
@@ -78,21 +96,26 @@ export function ChatSidebar() {
   // sort once per chats change
   const sortedChats = useMemo(
     () =>
-      [...chats].sort(
-        (a, b) => new Date(b.updated || b.created || 0).getTime() - new Date(a.updated || a.created || 0).getTime(),
-      ),
-    [chats],
+      chats
+        .filter((chat) => !projects.some((p) => p.id === selectedProjectId) || chat.projectId === selectedProjectId)
+        .sort(
+          (a, b) => new Date(b.updated || b.created || 0).getTime() - new Date(a.updated || a.created || 0).getTime(),
+        ),
+    [chats, selectedProjectId, projects],
   );
 
-  const [searchResult, setSearchResult] = useState<{ query: string; ids: Set<string> } | null>(null);
+  const query = searchQuery.trim();
+  const [searchResult, setSearchResult] = useState<{ query: string; matches: Map<string, ChatSearchMatch> } | null>(
+    null,
+  );
   // Full-text search waits for typing to pause; title filtering below stays immediate.
-  const [debouncedQuery] = useDebouncedValue(searchQuery, { wait: 250 });
+  const [debouncedQuery] = useDebouncedValue(query, { wait: 250 });
   useEffect(() => {
     if (!debouncedQuery.trim()) return;
     const controller = new AbortController();
     void searchChats(debouncedQuery, controller.signal)
-      .then((ids) => {
-        if (!controller.signal.aborted) setSearchResult({ query: debouncedQuery, ids });
+      .then((matches) => {
+        if (!controller.signal.aborted) setSearchResult({ query: debouncedQuery, matches });
       })
       .catch((error) => {
         if (!controller.signal.aborted) notify.error("Couldn't search saved chats", error);
@@ -101,15 +124,15 @@ export function ChatSidebar() {
   }, [debouncedQuery, chats, searchChats]);
 
   const filteredChats = useMemo(() => {
-    if (!searchQuery.trim()) return sortedChats;
-    const query = searchQuery.toLowerCase();
+    if (!query) return sortedChats;
+    const normalized = query.toLowerCase();
     return sortedChats.filter(
       (entry) =>
-        entry.customTitle?.toLowerCase().includes(query) ||
-        entry.title?.toLowerCase().includes(query) ||
-        (searchResult?.query === searchQuery && searchResult.ids.has(entry.id)),
+        entry.customTitle?.toLowerCase().includes(normalized) ||
+        entry.title?.toLowerCase().includes(normalized) ||
+        (searchResult?.query === query && searchResult.matches.has(entry.id)),
     );
-  }, [sortedChats, searchQuery, searchResult]);
+  }, [sortedChats, query, searchResult]);
 
   // Helper function to get date category
   const getDateCategory = useCallback((date: Date): string => {
@@ -224,6 +247,8 @@ export function ChatSidebar() {
         title: chatToFork.title ? `${chatToFork.title}${forkSuffix}` : "Forked Chat",
         customTitle: chatToFork.customTitle ? `${chatToFork.customTitle}${forkSuffix}` : undefined,
         model: chatToFork.model,
+        projectId: chatToFork.projectId,
+        agentId: chatToFork.agentId,
         messages,
       }));
 
@@ -289,6 +314,11 @@ export function ChatSidebar() {
   // Shared chat item row renderer
   const renderChatItem = (chatItem: ChatEntry, options?: { draggable?: boolean }) => {
     const displayTitle = chatItem.customTitle ?? chatItem.title ?? "Untitled";
+    const project = !projects.some((p) => p.id === selectedProjectId)
+      ? projects.find((p) => p.id === chatItem.projectId)
+      : undefined;
+    const match = query && searchResult?.query === query ? searchResult.matches.get(chatItem.id) : undefined;
+    const showExcerpt = match && (match.messageId || match.excerpt !== displayTitle);
     const isActive = chatItem.id === chatId;
     const dragBorder =
       dragOver?.id === chatItem.id
@@ -299,7 +329,7 @@ export function ChatSidebar() {
 
     return (
       <div
-        className={`flex items-center cursor-pointer relative shrink-0 group rounded-lg transition-colors duration-200 py-2 md:py-1.5 pl-3 pr-1 md:pr-0.5 ${dragBorder} ${
+        className={`flex items-center cursor-pointer relative shrink-0 group rounded-lg transition-colors duration-200 py-2 md:py-1.5 pl-3 pr-1 md:pr-0.5 max-md:min-h-12 max-md:rounded-xl max-md:pl-4 max-md:active:bg-neutral-200/60 max-md:dark:active:bg-white/10 ${dragBorder} ${
           isActive
             ? "bg-neutral-200/70 text-neutral-900 dark:bg-white/10 dark:text-neutral-100"
             : "hover:bg-neutral-200/40 dark:hover:bg-white/5"
@@ -328,15 +358,41 @@ export function ChatSidebar() {
             onDragEnd={options?.draggable ? handleDragEnd : undefined}
             onDrop={options?.draggable ? () => handleDrop(chatItem.id) : undefined}
             onClick={() => {
-              openChat(chatItem.id);
+              openChat(chatItem.id, match?.messageId ? { messageId: match.messageId, query } : undefined);
               if (window.innerWidth < 768) {
                 setShowSidebar(false);
               }
             }}
-            className={`flex-1 overflow-hidden text-ellipsis whitespace-nowrap pr-4 group-hover:pr-8 transition-all duration-200 text-left text-base md:text-sm ${isActive ? "font-medium" : "text-neutral-700 dark:text-neutral-300"}`}
+            className={`flex-1 min-w-0 pr-8 text-left text-base md:pr-0 md:group-hover:pr-8 md:group-focus-within:pr-8 md:text-sm ${isActive ? "font-medium" : "text-neutral-700 dark:text-neutral-300"}`}
             title={displayTitle}
+            aria-label={displayTitle}
+            aria-describedby={
+              [project && `chat-project-${chatItem.id}`, showExcerpt && `search-excerpt-${chatItem.id}`]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
           >
-            {displayTitle}
+            <span className="flex items-center gap-1.5">
+              {project && (
+                <span title={`Project: ${project.name}`} className="shrink-0 text-neutral-500 dark:text-neutral-400">
+                  <Folder size={14} aria-hidden="true" />
+                  <span id={`chat-project-${chatItem.id}`} className="sr-only">
+                    Project: {project.name}
+                  </span>
+                </span>
+              )}
+              <span className="truncate">
+                <SearchHighlight text={displayTitle} query={query} />
+              </span>
+            </span>
+            {showExcerpt && (
+              <span
+                id={`search-excerpt-${chatItem.id}`}
+                className="mt-1 line-clamp-3 whitespace-normal break-words text-xs font-normal text-neutral-500 dark:text-neutral-400"
+              >
+                <SearchHighlight text={match.excerpt} query={query} />
+              </span>
+            )}
           </button>
         )}
         {renamingChatId !== chatItem.id && (
@@ -344,7 +400,8 @@ export function ChatSidebar() {
             anchor="bottom end"
             trigger={
               <MenuButton
-                className="absolute right-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-2 -m-1 rounded hover:bg-neutral-200/60 dark:hover:bg-white/10"
+                aria-label={`Chat options for ${displayTitle}`}
+                className="absolute right-1.5 top-2 md:top-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-2 -m-1 rounded hover:bg-neutral-200/60 dark:hover:bg-white/10 max-md:top-1/2 max-md:m-0 max-md:flex max-md:size-10 max-md:-translate-y-1/2 max-md:items-center max-md:justify-center max-md:rounded-full max-md:p-0"
                 onClick={(e) => e.stopPropagation()}
               >
                 <MoreVertical size={16} />
@@ -367,6 +424,9 @@ export function ChatSidebar() {
               }}
             >
               Fork
+            </DropdownMenuItem>
+            <DropdownMenuItem icon={<FolderInput size={14} />} onClick={() => setMovingChat(chatItem.id)}>
+              Move to project
             </DropdownMenuItem>
             <DropdownMenuItem
               icon={<Trash size={14} />}
@@ -391,7 +451,7 @@ export function ChatSidebar() {
       {/* Same height and bottom border as the app top bar (py-2 + the 42px tab pill + 1px), so
           the header line runs continuously across sidebar and content, and the close button
           here shares a baseline with the open button there when the sidebar toggles. */}
-      <div className="flex items-center px-2 py-2 md:px-1.5 md:py-1 shrink-0 h-14 md:h-[3.6875rem] gap-1 border-b border-neutral-200 dark:border-neutral-800">
+      <div className="flex items-center px-2 py-2 md:px-1.5 md:py-1 shrink-0 h-14 md:h-[3.6875rem] gap-1 border-b border-neutral-200 dark:border-neutral-800 max-md:border-0 max-md:px-3">
         {showSearch ? (
           // Inline field on the same inset as the rows; the header line below frames it.
           <div className="mx-1.5 flex flex-1 items-center gap-1">
@@ -401,6 +461,7 @@ export function ChatSidebar() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search…"
+              aria-label="Search chats"
               className="w-full min-w-0 px-3 py-1 text-sm bg-transparent text-neutral-800 dark:text-neutral-200 placeholder-neutral-500 dark:placeholder-neutral-400 focus:outline-none"
             />
             <button
@@ -417,12 +478,13 @@ export function ChatSidebar() {
           </div>
         ) : (
           <>
-            <div className="flex-1" />
-            <div className="flex items-center gap-2 md:gap-1 shrink-0">
+            <ProjectPicker />
+            <div className="ml-auto flex items-center gap-2 md:gap-1 shrink-0">
+              {/* Phones keep a search field below the header instead of a toggle. */}
               <button
                 type="button"
                 onClick={() => setShowSearch(true)}
-                className="p-2 md:p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-white/10 rounded transition-all duration-200"
+                className="hidden md:block p-2 md:p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-white/10 rounded transition-all duration-200"
                 aria-label="Search chats"
               >
                 <Search size={20} />
@@ -430,25 +492,55 @@ export function ChatSidebar() {
               <button
                 type="button"
                 onClick={() => setShowSidebar(false)}
-                className="p-2 md:p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-white/10 rounded transition-all duration-200"
+                className="p-2 md:p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-white/10 rounded transition-all duration-200 max-md:press max-md:flex max-md:size-10 max-md:items-center max-md:justify-center max-md:rounded-full max-md:bg-black/6 max-md:p-0 max-md:text-neutral-800 max-md:dark:bg-white/10 max-md:dark:text-neutral-100"
                 aria-label="Close sidebar"
               >
-                <PanelRightOpen size={20} />
+                <PanelRightOpen size={20} className="hidden md:block" />
+                <X size={20} className="md:hidden" />
               </button>
             </div>
           </>
         )}
       </div>
 
+      {movingChat && <MoveChatDialog chatId={movingChat} onClose={() => setMovingChat(null)} />}
       {/* Scrollable content area */}
       <VirtualChatList
         items={flatSidebarItems}
         hasPinned={pinnedChats.length > 0}
+        tuckHeader={showSidebar}
+        header={
+          // Phones: the search field hides above the list and a pull down reveals it, as in iOS lists.
+          <div className="px-3 pt-1 pb-2 md:hidden">
+            <div className="flex h-10 items-center gap-2 rounded-xl bg-black/6 px-3 dark:bg-white/10">
+              <Search size={17} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search"
+                aria-label="Search chats"
+                enterKeyHint="search"
+                className="min-w-0 flex-1 bg-transparent text-base text-neutral-800 placeholder-neutral-500 focus:outline-none dark:text-neutral-100 dark:placeholder-neutral-400 [&::-webkit-search-cancel-button]:hidden"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Clear search"
+                  className="flex size-7 items-center justify-center rounded-full bg-neutral-400/60 text-white dark:bg-neutral-500/70"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+        }
         renderItem={(item) => {
           if (item.type === "item") return renderChatItem(item.chat);
           const group = item.group;
           return (
-            <div className="flex items-center justify-between pl-3 pr-0.5 py-1 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
+            <div className="flex items-center justify-between pl-3 pr-0.5 py-1 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section max-md:pl-4 max-md:text-[13px]">
               <span>{group.category}</span>
               <DropdownMenu
                 anchor="bottom end"
@@ -480,7 +572,7 @@ export function ChatSidebar() {
         {/* Pinned chats section (non-virtualized, drag-and-drop) */}
         {pinnedChats.length > 0 && (
           <div className="px-3 pt-2">
-            <div className="flex items-center justify-between pl-3 pr-0.5 py-1 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
+            <div className="flex items-center justify-between pl-3 pr-0.5 py-1 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section max-md:pl-4 max-md:text-[13px]">
               <span>Pinned</span>
               <DropdownMenu
                 anchor="bottom end"
@@ -519,16 +611,116 @@ export function ChatSidebar() {
 function VirtualChatList({
   items,
   hasPinned,
+  header,
+  tuckHeader,
   renderItem,
   children,
 }: {
   items: FlatSidebarItem[];
   hasPinned: boolean;
+  /** Rendered above the list inside the scroll area and scrolled out of view at first. */
+  header?: ReactNode;
+  /** Each time this turns true (the drawer opens), the header is scrolled out of view again. */
+  tuckHeader?: boolean;
   renderItem: (item: FlatSidebarItem) => ReactNode;
   children: ReactNode;
 }) {
   "use no memo";
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  // Tuck the header away whenever the drawer opens; it has no height on desktop, so
+  // this is a no-op there. The list body is at least a viewport tall so the header can
+  // always scroll out, even above a short list.
+  useLayoutEffect(() => {
+    if (!tuckHeader) return;
+    const scroller = scrollRef.current;
+    const head = headerRef.current;
+    if (scroller && head) scroller.scrollTop = head.offsetHeight;
+  }, [tuckHeader]);
+
+  // Pull-to-reveal with resistance. From the tucked position a downward drag
+  // reveals the header at a damped rate and needs a deliberate pull to commit;
+  // a short pull springs back. A scroll that comes to rest over the header
+  // settles to the nearer edge, so it is never left half shown. Settling runs
+  // on its own short ease-out so it feels the same in every browser.
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    const head = headerRef.current;
+    if (!scroller || !head) return;
+    const height = () => head.offsetHeight;
+    let frame = 0;
+    const settle = (to: number) => {
+      cancelAnimationFrame(frame);
+      const from = scroller.scrollTop;
+      if (Math.abs(to - from) < 0.5) return;
+      const start = performance.now();
+      const duration = 220;
+      const step = (now: number) => {
+        const t = Math.min(1, (now - start) / duration);
+        const eased = 1 - (1 - t) ** 3;
+        scroller.scrollTop = from + (to - from) * eased;
+        if (t < 1) frame = requestAnimationFrame(step);
+      };
+      frame = requestAnimationFrame(step);
+    };
+
+    let touching = false;
+    let pulling = false;
+    let startY = 0;
+    let pull = 0;
+    let idle = 0;
+    const onStart = (event: TouchEvent) => {
+      cancelAnimationFrame(frame);
+      touching = true;
+      pulling = false;
+      pull = 0;
+      if (height() > 0 && Math.abs(scroller.scrollTop - height()) < 1) {
+        startY = event.touches[0].clientY;
+        pulling = true;
+      }
+    };
+    const onMove = (event: TouchEvent) => {
+      if (!pulling) return;
+      const delta = event.touches[0].clientY - startY;
+      if (delta <= 0) {
+        pulling = false;
+        return;
+      }
+      event.preventDefault();
+      pull = delta;
+      // Resistance: the header follows at under half the finger's travel.
+      scroller.scrollTop = height() - Math.min(height(), delta * 0.45);
+    };
+    const onEnd = () => {
+      touching = false;
+      if (!pulling) return;
+      pulling = false;
+      settle(pull > 70 ? 0 : height());
+    };
+    // Once a free scroll comes to rest over the header, snap to the nearer edge.
+    const onScroll = () => {
+      clearTimeout(idle);
+      idle = window.setTimeout(() => {
+        const top = scroller.scrollTop;
+        if (!touching && top > 0 && top < height()) settle(top < height() / 2 ? 0 : height());
+      }, 90);
+    };
+    scroller.addEventListener("touchstart", onStart, { passive: true });
+    scroller.addEventListener("touchmove", onMove, { passive: false });
+    scroller.addEventListener("touchend", onEnd);
+    scroller.addEventListener("touchcancel", onEnd);
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(idle);
+      scroller.removeEventListener("touchstart", onStart);
+      scroller.removeEventListener("touchmove", onMove);
+      scroller.removeEventListener("touchend", onEnd);
+      scroller.removeEventListener("touchcancel", onEnd);
+      scroller.removeEventListener("scroll", onScroll);
+    };
+  }, []);
+
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
@@ -542,22 +734,28 @@ function VirtualChatList({
   const rows = virtualizer.getVirtualItems();
   return (
     <div className="flex-1 overflow-y-auto overflow-x-hidden" ref={scrollRef}>
-      {children}
-      <div className={cn("relative pb-1", hasPinned ? "pt-3" : "pt-2")} style={{ height: virtualizer.getTotalSize() }}>
-        <div className="absolute inset-x-0 top-0 px-3" style={{ transform: `translateY(${rows[0]?.start ?? 0}px)` }}>
-          {rows.map((row) => {
-            const item = items[row.index];
-            return (
-              <div
-                key={row.key}
-                data-index={row.index}
-                ref={virtualizer.measureElement}
-                className={cn(item.type === "header" && "pt-3")}
-              >
-                {renderItem(item)}
-              </div>
-            );
-          })}
+      {header && <div ref={headerRef}>{header}</div>}
+      <div className="max-md:min-h-full">
+        {children}
+        <div
+          className={cn("relative pb-1 max-md:pb-3", hasPinned ? "pt-3" : "pt-2")}
+          style={{ height: virtualizer.getTotalSize() }}
+        >
+          <div className="absolute inset-x-0 top-0 px-3" style={{ transform: `translateY(${rows[0]?.start ?? 0}px)` }}>
+            {rows.map((row) => {
+              const item = items[row.index];
+              return (
+                <div
+                  key={row.key}
+                  data-index={row.index}
+                  ref={virtualizer.measureElement}
+                  className={cn(item.type === "header" && "pt-3")}
+                >
+                  {renderItem(item)}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

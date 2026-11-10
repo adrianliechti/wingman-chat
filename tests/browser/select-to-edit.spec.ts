@@ -24,7 +24,7 @@ function selectContents(target: Element) {
 }
 
 async function sendInstruction(page: Page, instruction: string) {
-  const pill = page.getByRole("button", { name: "Edit selection" });
+  const pill = page.getByRole("button", { name: "Ask AI about selection" });
   await expect(pill).toBeVisible();
   await pill.click();
   const input = page.getByRole("textbox", { name: "Edit instruction" });
@@ -65,10 +65,14 @@ test("a code selection reports the highlighted lines even when the text repeats"
   const id = await ensureChat(page);
   await page.getByRole("button", { name: "Toggle artifacts" }).click();
   await page.evaluate((id) => window.artifactsE2E.write(id, "/script.py", "x = 1\nprint(x)\nprint(x)\n"), id);
-  const line = page.locator("code > span.line").nth(1);
-  await expect(line).toHaveText("print(x)");
+  const source = page.getByRole("textbox", { name: "Script source" });
+  await expect(source).toHaveValue("x = 1\nprint(x)\nprint(x)\n");
 
-  await line.evaluate(selectContents);
+  await source.evaluate((textarea: HTMLTextAreaElement) => {
+    textarea.focus();
+    textarea.setSelectionRange(6, 14);
+    textarea.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
   const message = await sendInstruction(page, "Log it instead");
 
   expect(message?.[1]).toMatchObject({
@@ -107,10 +111,15 @@ test("escape closes the control without sending", async ({ page }) => {
   const id = await ensureChat(page);
   await page.getByRole("button", { name: "Toggle artifacts" }).click();
   await page.evaluate((id) => window.artifactsE2E.write(id, "/plain.txt", "Some plain text"), id);
-  await expect(page.locator("pre")).toHaveText("Some plain text");
+  const text = page.getByRole("textbox", { name: "Text" });
+  await expect(text).toHaveValue("Some plain text");
 
-  await page.locator("pre").evaluate(selectContents);
-  const pill = page.getByRole("button", { name: "Edit selection" });
+  await text.evaluate((textarea: HTMLTextAreaElement) => {
+    textarea.focus();
+    textarea.select();
+    textarea.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
+  const pill = page.getByRole("button", { name: "Ask AI about selection" });
   await expect(pill).toBeVisible();
   await pill.click();
   await page.getByRole("textbox", { name: "Edit instruction" }).press("Escape");
@@ -125,7 +134,7 @@ test("a press outside the control closes it, in the page and inside the preview 
   await page.evaluate((id) => window.artifactsE2E.write(id, "/notes.md", "# Title\n\nQuarterly revenue grew.\n"), id);
   await expect(page.locator(".prose p")).toHaveText("Quarterly revenue grew.");
 
-  const pill = page.getByRole("button", { name: "Edit selection" });
+  const pill = page.getByRole("button", { name: "Ask AI about selection" });
   const input = page.getByRole("textbox", { name: "Edit instruction" });
 
   // Page: press on the drawer chrome while the input is open.

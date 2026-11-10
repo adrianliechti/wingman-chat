@@ -10,6 +10,11 @@ it.each([a, `[${a},${b}]`, `${a}\n${b}`])("accepts supported JSON framing", (sou
   expect(parsed.pending).toBe(false);
   expect(parsed.messages.length).toBeGreaterThan(0);
 });
+it("reads saved messages with the former v1.0 marker using the canonical SDK version", () => {
+  const saved = { ...fixtures.Text, version: "v1.0" };
+  expect(parseMessages(JSON.stringify(saved))).toEqual({ messages: [fixtures.Text], pending: false });
+  expect(saved.version).toBe("v1.0");
+});
 it("applies complete streaming messages but never fabricates a partial one", () => {
   expect(parseMessages(`[${a},${b.slice(0, -5)}`, true)).toMatchObject({ messages: [fixtures.Text], pending: true });
   expect(parseMessages(b.slice(0, -5), true)).toMatchObject({ messages: [], pending: true });
@@ -23,7 +28,7 @@ describe("strict validation", () => {
     `[${a},]`,
     JSON.stringify({ ...fixtures.Text, version: "v0.9" }),
     JSON.stringify({ children: [] }),
-    JSON.stringify({ version: "v1.0", updateDataModel: { surfaceId: "main" } }),
+    JSON.stringify({ version: "1.0", updateDataModel: { surfaceId: "main" } }),
     " ".repeat(MAX_UI_SOURCE + 1),
   ])("rejects invalid or unsupported input", (source) => {
     expect(parseMessages(source).error).toBeDefined();
@@ -44,7 +49,7 @@ it.each([`${a}${b}`, `[${a},,${b.slice(0, -4)}`, `[,${a}`])("rejects malformed s
 
 it.each([false, true])("reports mismatched brackets as invalid JSON, including while streaming (%s)", (streaming) => {
   const source =
-    '{"version":"v1.0","createSurface":{"components":[{"id":"b_draw","action":{"functionCall":{}, {"id":"t_draw"}]}}';
+    '{"version":"1.0","createSurface":{"components":[{"id":"b_draw","action":{"functionCall":{}, {"id":"t_draw"}]}}';
   expect(parseMessages(source, streaming)).toMatchObject({
     messages: [],
     pending: false,

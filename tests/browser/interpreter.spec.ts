@@ -134,6 +134,17 @@ test("execute_script detects shebangs, requires an inline language and shares fi
   expect(results[5].files?.["/intermediate.txt"]).toBeUndefined();
 });
 
+test("Bash gzip commands and compressed search work in the browser worker", async ({ page }) => {
+  await openFixture(page);
+  const result = await page.evaluate(() =>
+    window.interpreterE2E.executeBash({
+      code: "set -e\nprintf 'alpha\\nbeta\\n' > notes.txt\ngzip -c notes.txt > notes.gz\ngunzip -c notes.gz\nzcat notes.gz\nrg -z beta notes.gz",
+    }),
+  );
+  expect(result.success, result.error).toBe(true);
+  expect(result.output).toBe("alpha\nbeta\nalpha\nbeta\nbeta");
+});
+
 test("Bash cancellation terminates the worker and the next run starts cleanly", async ({ page }) => {
   await openFixture(page);
   const result = await page.evaluate(async () => {
@@ -704,6 +715,30 @@ if __name__ == "__main__":
   expect(bounded.success).toBe(true);
   expect(new TextEncoder().encode(bounded.output).byteLength).toBeLessThanOrEqual(128);
   expect(bounded.output).toContain("truncated");
+});
+
+test("JavaScript fetch uses the checked URL when an object stringifies to an MCP endpoint", async ({ page }) => {
+  let requests = 0;
+  await page.route("**/api/v1/mcp/review-only", async (route) => {
+    requests++;
+    await route.fulfill({ json: { jsonrpc: "2.0", id: 1, result: { content: [] } } });
+  });
+  await openFixture(page);
+  const result = await page.evaluate(() =>
+    window.interpreterE2E.runScript("javascript", "mcp-fetch-regression", {
+      code: `const target = {
+  url: "data:text/plain,local",
+  toString() { return new URL("/api/v1/mcp/review-only", self.location.href).href; }
+};
+return await (await fetch(target, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "review_only", arguments: {} } })
+})).text();`,
+    }),
+  );
+  expect(requests).toBe(0);
+  expect(result).toMatchObject({ success: true, output: "local" });
 });
 
 test("JavaScript supports VFS, blocks remote fetch, resets globals, and recovers after abort", async ({ page }) => {

@@ -1,4 +1,5 @@
 import type { ParsedSkill } from "@/features/skills/lib/skillParser";
+import type { McpApproval } from "@/features/settings/lib/mcpConfig";
 
 /** A plugin listed by a hub's catalog, not yet installed. */
 export interface HubPlugin {
@@ -21,6 +22,7 @@ export interface HubMcpServer {
   url?: string;
   command?: string;
   headers?: Record<string, string>;
+  approval?: McpApproval;
 }
 
 /**

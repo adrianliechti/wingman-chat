@@ -16,6 +16,7 @@ import { loadConfig } from "../../../src/shared/config";
 import { DuckDbRuntime } from "../../../src/shared/lib/duckdb";
 import type { File } from "../../../src/shared/types/file";
 import { AppContext, type AppContextType } from "../../../src/shell/context/AppContext";
+import { AppToaster } from "../../../src/shell/components/AppToaster";
 import { ThemeProvider } from "../../../src/shell/context/ThemeProvider";
 import { isContentPart, type ContentPart } from "@tanstack/ai";
 import type { Tool } from "../../../src/shared/types/chat";
@@ -28,6 +29,7 @@ config.client.listModels = async () => [model];
 const provider = testClient(async () => assistantMessage("Done"));
 config.client.textAdapter = (model, signal) => provider.textAdapter(model, signal);
 config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
+config.client.generateTitle = async () => "Fixture";
 
 const releaseReads: Array<() => void> = [];
 let readHeld = false;
@@ -167,11 +169,14 @@ createRoot(document.getElementById("root")!).render(
     <ThemeProvider>
       <AgentContext value={{ currentAgent: null } as AgentContextType}>
         <ProfileContext value={{ generateInstructions: () => "" } as ProfileContextType}>
-          <ToolsContext value={{ providers: [], coreProviders: [] } as unknown as ToolsContextValue}>
+          <ToolsContext
+            value={{ providers: [], coreProviders: [], getSkillsProvider: () => null } as unknown as ToolsContextValue}
+          >
             <AppContext value={{ closeApp: async () => {} } as AppContextType}>
               <ArtifactsProvider>
                 <ChatProvider>
                   <Fixture />
+                  <AppToaster />
                 </ChatProvider>
               </ArtifactsProvider>
             </AppContext>

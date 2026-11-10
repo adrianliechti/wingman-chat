@@ -23,7 +23,7 @@ export function AgentButton() {
       aria-expanded={showAgentDrawer}
       title={showAgentDrawer ? "Close agent" : currentAgent ? currentAgent.name : "Manage agents"}
       className={cn(
-        "p-2 rounded-full transition-all duration-150 ease-out",
+        "hidden md:flex p-2 rounded-full transition-all duration-150 ease-out",
         showAgentDrawer
           ? "text-neutral-900 dark:text-neutral-100 bg-neutral-200 dark:bg-neutral-700/60"
           : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",

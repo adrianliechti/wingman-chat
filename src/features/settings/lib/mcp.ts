@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Globe } from "lucide-react";
 import { internetToolPresentation } from "@/features/tools/lib/internetPresentation";
+import { createMcpAgentChat } from "@/features/tools/lib/mcpAgent";
 import {
   getToolUiResourceUri,
   isToolVisibilityAppOnly,
@@ -37,6 +38,7 @@ import type { ElicitationSchema } from "@/shared/types/elicitation";
 import { BrowserOAuthClientProvider, McpAuthRequiredError } from "./mcpAuth";
 import { McpAuthorizationPending, mcpAuthFetch } from "./mcpAuthFetch";
 import { mcpToolName } from "./mcpToolNames";
+import type { McpApproval } from "./mcpConfig";
 
 import {
   buildHostCapabilities,
@@ -49,6 +51,7 @@ import {
 } from "./mcpAppSession";
 
 const MCP_UI_EXTENSION = "io.modelcontextprotocol/ui";
+const TOOL_TIMEOUT_MS = 15 * 60_000;
 
 function findUiResource(uri: string, contents: MCPResourceContents[]): MCPResourceContents | undefined {
   return contents.find(
@@ -60,7 +63,7 @@ function findUiResource(uri: string, contents: MCPResourceContents[]): MCPResour
 }
 
 type McpIcon = { src: string; theme?: "light" | "dark" };
-type ActiveToolCall = { context?: ToolContext };
+type ActiveToolCall = { context?: ToolContext; controller: AbortController };
 function pickIcon(icons?: McpIcon[]): string | undefined {
   return (icons?.find((icon) => icon.theme === "light") ?? icons?.find((icon) => !icon.theme) ?? icons?.[0])?.src;
 }
@@ -70,6 +73,7 @@ export class MCPClient implements ToolProvider {
   icon?: ToolIcon;
   instructions?: string;
   tools: Tool[] = [];
+  chat?: ToolProvider["chat"];
   toolDefinitions = new Map<string, MCPTool>();
   onAuthenticating: (() => void) | null = null;
   onAuthComplete: (() => void) | null = null;
@@ -83,6 +87,7 @@ export class MCPClient implements ToolProvider {
   private readonly authProvider: BrowserOAuthClientProvider;
   private readonly activeToolCalls = new Set<ActiveToolCall>();
   private readonly elicitations = new Map<string, ActiveToolCall>();
+  private pendingInput = Promise.resolve();
   private readonly appListeners = new Set<(kind: AppNotification) => void>();
   private discovery?: { client: NativeMCPClient; dirty: boolean; promise: Promise<void> };
 
@@ -91,7 +96,8 @@ export class MCPClient implements ToolProvider {
   readonly name: string;
   readonly description: string;
   readonly headers?: Record<string, string>;
-  readonly needsApproval: boolean;
+  readonly approval: McpApproval;
+  readonly pluginId?: string;
   private readonly configIcon?: ToolIcon;
 
   constructor(
@@ -101,7 +107,8 @@ export class MCPClient implements ToolProvider {
     description: string,
     headers?: Record<string, string>,
     configIcon?: ToolIcon,
-    needsApproval = false,
+    approval?: McpApproval,
+    pluginId?: string,
   ) {
     this.id = id;
     this.url = url;
@@ -109,7 +116,8 @@ export class MCPClient implements ToolProvider {
     this.description = description;
     this.headers = headers;
     this.configIcon = id === "internet" ? Globe : configIcon;
-    this.needsApproval = needsApproval;
+    this.approval = approval ?? { mode: "none" };
+    this.pluginId = pluginId;
     this.icon = this.configIcon ?? new URL("icon", url.endsWith("/") ? url : `${url}/`).href;
     this.authProvider = new BrowserOAuthClientProvider(id, url);
   }
@@ -157,11 +165,11 @@ export class MCPClient implements ToolProvider {
       client = await createBrowserMcpClient({
         name: HOST_INFO.name,
         version: HOST_INFO.version,
+        elicit: (params, signal) => {
+          assertCurrent();
+          return this.elicit(params, signal);
+        },
         transport: browserMcpTransport(transport, {
-          elicit: (params) => {
-            assertCurrent();
-            return this.elicit(params);
-          },
           initialized: ({ instructions, serverInfo }) => {
             if (this.connectionVersion !== version) return;
             this.instructions = instructions;
@@ -178,7 +186,7 @@ export class MCPClient implements ToolProvider {
             else if (method === "notifications/elicitation/complete" && typeof params?.elicitationId === "string") {
               const call = this.elicitations.get(params.elicitationId);
               this.elicitations.delete(params.elicitationId);
-              if (!call?.context?.signal?.aborted) call?.context?.onElicitationComplete?.(params.elicitationId);
+              if (!call?.controller.signal.aborted) call?.context?.onElicitationComplete?.(params.elicitationId);
             }
           },
           closed: () => {
@@ -232,40 +240,63 @@ export class MCPClient implements ToolProvider {
     }
   }
 
-  private async elicit(params: ElicitRequest["params"]): Promise<ElicitResult> {
+  private async elicit(params: ElicitRequest["params"], signal: AbortSignal): Promise<ElicitResult> {
     const [call] = this.activeToolCalls;
     const context = call?.context;
-    if (this.activeToolCalls.size !== 1 || !context?.elicit || context.signal?.aborted) {
+    if (this.activeToolCalls.size !== 1 || !context?.elicit || call.controller.signal.aborted) {
       throw new Error("Elicitation requires a single active tool context");
     }
-    if (params.mode === "url") {
-      const url = new URL(params.url);
-      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
-        throw new Error("MCP elicitation URLs must use HTTP(S) without embedded credentials");
-      this.elicitations.set(params.elicitationId, call);
-      try {
-        const result = await context.elicit({
-          mode: "url",
-          message: params.message,
-          source: this.name,
-          url: params.url,
-          elicitationId: params.elicitationId,
-        });
-        context.signal?.throwIfAborted();
-        if (result.action !== "accept") this.elicitations.delete(params.elicitationId);
-        return { action: result.action };
-      } catch (error) {
-        this.elicitations.delete(params.elicitationId);
-        throw error;
-      }
-    }
-    const result = await context.elicit({
-      message: params.message,
-      source: this.name,
-      requestedSchema: normalizeRequestedSchema(params.requestedSchema),
-    });
-    context.signal?.throwIfAborted();
-    return result;
+    signal = AbortSignal.any([signal, call.controller.signal]);
+    const elicit = context.elicit.bind(context);
+    const options = {
+      signal,
+      onCancel: () => call.controller.abort(new DOMException("MCP elicitation cancelled", "AbortError")),
+    };
+    // Capture the owner before queueing; the UI can show only one SDK input request at a time.
+    const answer = this.pendingInput.then(() =>
+      withAbort(signal, async () => {
+        if (params.mode === "url") {
+          const url = new URL(params.url);
+          if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
+            throw new Error("MCP elicitation URLs must use HTTP(S) without embedded credentials");
+          this.elicitations.set(params.elicitationId, call);
+          try {
+            const result = await elicit(
+              {
+                mode: "url",
+                message: params.message,
+                source: this.name,
+                url: params.url,
+                elicitationId: params.elicitationId,
+              },
+              options,
+            );
+            signal.throwIfAborted();
+            if (result.action !== "accept") this.elicitations.delete(params.elicitationId);
+            return { action: result.action };
+          } catch (error) {
+            this.elicitations.delete(params.elicitationId);
+            throw error;
+          }
+        }
+        const result = await elicit(
+          {
+            message: params.message,
+            source: this.name,
+            requestedSchema: normalizeRequestedSchema(params.requestedSchema),
+          },
+          options,
+        );
+        signal.throwIfAborted();
+        return result;
+      }),
+    );
+    this.pendingInput = answer.then(
+      () => undefined,
+      () => undefined,
+    );
+    // Cancel the caller immediately without letting later forms bypass the queue.
+    return withAbort(signal, () => answer);
   }
 
   async disconnect(): Promise<void> {
@@ -278,6 +309,7 @@ export class MCPClient implements ToolProvider {
     this.client = null;
     this.pendingTransport = undefined;
     this.tools = [];
+    this.chat = undefined;
     this.instructions = undefined;
     this.discovery = undefined;
     this.toolDefinitions.clear();
@@ -315,9 +347,20 @@ export class MCPClient implements ToolProvider {
               [mcpToolName(this.id, tool.name), tool],
             ]),
           );
-          this.tools = nativeTools.flatMap((tool) =>
-            !isToolVisibilityAppOnly(tool) ? [this.toTool(tool, client)] : [],
-          );
+          const modelTools = nativeTools.filter((tool) => !isToolVisibilityAppOnly(tool));
+          this.tools = modelTools.map((tool) => this.toTool(tool, client));
+          // Raw tools keep per-call approval for voice; chat reviews one prompt per isolated agent run.
+          this.chat =
+            this.approval.mode === "delegated" && this.tools.length
+              ? createMcpAgentChat({
+                  id: this.id,
+                  name: this.name,
+                  pluginId: this.pluginId,
+                  icon: this.icon,
+                  instructions: this.instructions,
+                  tools: modelTools.map((tool) => this.toTool(tool, client, false)),
+                })
+              : undefined;
           this.onToolsChanged?.();
         }
       })
@@ -326,7 +369,7 @@ export class MCPClient implements ToolProvider {
       });
     return discovery.promise;
   }
-  private toTool(tool: MCPTool, client: NativeMCPClient): Tool {
+  private toTool(tool: MCPTool, client: NativeMCPClient, needsApproval = this.approval.mode !== "none"): Tool {
     let resourceUri: string | undefined;
     try {
       resourceUri = getToolUiResourceUri(tool);
@@ -341,7 +384,8 @@ export class MCPClient implements ToolProvider {
       getToolDisplayName(tool.name);
     return {
       name: mcpToolName(this.id, tool.name),
-      needsApproval: this.needsApproval,
+      telemetry: { serverId: this.id, serverName: this.name, pluginId: this.pluginId },
+      needsApproval,
       icon: pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined),
       description: tool.description || "",
       inputSchema: z.fromJSONSchema(flattenToolSchema(tool.inputSchema as Record<string, unknown>)),
@@ -349,7 +393,7 @@ export class MCPClient implements ToolProvider {
       title,
       execute: async (args, execution) => {
         const context = execution?.context;
-        if (this.needsApproval && !context?.interruptible) await this.approve(tool, title, args, context);
+        if (needsApproval && !context?.interruptible) await this.approve(tool, title, args, context);
         annotateMcpSpan(this.url, this.id, tool.name, context);
         const result = await this.callTool(client, { name: tool.name, arguments: args }, context);
         context?.signal?.throwIfAborted();
@@ -423,26 +467,18 @@ export class MCPClient implements ToolProvider {
     context?: ToolContext,
   ): Promise<CallToolResult> {
     if (this.client !== client) throw new Error("MCP connection changed; reload tools before calling");
-    const { controller, cleanup } = followAbortSignal(context?.signal, this.connectionAbort?.signal);
-    const call: ActiveToolCall = {
-      context: {
-        ...context,
-        signal: controller.signal,
-        elicit: context?.elicit
-          ? (request) =>
-              context.elicit!(request, {
-                signal: controller.signal,
-                onCancel: () => controller.abort(new DOMException("MCP elicitation cancelled", "AbortError")),
-              })
-          : undefined,
-      },
-    };
+    const { controller, cleanup } = followAbortSignal(
+      context?.signal,
+      this.connectionAbort?.signal,
+      AbortSignal.timeout(TOOL_TIMEOUT_MS),
+    );
+    const call: ActiveToolCall = { context, controller };
     this.activeToolCalls.add(call);
     try {
       let progress = -Infinity;
       const result = await client.callTool(params.name, params.arguments, {
         signal: controller.signal,
-        timeout: 15 * 60_000,
+        timeout: TOOL_TIMEOUT_MS,
         onprogress: (update) => {
           if (controller.signal.aborted || this.client !== client || !this.activeToolCalls.has(call)) return;
           if (!Number.isFinite(update.progress) || update.progress <= progress) return;
@@ -460,12 +496,13 @@ export class MCPClient implements ToolProvider {
       });
       controller.signal.throwIfAborted();
       if (this.client !== client) throw new Error("MCP connection changed during tool call");
-      return result as CallToolResult;
+      return result;
     } catch (error) {
       controller.signal.throwIfAborted();
       throw error;
     } finally {
       cleanup();
+      controller.abort();
       this.activeToolCalls.delete(call);
       for (const [id, owner] of this.elicitations) {
         if (owner === call) this.elicitations.delete(id);
@@ -536,7 +573,7 @@ export class MCPClient implements ToolProvider {
           const definition = this.toolDefinitions.get(params.name);
           if (!definition || definition.name !== params.name || isToolVisibilityModelOnly(definition))
             throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "Tool is not available to this app");
-          if (this.needsApproval)
+          if (this.approval.mode !== "none")
             throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "This server requires tool approval in chat");
           return toAppToolResult(await this.callTool(client, params, { signal: extra.signal }));
         },
@@ -679,7 +716,7 @@ function annotateMcpSpan(serverUrl: string, serverId: string, toolName: string, 
 
   span.setAttribute("mcp.method.name", "tools/call");
   span.setAttribute("wingman.mcp.server.id", serverId);
-  span.setAttribute("mcp.tool.name", toolName);
+  span.setAttribute("gen_ai.tool.name", toolName);
   span.setAttribute("url.full", serverUrl);
 
   try {

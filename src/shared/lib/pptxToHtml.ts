@@ -33,6 +33,7 @@ import {
 } from "./ooxml";
 import { type FillResolver, parseChart, renderChartSvg } from "./ooxmlChart";
 import { getSlideOrder } from "./pptx";
+import { pptxShapePaths, type PptxShapePath } from "./pptxGeometry";
 
 /**
  * Converts a PPTX file to an array of self-contained HTML slide documents
@@ -197,6 +198,7 @@ interface SlideCtx {
   layoutDoc: Document | null;
   masterDoc: Document | null;
   slideNum: number;
+  geometryId: number;
 }
 
 async function loadXml(shared: SharedCtx, path: string): Promise<Document | null> {
@@ -529,7 +531,7 @@ function resolveStyleRef(
 ): { fill: Element; phClr?: string } | undefined {
   if (!ref) return undefined;
   const idx = intAttr(ref, "idx") ?? 0;
-  if (idx === 0) return undefined;
+  if (idx === 0 || idx === 1000) return undefined;
   const phClr = resolveColorIn(ref, env);
   const list = idx >= 1001 ? bgStyles : styles;
   const i = idx >= 1001 ? idx - 1001 : idx - 1;
@@ -546,6 +548,7 @@ interface LineStyle {
   widthPx: number;
   color: string;
   dash: string; // CSS border-style
+  cap?: "butt" | "round" | "square";
 }
 
 function lineToStyle(ln: Element | undefined, env: ColorEnv): LineStyle | undefined {
@@ -555,8 +558,14 @@ function lineToStyle(ln: Element | undefined, env: ColorEnv): LineStyle | undefi
   if (!color) return undefined;
   const w = intAttr(ln, "w") ?? 9525;
   const prstDash = child(ln, "a:prstDash")?.getAttribute("val") || "solid";
-  const dash = prstDash.includes("dash") ? "dashed" : prstDash.includes("dot") ? "dotted" : "solid";
-  return { widthPx: Math.max(emuToPx(w), 0.5), color, dash };
+  const dash = /dash/i.test(prstDash) ? "dashed" : /dot/i.test(prstDash) ? "dotted" : "solid";
+  const cap = ln.getAttribute("cap");
+  return {
+    widthPx: Math.max(emuToPx(w), 0.5),
+    color,
+    dash,
+    cap: cap === "rnd" ? "round" : cap === "sq" ? "square" : "butt",
+  };
 }
 
 // ============================================================================
@@ -612,6 +621,7 @@ async function renderSlideDocument(
     layoutDoc,
     masterDoc,
     slideNum,
+    geometryId: 0,
   };
 
   const env: ColorEnv = { theme, clrMap };
@@ -1114,7 +1124,7 @@ interface ShapeGeo {
 function shapeGeometry(spPr: Element | undefined, w: number, h: number): ShapeGeo {
   const prst = child(spPr, "a:prstGeom")?.getAttribute("prst");
   if (!prst) return {};
-  if (prst === "ellipse") return { radiusCss: "border-radius:50%" };
+  if (prst === "ellipse" || prst === "flowChartConnector") return { radiusCss: "border-radius:50%" };
   if (prst === "roundRect" || prst === "round1Rect" || prst === "round2SameRect" || prst === "round2DiagRect") {
     const radius = geometryStyle(spPr, w, h); // reuse adj parsing → "border-radius:Npx;"
     return { radiusCss: radius ? radius.replace(/;$/, "") : undefined };
@@ -1137,6 +1147,45 @@ function polygonOutline(points: [number, number][], line: LineStyle): string {
     `<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;">` +
     `<polygon points="${pts}" fill="none" stroke="${line.color}" stroke-width="${line.widthPx}" vector-effect="non-scaling-stroke"${dashAttr}/></svg>`
   );
+}
+
+/** Paint custom paths without replacing their silhouettes with CSS boxes. */
+function vectorShape(
+  paths: PptxShapePath[],
+  w: number,
+  h: number,
+  bgCss: string | undefined,
+  line: LineStyle | undefined,
+  shadow: Shadow | null,
+  id: string,
+): string {
+  const parts: string[] = [];
+  const solid = !!bgCss && /^(#|rgba?\(|hsla?\()/.test(bgCss);
+  const hasFill = !!bgCss && bgCss !== "transparent";
+  const dash =
+    line?.dash === "dashed" ? ' stroke-dasharray="4 3"' : line?.dash === "dotted" ? ' stroke-dasharray="1 3"' : "";
+  for (const [index, path] of paths.entries()) {
+    const filled = hasFill && path.fill !== "none";
+    // CSS fills already resolve theme gradients and embedded images. Clip
+    // them to the same compound path; SVG's nonzero rule preserves holes.
+    if (filled && !solid) {
+      const clipId = `${id}-${index}`;
+      parts.push(
+        `<defs><clipPath id="${clipId}" clipPathUnits="userSpaceOnUse"><path d="${path.d}"/></clipPath></defs>`,
+      );
+      parts.push(
+        `<foreignObject width="${w}" height="${h}" clip-path="url(#${clipId})"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;background:${escapeHtml(bgCss)};"></div></foreignObject>`,
+      );
+    }
+    const fill = filled && solid ? escapeHtml(bgCss) : "none";
+    const stroke =
+      path.stroke && line
+        ? ` stroke="${line.color}" stroke-width="${line.widthPx}" stroke-linecap="${line.cap ?? "butt"}"${dash}`
+        : ' stroke="none"';
+    parts.push(`<path d="${path.d}" fill="${fill}"${stroke}/>`);
+  }
+  const filter = shadow ? `filter:drop-shadow(${shadow.dx}px ${shadow.dy}px ${px(shadow.blur)} ${shadow.color});` : "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Math.max(w, 1)} ${Math.max(h, 1)}" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;${filter}">${parts.join("")}</svg>`;
 }
 
 // --- Effects ---
@@ -1192,7 +1241,9 @@ async function renderShape(sp: Element, part: PartCtx, ctx: SlideCtx, opts: Tree
   const explicitFill = findFillElement(spPr);
   if (explicitFill) {
     bgCss = await fillToCss(explicitFill, env, ctx, part);
-  } else if (fillRef) {
+  } else if (fillRef && (intAttr(fillRef, "idx") ?? 0) > 0 && intAttr(fillRef, "idx") !== 1000) {
+    // fillRef indices 0 and 1000 mean no fill; their color only parameterizes an
+    // actual style-matrix entry. Treating it as a fill paints open arcs solid.
     const ref = resolveStyleRef(fillRef, ctx.theme.fillStyles, ctx.theme.bgFillStyles, env);
     if (ref) {
       bgCss = await fillToCss(ref.fill, { ...env, phClr: ref.phClr }, ctx, part);
@@ -1221,12 +1272,15 @@ async function renderShape(sp: Element, part: PartCtx, ctx: SlideCtx, opts: Tree
   }
 
   const geo = shapeGeometry(spPr, xfrm.w, xfrm.h);
+  const paths = pptxShapePaths(spPr, xfrm.w, xfrm.h);
   const shadow = shadowParts(spPr, env);
 
   // Background/border layer (kept separate so overflowing text doesn't stretch it)
   let bgLayer = "";
   const hasFill = !!bgCss && bgCss !== "transparent";
-  if (hasFill || line || shadow) {
+  if (paths) {
+    bgLayer = vectorShape(paths, xfrm.w, xfrm.h, bgCss, line, shadow, `pptx-geometry-${ctx.geometryId++}`);
+  } else if (hasFill || line || shadow) {
     const styles = ["position:absolute", "inset:0"];
     if (hasFill) styles.push(`background:${bgCss}`);
     if (geo.radiusCss) styles.push(geo.radiusCss);

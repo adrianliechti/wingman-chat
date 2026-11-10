@@ -1,7 +1,11 @@
+import { Buffer } from "buffer";
 import { runBash } from "./bashRuntime";
 import { createBashCommands } from "./bashCommands";
 import type { ExecuteMessage, ExecuteReply, WorkerToMainMessage } from "./interpreterProtocol";
 import { callMainThread } from "./interpreterRpc";
+
+// just-bash's gzip commands encode binary stdout through the Node Buffer API.
+Object.assign(globalThis, { Buffer });
 
 const post = (message: WorkerToMainMessage, transfer: Transferable[]) => {
   self.postMessage(message, { transfer });

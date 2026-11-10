@@ -66,8 +66,7 @@ export function SharedArtifactPage() {
   return (
     <div className="h-dvh flex flex-col bg-neutral-50 dark:bg-neutral-950">
       <header className="shrink-0 h-10 flex items-center gap-2 px-3 border-b border-neutral-200/70 dark:border-white/10">
-        <img src="/icon_light.svg" alt={app} title={app} className="h-5 w-5 shrink-0 dark:hidden" />
-        <img src="/icon_dark.svg" alt={app} title={app} className="h-5 w-5 shrink-0 hidden dark:block" />
+        <img src="/icon.svg" alt={app} title={app} className="h-5 w-5 shrink-0" />
         <h1
           className="min-w-0 flex-1 truncate text-[13px] font-semibold text-neutral-800 dark:text-neutral-200"
           title={manifest.title}

@@ -6,7 +6,8 @@ import { mediaFromDataUrl, text } from "@/shared/lib/messages";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MCPClient } from "./mcp";
 import { McpAuthorizationPending } from "./mcpAuthFetch";
-import { createAppBridge, getHtmlContent, buildHostCapabilities, type McpAppData } from "./mcpAppSession";
+import { createAppBridge } from "./mcpAppBridge";
+import { getHtmlContent, buildHostCapabilities, type McpAppData } from "./mcpAppSession";
 
 const tool = { name: "app", inputSchema: { type: "object" as const } };
 const resource = {
@@ -151,10 +152,10 @@ it("restores initial inputs and structured results without executing the tool ag
   expect(second).toHaveBeenCalledWith("disconnect");
 });
 
-it("prevents MCP apps from bypassing required chat approval", async () => {
+it.each(["individual", "delegated"] as const)("prevents MCP apps from bypassing %s approval", async (mode) => {
   const callTool = vi.fn();
   const client = { capabilities: {}, callTool } as unknown as NativeMCPClient;
-  const provider = new MCPClient("test", "https://example.test/mcp", "Test", "Test", undefined, undefined, true);
+  const provider = new MCPClient("test", "https://example.test/mcp", "Test", "Test", undefined, undefined, { mode });
   (provider as unknown as { client: NativeMCPClient }).client = client;
   provider.toolDefinitions.set("app", tool);
   const restored = await provider.restoreToolUI(savedApp(resource.content), {}, savedResult(), {});
@@ -163,6 +164,26 @@ it("prevents MCP apps from bypassing required chat approval", async () => {
     "requires tool approval in chat",
   );
   expect(callTool).not.toHaveBeenCalled();
+});
+
+it.each([undefined, "none"] as const)("allows MCP app calls without approval for mode %s", async (mode) => {
+  const callTool = vi.fn().mockResolvedValue({ content: [] });
+  const client = { capabilities: {}, callTool } as unknown as NativeMCPClient;
+  const provider = new MCPClient(
+    "test",
+    "https://example.test/mcp",
+    "Test",
+    "Test",
+    undefined,
+    undefined,
+    mode === undefined ? undefined : { mode },
+  );
+  (provider as unknown as { client: NativeMCPClient }).client = client;
+  provider.toolDefinitions.set("app", tool);
+  const restored = await provider.restoreToolUI(savedApp(resource.content), {}, savedResult(), {});
+  const handler = restored.handlers.oncalltool!;
+  await handler({ name: "app", arguments: {} }, {} as Parameters<typeof handler>[1]);
+  expect(callTool).toHaveBeenCalledOnce();
 });
 
 it("rejects unrelated resources and does not publish a late resource after cancellation", async () => {

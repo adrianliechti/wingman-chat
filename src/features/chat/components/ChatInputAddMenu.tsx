@@ -26,6 +26,7 @@ import {
 } from "@floating-ui/react";
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/react";
 import {
+  AppWindow,
   Bot,
   Check,
   ChevronRight,
@@ -39,6 +40,7 @@ import {
   Puzzle,
   ScreenShare,
   Settings2,
+  Shapes,
   Sparkles,
   TriangleAlert,
   User,
@@ -47,6 +49,8 @@ import {
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AgentWizard } from "@/features/agent/components/wizard/AgentWizard";
 import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { useApp } from "@/shell/hooks/useApp";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { pluginProviderId, PLUGIN_PROVIDER_PREFIX } from "@/features/plugins/lib/pluginProvider";
 import { useSkills } from "@/features/skills/hooks/useSkills";
@@ -351,6 +355,9 @@ export function ChatInputAddMenu({
 }: ChatInputAddMenuProps) {
   const config = getConfig();
   const { currentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
+  // Phones have no edge latches, so the right-side panels open from the sheet.
+  const { isAvailable: artifactsAvailable, setShowArtifactsDrawer, clearActiveFile } = useArtifacts();
+  const { hasAppContent, activeApp, setShowAppDrawer } = useApp();
   const { skills, openSkillCatalog } = useSkills();
   const { plugins } = usePlugins();
   const openPluginsManager = () => openSkillCatalog(undefined, "plugins");
@@ -399,11 +406,12 @@ export function ChatInputAddMenu({
       {/* Mobile: Plus button opens bottom sheet */}
       <button
         type="button"
-        className="md:hidden pl-1.5 pr-0.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+        className="md:hidden press flex size-9 items-center justify-center rounded-full bg-black/6 text-neutral-800 dark:bg-white/10 dark:text-neutral-100"
         title="More options"
+        aria-label="More options"
         onClick={() => setShowMobileSheet(true)}
       >
-        <Plus size={16} />
+        <Plus size={20} />
       </button>
 
       {/* Desktop: Add menu (screen share, file upload, drives, features) */}
@@ -689,25 +697,28 @@ export function ChatInputAddMenu({
           transition
           className="fixed inset-0 bg-black/40 dark:bg-black/60 duration-200 ease-out data-closed:opacity-0"
         />
-        <div className="fixed inset-x-0 bottom-0">
+        <div className="fixed inset-x-0 bottom-(--app-keyboard)">
           <DialogPanel
             transition
-            className="w-full max-h-[75dvh] flex flex-col rounded-t-2xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-2xl border-t border-x border-neutral-200/50 dark:border-neutral-700/50 pb-[env(safe-area-inset-bottom)] duration-300 ease-out data-closed:translate-y-full"
+            className="w-full max-h-[calc(var(--app-height)*0.8)] flex flex-col rounded-t-[28px] bg-(--glass-bg-strong) backdrop-blur-2xl backdrop-saturate-150 shadow-2xl border-t border-x border-(--glass-border) pl-(--safe-left) pr-(--safe-right) pb-[max(var(--safe-bottom),0.5rem)] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-closed:translate-y-full"
           >
             {/* Drag handle */}
-            <div className="flex justify-center pt-3 pb-1 shrink-0">
-              <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-600" />
+            <div className="flex justify-center pt-2 pb-1 shrink-0">
+              <div className="h-1.5 w-9 rounded-full bg-neutral-400/50 dark:bg-neutral-500/60" />
             </div>
 
             {/* Header */}
-            <div className="flex items-center justify-end px-4 py-1 border-b border-neutral-200/60 dark:border-neutral-800/60 shrink-0">
-              <DialogTitle className="sr-only">More Options</DialogTitle>
+            <div className="relative flex h-13 shrink-0 items-center justify-center px-3">
+              <DialogTitle className="pointer-events-none absolute inset-x-0 truncate px-14 text-center text-[17px] font-semibold text-neutral-900 dark:text-neutral-50">
+                Add to chat
+              </DialogTitle>
               <button
                 type="button"
                 onClick={() => setShowMobileSheet(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
+                aria-label="Close"
+                className="press absolute right-3 flex size-9 items-center justify-center rounded-full bg-black/6 text-neutral-700 dark:bg-white/10 dark:text-neutral-200"
               >
-                <X size={14} />
+                <X size={18} />
               </button>
             </div>
 
@@ -715,13 +726,43 @@ export function ChatInputAddMenu({
             <div className="overflow-y-auto flex-1">
               {/* Action cards */}
               <div className="px-3 pt-2 pb-3 grid grid-cols-3 gap-2">
+                {artifactsAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileSheet(false);
+                      // Land on the file list, not whatever file was open last.
+                      clearActiveFile();
+                      setShowArtifactsDrawer(true);
+                    }}
+                    className="press flex flex-col items-center gap-1.5 px-2 py-3.5 rounded-[18px] bg-black/5 dark:bg-white/8 text-neutral-800 dark:text-neutral-100"
+                  >
+                    <Shapes size={20} />
+                    <span className="text-xs font-medium leading-tight text-center">Artifacts</span>
+                  </button>
+                )}
+                {hasAppContent && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileSheet(false);
+                      setShowAppDrawer(true);
+                    }}
+                    className="press flex flex-col items-center gap-1.5 px-2 py-3.5 rounded-[18px] bg-black/5 dark:bg-white/8 text-neutral-800 dark:text-neutral-100"
+                  >
+                    <AppWindow size={20} />
+                    <span className="text-xs font-medium leading-tight text-center truncate max-w-full">
+                      {activeApp?.title ?? "App"}
+                    </span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
                     onAttachmentClick();
                     setShowMobileSheet(false);
                   }}
-                  className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95"
+                  className="press flex flex-col items-center gap-1.5 px-2 py-3.5 rounded-[18px] bg-black/5 dark:bg-white/8 text-neutral-800 dark:text-neutral-100"
                 >
                   <Paperclip size={20} />
                   <span className="text-xs font-medium leading-tight text-center">Upload File</span>
@@ -735,7 +776,7 @@ export function ChatInputAddMenu({
                       onDriveSelect(fp);
                       setShowMobileSheet(false);
                     }}
-                    className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95"
+                    className="press flex flex-col items-center gap-1.5 px-2 py-3.5 rounded-[18px] bg-black/5 dark:bg-white/8 text-neutral-800 dark:text-neutral-100"
                   >
                     {fp.icon ? (
                       <span
@@ -785,7 +826,7 @@ export function ChatInputAddMenu({
                       setShowMobileSheet(false);
                     }}
                     disabled={isResponding}
-                    className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95 disabled:opacity-50"
+                    className="press flex flex-col items-center gap-1.5 px-2 py-3.5 rounded-[18px] bg-black/5 dark:bg-white/8 text-neutral-800 dark:text-neutral-100 disabled:opacity-50"
                   >
                     <Mic size={20} />
                     <span className="text-xs font-medium leading-tight text-center">Start Recording</span>

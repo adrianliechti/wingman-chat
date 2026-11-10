@@ -208,7 +208,7 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
           <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
         </Transition.Child>
 
-        <div className="fixed inset-0 overflow-y-auto">
+        <div className="fixed inset-x-0 app-viewport overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             <Transition.Child
               as={Fragment}
@@ -219,7 +219,7 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 shadow-xl transition-all flex flex-col max-h-[80vh]">
+              <Dialog.Panel className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 shadow-xl transition-all flex flex-col max-h-[calc(var(--app-height)*0.8)]">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
                   <div className="flex items-center gap-2.5">

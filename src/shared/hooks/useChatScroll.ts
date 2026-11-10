@@ -16,7 +16,8 @@ const BOTTOM_TOLERANCE = 2;
 export function useChatScroll({ resetKey, messages = [], isResponding = false, requestKey }: UseChatScrollOptions) {
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
-  const modeRef = useRef<"prompt" | "latest" | "free">("latest");
+  const modeRef = useRef<"prompt" | "latest" | "free" | "target">("latest");
+  const targetRef = useRef<(() => HTMLElement | Range | null) | null>(null);
   const spacerRef = useRef<HTMLDivElement | null>(null);
   const spacerHeightRef = useRef(0);
   const lastPromptRef = useRef<unknown>(undefined);
@@ -31,6 +32,22 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
     if (spacerRef.current) spacerRef.current.style.height = `${next}px`;
   }, []);
 
+  const readScrollIntent = useCallback(() => {
+    if (!scrollElement) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+    const previous = geometryRef.current;
+    const delta = scrollTop - previous.top;
+    const atBottom = scrollHeight - spacerHeightRef.current - scrollTop - clientHeight <= BOTTOM_TOLERANCE;
+    // Scrollbar and accessibility changes may precede WebKit's scroll event.
+    // Observe them before a queued resize update can restore follow mode.
+    if (
+      Math.abs(delta) > 1 &&
+      ((scrollHeight === previous.height && clientHeight === previous.viewport) || (delta < 0 && !atBottom))
+    )
+      modeRef.current = "free";
+    if (modeRef.current === "free" && delta > 0 && atBottom) modeRef.current = "latest";
+  }, [scrollElement]);
+
   const syncScroll = useCallback(() => {
     if (!scrollElement) return;
     if (modeRef.current === "latest") {
@@ -38,6 +55,15 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
       scrollElement.scrollTo({ top: scrollElement.scrollHeight });
     } else {
       let target = scrollElement.scrollTop;
+      if (modeRef.current === "target") {
+        const anchor = targetRef.current?.();
+        if (anchor) {
+          const containerTop = scrollElement.getBoundingClientRect().top;
+          const barBottom = document.querySelector("[data-app-topbar]")?.getBoundingClientRect().bottom ?? 0;
+          const clearance = Math.max(TOP_CLEARANCE, barBottom - containerTop + 24);
+          target = Math.max(0, anchor.getBoundingClientRect().top - containerTop + target - clearance);
+        }
+      }
       if (modeRef.current === "prompt") {
         // Tool results have data-role="tool", although their message role is user.
         const prompts = scrollElement.querySelectorAll<HTMLElement>('[data-role="user"]');
@@ -61,9 +87,19 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
   }, [scrollElement, setSpacerHeight]);
 
   const goToLatest = useCallback(() => {
+    targetRef.current = null;
     modeRef.current = "latest";
     syncScroll();
   }, [syncScroll]);
+
+  const goToTarget = useCallback(
+    (resolve: () => HTMLElement | Range | null) => {
+      targetRef.current = resolve;
+      modeRef.current = "target";
+      syncScroll();
+    },
+    [syncScroll],
+  );
 
   const handleScrollContainerRef = useCallback((element: HTMLDivElement | null) => setScrollElement(element), []);
   const handleSpacerRef = useCallback((element: HTMLDivElement | null) => {
@@ -81,13 +117,18 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
     const newPrompt = !!prompt && identity !== lastPromptRef.current;
     if (lastResetKeyRef.current !== resetKey) {
       lastResetKeyRef.current = resetKey;
+      targetRef.current = null;
       modeRef.current = newPrompt && isResponding ? "prompt" : "latest";
       setSpacerHeight(0);
     } else if (newPrompt) {
       modeRef.current = "prompt";
     }
     lastPromptRef.current = identity;
-    if (requestKey && requestKey !== lastRequestKeyRef.current && modeRef.current !== "free") {
+    if (
+      requestKey &&
+      requestKey !== lastRequestKeyRef.current &&
+      (modeRef.current === "prompt" || modeRef.current === "latest")
+    ) {
       modeRef.current = "latest";
     }
     lastRequestKeyRef.current = requestKey;
@@ -124,14 +165,7 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
       }
     };
     const onScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = scrollElement;
-      const previous = geometryRef.current;
-      const delta = scrollTop - previous.top;
-      // Scrollbar dragging and accessibility scrolling do not produce wheel
-      // events. Ignore movement caused by our writes or a layout clamp.
-      if (Math.abs(delta) > 1 && scrollHeight === previous.height && clientHeight === previous.viewport) release();
-      const atBottom = scrollHeight - spacerHeightRef.current - scrollTop - clientHeight <= BOTTOM_TOLERANCE;
-      if (modeRef.current === "free" && delta > 0 && atBottom) modeRef.current = "latest";
+      readScrollIntent();
       syncScroll();
     };
     scrollElement.addEventListener("scroll", onScroll, { passive: true });
@@ -146,7 +180,7 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
       scrollElement.removeEventListener("touchmove", onTouchMove);
       scrollElement.removeEventListener("keydown", onKey);
     };
-  }, [scrollElement, syncScroll]);
+  }, [scrollElement, syncScroll, readScrollIntent]);
 
   useLayoutEffect(() => {
     const content = scrollElement?.firstElementChild;
@@ -160,17 +194,20 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
       // ResizeObserver can finish its current delivery without a resize loop.
       frame = requestAnimationFrame(() => {
         frame = undefined;
+        readScrollIntent();
         syncScroll();
       });
     });
     observer.observe(content);
     observer.observe(scrollElement);
+    const topbar = document.querySelector("[data-app-topbar]");
+    if (topbar) observer.observe(topbar);
     syncScroll();
     return () => {
       observer.disconnect();
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
-  }, [scrollElement, syncScroll]);
+  }, [scrollElement, syncScroll, readScrollIntent]);
 
-  return { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest };
+  return { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest, goToTarget, scrollElement };
 }

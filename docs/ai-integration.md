@@ -28,7 +28,7 @@ frontend.
   `\( \)` math, `:shortcode:` emoji, Noto emoji spans) lives in
   `src/shared/lib/markdownExtensions.ts` as synchronous extensions; the
   streaming profile keeps unfinished constructs stable while a reply arrives.
-  KaTeX and Shiki stay lazy and outside the parser.
+  KaTeX and TanStack Highlight stay lazy and outside the parser.
 - `@tanstack/react-query` owns remote inventories: the model catalog, MCP
   availability and the skill template index. One shared `QueryClient`
   (`src/shared/lib/queryClient.ts`) serves hooks and helper calls alike, so
@@ -52,6 +52,23 @@ calls create their own thread ids. Compaction summaries use
 `<conversation-thread-id>:compaction`, separate from the history they summarize.
 
 ## Markdown compatibility
+
+Code blocks and source editor mirrors share a lazy `@tanstack/highlight@1.2.11`
+registry with all 79 shipped definitions (including plaintext). Unknown languages
+and sources over 30,000 characters stay readable as plain text. React renders
+`tokenize()` output directly, preserving source whitespace and escaping code as
+text. The built-in Markdown highlighter callback is unnecessary because our
+components own the code-block wrapper and preview controls. Theme changes use
+CSS variables, with GitHub Light and One Dark Pro; they do not retokenize code.
+There is no Shiki runtime or dependency. Markdown block editing only mutes the
+structural markers identified by Highlight; it no longer uses TextMate scopes
+to dim individual inline delimiters and link destinations.
+
+This follows Highlight's [custom-renderer API](https://tanstack.com/highlight/latest/docs/guides/output-and-css)
+and [theme API](https://tanstack.com/highlight/latest/docs/guides/themes).
+The [Markdown adapter](https://tanstack.com/markdown/latest/docs/guides/syntax-highlighting)
+is for the default Markdown-owned wrapper. Highlight is a documentation
+highlighter, so syntax coloring is less detailed than an editor grammar.
 
 TanStack remains the sole Markdown parser. Its [documented syntax scope](https://github.com/TanStack/markdown#readme)
 is a subset of CommonMark/GFM, so this migration does not claim complete parity
@@ -110,14 +127,17 @@ intact, and completed input must match the non-streaming render.
 ## Shared execution and removed code
 
 Chat connects native [`useChat`](https://tanstack.com/ai/latest/docs/ui/react)
-directly to browser-local `streamRun`, which calls
-native `chat()`. The connection forwards TanStack's run, parent, thread, and
+to browser-local `streamRun` through the SDK's `stream()` connection helper,
+which handles in-process cancellation. The runner calls native `chat()`.
+The connection forwards TanStack's run, parent, thread, and
 resume context. There is no application token buffer, tool-execution loop,
 queue controller, manual React client lifecycle, or recursive queue drain.
 A draft receives its thread ID before saving, so its first send keeps the same
 native client. Voice messages enter that transcript through `setMessages`;
 completed voice tools retain their call arguments alongside the result.
-Delegation uses `defineAgent` and native nested streams. One-shot interpreter
+Delegation uses `defineAgent` and native nested streams. Retrieval-only agents
+return strings directly; the SDK creates their child text events and parent
+tool results, including empty results. One-shot interpreter
 `llm`/`vision` calls use the same stream through a short `run` helper, with only
 their own prompt and no tools. Noninteractive callers collect messages using
 TanStack's `StreamProcessor`; they do not create an interactive `ChatClient`.
@@ -206,14 +226,22 @@ A `RunSidecar` per thread collects tool display data, rich failure details,
 text phases and each turn's run and usage while streaming. It restores these
 on native parts when the transcript is persisted. Commentary and final-answer
 phases live on text parts, without duplicating text in message metadata; saved
-`textSegments` migrate on loading. Because TanStack joins all-text content when
-building model history, the request boundary restores phased text parts before
-gateway serialization. Execution and history replay send the same text
+`textSegments` migrate on loading. Older messages without original provider
+item ids replay as ordinary assistant text; migration never invents response
+ids. Native `metadata.tanstack.responseItems` retain each item's text length;
+older phased records gain missing lengths on load. The Responses adapter owns
+id/phase replay. Execution and history replay send the same text
 descriptions of binary tool outputs to the provider. Inline user
 files retain their filename, MIME type, and bytes as gateway `input_file` items,
 including Office documents and text files beyond the native adapter's PDF-only
 document contract. Upload preservation and text extraction remain independent
 of this request serialization.
+
+`scripts/tanstack-response-phases.ts` temporarily patches `@tanstack/openai-base`
+1.0.2 in Vite transforms, dependency prebundling, and tests. It records item
+lengths and restores boundaries when core merges adjacent text. Remove the
+plugin once [the upstream fix](https://github.com/TanStack/ai/pull/2087) ships. Live display phases and final-only
+structured-output selection still use the gateway adapter.
 
 Dictation uses the native recorder's encoded blob directly, following the
 [audio recording guide](https://tanstack.com/ai/latest/docs/media/audio-recording).
@@ -339,10 +367,12 @@ are validated again after resume and retain the typed `{ answered, answers }`
 result contract. Completed tool messages show readable answer summaries using
 the original question and option labels, including after reload. Skip retains
 the existing `{ answered: false, action: "decline" }` contract.
-Configured image and research confirmations use `needsApproval`, including
-approvals on research's synthetic subagent tool. Server and client share the same
-input schema so a saved approval remains bound after reload. Approval happens
-before image generation or starting research; the tool does not prompt again.
+Image confirmations and per-prompt agent tools use native approval. An MCP server
+configured with `approval: { mode: "delegated" }` is exposed to chat as one isolated agent
+tool; its card shows the read-only `prompt`, and declining lets the model propose
+another. Approval happens before starting the child; the server tools inside it require no further approval.
+Per-prompt agents use the same persistence as other native approvals. Pending approvals
+are restored on reload, and an approved prompt remains approved when its continuation resumes.
 Legacy MCP transport elicitation and realtime still use the small live-callback
 bridge because those requests cannot be resumed by replaying the tool.
 
@@ -446,9 +476,10 @@ for input. They inherit selected capabilities, attachment preparation, workspace
 access, and cancellation. Their artifact mutations
 reach parent verification. Realtime's `agent` tool uses the same one-shot runner
 and returns the final text because the voice protocol has no nested chat cards.
-Web research uses the same `defineAgent` path with its search/fetch tools and a
-content-guard middleware. It receives the model-written brief and its own resumed
-work, keeping unrelated parent history out of research requests. Search and fetch
+Per-prompt MCP agents, such as web research, use the same `defineAgent` path with
+the server's tools. They receive the human-approved prompt and their own results.
+Prompt-only children do not inherit parent history, tool-context callbacks, shared middleware,
+attachment preparation, memory or profile context. Search and fetch
 progress use native child parts during execution and ordinary child messages in
 storage and the UI, replacing the separate research runner
 and manually maintained parent status. Realtime delivers native assistant messages with tool-call/result parts and UI resources
@@ -521,7 +552,7 @@ cancellation attached to provider requests, and omits an empty multipart model
 field when selecting the gateway default. The embedding boundary retains the
 resolved model identity returned by the gateway for retrieval indexes.
 `gatewayText.ts` extends the native Responses adapter to retain commentary and
-final-answer phases on output and replay, resolved model identity, and the
+final-answer phases on live text parts, resolved model identity, and the
 gateway's reasoning context mode. It forwards inline documents using the same
 file contract as the pre-migration client; supported formats still depend on the
 gateway deployment. Native parsing still handles the stream. Completed response
@@ -534,20 +565,21 @@ than signed blocks with empty text, including deployments behind opaque aliases.
 Structured helper calls keep summaries opt-in.
 
 `Client.chatOptions()` owns SDK option placement for chat, subagents and
-structured helpers. With the published AI 0.68 API, reasoning still belongs in
-`modelOptions`. The next [reasoning migration](https://github.com/TanStack/ai/blob/5bd27f2fc94ebfb6d11bfb28d46d5d858310805e/docs/migration/reasoning-option.md)
-also requires mapping `none` to `off`, replacing summary styles with a boolean,
-and supplying reasoning metadata for gateway aliases through `modelReasoning`.
-Moving the property alone would silently lose alias reasoning. Cross-provider
+structured helpers. TanStack 1.x provides a native
+[`chat({ reasoning })` option](https://tanstack.com/ai/latest/docs/migration/reasoning-option),
+but the gateway keeps its wire-level reasoning in `modelOptions`: it accepts
+opaque aliases and `concise`/`detailed` summary styles, while the native option
+requires model reasoning metadata and exposes only a summary boolean. Moving
+the property alone would silently lose alias reasoning and summary styles. Cross-provider
 history support does not replace the gateway's deployment-bound ciphertext guard.
 
 The provider SDK already retries HTTP rate limits twice. Once exhausted,
 `streamRun` formats `metadata.tanstack.retryAfterMs` before ChatClient converts
 the event to an Error and drops that metadata. The displayed wait rounds up to
 whole seconds and survives transcript persistence. Missing or invalid delays
-retain the generic message. A future core `chat({ retry })` policy must account
-for those existing SDK retries. Automatic prompt-cache keys and core retries
-remain deferred until their APIs are published and gateway behavior is verified.
+retain the generic message. TanStack's optional `chat({ retry })` policy would
+add retries after the provider SDK's attempts, so it remains disabled. Its
+prompt-cache API likewise stays opt-in until gateway behavior is verified.
 
 Conversation loading includes native `isHydrating`, disabling composer sends
 and retries until hydration completes. The saved hydration snapshot remains:
@@ -572,6 +604,31 @@ card owns the retry and the transcript records no separate error.
 Structured extraction uses TanStack's `combinedStructuredOutputSource()` event
 contract to select the final answer instead of concatenating commentary with JSON.
 TanStack continues to normalize optional fields and validate the result schema.
+These repairs span two boundaries. The gateway owns missing upstream text deltas
+and provider signature rejection; its Responses adapter can append a missing
+final-text suffix, but a contradictory snapshot must fail because already emitted
+SSE text cannot be replaced. Its signature wrapper scopes replay by deployment
+and retries a recognized rejection once before forwarding any completion. It
+preserves tool results and compaction state during that retry.
+
+The client still needs final-answer JSON selection: commentary and final messages
+are valid separate Responses items, while the native TanStack adapter concatenates
+their text. The extended reasoning signature also retains separate visible text
+and summary across TanStack conversions. Keep the client fallback until gateway
+rollout and retry ownership are coordinated; a gateway fix alone does not remove
+those adapter limitations or invalidate older saved conversations.
+
+`npm run test:e2e:sdk` compares the app with the official OpenAI SDK using identical
+captured live gateway responses, including text, phases, reasoning, function calls,
+usage, and persisted replay. `WINGMAN_SDK_MODELS` selects a comma-separated model
+list; the default covers OpenAI, Anthropic, and Gemini. Absent and null optional
+fields are normalized, while text and opaque signatures are compared exactly.
+The gateway's `TestRepairSDKCrossProvider` and
+`TestRepairSDKDoesNotRetryAfterOutput` exercise both API directions with fixed
+upstream responses. Its opt-in `TestRepairLiveAnthropicSDKReplay` uses
+`WINGMAN_SDK_LIVE_URL` to test the reverse live path with the Anthropic SDK,
+including signed reasoning replay through OpenAI and Anthropic backends.
+
 Compaction requests a new summary with a final user instruction, avoiding an
 assistant-prefill request that gateway providers can reject.
 
@@ -597,8 +654,13 @@ per endpoint across clients/tabs, while ordinary MCP requests remain concurrent.
 belongs to the individual popup. The internal companion name retains the public
 `BRIDGE_URL` environment variable and `bridge.url` JSON contract.
 
-`mcpTransport.ts` forwards the SDK transport while exposing server metadata,
-legacy elicitation, and change notifications to the workspace. Resource reads use
+`mcpTransport.ts` forwards the SDK transport while exposing server metadata
+and change notifications to the workspace. The MCP SDK handles both legacy
+elicitation and modern `input_required` retries through one registered handler.
+Wingman queues form display after capturing the active tool owner; the SDK owns
+request IDs, state echoing, round limits and cancellation. Forms stop when their
+request or owning tool ends. Follow-up prompts replace accepted URL status
+without cancelling the tool. Resource reads use
 local cancellation because the native MCP resource API has no signal argument.
 Calls and discovery use the native client's APIs.
 
@@ -721,7 +783,7 @@ Provider requests carry an explicitly injected `traceparent` to connect gateway
 spans to the browser operation. Classification scores include the opaque chat ID
 as `gen_ai.conversation.id` so Insights can calculate classified prompts per
 conversation. Chat IDs are not included in model-usage metrics or provider request
-headers. MCP tool spans carry `wingman.mcp.server.id` and `mcp.tool.name`.
+headers. MCP tool spans carry `wingman.mcp.server.id` and `gen_ai.tool.name`.
 
 The Go telemetry proxy stamps `wingman.telemetry.source=chat` on resource
 attributes and removes client-supplied `service.peer.name`. Insights recognizes

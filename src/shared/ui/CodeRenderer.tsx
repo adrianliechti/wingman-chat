@@ -1,138 +1,47 @@
-import { useDebouncer } from "@tanstack/react-pacer";
-import { memo, useEffect, useMemo, useState } from "react";
-import { highlightCode } from "@/shared/lib/highlight";
-import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
-import { useTheme } from "@/shell/hooks/useTheme";
+import { memo } from "react";
+import { useHighlight } from "@/shared/hooks/useHighlight";
 import { CopyButton } from "./CopyButton";
+import { HighlightStyles } from "./HighlightStyles";
 import { RendererFrame } from "./renderers/RendererFrame";
 
-const HIGHLIGHT_DEBOUNCE_MS = 120;
-const MAX_HIGHLIGHT_CACHE_SIZE = 200;
-const highlightCache = new Map<string, string>();
-
-function getCacheEntry(cache: Map<string, string>, key: string): string | undefined {
-  const cached = cache.get(key);
-
-  if (cached === undefined) {
-    return undefined;
-  }
-
-  cache.delete(key);
-  cache.set(key, cached);
-  return cached;
-}
-
-function setCacheEntry(cache: Map<string, string>, key: string, value: string, maxSize: number) {
-  if (cache.has(key)) {
-    cache.delete(key);
-  }
-
-  cache.set(key, value);
-
-  while (cache.size > maxSize) {
-    const oldestKey = cache.keys().next().value as string | undefined;
-
-    if (oldestKey === undefined) {
-      break;
-    }
-
-    cache.delete(oldestKey);
-  }
-}
-
-const highlightedCodeStyle: React.CSSProperties = {
-  margin: 0,
-  padding: "0.75rem",
-  fontSize: "0.875rem",
-  lineHeight: "1.25rem",
+const codeStyle: React.CSSProperties = {
   fontFamily: "Fira Code, Monaco, Cascadia Code, Roboto Mono, monospace",
-  background: "transparent",
 };
 
 interface CodeRendererProps {
   code: string;
   language: string;
   name?: string;
-  isStreaming?: boolean;
   /** Strip the header bar and borders for inline contexts (e.g. tool details). */
   subtle?: boolean;
 }
 
-const CodeRenderer = memo(({ code, language, name, isStreaming = false, subtle = false }: CodeRendererProps) => {
-  const { isDark } = useTheme();
-  const normalizedLanguage = language.toLowerCase();
-  const cacheKey = `${isDark ? "dark" : "light"}:${normalizedLanguage}:${code}`;
-  const [highlighted, setHighlighted] = useState(() => ({ key: cacheKey, html: highlightCache.get(cacheKey) ?? "" }));
-  // While a block streams, wait for a pause before highlighting the growing source.
-  const scheduleHighlight = useDebouncer((run: () => void) => run(), { wait: isStreaming ? HIGHLIGHT_DEBOUNCE_MS : 0 });
-
-  useEffect(() => {
-    if (!code) {
-      return;
-    }
-
-    let cancelled = false;
-    const cached = getCacheEntry(highlightCache, cacheKey);
-
-    if (cached) {
-      setHighlighted({ key: cacheKey, html: cached });
-      return;
-    }
-
-    const highlight = async () => {
-      try {
-        const highlighted = await highlightCode(code, normalizedLanguage, isDark);
-
-        if (!cancelled) {
-          // Retain completed blocks, not hundreds of growing stream prefixes.
-          if (!isStreaming) setCacheEntry(highlightCache, cacheKey, highlighted, MAX_HIGHLIGHT_CACHE_SIZE);
-          setHighlighted({ key: cacheKey, html: highlighted });
-        }
-      } catch (error) {
-        console.error("Failed to highlight code:", error);
-        if (!cancelled) {
-          setHighlighted({ key: cacheKey, html: "" });
-        }
-      }
-    };
-
-    scheduleHighlight.maybeExecute(() => void highlight());
-
-    return () => {
-      cancelled = true;
-      scheduleHighlight.cancel();
-    };
-  }, [cacheKey, code, isDark, isStreaming, normalizedLanguage, scheduleHighlight]);
-
-  // Never show an older snapshot while the new source waits for highlighting.
-  const effectiveHtml = code && highlighted.key === cacheKey ? highlighted.html : "";
-  const renderedHtml = useMemo(() => sanitizeHtmlToReact(effectiveHtml), [effectiveHtml]);
-
-  // Tool details (subtle) show just the name (Result/Error); everywhere else
-  // keeps the language hint as the tag, with an optional name (e.g. a filename).
-  const renderCodeBlock = (content: React.ReactNode) => (
+const CodeRenderer = memo(({ code, language, name, subtle = false }: CodeRendererProps) => {
+  const tokens = useHighlight(code, language || "text");
+  return (
     <RendererFrame
       label={subtle ? (name ?? "") : language}
       name={subtle ? undefined : name}
       actions={<CopyButton text={code} label="Copy" />}
       compact={subtle}
     >
-      {content}
+      <HighlightStyles />
+      <pre className="syntax-highlight m-0 p-3 text-sm leading-5 whitespace-pre overflow-x-auto" style={codeStyle}>
+        <code>
+          {tokens
+            ? tokens.map((token, index) =>
+                token.className ? (
+                  <span key={index} className={`th-${token.className}`}>
+                    {token.value}
+                  </span>
+                ) : (
+                  token.value
+                ),
+              )
+            : code}
+        </code>
+      </pre>
     </RendererFrame>
-  );
-
-  if (!effectiveHtml) {
-    return renderCodeBlock(
-      <pre className="p-3 text-gray-800 dark:text-neutral-300 text-sm whitespace-pre overflow-x-auto">
-        <code>{code}</code>
-      </pre>,
-    );
-  }
-
-  return renderCodeBlock(
-    <div className="overflow-x-auto" style={highlightedCodeStyle}>
-      {renderedHtml}
-    </div>,
   );
 });
 

@@ -14,7 +14,7 @@ const runtime = (owner?: string) => {
 };
 const block = (message: unknown, key = "one") => ({ key, source: JSON.stringify(message) });
 const create = (components: unknown[], dataModel: Record<string, unknown> = {}) => ({
-  version: "v1.0",
+  version: "1.0",
   createSurface: { surfaceId: "main", catalogId: BASIC_CATALOG_ID, sendDataModel: true, components, dataModel },
 });
 afterEach(() => {
@@ -122,7 +122,7 @@ it("dispatches the standard action envelope with current context and opted-in da
   expect(ui.onSubmit).toHaveBeenCalledWith(
     expect.objectContaining({
       message: {
-        version: "v1.0",
+        version: "1.0",
         action: expect.objectContaining({
           name: "choose",
           surfaceId: surface.id,
@@ -132,7 +132,7 @@ it("dispatches the standard action envelope with current context and opted-in da
       },
       metadata: expect.objectContaining({
         a2uiRendererDataModel: {
-          version: "v1.0",
+          version: "1.0",
           surfaces: { [surface.id]: expect.objectContaining({ name: "Grace" }) },
         },
       }),
@@ -156,7 +156,7 @@ it.each(["delete", "replace", "dispose"])("ignores late action failures after a 
   expect(ui.onSubmit).toHaveBeenCalledOnce();
   if (operation === "dispose") ui.dispose();
   else if (operation === "delete")
-    ui.sync([first, block({ version: "v1.0", deleteSurface: { surfaceId: "fixture-Button" } }, "delete")]);
+    ui.sync([first, block({ version: "1.0", deleteSurface: { surfaceId: "fixture-Button" } }, "delete")]);
   else
     ui.sync([
       block({ ...fixtures.Text, createSurface: { ...fixtures.Text.createSurface, surfaceId: "fixture-Button" } }),
@@ -176,7 +176,7 @@ it("replays saved edits before applying new agent updates and isolates conversat
   restored.sync([first]);
   expect(restored.getSurface("fixture-TextField")!.dataModel.get("/name")).toBe("Grace");
   const update = block(
-    { version: "v1.0", updateDataModel: { surfaceId: "fixture-TextField", path: "/name", value: "Katherine" } },
+    { version: "1.0", updateDataModel: { surfaceId: "fixture-TextField", path: "/name", value: "Katherine" } },
     "two",
   );
   const appended = runtime("chat-a");
@@ -196,7 +196,7 @@ it("applies appended messages once, deletes surfaces, and rebuilds edited transc
   ui.sync([initial]);
   expect(ui.getSurface(surface.id)).toBe(surface);
   expect(surface.dataModel.get("/name")).toBe("Grace");
-  ui.sync([initial, block({ version: "v1.0", deleteSurface: { surfaceId: surface.id } }, "delete")]);
+  ui.sync([initial, block({ version: "1.0", deleteSurface: { surfaceId: surface.id } }, "delete")]);
   expect(ui.getSurface(surface.id)).toBeUndefined();
   ui.sync([block(fixtures.Metric)]);
   expect(ui.getSurface("fixture-Metric")).toBeDefined();
@@ -204,7 +204,7 @@ it("applies appended messages once, deletes surfaces, and rebuilds edited transc
 
 it("rejects unknown catalogs, unknown components, cycles and prototype paths", () => {
   const cases = [
-    { version: "v1.0", createSurface: { surfaceId: "main", catalogId: "https://untrusted.test/catalog" } },
+    { version: "1.0", createSurface: { surfaceId: "main", catalogId: "https://untrusted.test/catalog" } },
     create([{ id: "root", component: "Unknown" }]),
     create([{ id: "root", component: "Column", children: ["root"] }]),
     create([{ id: "root", component: "TextField", label: "Bad", value: { "@path": "/__proto__/polluted" } }]),
@@ -222,7 +222,7 @@ it("never executes renderer RPCs from a persisted transcript", () => {
   ui.onSubmit = vi.fn();
   ui.sync([
     block({
-      version: "v1.0",
+      version: "1.0",
       callRendererFunction: {
         functionCallId: "open",
         callFunction: { "@call": "openUrl", catalogId: BASIC_CATALOG_ID, args: { url: "https://example.com" } },
@@ -237,19 +237,19 @@ it("validates every protocol envelope using the pinned upstream schema", () => {
   for (const message of [
     fixtures.Text,
     {
-      version: "v1.0",
+      version: "1.0",
       updateComponents: { surfaceId: "a", components: [{ id: "root", component: "Text", text: "Changed" }] },
     },
-    { version: "v1.0", updateDataModel: { surfaceId: "a", path: "/value", value: 2 } },
-    { version: "v1.0", deleteSurface: { surfaceId: "a" } },
+    { version: "1.0", updateDataModel: { surfaceId: "a", path: "/value", value: 2 } },
+    { version: "1.0", deleteSurface: { surfaceId: "a" } },
     {
-      version: "v1.0",
+      version: "1.0",
       callRendererFunction: {
         functionCallId: "f",
         callFunction: { "@call": "formatNumber", catalogId: BASIC_CATALOG_ID, args: { value: 1 } },
       },
     },
-    { version: "v1.0", agentFunctionResponse: { functionCallId: "f", value: 2 } },
+    { version: "1.0", agentFunctionResponse: { functionCallId: "f", value: 2 } },
   ])
     expect(parseMessages(JSON.stringify(message)).error).toBeUndefined();
 });
@@ -309,7 +309,7 @@ it("retains binding diagnostics across no-op syncs and clears them after repair"
     initial,
     block(
       {
-        version: "v1.0",
+        version: "1.0",
         updateComponents: {
           surfaceId: "main",
           components: [{ id: "root", component: "Metric", catalogId: WINGMAN_CATALOG_ID, label: "Result", value: 3 }],

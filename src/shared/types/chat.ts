@@ -2,7 +2,7 @@ import type { ChatMiddleware, ContentPart, SchemaInput, Tool as NativeTool, UIMe
 import type { z } from "zod";
 import type { ChatPersistedState } from "@tanstack/ai-client";
 import type { Elicitation, ElicitationResult } from "./elicitation.ts";
-import type { AgentContext } from "./telemetry";
+import type { AgentContext, ToolTelemetry } from "./telemetry";
 
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
@@ -16,6 +16,12 @@ export type ImageQuality = "low" | "medium" | "high" | "xhigh" | "max";
 export type ImageResolution = "512" | "1K" | "2K" | "4K";
 /** Image-generation background mode beyond the default "auto" (which is omitted). */
 export type ImageBackground = "opaque" | "transparent";
+/** Image-generation output beyond the default raster image: vector SVG or animated GIF. */
+export type ImageFormat = "svg" | "gif";
+export type RenderFormat = ImageFormat | "mp4";
+export type RenderResolution = ImageResolution | "360p" | "720p" | "1080p";
+/** How much an image model plans before rendering, separate from quality (GPT Image 2.6). */
+export type ImageComplexity = "low" | "medium" | "high";
 
 export type Model = {
   id: string;
@@ -61,9 +67,15 @@ export type Model = {
   supportedQualities?: ImageQuality[];
   supportedAspectRatios?: string[];
   /** Output resolutions, for models whose size lever is resolution (e.g. Gemini) rather than a quality tier. */
-  supportedResolutions?: ImageResolution[];
+  supportedResolutions?: RenderResolution[];
   /** Background modes beyond the always-available "auto" default (opaque/transparent). */
   supportedBackgrounds?: ImageBackground[];
+  /** Output formats beyond the default raster image; text-to-image only (no reference images). */
+  supportedFormats?: RenderFormat[];
+  /** Video durations offered in whole seconds; unset uses the model default. */
+  supportedDurations?: number[];
+  /** Planning levels before rendering, separate from quality. */
+  supportedComplexities?: ImageComplexity[];
 
   tools?: {
     enabled: string[];
@@ -111,11 +123,14 @@ type WorkspaceTool = NativeTool<
 
 /** Native tools with rich workspace results and app-owned presentation. */
 export type Tool = Omit<WorkspaceTool, "inputSchema"> & {
+  telemetry?: ToolTelemetry;
   // Providers include native skill schemas and dynamically discovered MCP schemas.
   inputSchema: SchemaInput;
   execute: NonNullable<WorkspaceTool["execute"]>;
   title?: string;
   icon?: string;
+  /** The user reviews the `prompt` once before an isolated agent starts. */
+  approval?: "prompt";
   /** Chat uses a native defineAgent; execute remains the realtime tool boundary. */
   subagent?: {
     /** Defaults to the caller's model. */
@@ -124,7 +139,7 @@ export type Tool = Omit<WorkspaceTool, "inputSchema"> & {
     tools: Tool[];
     runtimeContext?: string;
     middleware?: ChatMiddleware[];
-    /** Research receives its explicit brief instead of the parent conversation. */
+    /** False runs on the approved prompt alone, without parent history or tool-context callbacks. */
     inheritHistory?: boolean;
     /** Optional bounds for a delegated run, including its tools and middleware. */
     maxIterations?: number;
@@ -208,6 +223,8 @@ export interface ToolContext {
   inputResponse?: { status: "resolved"; payload: unknown } | { status: "cancelled" };
   /** The content parts of the user turn that triggered this run (text and attachments). */
   content?(): ContentPart[];
+  /** Bundled skill files captured for this run, independent of the active UI chat. */
+  skillFiles?(): Promise<Record<string, { content: string; contentType?: string }>>;
   elicit?(
     elicitation: Elicitation,
     options?: { signal?: AbortSignal; onCancel?: () => void },
@@ -239,6 +256,8 @@ export type ChatMetadata = Record<string, Record<string, unknown>>;
 /** Native transcript and resume state, plus the application's chat settings. */
 export interface Chat extends ChatPersistedState {
   id: string;
+  projectId?: string;
+  agentId?: string | null;
   title?: string;
   customTitle?: string;
   customIndex?: number;
@@ -252,4 +271,7 @@ export interface Chat extends ChatPersistedState {
 }
 
 /** Sidebar metadata; conversation bodies and attachments are loaded separately. */
-export type ChatEntry = Pick<Chat, "id" | "title" | "customTitle" | "customIndex" | "created" | "updated">;
+export type ChatEntry = Pick<
+  Chat,
+  "id" | "projectId" | "title" | "customTitle" | "customIndex" | "created" | "updated"
+>;

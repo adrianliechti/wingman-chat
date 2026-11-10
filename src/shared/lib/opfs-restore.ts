@@ -1,4 +1,5 @@
 import { parseAgentMd } from "@/features/agent/lib/agentMarkdown";
+import { isProject } from "@/features/projects/lib/projects";
 import {
   isMemoryIndex,
   memoryPath,
@@ -44,7 +45,7 @@ class InvalidBackupJsonError extends Error {}
 function recordScope(path: string): string {
   const flatChat = path.match(/^chats\/([^/]+)\.json$/);
   if (flatChat && flatChat[1] !== "index") return `chats/${flatChat[1]}/`;
-  return path.match(/^(?:agents|chats|images|plugins)\/[^/]+\//)?.[0] ?? path;
+  return path.match(/^(?:agents|chats|images|plugins|projects)\/[^/]+\//)?.[0] ?? path;
 }
 
 /** Decode and validate the entire archive before changing any saved files. */
@@ -76,7 +77,11 @@ export async function readZipFiles(blob: Blob, onProgress?: RestoreProgressHandl
     const stripped = paths.map((path) => path.slice(prefix.length + 1));
     // A single agent folder can contain a bundled skills/ collection. Its
     // definition marks a record, not a backup wrapper: keep the folder's ID.
-    if (["chat.json", "AGENTS.md", "AGENT.md", "agent.json", "SKILL.md"].some((marker) => stripped.includes(marker)))
+    if (
+      ["chat.json", "project.json", "AGENTS.md", "AGENT.md", "agent.json", "SKILL.md"].some((marker) =>
+        stripped.includes(marker),
+      )
+    )
       break;
     if (
       !stripped.some(
@@ -100,6 +105,11 @@ function parseBackupJson(path: string, text: string): unknown {
 }
 
 async function validateMetadata(path: string, blob: Blob): Promise<void> {
+  if (/^projects\/[^/]+\/project\.json$/.test(path)) {
+    const project = parseBackupJson(path, await blob.text());
+    if (!isProject(project) || project.id !== path.split("/")[1]) throw new Error(`Invalid project in backup: ${path}`);
+    return;
+  }
   const memory = path.match(/^agents\/[^/]+\/memory\/(.+)$/);
   if (memory) {
     memoryPath(`/.memory/${memory[1]}`);

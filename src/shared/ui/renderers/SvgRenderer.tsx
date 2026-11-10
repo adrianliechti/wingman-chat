@@ -33,7 +33,7 @@ const NonMemoizedSvgRenderer = ({ svg, language, name }: SvgRendererProps) => {
     >
       {showCode ? (
         <div className="p-4">
-          <pre className="text-neutral-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto">
+          <pre className="text-neutral-800 dark:text-neutral-300 text-sm whitespace-pre overflow-x-auto">
             <code>{svg}</code>
           </pre>
         </div>

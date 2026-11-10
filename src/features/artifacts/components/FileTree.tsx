@@ -6,6 +6,7 @@ import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
 import type { FileEntry } from "@/shared/types/file";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
+import { useUnsavedPaths } from "@/shared/ui/editors/draftStore";
 import { FileIcon } from "@/shared/ui/FileIcon";
 
 interface FileNode {
@@ -75,6 +76,8 @@ interface FileTreeProps {
   filter?: string;
   /** Show every folder open, for a quick-switch list where one click should reach any file. */
   expandAll?: boolean;
+  /** "lg": 48px finger-sized rows with larger icons, for the phone file list. */
+  size?: "sm" | "lg";
   className?: string;
 }
 
@@ -92,9 +95,11 @@ export function FileTree({
   onDownload,
   filter = "",
   expandAll = false,
+  size = "sm",
   className,
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(activePath ? ancestors(activePath) : []));
+  const unsaved = useUnsavedPaths(fs.chatId);
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
 
@@ -156,8 +161,10 @@ export function FileTree({
       notify.error("Couldn't rename file", "A file with that name may already exist.");
   };
 
+  const large = size === "lg";
+  const iconSize = large ? 20 : 13;
   const renderNode = (node: FileNode, level: number) => {
-    const indent = { paddingLeft: `${level * 12 + 8}px` };
+    const indent = { paddingLeft: `${level * (large ? 20 : 12) + (large ? 12 : 8)}px` };
     if (node.type === "folder") {
       const open = expandAll || query.length > 0 || expanded.has(node.path);
       return (
@@ -165,15 +172,20 @@ export function FileTree({
           <button
             type="button"
             onClick={() => toggle(node.path)}
-            className={cn(rowClass, hoverClass, "text-neutral-600 dark:text-neutral-400")}
+            className={cn(
+              rowClass,
+              hoverClass,
+              "text-neutral-600 dark:text-neutral-400",
+              large && "h-12 gap-3 rounded-xl pr-3 press",
+            )}
             style={indent}
           >
             {open ? (
-              <FolderOpen size={13} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+              <FolderOpen size={iconSize} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
             ) : (
-              <Folder size={13} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+              <Folder size={iconSize} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
             )}
-            <span className="truncate text-xs">{node.name}</span>
+            <span className={cn("truncate", large ? "text-[15px] font-medium" : "text-xs")}>{node.name}</span>
           </button>
           {open && node.children?.map((child) => renderNode(child, level + 1))}
         </div>
@@ -185,6 +197,7 @@ export function FileTree({
         key={node.path}
         className={cn(
           "group relative flex h-7 min-w-0 items-center gap-1 rounded-md pr-1 transition-colors",
+          large && "h-12 gap-2 rounded-xl pr-1.5",
           active ? "bg-neutral-200/70 dark:bg-white/10" : hoverClass,
         )}
         style={indent}
@@ -207,13 +220,14 @@ export function FileTree({
           <button
             type="button"
             onClick={() => onOpen(node.path)}
-            className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+            className={cn("flex min-w-0 flex-1 items-center gap-1.5 text-left", large && "h-full gap-3")}
             title={node.path}
           >
-            <FileIcon name={node.path} contentType={node.file?.contentType} size={14} />
+            <FileIcon name={node.path} contentType={node.file?.contentType} size={large ? 22 : 14} />
             <span
               className={cn(
-                "truncate text-xs",
+                "truncate",
+                large ? "text-[15px]" : "text-xs",
                 active
                   ? "font-medium text-neutral-900 dark:text-neutral-100"
                   : "text-neutral-700 dark:text-neutral-300",
@@ -221,17 +235,28 @@ export function FileTree({
             >
               {node.name}
             </span>
+            {unsaved.has(node.path) && (
+              <span
+                role="img"
+                aria-label="Unsaved changes"
+                title="Unsaved changes"
+                className="size-1.5 shrink-0 rounded-full bg-neutral-500 dark:bg-neutral-400"
+              />
+            )}
           </button>
         )}
         <DropdownMenu
           anchor="bottom end"
           trigger={
             <MenuButton
-              className="shrink-0 rounded p-1 text-neutral-400 transition-opacity hover:text-neutral-700 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 dark:hover:text-neutral-200"
+              className={cn(
+                "shrink-0 rounded p-1 text-neutral-400 transition-opacity hover:text-neutral-700 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 dark:hover:text-neutral-200",
+                large && "flex size-10 items-center justify-center rounded-full p-0",
+              )}
               aria-label={`Actions for ${node.name}`}
               onClick={(event) => event.stopPropagation()}
             >
-              <MoreVertical size={13} />
+              <MoreVertical size={large ? 18 : 13} />
             </MenuButton>
           }
         >

@@ -51,6 +51,116 @@ func TestModelReplacementsReachBrowserConfig(t *testing.T) {
 	}
 }
 
+func TestLoadYAMLCompatibility(t *testing.T) {
+	filename := t.TempDir() + "/tools.yaml"
+	if err := os.WriteFile(filename, []byte(`
+- &defaults
+  id: base
+  approval:
+    mode: individual
+  headers:
+    X-Tenant: "0123"
+- <<: *defaults
+  id: inherited
+  url: https://mcp.example.test/api
+  futureSetting: ignored
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var tools []Tool
+	loadYAML(filename, &tools)
+	want := []Tool{
+		{ID: "base", Approval: &Approval{Mode: ApprovalIndividual}, Headers: map[string]string{"X-Tenant": "0123"}},
+		{ID: "inherited", Approval: &Approval{Mode: ApprovalIndividual}, URL: "https://mcp.example.test/api", Headers: map[string]string{"X-Tenant": "0123"}},
+	}
+	if !reflect.DeepEqual(tools, want) {
+		t.Fatalf("YAML aliases or quoted strings changed: got %#v, want %#v", tools, want)
+	}
+}
+
+func TestDriveAuthEnvironmentExpansion(t *testing.T) {
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	const secret = "secret: # 'quoted' \"double\" \\path\n$DRIVE_TEST_CLIENT_ID ${DRIVE_TEST_TENANT}"
+	t.Setenv("DRIVE_TEST_TENANT", "example-tenant")
+	t.Setenv("DRIVE_TEST_CLIENT_ID", "example-client")
+	t.Setenv("DRIVE_TEST_CLIENT_SECRET", secret)
+	t.Setenv("DRIVE_TEST_SCOPE", "https://graph.microsoft.com/.default")
+	t.Setenv("DRIVE_TEST_EMPTY", "")
+	// Register cleanup before unsetting the variable to make this independent
+	// of the environment running the tests.
+	t.Setenv("DRIVE_TEST_UNSET", "")
+	if err := os.Unsetenv("DRIVE_TEST_UNSET"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("drives.yaml", []byte(`
+- id: expanded
+  type: onedrive
+  auth:
+    issuer: https://login.microsoftonline.com/${DRIVE_TEST_TENANT}/v2.0
+    client_id: $DRIVE_TEST_CLIENT_ID
+    client_secret: '${DRIVE_TEST_CLIENT_SECRET}'
+    scope: ${DRIVE_TEST_SCOPE}
+- id: literal
+  type: sharepoint
+  auth:
+    issuer: https://login.microsoftonline.com/literal/v2.0
+    client_id: literal-client
+    client_secret: literal-secret
+    scope: https://graph.microsoft.com/.default
+- id: missing
+  type: onedrive
+  auth:
+    issuer: ${DRIVE_TEST_UNSET}
+    client_id: $DRIVE_TEST_UNSET
+    client_secret: ${DRIVE_TEST_EMPTY}
+- id: local
+  path: /data
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+	want := []Drive{
+		{ID: "expanded", Type: "onedrive", Auth: &DriveAuth{
+			Issuer:       "https://login.microsoftonline.com/example-tenant/v2.0",
+			ClientID:     "example-client",
+			ClientSecret: secret,
+			Scope:        "https://graph.microsoft.com/.default",
+		}},
+		{ID: "literal", Type: "sharepoint", Auth: &DriveAuth{
+			Issuer:       "https://login.microsoftonline.com/literal/v2.0",
+			ClientID:     "literal-client",
+			ClientSecret: "literal-secret",
+			Scope:        "https://graph.microsoft.com/.default",
+		}},
+		{ID: "missing", Type: "onedrive", Auth: &DriveAuth{}},
+		{ID: "local", Path: "/data"},
+	}
+	if !reflect.DeepEqual(cfg.Drives, want) {
+		t.Fatalf("drives = %#v, want %#v", cfg.Drives, want)
+	}
+
+	data, err := json.Marshal(cfg.Drives)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != `[{"id":"expanded"},{"id":"literal"},{"id":"missing"},{"id":"local"}]` {
+		t.Fatalf("unexpected browser drive config: %s", data)
+	}
+}
+
 func TestLoadAccountLinks(t *testing.T) {
 	previous, err := os.Getwd()
 	if err != nil {
@@ -137,11 +247,18 @@ func TestMCPConfigReachesBrowser(t *testing.T) {
 	t.Setenv("BRIDGE_URL", "http://localhost:4242/")
 	if err := os.WriteFile("tools.yaml", []byte(`
 - id: managed
+  approval:
+    mode: delegated
 - id: direct
-  needsApproval: true
+  approval:
+    mode: individual
   url: https://mcp.example.test/api
   headers:
     X-Tenant: example
+- id: explicit-none
+  approval:
+    mode: none
+- id: implicit-none
 `), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -157,8 +274,14 @@ func TestMCPConfigReachesBrowser(t *testing.T) {
 	if err := json.Unmarshal(data, &browser); err != nil {
 		t.Fatal(err)
 	}
-	if len(browser.Tools) != 2 || browser.Tools[0].URL != "" || browser.Tools[1].Headers["X-Tenant"] != "example" || !browser.Tools[1].NeedsApproval {
+	if len(browser.Tools) != 4 || browser.Tools[0].URL != "" || browser.Tools[1].Headers["X-Tenant"] != "example" {
 		t.Fatalf("tools.yaml lost MCP fields: %s", data)
+	}
+	approvals := []*Approval{{Mode: ApprovalDelegated}, {Mode: ApprovalIndividual}, {Mode: ApprovalNone}, nil}
+	for i, expected := range approvals {
+		if !reflect.DeepEqual(browser.Tools[i].Approval, expected) {
+			t.Fatalf("tools.yaml lost approval for %s: %s", browser.Tools[i].ID, data)
+		}
 	}
 	if browser.Bridge == nil || browser.Bridge.URL != "http://localhost:4242/" {
 		t.Fatalf("BRIDGE_URL changed its browser configuration contract: %s", data)

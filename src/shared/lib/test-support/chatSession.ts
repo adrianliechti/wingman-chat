@@ -1,4 +1,9 @@
-import { ChatClient, type ChatPersistedState, type ChatInterrupt } from "@tanstack/ai-client";
+import {
+  ChatClient,
+  stream as streamConnection,
+  type ChatPersistedState,
+  type ChatInterrupt,
+} from "@tanstack/ai-client";
 import { RunSidecar, approvalTools, streamRun, type AgentRunResult, type StreamRunHooks } from "../agent";
 import type { Client } from "../client";
 import type { Tool } from "../../types/chat";
@@ -25,21 +30,20 @@ export function chatSession(
         store.value = undefined;
       },
     },
-    connection: {
-      connect: (_messages, _data, signal, context) =>
-        stream(client, "model", "", sidecar.apply(ai.getMessages()), tools, {
-          ...hooks,
-          sidecar,
-          options: { signal },
-          threadId: context.threadId,
-          runId: context.runId,
-          parentRunId: context.parentRunId,
-          resume: context.resume,
-          onComplete: (result) => {
-            finished.push(result);
-          },
-        }),
-    },
+    connection: streamConnection((_messages, _data, signal, context) =>
+      stream(client, "model", "", sidecar.apply(ai.getMessages()), tools, {
+        ...hooks,
+        sidecar,
+        options: { signal },
+        threadId: context.threadId,
+        runId: context.runId,
+        parentRunId: context.parentRunId,
+        resume: context.resume,
+        onComplete: (result) => {
+          finished.push(result);
+        },
+      }),
+    ),
   });
   return { ai, finished, sidecar, store };
 }

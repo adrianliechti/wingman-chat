@@ -22,6 +22,7 @@ export function usePluginProviders(agent: Agent | null) {
           name: server.name,
           description: plugin.description ?? plugin.title ?? plugin.id,
           headers: server.headers,
+          approval: server.approval,
         });
         if (normalized) servers.push(normalized);
       }

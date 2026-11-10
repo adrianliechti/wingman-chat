@@ -101,6 +101,12 @@ own supported efforts instead of inheriting a vendor profile.
   for tool calling, with a 128,000-token output capacity (reviewed September 30,
   2026). The existing 272,000-token compaction budget stays below its higher
   long-input pricing tier.
+- [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra)
+  (reviewed October 26, 2026): none, low, medium (default), high, xhigh, max;
+  no minimal. Tool calling requires the Responses API. It has a 1,050,000-token
+  context window and 128,000-token output capacity. Wingman uses its existing
+  272,000-token compaction budget at the long-input pricing boundary and offers
+  a medium-effort slider preset when the backend exposes the model.
 - [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) and
   [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna): none, low,
   medium, high, xhigh, max; medium default. Both use the Responses API for tool
@@ -116,6 +122,22 @@ own supported efforts instead of inheriting a vendor profile.
   has low through max with a high default, plus none, which the gateway sends as
   `between_tools` to turn off up-front thinking. Mythos Preview and Opus/Sonnet 4.6 have
   max but no xhigh. Haiku 4.5 and older Sonnet models do not inherit Opus's efforts.
+- [Claude Fable 5.2](https://platform.claude.com/docs/en/models/fable-5-2/overview)
+  (reviewed November 10, 2026): low, medium, high (default), xhigh, max;
+  thinking is always adaptive, so none/minimal are not offered. Fable and its
+  verified-access counterpart Mythos 5.2 have 1M context and 128,000-token output
+  capacity. Their default chat allowance is 64,000 tokens; the existing
+  272,000-token operational compaction threshold still applies.
+  The [migration guide](https://platform.claude.com/docs/en/models/fable-5-2/migration-guide)
+  requires omission of sampling parameters and prohibits forced tool calls.
+  Wingman's Responses requests already follow these restrictions. The gateway
+  must support the model and expose its ID in `/v1/models`; adding a frontend
+  profile does not provision it. Fable 5.2 also requires 30-day account retention
+  unless Anthropic authorizes an exception.
+  Its stricter prefix checks can reject thinking after history, tools, or system
+  instructions change. Wingman's existing bounded retry removes rejected
+  signatures from replay and saved history; this recovery is covered by the
+  documented prefix-mismatch error regression, alongside signed tool round trips.
 - [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview)
   (reviewed October 8, 2026): low, medium (default), high, xhigh, max, plus
   gateway `none` to disable thinking. Adaptive thinking is on by default;
@@ -204,12 +226,13 @@ configured; such an override cannot be clamped until the deployment supplies a
 capacity.
 
 Examples of documented capacities (reviewed September 23, 2026; Haiku 5.5 added
-October 8, 2026):
+October 8, 2026; GPT-6.1 Terra added October 26, 2026):
 
 | Model                                                                                                                            | Capacity | Default chat budget |
 | -------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
 | [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)                                                         | 128,000  | 64,000              |
 | [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)                                                         | 128,000  | 64,000              |
+| [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra)                                                     | 128,000  | 64,000              |
 | [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol)                                                             | 128,000  | 64,000              |
 | [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)                                                           | 128,000  | 64,000              |
 | [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5)                                                                     | 128,000  | 64,000              |

@@ -14,6 +14,7 @@ import {
   useTransitionStyles,
 } from "@floating-ui/react";
 import { type ReactNode, useState } from "react";
+import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 
 interface TooltipProps {
@@ -36,7 +37,9 @@ export function Tooltip({ content, children, className, side = "right" }: Toolti
   });
 
   // Hover and keyboard focus both reveal the tooltip; Escape dismisses it via useRole.
-  const hover = useHover(context, { move: false });
+  // Touch screens have no hover: a tap would otherwise pin the tooltip over the control.
+  const touch = useMediaQuery("(hover: none)");
+  const hover = useHover(context, { move: false, enabled: !touch });
   const focus = useFocus(context);
   const role = useRole(context, { role: "tooltip" });
   const { getReferenceProps, getFloatingProps } = useInteractions([hover, focus, role]);

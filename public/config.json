@@ -42,7 +42,9 @@
       "url": "/api/v1/mcp/internet",
       "name": "Web Search",
       "description": "Access up-to-date information",
-      "needsApproval": true
+      "approval": {
+        "mode": "delegated"
+      }
     }
   ],
   "chat": {
@@ -185,6 +187,11 @@
         "label": "Gemini 3.8 Flash"
       },
       {
+        "model": "gpt-6.1-terra",
+        "effort": "medium",
+        "label": "GPT-6.1 Terra"
+      },
+      {
         "model": "claude-sonnet-5-5",
         "effort": "medium",
         "label": "Claude Sonnet 5.5"
@@ -235,14 +242,55 @@
   "translator": {
     "providers": [
       {
-        "id": "llm",
-        "name": "AI",
-        "description": "GPT-5.4 mini"
+        "id": "deepl",
+        "name": "DeepL",
+        "description": "Documents keep their format",
+        "files": [
+          ".docx",
+          ".pptx",
+          ".xlsx",
+          ".pdf",
+          ".txt",
+          ".html",
+          ".htm"
+        ],
+        "languages": [
+          "en",
+          "de",
+          "fr",
+          "it",
+          "es",
+          "pt",
+          "nl",
+          "pl",
+          "sv",
+          "da",
+          "nb",
+          "fi",
+          "cs",
+          "sk",
+          "sl",
+          "hu",
+          "ro",
+          "bg",
+          "el",
+          "et",
+          "lv",
+          "lt",
+          "tr",
+          "uk",
+          "ru",
+          "ja",
+          "zh",
+          "ko",
+          "id",
+          "ar"
+        ]
       },
       {
-        "id": "google",
-        "name": "Google",
-        "description": "Google Cloud Translation"
+        "id": "llm",
+        "name": "AI",
+        "description": "GPT-6.1 Sol, returns text"
       }
     ],
     "files": [
@@ -250,12 +298,39 @@
     ],
     "languages": [
       "en",
-      "es",
-      "fr",
       "de",
-      "zh",
+      "fr",
+      "it",
+      "es",
+      "pt",
+      "nl",
+      "pl",
+      "sv",
+      "da",
+      "nb",
+      "fi",
+      "cs",
+      "sk",
+      "sl",
+      "hu",
+      "ro",
+      "bg",
+      "el",
+      "et",
+      "lv",
+      "lt",
+      "tr",
+      "uk",
+      "ru",
       "ja",
-      "ru"
+      "zh",
+      "ko",
+      "id",
+      "ar",
+      "hi",
+      "he",
+      "th",
+      "vi"
     ]
   }
 }

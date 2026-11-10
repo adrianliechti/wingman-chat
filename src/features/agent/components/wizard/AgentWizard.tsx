@@ -237,7 +237,7 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
           <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
         </Transition.Child>
 
-        <div className="fixed inset-0 overflow-y-auto">
+        <div className="fixed inset-x-0 app-viewport overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             <Transition.Child
               as={Fragment}
@@ -248,7 +248,7 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-xl overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all border border-neutral-200/50 dark:border-neutral-700/50 flex flex-col h-[min(580px,85vh)]">
+              <Dialog.Panel className="w-full max-w-xl overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all border border-neutral-200/50 dark:border-neutral-700/50 flex flex-col h-[min(580px,calc(var(--app-height)*0.85))]">
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
                   <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">

@@ -67,3 +67,24 @@ it.each(["cancel", "abort", "clear"])("cancels the tool after URL consent on %s"
   act(() => api.completeElicitation("auth"));
   expect(api.pendingElicitation).toBeNull();
 });
+
+it("replaces accepted URL status with a follow-up form without cancelling its tool", async () => {
+  const controller = new AbortController();
+  const onCancel = vi.fn(() => controller.abort());
+  let consent!: Promise<ElicitationResult>;
+  act(() => {
+    consent = api.requestElicitation("call", "ask", url, controller.signal, onCancel);
+  });
+  act(() => api.resolveElicitation({ action: "accept" }));
+  await consent;
+  let form!: Promise<ElicitationResult>;
+  act(() => {
+    form = api.requestElicitation("call", "ask", { message: "Next question" }, controller.signal, onCancel);
+  });
+  expect(onCancel).not.toHaveBeenCalled();
+  expect(api.pendingElicitation?.elicitation.message).toBe("Next question");
+  act(() => api.completeElicitation("auth"));
+  expect(api.pendingElicitation?.elicitation.message).toBe("Next question");
+  act(() => api.resolveElicitation({ action: "decline" }));
+  expect(await form).toEqual({ action: "decline" });
+});

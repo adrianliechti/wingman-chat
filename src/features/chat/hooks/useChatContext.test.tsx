@@ -5,6 +5,7 @@ import type { Model, ToolProvider } from "@/shared/types/chat";
 import { createSkillsProvider } from "@/features/skills/lib/skillsProvider";
 import { useChatContext, type ChatContext } from "./useChatContext";
 import inlineUiInstructions from "../prompts/inline-ui.txt?raw";
+import { createMcpAgentChat } from "@/features/tools/lib/mcpAgent";
 
 const state = vi.hoisted(() => ({
   client: { listModels: vi.fn(async () => []) },
@@ -61,6 +62,52 @@ describe("chat prompt context", () => {
     state.coreProviders = [];
     state.renderer = undefined;
     state.agent = null;
+  });
+
+  it("uses one selected skill provider consistently for the parent and delegated runs", () => {
+    const oldMiddleware = { name: "old-skills" };
+    const selectedMiddleware = { name: "selected-skills" };
+    state.providers = [
+      {
+        id: "skills",
+        name: "Skills",
+        tools: [],
+        chat: { tools: [], instructions: "Automatic only", middleware: [oldMiddleware] },
+      },
+    ];
+    const selected: ToolProvider = {
+      id: "skills",
+      name: "Skills",
+      tools: [],
+      chat: { tools: [], instructions: "Selected skill instructions", middleware: [selectedMiddleware] },
+    };
+    const value = context();
+    expect(value.middleware(selected)).toEqual([selectedMiddleware]);
+    expect(value.instructions(selected)).toContain("Selected skill instructions");
+    expect(value.instructions(selected)).not.toContain("Automatic only");
+    const child = value.tools(selected).find((tool) => tool.subagent)!.subagent!;
+    expect(child.middleware).toEqual([selectedMiddleware]);
+    expect(child.instructions).toContain("Selected skill instructions");
+    const restricted = context({ id: "restricted", name: "Restricted", tools: { enabled: [], disabled: ["skills"] } });
+    expect(restricted.middleware(selected)).toEqual([]);
+  });
+
+  it("gives the main chat and generic delegates only the per-prompt agent entry point", () => {
+    const search = {
+      name: "private_search",
+      description: "Search",
+      inputSchema: z.strictObject({}),
+      execute: async () => [],
+    };
+    const chat = createMcpAgentChat({ id: "internet", name: "Web Search", tools: [search] });
+    const research = chat.tools[0];
+    state.providers = [{ id: "internet", name: "Web Search", tools: [search], chat }];
+    const available = context().tools();
+    expect(available).toContain(research);
+    expect(available).not.toContain(search);
+    const delegate = available.find((tool) => tool.name === "agent")!;
+    expect(delegate.subagent?.tools).toContain(research);
+    expect(delegate.subagent?.tools).not.toContain(search);
   });
 
   it("uses a retired agent model's replacement tool policy in voice mode", () => {

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // Load builds a Config by reading YAML files and applying environment variable overrides.
@@ -41,7 +41,7 @@ func loadConfigFiles(cfg *Config) {
 	loadLinks(cfg)
 	loadYAML("tools.yaml", &cfg.Tools)
 	loadYAML("models.yaml", &cfg.Models)
-	loadYAML("drives.yaml", &cfg.Drives)
+	loadDrives(cfg)
 	loadYAML("backgrounds.yaml", &cfg.Backgrounds)
 
 	loadYAMLPtr("chat.yaml", &cfg.Chat)
@@ -54,6 +54,20 @@ func loadConfigFiles(cfg *Config) {
 	loadYAMLPtr("artifacts.yaml", &cfg.Artifacts)
 }
 
+func loadDrives(cfg *Config) {
+	loadYAML("drives.yaml", &cfg.Drives)
+
+	for _, drive := range cfg.Drives {
+		if auth := drive.Auth; auth != nil {
+			// Expand after parsing to preserve quotes and newlines in secrets.
+			auth.Issuer = os.ExpandEnv(auth.Issuer)
+			auth.ClientID = os.ExpandEnv(auth.ClientID)
+			auth.ClientSecret = os.ExpandEnv(auth.ClientSecret)
+			auth.Scope = os.ExpandEnv(auth.Scope)
+		}
+	}
+}
+
 // loadLinks reads the ordered account-menu links from links.yaml. The old
 // support/cost mapping remains supported for existing deployments.
 func loadLinks(cfg *Config) {
@@ -63,7 +77,7 @@ func loadLinks(cfg *Config) {
 	}
 
 	var links []Link
-	if err := yaml.Unmarshal(data, &links); err == nil {
+	if err := yaml.Load(data, &links); err == nil {
 		cfg.Links = links
 		return
 	}
@@ -72,7 +86,7 @@ func loadLinks(cfg *Config) {
 		Support *Link `yaml:"support"`
 		Cost    *Link `yaml:"cost"`
 	}
-	if err := yaml.Unmarshal(data, &legacy); err == nil {
+	if err := yaml.Load(data, &legacy); err == nil {
 		cfg.Support = legacy.Support
 		cfg.Cost = legacy.Cost
 	}
@@ -263,14 +277,14 @@ func ensurePtr[T any](p *T) *T {
 
 func loadYAML[T any](filename string, target *T) {
 	if data, err := os.ReadFile(filename); err == nil {
-		yaml.Unmarshal(data, target)
+		yaml.Load(data, target)
 	}
 }
 
 func loadYAMLPtr[T any](filename string, target **T) {
 	if data, err := os.ReadFile(filename); err == nil {
 		*target = new(T)
-		yaml.Unmarshal(data, *target)
+		yaml.Load(data, *target)
 	}
 }
 

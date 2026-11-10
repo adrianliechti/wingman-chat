@@ -1,9 +1,10 @@
 import { ConversationUiProvider } from "@/shared/ui/inlineUi/UiRenderer";
+import { MarkdownNavigationContext } from "@/shared/ui/MarkdownNavigationContext";
 import { submissionText } from "@/shared/lib/inlineUi/diagnostics";
 import type { UiSubmission } from "@/shared/lib/inlineUi/runtime";
 import { userMessage } from "@/shared/lib/messages";
 import { ChatInterrupts } from "../components/ChatInterrupts";
-import { useMatch, useNavigate } from "@tanstack/react-router";
+import { useLocation, useMatch, useNavigate } from "@tanstack/react-router";
 import { AppWindow, ArrowDown, Info, Plus as PlusIcon, Shapes } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
@@ -22,6 +23,7 @@ import { ChatToolGroup } from "@/features/chat/components/ChatToolGroup";
 import { groupRenderUnits, isToolOnlyMessage } from "@/features/chat/components/chatMessageUtils";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
+import { useSearchMessage } from "@/features/chat/hooks/useSearchMessage";
 import { useDrawerExclusivity } from "@/features/chat/hooks/useDrawerExclusivity";
 import { useDrawerResize } from "@/features/chat/hooks/useDrawerResize";
 import { useSkills } from "@/features/skills/hooks/useSkills";
@@ -31,6 +33,7 @@ import { getConfig } from "@/shared/config";
 import { useChatScroll } from "@/shared/hooks/useChatScroll";
 import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
+import { navButtonClassName } from "@/shared/ui/actionButton";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { AppDrawer } from "@/shell/components/AppDrawer";
 import { BackgroundImage } from "@/shell/components/BackgroundImage";
@@ -39,6 +42,8 @@ import { useBackground } from "@/shell/hooks/useBackground";
 import { useLayout } from "@/shell/hooks/useLayout";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
+import { useProjects } from "@/features/projects/context/ProjectsContext";
+import { ProjectSettings } from "@/features/projects/components/ProjectSettings";
 
 function loadDisclaimer() {
   try {
@@ -91,6 +96,7 @@ export function ChatPage() {
 
   const navigate = useNavigate();
   const { newChat } = useChatNavigate();
+  const { editingProjectId } = useProjects();
 
   // selectChat(null) already leaves realtime for a new chat without touching
   // the model stored on the chat being left.
@@ -101,7 +107,12 @@ export function ChatPage() {
     newChat();
   }, [isListening, stopVoice, newChat]);
   const chatIdMatch = useMatch({ from: "/app/chat/$chatId", shouldThrow: false });
-  const routeChatId = chatIdMatch?.params.chatId;
+  const messageMatch = useMatch({ from: "/app/chat/$chatId/$messageId", shouldThrow: false });
+  const routeChatId = messageMatch?.params.chatId ?? chatIdMatch?.params.chatId;
+  const searchQuery = useLocation({ select: (location) => location.state.chatSearchQuery });
+  const navigationKey = useLocation({
+    select: (location) => location.state.chatSearchNavigationId ?? location.state.__TSR_key,
+  });
 
   const showChatLoading = !chats.some((c) => c.id === selectedChatId);
 
@@ -374,24 +385,29 @@ export function ChatPage() {
     [messages, isResponding, pendingElicitation?.toolCallId],
   );
 
-  const { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest } = useChatScroll({
-    resetKey: chat?.id ?? routeChatId ?? "__draft__",
-    messages,
-    isResponding,
-    requestKey:
-      pendingElicitation?.elicitation ?? interruptState?.interrupts.map((interrupt) => interrupt.id).join(","),
-  });
+  const { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest, goToTarget, scrollElement } =
+    useChatScroll({
+      resetKey: chat?.id ?? routeChatId ?? "__draft__",
+      messages,
+      isResponding,
+      requestKey:
+        pendingElicitation?.elicitation ?? interruptState?.interrupts.map((interrupt) => interrupt.id).join(","),
+    });
+  useSearchMessage(
+    scrollElement,
+    chat?.id === routeChatId ? messageMatch?.params.messageId : undefined,
+    searchQuery,
+    navigationKey,
+    goToTarget,
+  );
 
-  // Set up navigation actions
+  // Set up navigation actions. Phones have no edge latches; the artifact and app
+  // panels open from the composer's plus sheet instead.
   useEffect(() => {
     setRightActions(
-      <div className="flex items-center gap-2">
-        <AgentButton />
-        <button
-          type="button"
-          className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-          onClick={handleNewChat}
-        >
+      <div className="flex items-center gap-2 max-md:gap-0">
+        {!editingProjectId && <AgentButton />}
+        <button type="button" className={navButtonClassName} onClick={handleNewChat} aria-label="New chat">
           <PlusIcon size={20} />
         </button>
       </div>,
@@ -400,16 +416,12 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, handleNewChat]);
+  }, [setRightActions, handleNewChat, editingProjectId]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {
-    // Only show sidebar if there are chats
-    if (chats.length === 0) {
-      return null;
-    }
     return <ChatSidebar />;
-  }, [chats.length]);
+  }, []);
 
   // Set up sidebar content when it changes
   useEffect(() => {
@@ -427,6 +439,8 @@ export function ChatPage() {
     observer.observe(footer);
     return () => observer.disconnect();
   }, []);
+
+  if (editingProjectId) return <ProjectSettings key={editingProjectId} projectId={editingProjectId} />;
 
   return (
     <div className="h-full w-full flex overflow-hidden relative">
@@ -458,8 +472,7 @@ export function ChatPage() {
                 {/* Logo - only show if no background image is available */}
                 {!backgroundImage && (
                   <div className="mb-8">
-                    <img src="/logo_light.svg" alt="Wingman Chat" className="h-24 w-24 opacity-70 dark:hidden" />
-                    <img src="/logo_dark.svg" alt="Wingman Chat" className="h-24 w-24 opacity-70 hidden dark:block" />
+                    <img src="/icon.svg" alt="Wingman Chat" className="h-24 w-24 opacity-70" />
                   </div>
                 )}
               </div>
@@ -476,59 +489,75 @@ export function ChatPage() {
             >
               <div
                 className={cn(
-                  "px-3 pt-18 transition-[max-width] duration-150 ease-out",
+                  "px-3 md:pt-[calc(var(--safe-top)+4.5rem)] transition-[max-width] duration-150 ease-out max-md:px-4 max-md:pt-[calc(var(--app-topbar)+0.5rem)]",
                   layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width",
                 )}
                 style={{ paddingBottom: chatInputHeight }}
               >
                 <Disclaimer />
 
-                <ConversationUiProvider
-                  owner={chat?.id ?? selectedChatId ?? "new-chat"}
-                  messages={messages}
-                  streaming={isResponding}
-                  onSubmit={handleUiSubmission}
-                >
-                  {renderUnits.map((unit) => {
-                    if (unit.kind === "toolGroup") {
-                      // Key off the first tool-call id — stable as the group grows and across restarts.
-                      const first = messages[unit.indices[0]].parts.find((part) => part.type === "tool-call");
-                      const groupKey = first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
+                <MarkdownNavigationContext value={goToTarget}>
+                  <ConversationUiProvider
+                    owner={chat?.id ?? selectedChatId ?? "new-chat"}
+                    messages={messages}
+                    streaming={isResponding}
+                    onSubmit={handleUiSubmission}
+                  >
+                    {renderUnits.map((unit) => {
+                      if (unit.kind === "toolGroup") {
+                        // Key off the first tool-call id — stable as the group grows and across restarts.
+                        const first = messages[unit.indices[0]].parts.find((part) => part.type === "tool-call");
+                        const groupKey = first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
+                        return (
+                          <div key={groupKey} className="flow-root" data-role="tool-group">
+                            <ChatToolGroup messages={messages} indices={unit.indices} reply={unit.reply} />
+                          </div>
+                        );
+                      }
+                      const index = unit.index;
+                      const message = messages[index];
+                      // Tool-only turns are tagged so the scroll pin anchors to prompts and replies.
+                      const dataRole = isToolOnlyMessage(message) ? "tool" : message.role;
                       return (
-                        <div key={groupKey} className="flow-root" data-role="tool-group">
-                          <ChatToolGroup messages={messages} indices={unit.indices} reply={unit.reply} />
+                        <div
+                          key={messageRenderKeys[index]}
+                          className="flow-root"
+                          data-role={dataRole}
+                          data-message-id={message.id}
+                          data-markdown-document
+                        >
+                          <ChatMessage
+                            index={index}
+                            message={message}
+                            isLast={index === messages.length - 1}
+                            isResponding={isResponding}
+                            foldedReasoning={unit.foldedReasoning}
+                          />
                         </div>
                       );
-                    }
-                    const index = unit.index;
-                    const message = messages[index];
-                    // Tool-only turns are tagged so the scroll pin anchors to prompts and replies.
-                    const dataRole = isToolOnlyMessage(message) ? "tool" : message.role;
-                    return (
-                      <div key={messageRenderKeys[index]} className="flow-root" data-role={dataRole}>
-                        <ChatMessage
-                          index={index}
-                          message={message}
-                          isLast={index === messages.length - 1}
-                          isResponding={isResponding}
-                          foldedReasoning={unit.foldedReasoning}
-                        />
-                      </div>
-                    );
-                  })}
-                  <ChatInterrupts />
-                </ConversationUiProvider>
+                    })}
+                    <ChatInterrupts />
+                  </ConversationUiProvider>
+                </MarkdownNavigationContext>
                 {/* Spacer — allows the last user message to scroll to the top */}
                 <div ref={handleSpacerRef} aria-hidden="true" />
               </div>
             </div>
           )}
 
+          {messages.length > 0 && (
+            <div
+              aria-hidden="true"
+              className="scroll-edge-bottom absolute inset-x-0 bottom-0 z-10 md:hidden"
+              style={{ height: chatInputHeight }}
+            />
+          )}
+
           {messages.length > 0 && !isAtBottom && (
             <button
               type="button"
               onClick={goToLatest}
-              className="absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-neutral-200/80 bg-white/95 px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm backdrop-blur transition-colors hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700/80 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:border-neutral-600 dark:hover:text-neutral-50"
+              className="glass press absolute left-1/2 z-10 flex h-10 -translate-x-1/2 items-center gap-2 rounded-full px-4 text-sm font-medium text-neutral-800 md:h-auto md:px-3 md:py-2 md:text-neutral-700 md:hover:text-neutral-900 dark:text-neutral-100 md:dark:text-neutral-200 md:dark:hover:text-neutral-50"
               style={{ bottom: chatInputHeight + 16 }}
               title="Follow latest response"
             >
@@ -543,12 +572,12 @@ export function ChatPage() {
       <footer
         ref={measureFooter}
         className={cn(
-          "fixed bottom-0 left-0 px-2 md:px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
+          "fixed bottom-(--app-keyboard) left-0 pl-[max(var(--safe-left),0.75rem)] pr-[max(var(--safe-right),0.75rem)] pb-[calc(var(--safe-bottom)+0.5rem)] md:pb-[calc(var(--safe-bottom)+1rem)] pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
           "right-0",
         )}
         style={{
           // Offset past the (resizable) sidebar so the input never sits under it.
-          ...(!isMobile && showSidebar && chats.length > 0 && !showAgentDrawer && !showAppDrawer && !showArtifactsDrawer
+          ...(!isMobile && showSidebar && !showAgentDrawer && !showAppDrawer && !showArtifactsDrawer
             ? { left: sidebarWidth + 12 }
             : {}),
           // Offset past the open right-side drawer(s); track the edge instantly while dragging.
@@ -569,7 +598,7 @@ export function ChatPage() {
               !showAppDrawer &&
               !showAgentDrawer &&
               !showArtifactsDrawer &&
-              "md:translate-y-[calc(50%-33.333vh)]",
+              "md:translate-y-[min(0px,calc(50%-var(--app-height)/3))]",
           )}
         >
           <div className="pointer-events-auto">
@@ -592,13 +621,14 @@ export function ChatPage() {
         resizeLabel="Resize artifacts panel"
         onResizeStart={handleArtifactsResizeMouseDown}
         onClose={toggleArtifactsDrawer}
+        ownsHeader={isMobile}
         latch={
           artifactsAvailable && (
             <EdgeLatch
               label="Artifacts"
               icon={<Shapes size={16} className="-rotate-90" />}
               open={showArtifactsDrawer}
-              hidden={isMobile && showAppDrawer}
+              hidden={isMobile}
               shiftVw={showAppDrawer ? appWidthVw : 0}
               resizing={isAppResizing || isSwapping}
               compact={isMobile}
@@ -640,7 +670,7 @@ export function ChatPage() {
               name={activeApp?.title ?? "app"}
               icon={<AppWindow size={16} className="-rotate-90" />}
               open={showAppDrawer}
-              hidden={isMobile && showArtifactsDrawer}
+              hidden={isMobile}
               shiftVw={showArtifactsDrawer ? artifactsWidthVw : 0}
               resizing={isArtifactsResizing || isSwapping}
               compact={isMobile}

@@ -1,6 +1,6 @@
 import { EventType, type AGUIEvent } from "@ag-ui/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { useChat } from "@tanstack/ai-react";
+import { stream, useChat } from "@tanstack/ai-react";
 import type { ChatInterruptState, ChatPersistedState, RunAgentInputContext } from "@tanstack/ai-client";
 import { normalizeToUIMessage, isContentPart, type ContentPart, type UIMessage, type ModelMessage } from "@tanstack/ai";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
@@ -27,6 +27,7 @@ import { useChatClassification } from "./useChatClassification";
 import { useChatElicitation } from "./useChatElicitation";
 import { createAttachmentLoader } from "../lib/chatAttachments";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { useAgents } from "@/features/agent/hooks/useAgents";
 import { mcpToolPrefix } from "@/features/settings/lib/mcpToolNames";
 import { ProviderState } from "@/shared/types/chat";
 import { beginMemoryRun, enqueueMemoryLearning } from "@/features/agent/lib/memoryLearning";
@@ -41,6 +42,7 @@ interface Session {
   hydrated: ChatPersistedState | null;
   interrupts: ChatInterruptState | null;
   toolWaiters: Set<() => void>;
+  pendingSends: Map<string, () => void>;
 }
 
 interface Options {
@@ -80,6 +82,7 @@ export function useChatRun({
   chatRuntimeContext,
   chatMemory,
 }: Options) {
+  const { getAgent } = useAgents();
   const config = getConfig();
   const client = config.client;
   const session = useMemo<Session>(
@@ -90,6 +93,7 @@ export function useChatRun({
       hydrated: null,
       interrupts: null,
       toolWaiters: new Set(),
+      pendingSends: new Map(),
     }),
     [threadId],
   );
@@ -103,9 +107,10 @@ export function useChatRun({
     };
   }, [session]);
   const tools = useMemo(() => approvalTools(chatTools()), [chatTools]);
-  const { providers, getProviderState, isProviderEnabled } = useToolsContext();
+  const { providers, getProviderState, isProviderEnabled, getSkillsProvider, skillsLoading } = useToolsContext();
   const toolNames = new Set(tools.map((tool) => tool.name));
   const isAwaitingTools = (names: string[]) =>
+    skillsLoading ||
     names.some(
       (name) =>
         !toolNames.has(name) &&
@@ -141,11 +146,22 @@ export function useChatRun({
     ): AsyncGenerator<AGUIEvent> {
       if (!model) throw new Error("No model selected");
       const { id, sidecar } = session;
+      const agentId = getChat(id)?.agentId;
+      const agent = agentId ? getAgent(agentId) : undefined;
       const runId = runContext.runId;
       const conversation = sidecar.apply(
         nativeMessages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
       );
       const outgoing = conversation.findLast(isUserPrompt);
+      // Stored references keep manual skills (and their resources) available on
+      // follow-ups and reloads, without changing global automatic-use settings.
+      const selectedSkills = conversation.filter(isUserPrompt).flatMap((message) =>
+        message.parts.flatMap((part) => {
+          const skill = part.type === "text" ? textMetadata(part).skillRef : undefined;
+          return skill ? [skill.name] : [];
+        }),
+      );
+      const skills = getSkillsProvider(selectedSkills);
       const loadAttachments = createAttachmentLoader(id);
       const memory = chatMemory();
       const releaseMemory = memory ? beginMemoryRun(memory) : undefined;
@@ -155,7 +171,7 @@ export function useChatRun({
       try {
         if (active()) setRunPhase("thinking");
         updateChat(id, () => ({}));
-        const tools = chatTools();
+        const tools = chatTools(skills);
         signal?.throwIfAborted();
         const toolMessage = outgoing ? (await loadAttachments([outgoing], signal))[0] : undefined;
         let memoryContext = "";
@@ -183,15 +199,16 @@ export function useChatRun({
         const compaction = config.chat?.compaction;
         let threshold = compaction ? (model.compactThreshold ?? compactThreshold(model.id)) : 0;
         if (compaction?.threshold !== undefined && threshold > 0) threshold = Math.min(threshold, compaction.threshold);
-        yield* streamChatWithUiRepair(client, model.id, chatInstructions(), conversation, tools, {
+        yield* streamChatWithUiRepair(client, model.id, chatInstructions(skills), conversation, tools, {
           runId,
           threadId: id,
           parentRunId: runContext.parentRunId,
           resume: runContext.resume,
           agentName: "chat",
+          agentIdentity: agent ? { id: agent.id, name: agent.name, kind: "configured" } : undefined,
           sidecar,
           middleware: [
-            ...chatMiddleware(),
+            ...chatMiddleware(skills),
             ...(runFs ? [artifactVerification(runFs, sidecar, conversation)] : []),
             uiDiagnostics(conversation),
             {
@@ -234,6 +251,7 @@ export function useChatRun({
             loadAttachments(prepareChatMessages(messages, requestContext), runSignal),
           createToolContext: (call, execution) => ({
             chatId: id,
+            skillFiles: skills?.loadFiles ?? (async () => ({})),
             content: () => (toolMessage?.parts ?? []).filter(isContentPart),
             elicit: (elicitation, options) =>
               requestElicitation(
@@ -274,11 +292,13 @@ export function useChatRun({
       chatRuntimeContext,
       classify,
       getChat,
+      getAgent,
       config.chat?.compaction,
       config.chat?.summarizer,
       client,
       chatInstructions,
       chatMiddleware,
+      getSkillsProvider,
       requestElicitation,
       completeElicitation,
       clearElicitation,
@@ -294,16 +314,15 @@ export function useChatRun({
     threadId: session.id,
     tools,
     queue: { whenBusy: "queue", drain: "batch" },
-    connection: {
-      connect: (messages, _data, signal, context) => connectRef.current(session, messages, signal, context),
-    },
+    connection: stream((messages, _data, signal, context) => connectRef.current(session, messages, signal, context)),
     persistence: {
       getItem: async () => {
         const saved = getChat(session.id) ?? (chatId === session.id ? await loadChat(session.id) : undefined);
-        if (!saved) return null;
+        // Keep sends gated until personal/plugin skills are available, including
+        // resources explicitly selected in a saved conversation.
         // TanStack binds persisted approvals once at hydration. Its current
         // updateTools does not rebind an approval hydrated before MCP discovery.
-        const pendingIds = new Set(saved.resume?.pendingInterrupts?.map((interrupt) => interrupt.toolCallId));
+        const pendingIds = new Set(saved?.resume?.pendingInterrupts?.map((interrupt) => interrupt.toolCallId));
         const names: string[] = [];
         const collect = (messages: UIMessage[]) => {
           for (const message of messages)
@@ -312,12 +331,13 @@ export function useChatRun({
               if (part.type === "subagent") collect(part.subagent.messages);
             }
         };
-        collect(saved.messages);
+        if (saved) collect(saved.messages);
         await Promise.resolve();
         while (storageOwnerRef.current === session && awaitingTools.current(names))
           await new Promise<void>((resolve) => {
             session.toolWaiters.add(resolve);
           });
+        if (!saved) return null;
         session.hydrated = { messages: saved.messages, resume: saved.resume };
         session.native = saved.messages;
         return session.hydrated;
@@ -374,7 +394,7 @@ export function useChatRun({
   useEffect(() => {
     for (const resolve of session.toolWaiters) resolve();
     session.toolWaiters.clear();
-  }, [session, tools, providers, getProviderState]);
+  }, [session, tools, providers, getProviderState, skillsLoading]);
   useEffect(() => {
     setStreamingMessage(null);
     clearElicitation();
@@ -389,6 +409,19 @@ export function useChatRun({
     [ai.interrupts, ai.interruptErrors, ai.resuming],
   );
   const { sendMessage: sendNativeMessage, setMessages, append, stop, isLoading } = ai;
+  useEffect(() => {
+    const accepted = new Set(ai.messages.map((m) => m.id));
+    for (const queued of ai.queue) {
+      if (typeof queued.content !== "string" && queued.content.id) accepted.add(queued.content.id);
+    }
+    for (const id of accepted) {
+      const done = session.pendingSends.get(id);
+      if (done) {
+        session.pendingSends.delete(id);
+        done();
+      }
+    }
+  }, [ai.messages, ai.queue, session]);
   const isResponding = ai.isLoading || !!streamingMessage;
   const status: ChatContextType["status"] =
     pendingElicitation || ai.interrupts.length
@@ -421,6 +454,7 @@ export function useChatRun({
       historyOverride?: UIMessage[],
       artifactFiles?: ProcessedFile[],
       deletedPaths?: string[],
+      onAccepted?: (chatId: string) => void,
     ) => {
       const { id, chat: chatObj, fs: chatFs } = await getOrCreateChat();
       if (!chatObj) {
@@ -467,18 +501,24 @@ export function useChatRun({
           );
         }
       }
-      if (!getChat(id) || chatIdRef.current !== id) return;
-      if (session.id !== id) return;
+      if (!getChat(id) || chatIdRef.current !== id || session.id !== id)
+        throw new Error("Conversation changed before the message was sent. Your draft was kept.");
       if (historyOverride) {
         // An edited turn replaces itself and everything after it in the live transcript.
         const cut = session.native.findIndex((native) => native.id === resolvedMessage.id);
         setMessages(cut >= 0 ? session.native.slice(0, cut) : historyOverride);
       }
-      await sendNativeMessage({
-        id: resolvedMessage.id,
-        content: resolvedMessage.parts as ContentPart[],
-        metadata: resolvedMessage.metadata,
-      });
+      if (onAccepted) session.pendingSends.set(resolvedMessage.id, () => onAccepted(id));
+      try {
+        await sendNativeMessage({
+          id: resolvedMessage.id,
+          content: resolvedMessage.parts as ContentPart[],
+          metadata: resolvedMessage.metadata,
+        });
+      } catch (error) {
+        session.pendingSends.delete(resolvedMessage.id);
+        throw error;
+      }
     },
     [getOrCreateChat, getChat, chatIdRef, session, setMessages, sendNativeMessage],
   );
@@ -492,7 +532,12 @@ export function useChatRun({
     await append(retry.resend);
   }, [chatIdRef, session, isLoading, ai.isHydrating, setMessages, append]);
 
+  const subagentsRef = useRef(ai.subagents);
+  useLayoutEffect(() => {
+    subagentsRef.current = ai.subagents;
+  }, [ai.subagents]);
   const stopStreaming = useCallback(() => {
+    for (const subagent of subagentsRef.current) subagent.stop?.();
     stop();
     clearElicitation();
     setStreamingMessage(null);

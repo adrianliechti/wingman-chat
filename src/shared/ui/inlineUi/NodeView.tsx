@@ -225,8 +225,8 @@ function UiModal({ trigger, content }: Pick<BasicProps["Modal"], "trigger" | "co
       </div>
       <Dialog open={open} onClose={setOpen} className="relative z-50">
         <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
-        <div className="fixed inset-0 flex items-center justify-center p-4">
-          <DialogPanel className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-lg bg-white p-5 dark:bg-neutral-900">
+        <div className="fixed inset-x-0 app-viewport flex items-center justify-center p-4">
+          <DialogPanel className="max-h-[calc(var(--app-height)*0.85)] w-full max-w-lg overflow-auto rounded-lg bg-white p-5 dark:bg-neutral-900">
             <DialogTitle className="sr-only">Details</DialogTitle>
             <Child value={content} />
             <button className={cn(buttonClass, "mt-3")} onClick={() => setOpen(false)}>
