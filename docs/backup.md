@@ -147,7 +147,7 @@ backend verifies that isolated probe writes reject both duplicate creation and
 stale ETags; it refuses index writes if either check fails. Unrelated resource
 changes merge and retry; concurrent
 changes to the same resource return a conflict. A changed keystore or reset
-generation rejects stale uploads. No lock files, persistent volume, or shared
+generation rejects uploads that started before that change. No lock files, persistent volume, or shared
 filesystem are required. Encrypted upload
 spools use the backend's temporary directory and are removed after each request.
 
@@ -158,7 +158,8 @@ Reset also works when the index contents are corrupt or unsupported. It atomical
 with a fresh generation to fence stale writers. It then deletes a snapshot of
 existing encrypted objects, including objects left by earlier failed commits.
 An upload already in progress can leave an unpublished object after reset; it
-cannot publish into the new backup. Cleanup failures can be retried with another
+cannot publish into the new backup. An old device that starts a request after
+reset and re-enrollment is not fenced by this mechanism. Cleanup failures can be retried with another
 reset. Concurrent deletion or reset can interrupt a download; restore reports the
 failure and must be retried rather than accepting a partial backup. OneDrive's recycle
 bin and version-history policies still apply: a reset or PIN change cannot revoke
@@ -210,14 +211,16 @@ method can unlock it. Changing protection preserves existing data and keys; olde
 symmetric backups remain readable.
 
 New PINs must have at least 8 characters. They are stretched with Argon2id
-(64 MiB, 3 passes) and then HKDF-SHA256, keyed by a per-user **PIN pepper** when the
-deployment configures `BACKUP_PIN_SECRET` (see below). With a pepper, a copy of the
-keystore alone, for example from OneDrive or its version history, cannot be
-brute-forced offline: guesses also need the backend's secret. Without a pepper,
-Argon2id only makes each guess more expensive. PINs created with the earlier
-PBKDF2-SHA256 scheme, or before a pepper was configured, keep working and are
-re-wrapped automatically after the next successful PIN unlock. Shorter existing
-PINs also keep working; only new or changed PINs need 8 characters.
+(64 MiB, 3 passes) and HKDF-SHA256. A leaked keystore permits offline PIN
+attempts; Argon2id raises the cost of each guess. Older PBKDF2-SHA256 PINs are
+re-wrapped after a successful unlock. Existing short PINs continue to work.
+
+Backups created by an earlier experimental version with a PIN pepper require
+migration: unlock with a passkey or the previous version and restore/export the data,
+then reset and configure a new backup. A configured passkey can also continue
+to unlock the existing backup, but its old peppered PIN will no longer work.
+Without the old server secret, a passkey, an unlocked device, or an export,
+a peppered PIN backup cannot be recovered.
 
 Setup and unlock automatically remember this device. The root key is saved in
 local IndexedDB as a non-extractable Web Crypto key, excluded from exports. Scripts
@@ -227,25 +230,6 @@ access. Because the saved key cannot be read back, adding or replacing a recover
 method on a remembered device first asks for an existing method again: a passkey
 prompt, or the PIN before adding a passkey. A cached public key supports
 upload-only operation; restoring or reconciling conflicts requires unlocking.
-
-### PIN pepper secret
-
-Set a long random secret on the backend to enable PIN peppers:
-
-```sh
-BACKUP_PIN_SECRET="$(openssl rand -base64 48)"
-```
-
-It can also be set as `pinSecret` in `backup.yaml`. It is never read from or served
-in `config.json`. It must have at least 32 characters and be identical on every
-backend replica. The backend derives `HMAC-SHA256(secret, account identity)` and
-returns it to the signed-in user at `GET /api/v1/keystore/pepper`.
-
-Store the secret like an encryption key. **Losing or changing it makes peppered
-PINs unusable**: users then need their passkey, an unlocked device, or a backup
-reset. Passkey protection does not use the pepper. The pepper protects against
-leaked backup storage, not against a compromised backend or a signed-in session,
-which can fetch it.
 
 ## What is included?
 
@@ -283,7 +267,7 @@ usage, and reset. Files and blobs share `GetObject`, `PutObject`, and `DeleteObj
 with `ObjectKind` keeping their namespaces separate. Conditional object writes
 return `ErrObjectConflict` when their ETag precondition fails.
 Each method serves an existing API operation; providers own concurrency control
-and must fence stale writes after reset or keystore changes. Local ZIP export stays in the browser.
+and must fence requests that began before a reset or keystore change. Local ZIP export stays in the browser.
 
 Chat attachments are content-addressed and may be shared across conversations.
 Deleting a chat removes its event history but retains shared encrypted attachment

@@ -346,7 +346,6 @@ for (const ending of ["finish", "stop", "error"] as const) {
       const request = route.request();
       const path = new URL(request.url()).pathname;
       if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-      if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
       if (path.endsWith("/keystore")) {
         if (request.method() === "GET")
           return key

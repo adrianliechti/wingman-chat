@@ -10,12 +10,6 @@ import { isBackupSessionCurrent } from "./backupLifecycle";
 
 const PREFIX = "/api/v1";
 
-let backupPublicKey: string | undefined;
-
-export function setBackupKey(publicKey: string): void {
-  backupPublicKey = publicKey;
-}
-
 const REQUEST_TIMEOUT_MS = 60_000;
 /** Blob and file bodies can be large in either direction. */
 const TRANSFER_TIMEOUT_MS = 10 * 60_000;
@@ -25,7 +19,6 @@ async function storeFetch(input: string, init?: RequestInit): Promise<Response> 
     throw new Error("Backup reset in progress. Reload before syncing.");
   }
   const headers = new Headers(init?.headers);
-  if (backupPublicKey) headers.set("X-Backup-Key", backupPublicKey);
   // A hung request would otherwise hold the sync engines' locks indefinitely.
   const transfer = init?.body !== undefined || /\/(blobs|files)\//.test(input);
   const signal = init?.signal ?? AbortSignal.timeout(transfer ? TRANSFER_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
@@ -112,17 +105,6 @@ export async function getKeystore(): Promise<KeystoreResponse | null> {
   if (res.status === 404) return null;
   const etag = unquote(res.headers.get("ETag") ?? "");
   return { data: await res.text(), etag };
-}
-
-/** Per-user secret mixed into PIN key derivation, or null when the server has none configured. */
-export async function getPinPepper(): Promise<Uint8Array<ArrayBuffer> | null> {
-  const res = await ensureOk(await storeFetch(`${PREFIX}/keystore/pepper`), true);
-  if (res.status === 404) return null;
-  const { pepper } = (await res.json()) as { pepper?: unknown };
-  if (typeof pepper !== "string") throw new Error("Invalid PIN pepper response.");
-  const bin = atob(pepper);
-  if (bin.length !== 32) throw new Error("Invalid PIN pepper response.");
-  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
 
 export type PutKeystoreOptions = ConditionalOptions;

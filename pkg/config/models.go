@@ -210,10 +210,6 @@ type Risk struct {
 type Backup struct {
 	Provider string `json:"provider" yaml:"provider"`
 	Drive    string `json:"drive,omitempty" yaml:"drive,omitempty"`
-
-	// PinSecret derives per-user PIN peppers. It is never read from or
-	// served in config.json; set it in backup.yaml or BACKUP_PIN_SECRET.
-	PinSecret string `json:"-" yaml:"pinSecret,omitempty"`
 }
 
 type Translator struct {

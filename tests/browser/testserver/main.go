@@ -12,7 +12,7 @@ import (
 
 func main() {
 	http.DefaultClient = &http.Client{Transport: &testgraph.Accounts{}}
-	cfg := &config.Config{Backup: &config.Backup{Provider: "onedrive", PinSecret: "browser-test-pin-secret-0123456789abcdef"}, Drives: []config.Drive{{ID: "test", Type: "onedrive"}}}
+	cfg := &config.Config{Backup: &config.Backup{Provider: "onedrive"}, Drives: []config.Drive{{ID: "test", Type: "onedrive"}}}
 	handler := server.New(cfg, "/api", config.PlatformURL(), "", os.DirFS("dist"), "skills")
 	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if user, ok := identity.FromRequest(r); ok {

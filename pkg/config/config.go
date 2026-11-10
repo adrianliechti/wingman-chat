@@ -181,7 +181,6 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if cfg.Backup != nil {
 		envOverride("BACKUP_DRIVE", &cfg.Backup.Drive)
-		envOverride("BACKUP_PIN_SECRET", &cfg.Backup.PinSecret)
 		if cfg.Backup.Provider == "" {
 			cfg.Backup.Provider = "local"
 		}

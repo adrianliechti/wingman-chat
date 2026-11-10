@@ -447,7 +447,6 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
 - `BACKUP_PROVIDER` — `local` (default) or `onedrive`. Local uses ZIP backup controls; OneDrive enables online backup. Configure the same setting with `backup.provider` in `config.json`, or `provider` in `backup.yaml`. For OneDrive, `BACKUP_DRIVE` / `drive` selects an existing connection from `drives.yaml`. See [backup configuration](docs/backup.md#choose-a-provider) for authentication, concurrency, and migration details. OneDrive requires no persistent or shared volume.
-- `BACKUP_PIN_SECRET` — optional server secret (32+ characters, same on every replica) mixed into PIN key derivation so leaked backup storage can't be brute-forced offline. Also settable as `pinSecret` in `backup.yaml`, never in `config.json`. Losing or changing it locks out PIN unlocks; passkeys keep working. See [PIN pepper secret](docs/backup.md#pin-pepper-secret).
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED` (`TELEMETRY_NAME` — the OpenTelemetry `service.name`, default `wingman-chat`)

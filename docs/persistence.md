@@ -195,9 +195,9 @@ to the browser profile grants use of that saved decryption key, but its bytes ca
 be read back. Protection changes on a remembered device therefore re-authenticate
 with an existing passkey or PIN first.
 
-PIN wraps use Argon2id (64 MiB, t=3, p=1) followed by HKDF-SHA256 whose salt is the
-optional server PIN pepper (`HMAC-SHA256(BACKUP_PIN_SECRET, identity)`). The keystore
-records `kdf.pepper: true` when a pepper was used, and unlocking then requires it.
+PIN wraps use Argon2id (64 MiB, t=3, p=1) followed by HKDF-SHA256.
+Backups with legacy peppered PINs must be migrated using a passkey or the
+previous version, as described in [How backup works](backup.md).
 Legacy PBKDF2-SHA256 wraps remain readable and are re-wrapped after a successful PIN
 unlock. The backend accepts only bounded Argon2id parameters. “Stop sync on this device” removes
 the saved key and public upload key, then reloads open tabs to stop uploads and
@@ -314,9 +314,9 @@ generation fences old tabs even if they miss the reload notification. Pending
 local edits remain usable. A failed local cleanup retries without repeating an
 acknowledged online deletion.
 
-Requests carry the public backup key in `X-Backup-Key`. Conditional index commits
-reject an older session's writes after reset or a keystore change, so stale
-uploads cannot publish into a newly configured backup.
+Conditional index commits reject requests that began before a reset or
+keystore change. Requests started by an old device after a reset are not fenced
+by that mechanism.
 
 ## Verification
 

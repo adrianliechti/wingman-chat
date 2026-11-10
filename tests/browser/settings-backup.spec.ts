@@ -16,7 +16,6 @@ async function configure(page: Page, online?: boolean, store = true) {
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/backup/usage")) return route.fulfill({ json: { bytes: 12949914 } });
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice", name: "Alice" } });
-    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/keystore")) {
       if (request.method() === "GET") {
         return keystore

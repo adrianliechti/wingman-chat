@@ -1,10 +1,8 @@
 package config
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -152,48 +150,5 @@ func TestLocalBackupDefaultAndExplicitProviders(t *testing.T) {
 				t.Fatalf("provider: %+v", cfg.Backup)
 			}
 		})
-	}
-}
-
-func TestBackupPinSecretStaysServerSide(t *testing.T) {
-	previous, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(t.TempDir()); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(previous); err != nil {
-			t.Fatal(err)
-		}
-	})
-	t.Setenv("BACKUP_PROVIDER", "")
-	t.Setenv("BACKUP_DRIVE", "")
-	t.Setenv("BACKUP_PIN_SECRET", "")
-	// The public browser config must not be able to supply the secret.
-	if err := os.WriteFile("config.json", []byte(`{"backup":{"provider":"onedrive","pinSecret":"from-public-json"}}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if cfg := Load(); cfg.Backup == nil || cfg.Backup.PinSecret != "" {
-		t.Fatalf("PIN secret read from public JSON: %+v", cfg.Backup)
-	}
-	if err := os.WriteFile("backup.yaml", []byte("provider: onedrive\npinSecret: from-yaml\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if cfg := Load(); cfg.Backup.PinSecret != "from-yaml" {
-		t.Fatalf("YAML PIN secret not loaded: %+v", cfg.Backup)
-	}
-	t.Setenv("BACKUP_PIN_SECRET", "from-env")
-	cfg := Load()
-	if cfg.Backup.PinSecret != "from-env" {
-		t.Fatalf("environment PIN secret not applied: %+v", cfg.Backup)
-	}
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "from-env") {
-		t.Fatalf("PIN secret serialized into browser config: %s", data)
 	}
 }

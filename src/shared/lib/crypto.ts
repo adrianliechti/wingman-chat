@@ -5,12 +5,11 @@
  *   - Server is *not* trusted to read chat contents.
  *   - Server *is* trusted to identify the user (via reverse-proxy headers).
  *   - PIN, when set, protects the DEK against storage-theft scenarios. A PIN
- *     is low-entropy: without the server pepper it is brute-forceable offline
+ *     is low-entropy: it is brute-forceable offline
  *     if the wrapped DEK leaks, so Argon2id only raises the cost per guess.
  *
  * Primitives:
- *   - Argon2id (64 MiB, t=3) + HKDF-SHA256 keyed by an optional server-held
- *     per-user pepper → 256-bit KEK from PIN + salt. Legacy PBKDF2-SHA256
+ *   - Argon2id (64 MiB, t=3) + HKDF-SHA256 → 256-bit KEK from PIN + salt. Legacy PBKDF2-SHA256
  *     (600 000 iterations) wraps stay readable and upgrade on unlock.
  *   - AES-256-GCM with random 12-byte nonce for both DEK-wrap and event/blob.
  *   - AAD pins identity into ciphertext (userId:chatId:seq for events,
@@ -153,7 +152,7 @@ interface Argon2idParams {
   m: number;
   t: number;
   p: number;
-  /** Mixes in the server's per-user PIN pepper, required to unlock. */
+  /** Legacy marker: these wraps must be migrated using the previous release. */
   pepper?: boolean;
 }
 
@@ -164,23 +163,14 @@ const ARGON2_COST = { m: 64 * 1024, t: 3, p: 1 } as const;
 const ARGON2_MAX_MEMORY_KIB = 256 * 1024;
 const ARGON2_MAX_ITERATIONS = 16;
 const ARGON2_MAX_PARALLELISM = 8;
-const PEPPER_BYTES = 32;
-
-export class PinPepperUnavailableError extends Error {
-  constructor() {
-    super("This server can't unlock PIN-protected backups right now. Use your passkey or contact your administrator.");
-    this.name = "PinPepperUnavailableError";
-  }
-}
-
 /** True when a wrap should be refreshed with current KDF settings. */
-export function kdfNeedsUpgrade(kdf: KdfParams, pepperAvailable: boolean): boolean {
+export function kdfNeedsUpgrade(kdf: KdfParams): boolean {
   if (kdf.name !== "argon2id") return true;
   if (kdf.m < ARGON2_COST.m || kdf.t < ARGON2_COST.t) return true;
-  return pepperAvailable && !kdf.pepper;
+  return false;
 }
 
-async function deriveKEK(pin: string, kdf: KdfParams, userId: string, pepper: Bytes | null): Promise<CryptoKey> {
+async function deriveKEK(pin: string, kdf: KdfParams, userId: string): Promise<CryptoKey> {
   if (kdf.name === "pbkdf2-sha256") {
     const baseKey = await crypto.subtle.importKey("raw", encodeUtf8(pin), "PBKDF2", false, ["deriveKey"]);
     return crypto.subtle.deriveKey(
@@ -212,7 +202,8 @@ async function deriveKEK(pin: string, kdf: KdfParams, userId: string, pepper: By
   ) {
     throw new Error("unsupported PIN key parameters");
   }
-  if (kdf.pepper && !pepper) throw new PinPepperUnavailableError();
+  if (kdf.pepper)
+    throw new Error("This PIN uses retired backup protection. Use a passkey or migrate it with the previous version.");
 
   const { deriveArgon2id } = await import("./argon2");
   const stretched = await deriveArgon2id(encodeUtf8(pin), fromBase64(kdf.salt), kdf);
@@ -222,8 +213,7 @@ async function deriveKEK(pin: string, kdf: KdfParams, userId: string, pepper: By
     {
       name: "HKDF",
       hash: "SHA-256",
-      // The pepper keys HKDF-Extract, so a leaked keystore alone cannot be brute-forced offline.
-      salt: kdf.pepper && pepper ? pepper : new Uint8Array(new ArrayBuffer(0)),
+      salt: new Uint8Array(new ArrayBuffer(0)),
       info: encodeUtf8(`wingman:pin:${userId}`),
     },
     material,
@@ -239,21 +229,14 @@ export interface WrappedDek {
   wrappedDek: string; // base64
 }
 
-export async function wrapDEKWithPin(
-  dek: DEK,
-  pin: string,
-  userId: string,
-  pepper: Uint8Array | null = null,
-): Promise<WrappedDek> {
-  if (pepper && pepper.length !== PEPPER_BYTES) throw new Error("invalid PIN pepper");
+export async function wrapDEKWithPin(dek: DEK, pin: string, userId: string): Promise<WrappedDek> {
   const kdf: Argon2idParams = {
     name: "argon2id",
     salt: toBase64(randomBytes(SALT_BYTES)),
     ...ARGON2_COST,
-    ...(pepper ? { pepper: true } : {}),
   };
 
-  const kek = await deriveKEK(pin, kdf, userId, pepper ? bufFrom(pepper) : null);
+  const kek = await deriveKEK(pin, kdf, userId);
   const nonce = randomBytes(NONCE_BYTES);
 
   const ct = new Uint8Array(
@@ -271,14 +254,8 @@ export async function wrapDEKWithPin(
   };
 }
 
-export async function unwrapDEKWithPin(
-  w: WrappedDek,
-  pin: string,
-  userId: string,
-  kid = 1,
-  pepper: Uint8Array | null = null,
-): Promise<DEK> {
-  const kek = await deriveKEK(pin, w.kdf, userId, pepper ? bufFrom(pepper) : null);
+export async function unwrapDEKWithPin(w: WrappedDek, pin: string, userId: string, kid = 1): Promise<DEK> {
+  const kek = await deriveKEK(pin, w.kdf, userId);
   const raw = bufFrom(
     new Uint8Array(
       await crypto.subtle.decrypt(

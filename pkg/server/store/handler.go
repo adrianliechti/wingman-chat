@@ -16,7 +16,6 @@ import (
 type Handler struct {
 	store      store.Provider
 	middleware func(http.Handler) http.Handler
-	pinSecret  []byte
 }
 
 // New serves the backup API. middleware, if non-nil, wraps every route.
@@ -38,7 +37,6 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 
 	handle("GET "+prefix+"/v1/keystore", h.handleGetKeystore)
 	handle("PUT "+prefix+"/v1/keystore", h.handlePutKeystore)
-	handle("GET "+prefix+"/v1/keystore/pepper", h.handlePinPepper)
 	handle("DELETE "+prefix+"/v1/backup", h.handleResetBackup)
 	handle("GET "+prefix+"/v1/backup/usage", h.requireProtection(h.handleBackupUsage))
 

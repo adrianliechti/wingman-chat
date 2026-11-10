@@ -53,7 +53,6 @@ test("PIN and passkey protection survive reload and permit PIN changes", async (
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/files"))
       return route.fulfill({
         json: [...files].map(([id, entry]) => ({
@@ -236,7 +235,6 @@ test("new backups stay local until PIN protection is configured", async ({ page 
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/keystore")) {
       if (request.method() === "GET")
         return key
@@ -289,7 +287,6 @@ test("PIN setup recovers when protection saves but backup key provisioning fails
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (!path.endsWith("/keystore")) return route.fulfill({ json: [] });
     if (request.method() === "GET")
       return key ? route.fulfill({ json: key, headers: { ETag: `"${revision}"` } }) : route.fulfill({ status: 404 });
@@ -333,7 +330,6 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/backup") && request.method() === "DELETE") {
       expect(request.headers()["x-confirm-backup-reset"]).toBe("true");
       resets++;
@@ -350,7 +346,7 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
     }
     if (request.method() === "PUT" && path.includes("/files/")) {
       expect(key?.backup).toBeTruthy();
-      expect(request.headers()["x-backup-key"]).toBe((key!.backup as { publicKey: string }).publicKey);
+      expect(request.headers()["x-backup-key"]).toBeUndefined();
       uploads++;
       files.set(path, { bytes: request.postDataBuffer()!, etag: String(uploads) });
       return route.fulfill({ status: 204, headers: { ETag: `"${uploads}"` } });
@@ -412,7 +408,6 @@ test("a failed reset preserves local data and retries on reload", async ({ page 
   await page.route("**/api/v1/**", (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/backup")) {
       resets++;
       return fail ? route.fulfill({ status: 500, body: "Reset unavailable" }) : route.fulfill({ status: 204 });
@@ -452,7 +447,6 @@ test("reset waits for a peer upload's local writes and fences the stale tab afte
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/backup")) {
       resets++;
       key = null;
@@ -534,7 +528,6 @@ test("PIN setup validates before sending data when passkeys are unavailable", as
     if (request.method() !== "GET") writes++;
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/keystore")) return route.fulfill({ status: 404 });
     return route.fulfill({ json: [] });
   });
@@ -569,7 +562,6 @@ test("danger zone stays at the bottom and scrolls with the whole section in shor
   await page.route("**/api/v1/**", (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/keystore")) return route.fulfill({ status: 404 });
     return route.fulfill({ json: [] });
   });
@@ -606,7 +598,6 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: userId } });
-    if (path.endsWith("/keystore/pepper")) return route.fulfill({ status: 404 });
     if (path.endsWith("/keystore")) {
       if (request.method() === "GET")
         return stored

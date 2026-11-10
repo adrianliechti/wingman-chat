@@ -101,8 +101,7 @@ test("a remembered PIN device confirms the PIN before adding a passkey", async (
   const keystore = await (
     await page.request.get(`${backupServer}/api/v1/keystore`, { headers: { "X-Forwarded-User": backupUser } })
   ).json();
-  // The test backend configures a PIN secret, so new PINs are peppered Argon2id wraps.
-  expect(keystore.kdf).toMatchObject({ name: "argon2id", m: 65536, t: 3, p: 1, pepper: true });
+  expect(keystore.kdf).toMatchObject({ name: "argon2id", m: 65536, t: 3, p: 1 });
 
   // After reload only the non-extractable device key remains, so adding a method needs the PIN.
   await page.reload();

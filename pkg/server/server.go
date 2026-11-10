@@ -37,11 +37,7 @@ func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.
 		panic(fmt.Errorf("store: %w", err))
 	}
 	if provider != nil {
-		handler, err := storesrv.New(provider, middleware).WithPinSecret(cfg.Backup.PinSecret)
-		if err != nil {
-			panic(fmt.Errorf("store: %w", err))
-		}
-		handler.Attach(mux, prefix)
+		storesrv.New(provider, middleware).Attach(mux, prefix)
 	}
 
 	if info, err := os.Stat(skillsDir); err == nil && info.IsDir() {

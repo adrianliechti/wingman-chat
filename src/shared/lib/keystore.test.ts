@@ -3,7 +3,7 @@ import { generateDEK, toBase64 } from "./crypto";
 import * as keystore from "./keystore";
 import * as api from "./storeClient";
 
-vi.mock("./storeClient", () => ({ putKeystore: vi.fn(), getKeystore: vi.fn(), getPinPepper: vi.fn() }));
+vi.mock("./storeClient", () => ({ putKeystore: vi.fn(), getKeystore: vi.fn() }));
 const create = vi.fn();
 const get = vi.fn();
 
@@ -22,7 +22,6 @@ beforeEach(() => {
   create.mockResolvedValue(credential({ enabled: true }));
   get.mockResolvedValue(credential({ results: { first: secret.buffer } }));
   vi.mocked(api.putKeystore).mockResolvedValue("next-etag");
-  vi.mocked(api.getPinPepper).mockResolvedValue(null);
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -172,18 +171,7 @@ describe("required backup protection", () => {
   });
 });
 
-describe("PIN pepper and KDF upgrades", () => {
-  it("requires the server pepper for peppered PINs", async () => {
-    const pepper = crypto.getRandomValues(new Uint8Array(32));
-    vi.mocked(api.getPinPepper).mockResolvedValue(pepper);
-    const prepared = await keystore.prepareSetup();
-    const pin = await keystore.setPin(prepared.state, prepared.dek, "12345678", "alice");
-    expect(pin.keystore).toMatchObject({ kdf: { name: "argon2id", pepper: true } });
-    expect(await keystore.unlockWithPin(pin, "12345678", "alice")).toEqual(prepared.dek);
-    vi.mocked(api.getPinPepper).mockResolvedValue(null);
-    await expect(keystore.unlockWithPin(pin, "12345678", "alice")).rejects.toThrow(/can't unlock PIN-protected/);
-  });
-
+describe("PIN KDF upgrades", () => {
   it("re-wraps older PIN protection after unlock without enforcing the new length", async () => {
     const prepared = await keystore.prepareSetup();
     const unpeppered = await keystore.setPin(prepared.state, prepared.dek, "12345678", "alice");
@@ -191,24 +179,13 @@ describe("PIN pepper and KDF upgrades", () => {
     expect(await keystore.upgradePinProtection(unpeppered, prepared.dek, "12345678", "alice")).toBe(unpeppered);
     expect(api.putKeystore).not.toHaveBeenCalled();
 
-    const pepper = crypto.getRandomValues(new Uint8Array(32));
-    vi.mocked(api.getPinPepper).mockResolvedValue(pepper);
     const legacy: keystore.KeystoreState = {
       ...unpeppered,
       keystore: { ...unpeppered.keystore, kdf: { name: "pbkdf2-sha256", salt: "", iter: 600_000 } },
     } as keystore.KeystoreState;
     const upgraded = await keystore.upgradePinProtection(legacy, prepared.dek, "1234", "alice");
-    expect(upgraded.keystore).toMatchObject({ kdf: { name: "argon2id", pepper: true } });
+    expect(upgraded.keystore).toMatchObject({ kdf: { name: "argon2id" } });
     expect(api.putKeystore).toHaveBeenCalledWith(JSON.stringify(upgraded.keystore), { ifMatch: "next-etag" });
     expect(await keystore.unlockWithPin(upgraded, "1234", "alice")).toEqual(prepared.dek);
-  });
-
-  it("skips the upgrade when the pepper cannot be fetched", async () => {
-    const prepared = await keystore.prepareSetup();
-    const pin = await keystore.setPin(prepared.state, prepared.dek, "12345678", "alice");
-    vi.mocked(api.putKeystore).mockClear();
-    vi.mocked(api.getPinPepper).mockRejectedValue(new Error("offline"));
-    expect(await keystore.upgradePinProtection(pin, prepared.dek, "12345678", "alice")).toBe(pin);
-    expect(api.putKeystore).not.toHaveBeenCalled();
   });
 });

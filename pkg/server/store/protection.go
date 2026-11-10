@@ -89,16 +89,6 @@ func (h *Handler) requireProtection(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "Set a PIN or passkey to enable backups", http.StatusForbidden)
 			return
 		}
-		var envelope struct {
-			Backup struct {
-				PublicKey string `json:"publicKey"`
-			} `json:"backup"`
-		}
-		_ = json.Unmarshal(key, &envelope)
-		if r.Header.Get("X-Backup-Key") != envelope.Backup.PublicKey {
-			http.Error(w, "Backup settings changed. Reload and unlock before syncing", http.StatusForbidden)
-			return
-		}
 		next(w, r)
 	}
 }

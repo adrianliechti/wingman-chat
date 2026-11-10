@@ -275,7 +275,6 @@ func TestBackupHTTPAPI(t *testing.T) {
 		t.Helper()
 		r := httptest.NewRequest(method, "/api/v1/"+path, strings.NewReader(body))
 		r.Header.Set("X-Forwarded-User", "alice")
-		r.Header.Set("X-Backup-Key", "public")
 		r.Header.Set("X-Expected-Seq", "0")
 		r.Header.Set("X-Confirm-Backup-Reset", "true")
 		w := httptest.NewRecorder()

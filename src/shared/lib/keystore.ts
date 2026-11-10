@@ -135,9 +135,8 @@ export async function unlockWithPin(state: KeystoreState, pin: string, userId: s
     if (isPasskeyProtected(state.keystore)) throw new Error("Use your passkey to unlock sync.");
     return dekFromPlain(state.keystore);
   }
-  const pepper = state.keystore.kdf.name === "argon2id" && state.keystore.kdf.pepper ? await api.getPinPepper() : null;
   try {
-    return await unwrapDEKWithPin(state.keystore, pin, userId, state.keystore.kid, pepper);
+    return await unwrapDEKWithPin(state.keystore, pin, userId, state.keystore.kid);
   } catch (err) {
     if (err instanceof Error && err.name === "OperationError") {
       throw new Error("Incorrect PIN. Please try again.", { cause: err });
@@ -154,11 +153,11 @@ export async function setPin(state: KeystoreState, dek: DEK, pin: string, userId
   if (pin.length < PIN_MIN_LENGTH || pin.length > PIN_MAX_LENGTH) {
     throw new Error(`PIN must be between ${PIN_MIN_LENGTH} and ${PIN_MAX_LENGTH} characters.`);
   }
-  return savePin(state, dek, pin, userId, await api.getPinPepper());
+  return savePin(state, dek, pin, userId);
 }
 
 /**
- * Re-wrap an existing PIN with the current KDF and server pepper after a
+ * Re-wrap an existing PIN with the current KDF after a
  * successful unlock. Older PINs keep working even below today's minimum length.
  * Returns the unchanged state when no upgrade is needed or possible.
  */
@@ -169,24 +168,12 @@ export async function upgradePinProtection(
   userId: string,
 ): Promise<KeystoreState> {
   if (!isPinProtected(state.keystore)) return state;
-  let pepper: Uint8Array<ArrayBuffer> | null;
-  try {
-    pepper = await api.getPinPepper();
-  } catch {
-    return state;
-  }
-  if (!kdfNeedsUpgrade(state.keystore.kdf, pepper !== null)) return state;
-  return savePin(state, dek, pin, userId, pepper);
+  if (!kdfNeedsUpgrade(state.keystore.kdf)) return state;
+  return savePin(state, dek, pin, userId);
 }
 
-async function savePin(
-  state: KeystoreState,
-  dek: DEK,
-  pin: string,
-  userId: string,
-  pepper: Uint8Array<ArrayBuffer> | null,
-): Promise<KeystoreState> {
-  const wrapped = await wrapDEKWithPin(dek, pin, userId, pepper);
+async function savePin(state: KeystoreState, dek: DEK, pin: string, userId: string): Promise<KeystoreState> {
+  const wrapped = await wrapDEKWithPin(dek, pin, userId);
   const pinState: ProtectedKeystore = {
     version: 2,
     kid: dek.kid,

@@ -11,7 +11,6 @@ import {
   generateDEK,
   hashFrame,
   kdfNeedsUpgrade,
-  PinPepperUnavailableError,
   toBase64,
   toDeviceKey,
   unwrapDEKWithPin,
@@ -117,17 +116,15 @@ describe("PIN wrapping", () => {
     await expect(unwrapDEKWithPin(wrapped, "1234", "user2")).rejects.toThrow();
   });
 
-  it("uses Argon2id and requires the matching server pepper when one was used", async () => {
+  it("uses Argon2id and rejects legacy peppered PINs with a recovery message", async () => {
     const dek = await generateDEK();
-    const pepper = crypto.getRandomValues(new Uint8Array(32));
-    const wrapped = await wrapDEKWithPin(dek, "correct horse", "user1", pepper);
-    expect(wrapped.kdf).toMatchObject({ name: "argon2id", m: 65536, t: 3, p: 1, pepper: true });
-    expect(toBase64((await unwrapDEKWithPin(wrapped, "correct horse", "user1", 1, pepper)).raw)).toBe(
-      toBase64(dek.raw),
-    );
-    await expect(unwrapDEKWithPin(wrapped, "correct horse", "user1")).rejects.toBeInstanceOf(PinPepperUnavailableError);
-    const otherPepper = crypto.getRandomValues(new Uint8Array(32));
-    await expect(unwrapDEKWithPin(wrapped, "correct horse", "user1", 1, otherPepper)).rejects.toThrow();
+    const wrapped = await wrapDEKWithPin(dek, "correct horse", "user1");
+    expect(wrapped.kdf).toMatchObject({ name: "argon2id", m: 65536, t: 3, p: 1 });
+    expect(toBase64((await unwrapDEKWithPin(wrapped, "correct horse", "user1")).raw)).toBe(toBase64(dek.raw));
+    if (wrapped.kdf.name !== "argon2id") throw new Error("Expected Argon2id");
+    await expect(
+      unwrapDEKWithPin({ ...wrapped, kdf: { ...wrapped.kdf, pepper: true } }, "correct horse", "user1"),
+    ).rejects.toThrow(/retired backup protection/);
   });
 
   it("still unwraps legacy PBKDF2 wraps and marks them for upgrade", async () => {
@@ -150,10 +147,9 @@ describe("PIN wrapping", () => {
     );
     const legacy = { kdf, nonce: toBase64(nonce), wrappedDek: toBase64(new Uint8Array(ct)) };
     expect(toBase64((await unwrapDEKWithPin(legacy, "1234", "user1")).raw)).toBe(toBase64(dek.raw));
-    expect(kdfNeedsUpgrade(kdf, false)).toBe(true);
+    expect(kdfNeedsUpgrade(kdf)).toBe(true);
     const current = (await wrapDEKWithPin(dek, "1234", "user1")).kdf;
-    expect(kdfNeedsUpgrade(current, false)).toBe(false);
-    expect(kdfNeedsUpgrade(current, true)).toBe(true);
+    expect(kdfNeedsUpgrade(current)).toBe(false);
   });
 
   it("rejects hostile Argon2id parameters before deriving", async () => {
