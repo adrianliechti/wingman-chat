@@ -12,7 +12,7 @@ import { BackupSetup, type BackupSetupStep } from "./BackupSetup";
 import { BackupRecoveryMethods } from "./BackupRecoveryMethods";
 import { BackupStatusIcon } from "./BackupStatusIcon";
 import { PinForm } from "./PinForm";
-import { readLocalMirror } from "@/shared/lib/chatSync";
+import { readLocalMirror } from "@/shared/lib/localChats";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 
 import { getBackupSize } from "@/shared/lib/storeClient";

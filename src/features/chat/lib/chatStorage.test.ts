@@ -95,26 +95,85 @@ describe("chat persistence", () => {
       vi.restoreAllMocks();
     }
   });
-  it("reads only the index at startup and resolves attachment copies when requested", async () => {
-    const value = chat();
-    value.messages = [userMessage([image()])];
-    await storeChat(value);
+  it.each([false, true])(
+    "reads only metadata at startup with online backup %s and resolves attachments on demand",
+    async (online) => {
+      config.store = online;
+      const value = chat();
+      value.messages = [userMessage([image()])];
+      await storeChat(value);
+      const reads: string[] = [];
+      memory.beforeRead = async (path) => {
+        reads.push(path);
+      };
+      expect(await loadChatIndex()).toHaveLength(1);
+      expect(reads).toEqual(["chats/index.json"]);
+      const manifest = (await loadChat(value.id, false))!;
+      expect(reads).toEqual([
+        "chats/index.json",
+        "chats/chat/chat.json",
+        ...(online ? ["chats/chat/target.json"] : []),
+      ]);
+      expect(JSON.stringify(manifest.messages)).toContain("blob:sha256-");
+      const load = createAttachmentLoader(value.id);
+      expect(await load(manifest.messages)).toMatchObject(value.messages);
+      expect(JSON.stringify(manifest.messages)).toContain("blob:sha256-");
+      const readCount = reads.length;
+      await load(manifest.messages);
+      expect(reads).toHaveLength(readCount);
+    },
+  );
+
+  it("keeps indexed flat chats visible when online backup is enabled", async () => {
+    config.store = true;
+    memory.put("chats/old.json", JSON.stringify(await opfs.extractChatBlobs(chat("old"))));
+    await opfs.upsertIndexEntry("chats", { id: "old", title: "Older chat", updated: "2026-01-02" });
     const reads: string[] = [];
     memory.beforeRead = async (path) => {
       reads.push(path);
     };
-    expect(await loadChatIndex()).toHaveLength(1);
+    expect(await loadChatIndex()).toMatchObject([{ id: "old", title: "Older chat" }]);
     expect(reads).toEqual(["chats/index.json"]);
-    const manifest = (await loadChat(value.id, false))!;
-    expect(reads).toEqual(["chats/index.json", "chats/chat/chat.json"]);
-    expect(JSON.stringify(manifest.messages)).toContain("blob:sha256-");
-    const load = createAttachmentLoader(value.id);
-    expect(await load(manifest.messages)).toMatchObject(value.messages);
-    expect(JSON.stringify(manifest.messages)).toContain("blob:sha256-");
-    const readCount = reads.length;
-    await load(manifest.messages);
-    expect(reads).toHaveLength(readCount);
+    expect(await loadChat("old", false)).toMatchObject({ id: "old" });
   });
+
+  it("keeps healthy chat listings available when another indexed or unindexed transcript is corrupt", async () => {
+    config.store = true;
+    await storeChat(chat("healthy"));
+    await storeChat(chat("broken"));
+    memory.put("chats/broken/chat.json", "{invalid");
+    memory.put("chats/unindexed/chat.json", "{invalid");
+    expect((await loadChatIndex()).map((entry) => entry.id).sort()).toEqual(["broken", "healthy"]);
+    expect(await loadChat("healthy", false)).toMatchObject({ id: "healthy" });
+  });
+
+  it.each([false, true])(
+    "repairs an interrupted metadata update with online backup %s without scanning healthy transcripts",
+    async (online) => {
+      config.store = online;
+      const original = { ...chat(), title: "original" };
+      await storeChat(original);
+      await storeChat(chat("healthy"));
+      const updated = { ...original, title: "updated", projectId: "project", updated: new Date(Date.now() + 1000) };
+      memory.beforeWrite = async (path) => {
+        if (path === "chats/index.json") throw new Error("index write failed");
+      };
+      await expect(storeChat(updated)).rejects.toThrow("index write failed");
+      memory.beforeWrite = undefined;
+      const reads: string[] = [];
+      memory.beforeRead = async (path) => {
+        reads.push(path);
+      };
+      expect((await loadChatIndex()).find((entry) => entry.id === original.id)).toMatchObject({
+        title: updated.title,
+        projectId: updated.projectId,
+        updated: updated.updated,
+      });
+      expect(reads.some((path) => path.startsWith("chats/healthy/"))).toBe(false);
+      expect(await opfs.listFiles("_sync/chat-index")).toEqual([]);
+      expect(await loadChat(original.id, false)).toMatchObject(updated);
+    },
+  );
 
   it("round-trips the native record: identities, usage, phases, resume, metadata and rich tool output", async () => {
     const value = chat();
@@ -412,3 +471,28 @@ it("recovers a local edit from the shared pending target if the native save fail
   expect((await loadChatIndex()).find((entry) => entry.id === value.id)?.title).toBe(edited.title);
   expect(await opfs.readJson("chats/chat/target.json")).toMatchObject({ title: edited.title });
 });
+
+it.each([false, true])(
+  "keeps an uploaded local edit after a failed native save with engine restart %s",
+  async (restart) => {
+    config.store = true;
+    vi.mocked(api.appendEvents).mockImplementation(async (_id, seq, events) => ({ newSeq: seq + events.length }));
+    vi.mocked(api.headBlob).mockResolvedValue(true);
+    const dek = await generateDEK();
+    const original = chat();
+    await storeChat(original);
+    const sync = await ChatSync.create({ userId: "user", dek });
+    await sync.flushPending();
+    const updated = { ...original, title: "recover this update", messages: [userMessage("new message")] };
+    memory.beforeWrite = async (path) => {
+      if (path === "chats/chat/chat.json") throw new Error("native write failed");
+    };
+    await expect(storeChat(updated)).rejects.toThrow("native write failed");
+    memory.beforeWrite = undefined;
+    const recovered = restart ? await ChatSync.create({ userId: "user", dek }) : sync;
+    await recovered.flushPending();
+    expect(await opfs.readJson("chats/chat/target.json")).toBeUndefined();
+    expect(await loadChat(original.id, false)).toMatchObject(updated);
+    expect(await opfs.listFiles("_sync/chat-index")).toEqual([]);
+  },
+);

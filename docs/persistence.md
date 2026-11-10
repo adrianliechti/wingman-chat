@@ -254,6 +254,19 @@ ChatSync backs up chat metadata, transcripts, and referenced message attachments
 Both backup modes keep the native `chat.json` snapshot locally. Online saves
 commit an outbox snapshot before starting backup initialization or network work;
 confirmed event logs are backup baselines rather than the UI's storage format.
+Each local history commit includes its sequence, frame hash, and compaction count
+in the same atomic write. The shared sync-state file caches those checkpoints;
+recovery trusts the history if a later cache or snapshot write failed, preventing
+an acknowledged event from being applied twice. Older histories remain readable
+and gain a checkpoint on their next commit.
+Local saves and incoming changes maintain the chat metadata index. Sidebar
+startup reads that index and checks record membership without parsing indexed
+transcripts; it reads a manifest only to recover a missing or interrupted index
+entry or check retention. A small `_sync/chat-index/` intent marks unfinished
+snapshot/index writes, so recovery repairs only the affected conversations.
+Existing flat `chats/<id>.json` records stay visible and are promoted
+into the backup outbox when synchronization starts, retaining their source JSON
+as `chat.legacy.json`.
 Retention applies to local chats and to older chats restored from online backup.
 FileSync backs up current artifact files under `chats/<id>/artifacts/` and saved
 HTML artifact app data under `chats/<id>/artifact-state/`. Immutable artifact
@@ -269,7 +282,7 @@ chat internals handled by ChatSync. This covers projects and original shared fil
 composer drafts and pending attachments, agents and their attached documents,
 embeddings and memory, editable skills, installed plugins and bundled resources,
 repositories, generated images, and `profile.json`. Local chat indexes and legacy
-chat recovery copies are excluded; the chat log supplies the restored chat list.
+chat recovery copies are excluded; restored chat logs rebuild the local metadata index.
 
 Online backup does not cover localStorage: theme, layout/background, device choices,
 model/effort/verbosity and tool/source preferences, selected agent/project, artifact

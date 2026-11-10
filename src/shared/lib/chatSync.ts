@@ -20,6 +20,15 @@ import { isChatBackupPaused, requireChatBackupReady, BackupPausedError } from ".
 import { isBackupSessionCurrent, withBackupStorage, WORKSPACE_OWNER_KEY } from "./backupLifecycle";
 import { withPersistenceLock } from "./persistence";
 import { chatRetentionCutoff } from "./chatRetention";
+import { chatHistoryPath as historyPath, encodeHistory, readChatHistory } from "./chatHistoryStorage";
+import { completeChatIndexRepair, storeChatIndexEntry } from "./chatIndex";
+import {
+  targetPath,
+  localChatPath,
+  withChatTarget,
+  writeLocalChatSnapshot,
+  writeLocalChatSnapshotUnlocked,
+} from "./localChats";
 import { normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
 import type { Chat } from "@/shared/types/chat";
 import { applyEntries, chunkEntries, decodeLines, diffChat, encodeLines, type LogEntry, replayLog } from "./chatLog";
@@ -34,24 +43,19 @@ import {
   hashFrame,
   ZERO_HASH,
 } from "./crypto";
-import {
-  collectChatBlobIds,
-  extractChatBlobs,
-  getChatBlob,
-  rehydrateChatBlobs,
-  restoreChatManifest,
-  type StoredChat,
-} from "./opfs-chat";
+import { collectChatBlobIds, extractChatBlobs, getChatBlob, restoreChatManifest, type StoredChat } from "./opfs-chat";
 import {
   appendBlob,
   deleteDirectory,
   deleteFile,
   listDirectories,
   listFiles,
+  fileExists,
   readJson,
   readText,
   writeBlob,
   writeJson,
+  removeIndexEntry,
 } from "./opfs-core";
 
 const SYNC_DIR = "_sync";
@@ -134,15 +138,6 @@ function forgetChatState(state: SyncState, chatId: string): void {
   if (state.entriesSinceCompact) delete state.entriesSinceCompact[chatId];
 }
 
-// Per-chat paths in OPFS
-const historyPath = (chatId: string) => `chats/${chatId}/history.jsonl`;
-const targetPath = (chatId: string) => `chats/${chatId}/target.json`;
-/** Shared by unlocked engines and saves from locked/offline tabs. */
-const withTarget = <T>(chatId: string, operation: () => Promise<T>) =>
-  withPersistenceLock(`chat-target:${encodeURIComponent(chatId)}`, operation);
-/** The native local snapshot is kept in both local-only and online modes. */
-const localChatPath = (chatId: string) => `chats/${chatId}/chat.json`;
-
 /** Preserve local snapshots and attachments, but start the next backup from seq 0. */
 export async function resetLocalBackupState(): Promise<void> {
   for (const id of await listDirectories("chats")) {
@@ -155,34 +150,11 @@ export async function resetLocalBackupState(): Promise<void> {
     if (stored) {
       await writeJson(targetPath(id), normalizeStoredChat(stored));
       await writeJson(localChatPath(id), normalizeStoredChat(stored));
+      await storeChatIndexEntry(normalizeStoredChat(stored));
     }
     await deleteFile(historyPath(id));
   }
   await deleteDirectory(SYNC_DIR);
-}
-
-/** Read the local mirror without a DEK — logs and pending targets are
- *  plaintext locally; the PIN only protects the server copies. Lets the
- *  UI show chats while the session is still locked. */
-export async function readLocalChat(id: string, hydrateBlobs = true): Promise<Chat | undefined> {
-  let stored = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
-  if (!stored) stored = await readJson<StoredChat | LegacyStoredChat>(localChatPath(id));
-  if (!stored) {
-    const history = await readText(historyPath(id));
-    if (history) stored = replayLog(id, decodeLines(history)).chat ?? undefined;
-  }
-  if (!stored) return undefined;
-  const normalized = normalizeStoredChat({ ...stored, id });
-  return hydrateBlobs ? rehydrateChatBlobs(normalized) : restoreChatManifest(normalized);
-}
-
-export async function readLocalMirror(hydrateBlobs = true): Promise<Chat[]> {
-  const out: Chat[] = [];
-  for (const id of await listDirectories("chats")) {
-    const chat = await readLocalChat(id, hydrateBlobs);
-    if (chat) out.push(chat);
-  }
-  return out;
 }
 
 /** Persist a chat as a pending target without a session — used while the
@@ -200,14 +172,6 @@ async function stashPendingTargetUnlocked(chat: Chat): Promise<StoredChat> {
   return stored;
 }
 
-/** Share the snapshot commit with native local storage and its durable outbox. */
-export function writeLocalChatSnapshot(stored: StoredChat, pending: boolean): Promise<void> {
-  return withTarget(stored.id, async () => {
-    if (pending) await writeJson(targetPath(stored.id), stored);
-    await writeJson(localChatPath(stored.id), stored);
-  });
-}
-
 /** Keep local deletion usable before backup protection has been configured. */
 export function stashPendingDeletion(chatId: string, userId?: string): Promise<void> {
   return withBackupStorage(() => stashPendingDeletionUnlocked(chatId, userId));
@@ -223,11 +187,19 @@ async function stashPendingDeletionUnlocked(chatId: string, userId?: string): Pr
     await deleteDirectory(`chats/${chatId}`);
     return;
   }
-  const state = previous ?? { userId: owner, heads: {}, lastFrameHash: {} };
-  await journalDeletion(owner, chatId);
-  forgetChatState(state, chatId);
-  await saveChatState(state, chatId);
-  await deleteDirectory(`chats/${chatId}`);
+  // A response from an active upload must finish its local commit before the
+  // deletion removes history; otherwise that response can recreate the chat.
+  await withPersistenceLock(`chat-sync:${encodeURIComponent(owner)}:${encodeURIComponent(chatId)}`, () =>
+    withChatTarget(chatId, async () => {
+      const state = (await loadState()) ?? { userId: owner, heads: {}, lastFrameHash: {} };
+      await journalDeletion(owner, chatId);
+      forgetChatState(state, chatId);
+      await saveChatState(state, chatId);
+      await deleteDirectory(`chats/${chatId}`);
+      await removeIndexEntry("chats", chatId);
+      await completeChatIndexRepair(chatId);
+    }),
+  );
 }
 
 // ChatSync ---------------------------------------------------------------
@@ -375,16 +347,22 @@ export class ChatSync {
       if (remoteIds.has(id)) continue;
       await this.withChat(id, async () => {
         if (this.state.heads[id] !== head) return;
-        if (this.pendingTargets.has(id)) {
-          // Keep offline edits and their attachments; the next upload starts
-          // a fresh log rather than diffing against the deleted server copy.
-          await deleteFile(historyPath(id));
-        } else {
-          await deleteDirectory(`chats/${id}`);
-        }
-        this.lastSynced.delete(id);
-        forgetChatState(this.state, id);
-        await saveChatState(this.state, id);
+        await withChatTarget(id, async () => {
+          const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
+          if (target) {
+            // Keep offline edits and their attachments; the next upload starts
+            // a fresh log rather than diffing against the deleted server copy.
+            this.pendingTargets.set(id, normalizeStoredChat(target));
+            await deleteFile(historyPath(id));
+          } else {
+            await deleteDirectory(`chats/${id}`);
+            await removeIndexEntry("chats", id);
+            await completeChatIndexRepair(id);
+          }
+          this.lastSynced.delete(id);
+          forgetChatState(this.state, id);
+          await saveChatState(this.state, id);
+        });
       });
     }
 
@@ -451,7 +429,11 @@ export class ChatSync {
     await saveChatState(this.state, chatId);
     this.setActivity({});
 
-    await deleteDirectory(`chats/${chatId}`);
+    await withChatTarget(chatId, async () => {
+      await deleteDirectory(`chats/${chatId}`);
+      await removeIndexEntry("chats", chatId);
+      await completeChatIndexRepair(chatId);
+    });
     await withPersistenceLock("collection:drafts", () =>
       deleteDirectory(`drafts/${encodeURIComponent(`chat-${chatId}`)}`),
     );
@@ -476,7 +458,7 @@ export class ChatSync {
       await this.syncKnownChats();
       // Local saves need no initialized engine; adopt their durable outbox now.
       for (const id of await listDirectories("chats")) {
-        await withTarget(id, async () => {
+        await withChatTarget(id, async () => {
           const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
           if (target) this.pendingTargets.set(id, normalizeStoredChat(target));
           else this.pendingTargets.delete(id);
@@ -544,31 +526,38 @@ export class ChatSync {
   }
 
   private async hydrateFromOpfs(): Promise<void> {
-    for (const id of await listDirectories("chats")) {
+    const ids = new Set(await listDirectories("chats"));
+    for (const file of await listFiles("chats")) {
+      if (file !== "index.json" && file.endsWith(".json")) ids.add(file.slice(0, -5));
+    }
+    for (const id of ids) {
       await this.withChat(id, () =>
-        withTarget(id, async () => {
+        withChatTarget(id, async () => {
           const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
-          const history = await readText(historyPath(id));
-          if (!history) {
+          if (!(await fileExists(historyPath(id)))) {
             // A pending edit takes precedence over an older local-only record.
-            const local = target ?? (await readJson<StoredChat | LegacyStoredChat>(localChatPath(id)));
-            if (this.state.heads[id] !== undefined) {
-              // Without a replayable log, the chat must upload as a fresh snapshot.
-              forgetChatState(this.state, id);
-              await saveChatState(this.state, id);
-            }
+            const flat = await readJson<StoredChat | LegacyStoredChat>(`chats/${id}.json`);
+            const local = target ?? (await readJson<StoredChat | LegacyStoredChat>(localChatPath(id))) ?? flat;
             if (local) {
-              const stored = normalizeStoredChat(local);
+              const stored = normalizeStoredChat({ ...local, id });
               this.pendingTargets.set(id, stored);
-              await writeJson(targetPath(id), stored);
-              await writeJson(localChatPath(id), stored);
+              await writeLocalChatSnapshotUnlocked(stored, true);
+              if (flat) {
+                if (!(await fileExists(`chats/${id}/chat.legacy.json`)))
+                  await writeJson(`chats/${id}/chat.legacy.json`, flat);
+                await deleteFile(`chats/${id}.json`);
+              }
             }
             return;
           }
-          const { chat } = replayLog(id, decodeLines(history));
-          if (chat) this.lastSynced.set(id, chat);
-          if (target) this.pendingTargets.set(id, normalizeStoredChat(target));
-          else if (!(await readJson(localChatPath(id))) && chat) await writeJson(localChatPath(id), chat);
+          const chat = this.lastSynced.get(id);
+          if (target) {
+            const stored = normalizeStoredChat(target);
+            this.pendingTargets.set(id, stored);
+            await writeLocalChatSnapshotUnlocked(stored, true);
+          } else if (!(await fileExists(localChatPath(id))) && chat) {
+            await writeLocalChatSnapshotUnlocked(chat, false);
+          }
         }),
       );
     }
@@ -583,7 +572,7 @@ export class ChatSync {
       this.pendingTargets.delete(id);
     }
     for (const id of ids) {
-      if (!this.lastSynced.has(id) && !this.pendingTargets.has(id)) await this.reloadChat(id);
+      await this.withChat(id, async () => {});
     }
   }
 
@@ -592,28 +581,42 @@ export class ChatSync {
   private async reloadChat(chatId: string): Promise<void> {
     const disk = await loadState();
     const owned = disk?.userId === this.userId;
-    const head = owned ? disk.heads[chatId] : undefined;
-    const hash = owned ? disk.lastFrameHash[chatId] : undefined;
-    if (head !== this.state.heads[chatId] || hash !== this.state.lastFrameHash[chatId]) {
-      if (head === undefined) {
-        forgetChatState(this.state, chatId);
-      } else {
-        this.state.heads[chatId] = head;
-        this.state.lastFrameHash[chatId] = hash ?? ZERO_HASH;
-        const count = owned ? disk.entriesSinceCompact?.[chatId] : undefined;
-        if (count === undefined) delete this.state.entriesSinceCompact?.[chatId];
-        else (this.state.entriesSinceCompact ??= {})[chatId] = count;
-      }
-      const history = head === undefined ? undefined : await readText(historyPath(chatId));
-      const chat = history ? replayLog(chatId, decodeLines(history)).chat : null;
-      if (chat) this.lastSynced.set(chatId, chat);
-      else this.lastSynced.delete(chatId);
+    const previous = this.lastSynced.get(chatId);
+    const history = await readChatHistory(
+      chatId,
+      previous
+        ? {
+            head: this.state.heads[chatId],
+            hash: this.state.lastFrameHash[chatId],
+            chat: previous,
+          }
+        : undefined,
+    );
+    const head = history?.checkpoint?.head ?? (history && owned ? disk.heads[chatId] : undefined);
+    const hash = history?.checkpoint?.hash ?? (history && owned ? disk.lastFrameHash[chatId] : undefined);
+    const count = history?.checkpoint?.count ?? (history && owned ? disk.entriesSinceCompact?.[chatId] : undefined);
+    if (head === undefined) {
+      forgetChatState(this.state, chatId);
+    } else {
+      this.state.heads[chatId] = head;
+      this.state.lastFrameHash[chatId] = hash ?? ZERO_HASH;
+      if (count === undefined) delete this.state.entriesSinceCompact?.[chatId];
+      else (this.state.entriesSinceCompact ??= {})[chatId] = count;
     }
-    await withTarget(chatId, async () => {
+    if (history?.chat) this.lastSynced.set(chatId, history.chat);
+    else this.lastSynced.delete(chatId);
+    await withChatTarget(chatId, async () => {
       const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
       if (target) this.pendingTargets.set(chatId, normalizeStoredChat(target));
-      else this.pendingTargets.delete(chatId);
+      else {
+        this.pendingTargets.delete(chatId);
+        if (history?.chat && (head !== disk?.heads[chatId] || hash !== disk?.lastFrameHash[chatId])) {
+          // Finish projecting a history commit interrupted before its checkpoint cache.
+          await writeLocalChatSnapshotUnlocked(history.chat, false);
+        }
+      }
     });
+    if (head !== disk?.heads[chatId] || hash !== disk?.lastFrameHash[chatId]) await saveChatState(this.state, chatId);
   }
 
   private async pushDelete(del: { id: string }): Promise<boolean> {
@@ -690,13 +693,16 @@ export class ChatSync {
   /** Drop the pending target — unless a newer save replaced it while the
    *  flush was in flight (in this or another tab), in which case it must flush again. */
   private async clearPendingTarget(chatId: string, flushed: StoredChat): Promise<void> {
-    await withTarget(chatId, async () => {
+    await withChatTarget(chatId, async () => {
       const current = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
       if (!current) {
         this.pendingTargets.delete(chatId);
       } else if (JSON.stringify(current) === JSON.stringify(flushed)) {
-        this.pendingTargets.delete(chatId);
+        // A prior save may have committed the outbox but failed its native
+        // projection. Keep the outbox until that snapshot is durable too.
+        await writeLocalChatSnapshotUnlocked(normalizeStoredChat(current), false);
         await deleteFile(targetPath(chatId));
+        this.pendingTargets.delete(chatId);
       } else {
         this.pendingTargets.set(chatId, normalizeStoredChat(current));
       }
@@ -765,16 +771,15 @@ export class ChatSync {
 
   /** Apply entries the server accepted to the local log, baseline and head. */
   private async commitPosted(chatId: string, entries: LogEntry[], head: number, hash: string): Promise<void> {
-    await appendBlob(historyPath(chatId), new Blob([enc.encode(encodeLines(entries))]));
+    const count = entries[0]?.type === "init" ? 1 : (this.state.entriesSinceCompact?.[chatId] ?? 0) + entries.length;
+    await appendBlob(historyPath(chatId), new Blob([enc.encode(encodeHistory(entries, { head, hash, count }))]));
     const merged = applyEntries(this.lastSynced.get(chatId) ?? null, entries, chatId);
     if (merged) this.lastSynced.set(chatId, merged);
     else this.lastSynced.delete(chatId);
 
     this.state.heads[chatId] = head;
     this.state.lastFrameHash[chatId] = hash;
-    const counts = (this.state.entriesSinceCompact ??= {});
-    // A snapshot resets the count; it survives as one entry.
-    counts[chatId] = entries[0]?.type === "init" ? 1 : (counts[chatId] ?? 0) + entries.length;
+    (this.state.entriesSinceCompact ??= {})[chatId] = count;
     await saveChatState(this.state, chatId);
   }
 
@@ -814,7 +819,12 @@ export class ChatSync {
     }
 
     // Replace the local log with just the surviving snapshot entry.
-    await writeBlob(historyPath(chatId), new Blob([enc.encode(encodeLines(entries))]));
+    const checkpoint = {
+      head: this.state.heads[chatId],
+      hash: this.state.lastFrameHash[chatId],
+      count: this.state.entriesSinceCompact?.[chatId] ?? 1,
+    };
+    await writeBlob(historyPath(chatId), new Blob([enc.encode(encodeHistory(entries, checkpoint))]));
   }
 
   /** Pull events up to expectedHead and apply them. Returns whether anything changed. */
@@ -897,7 +907,8 @@ export class ChatSync {
       // Confirm attachments before committing history/head so a failed download
       // retries on the next pull, even if no new events have arrived.
       if (baseline) await this.downloadMissingBlobs(chatId, baseline);
-      const text = new Blob([enc.encode(appendedText.join(""))]);
+      const checkpoint = encodeHistory([], { head, hash: lastHash, count: entryCount });
+      const text = new Blob([enc.encode(appendedText.join("") + checkpoint)]);
       if (logWasReset) await writeBlob(historyPath(chatId), text);
       else await appendBlob(historyPath(chatId), text);
 
@@ -906,8 +917,10 @@ export class ChatSync {
       else this.lastSynced.delete(chatId);
       this.state.heads[chatId] = head;
       this.state.lastFrameHash[chatId] = lastHash;
-      await withTarget(chatId, async () => {
-        if (baseline && !(await readJson(targetPath(chatId)))) await writeJson(localChatPath(chatId), baseline);
+      await withChatTarget(chatId, async () => {
+        if (baseline && !(await readJson(targetPath(chatId)))) {
+          await writeLocalChatSnapshotUnlocked(baseline, false);
+        }
       });
       return true;
     });

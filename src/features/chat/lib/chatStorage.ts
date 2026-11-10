@@ -1,4 +1,6 @@
-import { readLocalChat, stashPendingDeletion, writeLocalChatSnapshot } from "@/shared/lib/chatSync";
+import { stashPendingDeletion } from "@/shared/lib/chatSync";
+import { readLocalChat, withChatTarget, writeLocalChatSnapshot } from "@/shared/lib/localChats";
+import { completeChatIndexRepair, pendingChatIndexRepairs } from "@/shared/lib/chatIndex";
 import { getConfig } from "@/shared/config";
 import { chatRetentionCutoff } from "@/shared/lib/chatRetention";
 import {
@@ -27,15 +29,6 @@ export async function storeChat(chat: Chat): Promise<void> {
       (await opfs.fileExists(`chats/${chat.id}/target.json`)),
     );
     await writeLocalChatSnapshot(stored, pending);
-    await opfs.upsertIndexEntry("chats", {
-      id: chat.id,
-      projectId: chat.projectId,
-      title: chat.title,
-      customTitle: chat.customTitle,
-      customIndex: chat.customIndex,
-      created: stored.created ?? undefined,
-      updated: stored.updated ?? stored.created ?? new Date(0).toISOString(),
-    });
     // Cleanup follows the durable commit. An unreadable recovery record must
     // leave all blobs intact; cleanup failure is not a failed save.
     try {
@@ -52,6 +45,7 @@ async function removeChatFiles(id: string): Promise<void> {
   await opfs.deleteDirectory(`chats/${id}`);
   await opfs.deleteFile(`chats/${id}.json`);
   await opfs.removeIndexEntry("chats", id);
+  await completeChatIndexRepair(id);
   await withPersistenceLock("collection:drafts", () =>
     opfs.deleteDirectory(`drafts/${encodeURIComponent(`chat-${id}`)}`),
   );
@@ -105,36 +99,41 @@ export async function loadChat(id: string, hydrateBlobs = true): Promise<Chat | 
 
 export async function loadChatIndex(): Promise<ChatEntry[]> {
   return withPersistenceLock("collection:chats", async () => {
-    let index = await opfs.readIndex("chats");
-    // Native snapshots are shared by both modes. Older online mirrors may still
-    // need their pending snapshot or log, without contacting a backup server.
-    const entries = new Map((getConfig().store ? [] : index).map((entry) => [entry.id, entry]));
-    for (const id of await opfs.listDirectories("chats")) {
-      if (
-        !getConfig().store &&
-        !(await opfs.fileExists(`chats/${id}/target.json`)) &&
-        !(await opfs.fileExists(`chats/${id}/history.jsonl`))
-      )
-        continue;
-      const chat = await readLocalChat(id, false);
-      if (!chat) continue;
-      const previous = entries.get(chat.id);
-      if (
-        !previous ||
-        (await opfs.fileExists(`chats/${id}/target.json`)) ||
-        (chat.updated?.getTime() ?? 0) >= (previous.updated ? Date.parse(previous.updated) : 0)
-      ) {
-        entries.set(chat.id, {
-          ...chatEntry(chat),
-          created: chat.created?.toISOString(),
-          updated: (chat.updated ?? chat.created ?? new Date(0)).toISOString(),
+    const index = await opfs.readIndex("chats");
+    const [directories, files] = await Promise.all([opfs.listDirectories("chats"), opfs.listFiles("chats")]);
+    const ids = new Set([
+      ...directories,
+      ...files.filter((file) => file !== "index.json" && file.endsWith(".json")).map((file) => file.slice(0, -5)),
+    ]);
+    const entries = new Map(index.filter((entry) => ids.has(entry.id)).map((entry) => [entry.id, entry]));
+    const repairs = await pendingChatIndexRepairs();
+    for (const id of repairs) ids.add(id);
+    // Ordinary startup reads metadata only. Read transcripts only for missing
+    // index entries or commits whose snapshot/index projection was interrupted.
+    for (const id of ids) {
+      if (entries.has(id) && !repairs.has(id)) continue;
+      try {
+        await withChatTarget(id, async () => {
+          const chat = await loadChat(id, false);
+          if (chat) {
+            const entry = {
+              ...chatEntry(chat),
+              created: chat.created?.toISOString(),
+              updated: (chat.updated ?? chat.created ?? new Date(0)).toISOString(),
+            };
+            await opfs.upsertIndexEntry("chats", entry);
+            entries.set(id, entry);
+          } else entries.delete(id);
+          await completeChatIndexRepair(id);
         });
+      } catch (error) {
+        if (!(error instanceof Error && error.cause instanceof SyntaxError)) throw error;
+        console.warn(`Could not recover chat index entry ${id}:`, error);
       }
     }
-    index = [...entries.values()];
     const cutoff = chatRetentionCutoff(getConfig().chat?.retentionDays);
     const summaries: ChatEntry[] = [];
-    for (const entry of index) {
+    for (const entry of entries.values()) {
       let summary: ChatEntry = {
         ...entry,
         created: entry.created ? new Date(entry.created) : null,

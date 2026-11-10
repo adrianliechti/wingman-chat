@@ -6,7 +6,7 @@ import { initSession } from "../../../src/shared/lib/storeSession";
 import { loadConfig } from "../../../src/shared/config";
 import { clearAll, readJson, readText, writeText } from "../../../src/shared/lib/opfs-core";
 import { syncedChatStorage } from "../../../src/features/chat/lib/syncedChatStorage";
-import { readLocalChat } from "../../../src/shared/lib/chatSync";
+import { readLocalChat } from "../../../src/shared/lib/localChats";
 import { userMessage } from "../../../src/shared/lib/messages";
 import "../../../src/index.css";
 
