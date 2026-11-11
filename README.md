@@ -441,19 +441,26 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
 - `ARTIFACTS_SHARE_MAX_SIZE` (default `104857600`) — max uncompressed workspace size in bytes
 
 The same settings go under `share` in `artifacts.yaml` (`path`, `retentionDays`, `maxSize`). **Share** uploads every
-workspace file and opens the page being viewed (or `index.html`). Each publish creates a new link, which opens in
-the app: a minimal header and the page, with no file browser and no download. Opening one of the share's files in
-a tab leads back to that view.
+workspace file and opens the page being viewed (or `index.html`); unsaved edits must be saved or discarded first.
+Each publish creates a new link, which opens in the app: a minimal header and the page, with no file browser and no
+download. Opening one of the share's files in a tab leads back to that view.
+
+Whoever published a link can end it early: **Stop sharing** next to the link, or **Settings → Shared links**, which
+lists their live links. The server tells publishers apart by the `X-Forwarded-User` (or `X-Forwarded-Email`) header
+of its authenticating proxy. Without one it keeps no list and links only end by expiring. `npm run dev` sends
+`WINGMAN_USER` (default `default`) in that header.
 
 The page runs in a sandboxed frame with an opaque origin, so it cannot read the viewer's chats, storage or
 cookies. Through `window.wingman` the app answers for it: the bundled `/.lib/` libraries, its files read-only,
 SQL over them (`wingman.duckdb`), a store for the visit, and `llm`, `vision`, `ocr`, `translate` and `transcribe`
 as the signed-in viewer. Helpers that save files (`render`, `synthesize`, writes) and chat tools are unavailable.
+The page cannot call the gateway itself: the server's `/api` proxy answers the app's own pages and clients that are
+not browsers, and refuses every other web origin, shared pages included.
 
 Behind an authenticating proxy, keep the app, `/artifacts/<id>` and uploads signed in. The sandboxed page requests
 its own files without the proxy's `SameSite=Lax` cookie, so let those through; the 128-bit link stays the secret
-(for oauth2-proxy: `--skip-auth-route=GET=^/artifacts/[0-9a-f]{32}/files/`). Setting the proxy cookie to
-`SameSite=None` works too.
+(for oauth2-proxy: `--skip-auth-route=GET=^/artifacts/[0-9a-f]{32}/files/`). Keep the proxy cookie at
+`SameSite=Lax`; loosening it would let shared pages and other sites send it.
 
 YAML files loaded from the working directory (when present) configure models, tools, drives,
 backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`, `links.yaml`,

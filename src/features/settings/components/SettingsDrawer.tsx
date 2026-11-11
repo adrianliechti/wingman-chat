@@ -10,6 +10,7 @@ import {
   Mic,
   Palette,
   Settings,
+  Share2,
   ToggleLeft,
   ToggleRight,
   Trash2,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
+import { SharedLinksSection } from "@/features/artifacts/components/SharedLinksSection";
 import { useChatActions, useChatList } from "@/features/chat/hooks/useChat";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { useSettings } from "@/features/settings/hooks/useSettings";
@@ -30,6 +32,7 @@ import { rebuildAllIndexes } from "@/features/settings/lib/rebuildIndexes";
 import { finishRestore } from "@/features/settings/lib/restoreReport";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
+import { getConfig } from "@/shared/config";
 import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
@@ -52,13 +55,14 @@ interface SettingsDrawerProps {
   initialSection?: string;
 }
 
-type SectionId = "general" | "audio" | "profile" | "backup" | "companion" | "advanced";
+type SectionId = "general" | "audio" | "profile" | "backup" | "shared" | "companion" | "advanced";
 
 const SECTION_META: { id: SectionId; label: string; icon: React.ReactNode }[] = [
   { id: "general", label: "Appearance", icon: <Palette size={16} /> },
   { id: "audio", label: "Audio", icon: <Mic size={16} /> },
   { id: "profile", label: "Profile", icon: <User size={16} /> },
   { id: "backup", label: "Backup & Restore", icon: <HardDrive size={16} /> },
+  { id: "shared", label: "Shared links", icon: <Share2 size={16} /> },
   { id: "companion", label: "Companion", icon: <Coffee size={16} /> },
   { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
 ];
@@ -400,8 +404,16 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     setMobileShowList(false);
   }, []);
 
+  // Listed only where the server publishes workspaces (see pkg/server/share).
+  const sharingAvailable = !!getConfig().artifacts?.share;
   const visibleSections = SECTION_META.filter((s) =>
-    s.id === "companion" ? companionAvailable : s.id === "advanced" ? showAdvanced : true,
+    s.id === "companion"
+      ? companionAvailable
+      : s.id === "advanced"
+        ? showAdvanced
+        : s.id === "shared"
+          ? sharingAvailable
+          : true,
   );
   const activeMeta = visibleSections.find((s) => s.id === section) ?? visibleSections[0];
 
@@ -1055,6 +1067,18 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                               </button>
                             </div>
                           </section>
+                        </section>
+                      )}
+
+                      {/* Shared links Section */}
+                      {section === "shared" && sharingAvailable && (
+                        <section aria-labelledby="shared-settings-heading" className="space-y-6">
+                          <SettingsViewHeader
+                            id="shared-settings-heading"
+                            title="Shared links"
+                            description="Workspaces you published as web pages. Anyone with a link can open it until it expires or you stop sharing it."
+                          />
+                          <SharedLinksSection />
                         </section>
                       )}
 

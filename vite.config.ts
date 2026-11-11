@@ -53,9 +53,14 @@ export default defineConfig({
       ignored: ["**/test-results/**", "**/playwright-report/**"],
     },
     proxy: {
-      // Publishing, share.json and the shared files; the viewer at /artifacts/{id} is an app route.
-      "^/artifacts(?:\\?|$|/[^/]+/)": {
+      // Publishing, listing, revoking, share.json and the shared files are the server's; only
+      // opening the viewer at /artifacts/{id} is an app route. The server learns who publishes
+      // from its authenticating proxy, which this dev proxy stands in for.
+      "^/artifacts(?:[/?]|$)": {
         target: serverUrl,
+        headers: { "X-Forwarded-User": process.env.WINGMAN_USER || "default" },
+        bypass: (req) =>
+          req.method === "GET" && /^\/artifacts\/[^/?]+(?:\?|$)/.test(req.url ?? "") ? req.url : undefined,
       },
       "/telemetry/v1": {
         target: "http://localhost:4318",

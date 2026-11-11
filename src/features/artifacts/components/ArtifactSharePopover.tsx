@@ -2,11 +2,19 @@ import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import { Check, Copy, ExternalLink, Loader2, Share2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
-import { type ArtifactShare, publishArtifacts, shareEntryFor } from "@/features/artifacts/lib/shareArtifacts";
+import {
+  type ArtifactShare,
+  publishArtifacts,
+  recentShare,
+  rememberShare,
+  revokeShare,
+  shareEntryFor,
+} from "@/features/artifacts/lib/shareArtifacts";
 import { cn } from "@/shared/lib/cn";
 import { formatAbsoluteTime } from "@/shared/lib/formatRelativeTime";
 import { formatBytes, getFileName } from "@/shared/lib/utils";
 import type { FileEntry } from "@/shared/types/file";
+import { useUnsavedPaths } from "@/shared/ui/editors/draftStore";
 import { PANEL_CLASS } from "@/shared/ui/menuStyles";
 
 interface ArtifactSharePopoverProps {
@@ -44,7 +52,7 @@ export function ArtifactSharePopover({ fs, files, activePath, retentionDays, max
 type ShareState =
   | { status: "idle" }
   | { status: "publishing" }
-  | { status: "published"; share: ArtifactShare }
+  | { status: "published"; share: ArtifactShare; revoking?: boolean; error?: string }
   | { status: "failed"; message: string };
 
 interface SharePanelProps {
@@ -55,9 +63,20 @@ interface SharePanelProps {
   maxSize?: number;
 }
 
-/** Mounted only while the popover is open; closing it cancels an upload in flight. */
+const LINK_ACTION =
+  "text-[11px] font-medium text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors disabled:opacity-50";
+
+/**
+ * Mounted only while the popover is open; closing it cancels an upload in
+ * flight. A created link is remembered for the workspace, so opening the
+ * popover again shows it instead of offering to publish a second copy.
+ */
 function SharePanel({ fs, files, entry, retentionDays, maxSize }: SharePanelProps) {
-  const [state, setState] = useState<ShareState>({ status: "idle" });
+  const workspace = fs.chatId;
+  const [state, setState] = useState<ShareState>(() => {
+    const share = recentShare(workspace);
+    return share ? { status: "published", share } : { status: "idle" };
+  });
   const [copied, setCopied] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -66,6 +85,9 @@ function SharePanel({ fs, files, entry, retentionDays, maxSize }: SharePanelProp
   const size = files.reduce((total, file) => total + (file.size ?? 0), 0);
   const tooLarge = maxSize !== undefined && size > maxSize;
   const lifetime = retentionDays === 1 ? "1 day" : `${retentionDays ?? 7} days`;
+  // The upload reads the saved files, so edits still open in an editor would be left out silently.
+  const unsaved = [...useUnsavedPaths(workspace)].sort();
+  const blocked = tooLarge || unsaved.length > 0;
 
   const publish = () => {
     controllerRef.current?.abort();
@@ -74,11 +96,25 @@ function SharePanel({ fs, files, entry, retentionDays, maxSize }: SharePanelProp
     setState({ status: "publishing" });
     setCopied(false);
     publishArtifacts(fs, entry, controller.signal)
-      .then((share) => setState({ status: "published", share }))
+      .then((share) => {
+        // The share exists from here on, whether or not this panel is still open.
+        rememberShare(workspace, share);
+        setState({ status: "published", share });
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         console.error("Failed to share artifacts:", error);
         setState({ status: "failed", message: error instanceof Error ? error.message : "Sharing failed." });
+      });
+  };
+
+  const revoke = (share: ArtifactShare) => {
+    setState({ status: "published", share, revoking: true });
+    revokeShare(share.id)
+      .then(() => setState({ status: "idle" }))
+      .catch((error: unknown) => {
+        console.error("Failed to revoke share:", error);
+        setState({ status: "published", share, error: error instanceof Error ? error.message : "Revoking failed." });
       });
   };
 
@@ -136,19 +172,58 @@ function SharePanel({ fs, files, entry, retentionDays, maxSize }: SharePanelProp
           <p className="text-[11px] text-neutral-400 dark:text-neutral-500">
             Expires {formatAbsoluteTime(state.share.expiresAt)}. Later changes need a new link.
           </p>
+          {state.error && <p className="text-xs text-red-600 dark:text-red-400">{state.error}</p>}
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={publish}
+              disabled={state.revoking || blocked}
+              title={unsaved.length > 0 ? "Save or discard your changes first" : undefined}
+              className={LINK_ACTION}
+            >
+              Create new link
+            </button>
+            {state.share.revocable && (
+              <button
+                type="button"
+                onClick={() => revoke(state.share)}
+                disabled={state.revoking}
+                className={cn(LINK_ACTION, "hover:text-red-600 dark:hover:text-red-400")}
+              >
+                {state.revoking ? "Stopping…" : "Stop sharing"}
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <>
+          <ul
+            aria-label="Files that will be published"
+            className="max-h-24 overflow-y-auto rounded-lg border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900/60 px-2.5 py-1.5 text-[11px] leading-relaxed text-neutral-600 dark:text-neutral-400"
+          >
+            {files.map((file) => (
+              <li key={file.path} className="truncate" title={file.path}>
+                {file.path.replace(/^\/+/, "")}
+              </li>
+            ))}
+          </ul>
           {tooLarge && (
             <p className="text-xs text-red-600 dark:text-red-400">
               The workspace is larger than the {formatBytes(maxSize)} sharing limit.
+            </p>
+          )}
+          {unsaved.length > 0 && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Save or discard your changes to{" "}
+              {unsaved.length === 1 ? getFileName(unsaved[0]) : `${unsaved.length} files`} first; unsaved edits are not
+              published.
             </p>
           )}
           {state.status === "failed" && <p className="text-xs text-red-600 dark:text-red-400">{state.message}</p>}
           <button
             type="button"
             onClick={publish}
-            disabled={tooLarge || state.status === "publishing"}
+            disabled={blocked || state.status === "publishing"}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-neutral-900 dark:bg-neutral-100 px-3 py-1.5 text-xs font-medium text-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-white transition-colors disabled:opacity-50"
           >
             {state.status === "publishing" && <Loader2 size={12} className="animate-spin" />}

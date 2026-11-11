@@ -404,3 +404,126 @@ func TestInjectHead(t *testing.T) {
 		}
 	}
 }
+
+// send issues a request as the app would ("same-origin") unless headers say otherwise.
+func send(mux *http.ServeMux, method, path string, headers map[string]string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, nil)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+	return res
+}
+
+func publishAs(t *testing.T, mux *http.ServeMux, headers map[string]string) createResponse {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodPost, "/artifacts?entry=index.html", buildZip(t, deck...))
+	req.Header.Set("Content-Type", "application/zip")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("publish status = %d: %s", res.Code, res.Body)
+	}
+
+	var created createResponse
+	if err := json.NewDecoder(res.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	return created
+}
+
+func TestOwnerListsAndRevokesShares(t *testing.T) {
+	mux, _ := newTestServer(t)
+	alice := map[string]string{"X-Forwarded-User": "alice@example.test"}
+	bob := map[string]string{"X-Forwarded-User": "bob@example.test"}
+
+	created := publishAs(t, mux, alice)
+	publishAs(t, mux, bob)
+
+	// Without a signed-in user nobody could revoke the share, and the app is told so.
+	if anonymous := publishAs(t, mux, nil); anonymous.Revocable || !created.Revocable {
+		t.Fatalf("revocable: signed in = %v, anonymous = %v", created.Revocable, anonymous.Revocable)
+	}
+
+	list := func(headers map[string]string) []listEntry {
+		t.Helper()
+		res := send(mux, http.MethodGet, "/artifacts", headers)
+		if res.Code != http.StatusOK {
+			t.Fatalf("list = %d: %s", res.Code, res.Body)
+		}
+		// The ids are the links' secrets: never cached, never readable from another origin.
+		if res.Header().Get("Cache-Control") != "no-store" || res.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Fatalf("list headers = %v", res.Header())
+		}
+		var entries []listEntry
+		if err := json.NewDecoder(res.Body).Decode(&entries); err != nil {
+			t.Fatal(err)
+		}
+		return entries
+	}
+
+	mine := list(alice)
+	if len(mine) != 1 {
+		t.Fatalf("alice sees %d shares, want her own one: %+v", len(mine), mine)
+	}
+	got := mine[0]
+	if got.ID != created.ID || got.URL != created.URL || got.Title != "Q3 & Deck" || got.Entry != "index.html" ||
+		got.Files != len(deck) || got.Size == 0 || !got.ExpiresAt.Equal(created.ExpiresAt) || got.Created.IsZero() {
+		t.Fatalf("listed share = %+v", got)
+	}
+
+	// The proxy may name the user by email only.
+	byEmail := map[string]string{"X-Forwarded-Email": "carol@example.test"}
+	publishAs(t, mux, byEmail)
+	if entries := list(byEmail); len(entries) != 1 {
+		t.Fatalf("shares by email = %+v", entries)
+	}
+
+	for _, tt := range []struct {
+		name    string
+		method  string
+		path    string
+		headers map[string]string
+		want    int
+	}{
+		{"list without identity", http.MethodGet, "/artifacts", nil, http.StatusForbidden},
+		{"list from a shared page", http.MethodGet, "/artifacts", map[string]string{"X-Forwarded-User": "alice@example.test", "Sec-Fetch-Site": "cross-site"}, http.StatusForbidden},
+		{"revoke someone else's", http.MethodDelete, created.URL, bob, http.StatusForbidden},
+		{"revoke without identity", http.MethodDelete, created.URL, nil, http.StatusForbidden},
+		{"revoke from a shared page", http.MethodDelete, created.URL, map[string]string{"X-Forwarded-User": "alice@example.test", "Sec-Fetch-Site": "cross-site"}, http.StatusForbidden},
+		{"revoke an unknown share", http.MethodDelete, "/artifacts/0123456789abcdef0123456789abcdef", alice, http.StatusNotFound},
+	} {
+		if res := send(mux, tt.method, tt.path, tt.headers); res.Code != tt.want {
+			t.Errorf("%s = %d, want %d: %s", tt.name, res.Code, tt.want, res.Body)
+		}
+	}
+
+	if page := get(mux, created.URL+"/files/index.html", "iframe"); page.Code != http.StatusOK {
+		t.Fatalf("share after refused revokes = %d", page.Code)
+	}
+
+	if res := send(mux, http.MethodDelete, created.URL, alice); res.Code != http.StatusNoContent {
+		t.Fatalf("revoke = %d: %s", res.Code, res.Body)
+	}
+
+	for _, path := range []string{created.URL, created.URL + "/share.json", created.URL + "/files/index.html", created.URL + "/files/data/sales.csv"} {
+		if res := get(mux, path, "iframe"); res.Code != http.StatusNotFound {
+			t.Errorf("%s after revoke = %d", path, res.Code)
+		}
+	}
+
+	if entries := list(alice); len(entries) != 0 {
+		t.Fatalf("alice's shares after revoke = %+v", entries)
+	}
+	if entries := list(bob); len(entries) != 1 {
+		t.Fatalf("bob's shares after alice's revoke = %+v", entries)
+	}
+}

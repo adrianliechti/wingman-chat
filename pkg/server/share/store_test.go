@@ -289,3 +289,166 @@ func TestPageTitle(t *testing.T) {
 		t.Errorf("missing page title = %q", got)
 	}
 }
+
+func TestSweepKeepsSharesItCannotRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("file permissions do not stop root")
+	}
+
+	store := newTestStore(t)
+	create := func() *Share {
+		share, err := store.Create(buildZip(t, zipEntry{name: "index.html", body: "hi"}), "index.html", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return share
+	}
+
+	unreadable, missing, damaged := create(), create(), create()
+	meta := func(share *Share) string { return filepath.Join(store.dir, share.ID, metadataFile) }
+
+	// A passing fault of the disk looks like this: the metadata is there but cannot be read now.
+	if err := os.Chmod(meta(unreadable), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(meta(missing)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(meta(damaged), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store.Sweep()
+
+	if err := os.Chmod(meta(unreadable), 0o644); err != nil {
+		t.Fatalf("a live share was swept while unreadable: %v", err)
+	}
+	if _, _, err := store.Get(unreadable.ID); err != nil {
+		t.Fatalf("share after the fault passed: %v", err)
+	}
+
+	for name, share := range map[string]*Share{"without metadata": missing, "with damaged metadata": damaged} {
+		if _, err := os.Stat(filepath.Join(store.dir, share.ID)); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("folder %s kept: %v", name, err)
+		}
+	}
+}
+
+func TestSweepKeepsUploadsStillArriving(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+
+	upload := func(name string, folder, archive time.Time) string {
+		dir := filepath.Join(store.dir, uploadPrefix+name)
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		file := filepath.Join(dir, archiveFile)
+		if err := os.WriteFile(file, []byte("partial"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		os.Chtimes(file, archive, archive)
+		os.Chtimes(dir, folder, folder)
+		return dir
+	}
+
+	// The folder was created two hours ago; only the archive shows whether data still arrives.
+	arriving := upload("arriving", now.Add(-2*time.Hour), now.Add(-time.Minute))
+	stalled := upload("stalled", now.Add(-2*time.Hour), now.Add(-90*time.Minute))
+
+	store.Sweep()
+
+	if _, err := os.Stat(arriving); err != nil {
+		t.Fatalf("an upload still receiving data was swept: %v", err)
+	}
+	if _, err := os.Stat(stalled); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("stalled upload kept: %v", err)
+	}
+}
+
+func TestListAndDelete(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+
+	create := func(owner string) *Share {
+		t.Helper()
+		share, err := store.Create(buildZip(t, zipEntry{name: "index.html", body: "hi"}), "index.html", owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		now = now.Add(time.Hour)
+		return share
+	}
+
+	first := create("alice")
+	other := create("bob")
+	nobody := create("")
+	second := create("alice")
+
+	ids := func(shares []*Share) string {
+		var out []string
+		for _, share := range shares {
+			out = append(out, share.ID)
+		}
+		return strings.Join(out, ",")
+	}
+
+	if got, want := ids(store.List("alice")), second.ID+","+first.ID; got != want {
+		t.Fatalf("alice's shares = %s, want newest first %s", got, want)
+	}
+	if got := store.List(""); len(got) != 0 {
+		t.Fatalf("shares without an owner were listed: %s", ids(got))
+	}
+	if got := store.List("carol"); got == nil || len(got) != 0 {
+		t.Fatalf("carol's shares = %v", got)
+	}
+
+	for _, tt := range []struct {
+		name, id, owner string
+		want            error
+	}{
+		{"someone else's share", first.ID, "bob", ErrForbidden},
+		{"no identity", first.ID, "", ErrForbidden},
+		{"a share nobody owns", nobody.ID, "", ErrForbidden},
+		{"unknown id", "0123456789abcdef0123456789abcdef", "alice", ErrNotFound},
+		{"malformed id", "../" + first.ID, "alice", ErrNotFound},
+	} {
+		if err := store.Delete(tt.id, tt.owner); !errors.Is(err, tt.want) {
+			t.Errorf("Delete %s: err = %v, want %v", tt.name, err, tt.want)
+		}
+	}
+
+	if _, _, err := store.Get(first.ID); err != nil {
+		t.Fatalf("share after refused deletes: %v", err)
+	}
+
+	if err := store.Delete(first.ID, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.Get(first.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted share: err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(store.dir, first.ID)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("deleted share's files kept: %v", err)
+	}
+	if err := store.Delete(first.ID, "alice"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second delete: err = %v", err)
+	}
+	if got := ids(store.List("alice")); got != second.ID {
+		t.Fatalf("alice's shares after deleting one = %s", got)
+	}
+	if got := ids(store.List("bob")); got != other.ID {
+		t.Fatalf("bob's shares = %s", got)
+	}
+
+	// Expired shares are neither listed nor deletable; the sweeper removes them.
+	now = now.Add(48 * time.Hour)
+	if got := store.List("alice"); len(got) != 0 {
+		t.Fatalf("expired shares listed: %s", ids(got))
+	}
+	if err := store.Delete(second.ID, "alice"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete expired: err = %v", err)
+	}
+}

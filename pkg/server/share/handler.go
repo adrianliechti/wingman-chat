@@ -92,7 +92,9 @@ func New(cfg *config.Config, assets Assets) *Handler {
 }
 
 func (h *Handler) Attach(mux *http.ServeMux) {
+	mux.HandleFunc("GET /artifacts", h.handleList)
 	mux.HandleFunc("POST /artifacts", h.handleCreate)
+	mux.HandleFunc("DELETE /artifacts/{id}", h.handleDelete)
 	mux.HandleFunc("GET /artifacts/{id}", h.handleViewer)
 	mux.HandleFunc("GET /artifacts/{id}/{$}", h.handleSlash)
 	mux.HandleFunc("GET /artifacts/{id}/share.json", h.handleManifest)
@@ -115,12 +117,33 @@ type createResponse struct {
 	URL       string    `json:"url"`
 	Entry     string    `json:"entry"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	// Revocable tells the app whether its user can end this share early.
+	Revocable bool `json:"revocable"`
+}
+
+// fromApp reports whether a browser sent the request from the app itself.
+// Shared pages run on this host too, but their origin is opaque, which Fetch
+// Metadata reports as cross-site. Requests without it (other clients, older
+// browsers) pass.
+func fromApp(r *http.Request) bool {
+	site := r.Header.Get("Sec-Fetch-Site")
+	return site == "" || site == "same-origin"
+}
+
+// ownerOf is the signed-in user as the authenticating proxy names them. It is
+// empty when the server runs without one; shares published then cannot be
+// listed or deleted, because nothing tells their publishers apart.
+func ownerOf(r *http.Request) string {
+	if user := strings.TrimSpace(r.Header.Get("X-Forwarded-User")); user != "" {
+		return user
+	}
+
+	return strings.TrimSpace(r.Header.Get("X-Forwarded-Email"))
 }
 
 func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	// A non-simple content type forces a CORS preflight, and Fetch Metadata
-	// rejects cross-site posts (including from shared pages, whose origin is opaque).
-	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
+	// A non-simple content type forces a CORS preflight on top of the origin check.
+	if !fromApp(r) {
 		http.Error(w, "cross-site uploads are not allowed", http.StatusForbidden)
 		return
 	}
@@ -130,7 +153,7 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	share, err := h.store.Create(r.Body, r.URL.Query().Get("entry"), r.Header.Get("X-Forwarded-User"))
+	share, err := h.store.Create(r.Body, r.URL.Query().Get("entry"), ownerOf(r))
 
 	var archiveErr ArchiveError
 	switch {
@@ -154,7 +177,85 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		URL:       viewerURL(share.ID),
 		Entry:     share.Entry,
 		ExpiresAt: h.store.ExpiresAt(share),
+		Revocable: share.Owner != "",
 	})
+}
+
+// listEntry is one of the caller's own shares, as their settings show it.
+type listEntry struct {
+	ID        string    `json:"id"`
+	URL       string    `json:"url"`
+	Title     string    `json:"title"`
+	Entry     string    `json:"entry"`
+	Files     int       `json:"files"`
+	Size      int64     `json:"size"`
+	Created   time.Time `json:"created"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// handleList answers with the shares the caller published. The ids are the
+// links' secrets, so the response is for the app only and never cached.
+func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "no-store")
+
+	if !fromApp(r) {
+		http.Error(w, "cross-site requests are not allowed", http.StatusForbidden)
+		return
+	}
+
+	user := ownerOf(r)
+	if user == "" {
+		http.Error(w, "shares are listed per signed-in user", http.StatusForbidden)
+		return
+	}
+
+	entries := []listEntry{}
+	for _, share := range h.store.List(user) {
+		entries = append(entries, listEntry{
+			ID:        share.ID,
+			URL:       viewerURL(share.ID),
+			Title:     titleOf(share),
+			Entry:     share.Entry,
+			Files:     share.Files,
+			Size:      share.Size,
+			Created:   share.Created,
+			ExpiresAt: h.store.ExpiresAt(share),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(entries)
+}
+
+func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if !fromApp(r) {
+		http.Error(w, "cross-site requests are not allowed", http.StatusForbidden)
+		return
+	}
+
+	err := h.store.Delete(r.PathValue("id"), ownerOf(r))
+
+	switch {
+	case errors.Is(err, ErrNotFound):
+		http.NotFound(w, r)
+	case errors.Is(err, ErrForbidden):
+		http.Error(w, err.Error(), http.StatusForbidden)
+	case err != nil:
+		http.Error(w, "the share could not be removed", http.StatusInternalServerError)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// titleOf is what the viewer and the owner's list call a share: its entry
+// page's <title>, else that page's file name.
+func titleOf(share *Share) string {
+	if share.Title != "" {
+		return share.Title
+	}
+
+	return strings.TrimSuffix(path.Base(share.Entry), path.Ext(share.Entry))
 }
 
 func (h *Handler) handleSlash(w http.ResponseWriter, r *http.Request) {
@@ -204,15 +305,10 @@ func (h *Handler) handleManifest(w http.ResponseWriter, r *http.Request) {
 	})
 	sort.Strings(paths)
 
-	title := share.Title
-	if title == "" {
-		title = strings.TrimSuffix(path.Base(share.Entry), path.Ext(share.Entry))
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(manifest{
 		ID:           share.ID,
-		Title:        title,
+		Title:        titleOf(share),
 		Entry:        share.Entry,
 		ExpiresAt:    h.store.ExpiresAt(share),
 		Files:        paths,

@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -24,6 +25,7 @@ import (
 const (
 	metadataFile = "share.json"
 	filesDir     = "files"
+	archiveFile  = "upload.zip"
 	uploadPrefix = ".upload-"
 
 	// Zip headers and directory records on top of the content limit.
@@ -34,8 +36,9 @@ const (
 var idPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 var (
-	ErrNotFound = errors.New("share not found")
-	ErrTooLarge = errors.New("the workspace exceeds the share size limit")
+	ErrNotFound  = errors.New("share not found")
+	ErrTooLarge  = errors.New("the workspace exceeds the share size limit")
+	ErrForbidden = errors.New("the share was published by someone else")
 )
 
 // ArchiveError rejects an upload the client can fix; it is answered with 400.
@@ -99,7 +102,7 @@ func (s *Store) Create(body io.Reader, entry, owner string) (*Share, error) {
 	// After the final rename there is nothing left to remove.
 	defer os.RemoveAll(tmp)
 
-	archive := filepath.Join(tmp, "upload.zip")
+	archive := filepath.Join(tmp, archiveFile)
 	if err := s.receive(body, archive); err != nil {
 		return nil, err
 	}
@@ -256,14 +259,70 @@ func (s *Store) Get(id string) (*Share, fs.FS, error) {
 	return share, os.DirFS(filepath.Join(s.dir, id, filesDir)), nil
 }
 
+// List returns the live shares owner published, newest first. Shares
+// published without a known owner belong to nobody and are never listed.
+func (s *Store) List(owner string) []*Share {
+	shares := []*Share{}
+	if owner == "" {
+		return shares
+	}
+
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return shares
+	}
+
+	for _, e := range entries {
+		share, err := s.read(e.Name())
+		if err != nil || share.Owner != owner || s.expired(share) {
+			continue
+		}
+
+		shares = append(shares, share)
+	}
+
+	sort.Slice(shares, func(i, j int) bool { return shares[i].Created.After(shares[j].Created) })
+
+	return shares
+}
+
+// Delete ends a share before its retention has passed. Only its owner may;
+// a share published without a known owner stays until it expires.
+func (s *Store) Delete(id, owner string) error {
+	share, err := s.read(id)
+	if err != nil || s.expired(share) {
+		return ErrNotFound
+	}
+
+	if owner == "" || share.Owner != owner {
+		return ErrForbidden
+	}
+
+	dir := filepath.Join(s.dir, id)
+
+	// Without its metadata the share is gone for readers at once, even if
+	// removing the files is interrupted; the sweeper clears what is left.
+	if err := os.Remove(filepath.Join(dir, metadataFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+
+	return os.RemoveAll(dir)
+}
+
+// read loads a share's metadata. A missing or damaged share.json is
+// ErrNotFound. Any other failure is returned as it is, so that a passing
+// fault of the disk is not taken for a share that is gone.
 func (s *Store) read(id string) (*Share, error) {
 	if !idPattern.MatchString(id) {
 		return nil, ErrNotFound
 	}
 
 	data, err := os.ReadFile(filepath.Join(s.dir, id, metadataFile))
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	var share Share
@@ -274,7 +333,8 @@ func (s *Store) read(id string) (*Share, error) {
 	return &share, nil
 }
 
-// Sweep deletes expired or unreadable shares and uploads abandoned mid-way.
+// Sweep deletes expired shares, folders left without usable metadata and
+// uploads abandoned mid-way. A share it cannot read right now is kept.
 func (s *Store) Sweep() {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
@@ -286,7 +346,7 @@ func (s *Store) Sweep() {
 		path := filepath.Join(s.dir, name)
 
 		if strings.HasPrefix(name, uploadPrefix) {
-			if info, err := e.Info(); err == nil && s.now().Sub(info.ModTime()) > time.Hour {
+			if active, ok := uploadActivity(path, e); ok && s.now().Sub(active) > time.Hour {
 				os.RemoveAll(path)
 			}
 			continue
@@ -296,10 +356,28 @@ func (s *Store) Sweep() {
 			continue
 		}
 
-		if share, err := s.read(name); err != nil || s.expired(share) {
+		share, err := s.read(name)
+		if errors.Is(err, ErrNotFound) || (err == nil && s.expired(share)) {
 			os.RemoveAll(path)
 		}
 	}
+}
+
+// uploadActivity is when an upload last received data. The archive grows
+// without touching its folder's modification time, so both are considered.
+func uploadActivity(dir string, entry fs.DirEntry) (time.Time, bool) {
+	info, err := entry.Info()
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	active := info.ModTime()
+
+	if archive, err := os.Stat(filepath.Join(dir, archiveFile)); err == nil && archive.ModTime().After(active) {
+		active = archive.ModTime()
+	}
+
+	return active, true
 }
 
 var titleTag = regexp.MustCompile(`(?is)<title\b[^>]*>(.*?)</title>`)

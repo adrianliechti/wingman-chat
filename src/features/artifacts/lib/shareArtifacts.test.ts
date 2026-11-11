@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { publishArtifacts, shareEntryFor, shareErrorMessage } from "./shareArtifacts";
+import {
+  listShares,
+  publishArtifacts,
+  recentShare,
+  rememberShare,
+  revokeShare,
+  shareEntryFor,
+  shareErrorMessage,
+} from "./shareArtifacts";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -90,5 +98,116 @@ describe("publishArtifacts", () => {
     await expect(publishArtifacts({ exportZip: async () => new Blob() }, "/index.html")).rejects.toThrow(
       "The entry page index.html is not in the upload.",
     );
+  });
+});
+
+describe("listShares", () => {
+  const listed = {
+    id: "abc",
+    url: "/artifacts/abc",
+    title: "Q3 deck",
+    entry: "index.html",
+    files: 3,
+    size: 2048,
+    created: "2026-10-22T12:00:00Z",
+    expiresAt: "2026-10-29T12:00:00Z",
+  };
+
+  it("returns the user's shares with absolute links", async () => {
+    const fetchMock = vi.fn(async () => Response.json([listed]));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", { location: { origin: "https://chat.example.com" } });
+
+    expect(await listShares()).toEqual([{ ...listed, url: "https://chat.example.com/artifacts/abc" }]);
+    expect(fetchMock).toHaveBeenCalledWith("/artifacts", { cache: "no-store", signal: undefined });
+  });
+
+  it("is null when the server keeps no list per user, and fails on other errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("shares are listed per signed-in user\n", { status: 403 })),
+    );
+    expect(await listShares()).toBeNull();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<html>Bad gateway</html>", { status: 502 })),
+    );
+    await expect(listShares()).rejects.toThrow("The shared links could not be loaded (502).");
+  });
+});
+
+describe("revokeShare", () => {
+  const share = { id: "abc", url: "https://chat.example.com/artifacts/abc", entry: "index.html" };
+  const live = { ...share, expiresAt: "2026-10-29T12:00:00Z" };
+  const now = Date.parse("2026-10-22T12:00:00Z");
+
+  it("deletes the share and forgets the workspace's remembered link", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    rememberShare("chat-1", live);
+    rememberShare("chat-2", { ...live, id: "other" });
+
+    await revokeShare("abc");
+
+    expect(fetchMock).toHaveBeenCalledWith("/artifacts/abc", { method: "DELETE" });
+    expect(recentShare("chat-1", now)).toBeUndefined();
+    expect(recentShare("chat-2", now)?.id).toBe("other");
+  });
+
+  it("treats a share that is already gone as revoked", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("404 page not found\n", { status: 404 })),
+    );
+    rememberShare("chat-1", live);
+
+    await revokeShare("abc");
+
+    expect(recentShare("chat-1", now)).toBeUndefined();
+  });
+
+  it("keeps the link and reports why when the server refuses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("the share was published by someone else\n", {
+            status: 403,
+            headers: { "Content-Type": "text/plain; charset=utf-8" },
+          }),
+      ),
+    );
+    rememberShare("chat-1", live);
+
+    await expect(revokeShare("abc")).rejects.toThrow("The share was published by someone else.");
+    expect(recentShare("chat-1", now)?.id).toBe("abc");
+
+    // A proxy's own error page is not shown to the user.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response("<html>Bad gateway</html>", { status: 502, headers: { "Content-Type": "text/html" } }),
+      ),
+    );
+    await expect(revokeShare("abc")).rejects.toThrow("Revoking failed (502).");
+  });
+});
+
+describe("recentShare", () => {
+  it("returns a workspace's remembered link until it expires", () => {
+    const share = {
+      id: "abc",
+      url: "https://chat.example.com/artifacts/abc",
+      entry: "index.html",
+      expiresAt: "2026-10-29T12:00:00Z",
+    };
+    rememberShare("chat-9", share);
+
+    expect(recentShare("chat-9", Date.parse("2026-10-29T11:59:59Z"))).toEqual(share);
+    expect(recentShare("another-chat", Date.parse("2026-10-22T12:00:00Z"))).toBeUndefined();
+    expect(recentShare("chat-9", Date.parse("2026-10-29T12:00:00Z"))).toBeUndefined();
+    // Expired links are dropped, not hidden.
+    expect(recentShare("chat-9", Date.parse("2026-10-22T12:00:00Z"))).toBeUndefined();
   });
 });

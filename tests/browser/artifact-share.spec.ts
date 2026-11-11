@@ -116,3 +116,116 @@ test("offers sharing only with a page to open and a server that stores shares", 
   await expect(page.getByRole("button", { name: "History" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Share" })).toHaveCount(0);
 });
+
+test("keeps the link while the popover is closed and stops sharing on request", async ({ page }) => {
+  const id = await openFixture(page, { retentionDays: 7, maxSize: 1 << 20 });
+  await writeWorkspace(page, id);
+
+  const requests: string[] = [];
+  await page.route(
+    (url) => url.pathname.startsWith("/artifacts"),
+    (route) => {
+      const request = route.request();
+      requests.push(`${request.method()} ${new URL(request.url()).pathname}`);
+      if (request.method() === "DELETE") return route.fulfill({ status: 204 });
+      return route.fulfill({
+        status: 201,
+        json: {
+          id: "abc",
+          url: "/artifacts/abc",
+          entry: "reports/deck.html",
+          expiresAt: "2099-01-01T00:00:00Z",
+          revocable: true,
+        },
+      });
+    },
+  );
+
+  const share = page.getByRole("button", { name: "Share", exact: true });
+  const link = page.getByRole("textbox", { name: "Share link" });
+  const create = page.getByRole("button", { name: "Create link" });
+
+  await share.click();
+  await create.click();
+  await expect(link).toHaveValue(/\/artifacts\/abc$/);
+
+  // The share stays live on the server, so closing the popover must not lose its link.
+  await share.click();
+  await expect(link).toBeHidden();
+  await share.click();
+  await expect(link).toHaveValue(/\/artifacts\/abc$/);
+  await expect(create).toHaveCount(0);
+  expect(requests).toEqual(["POST /artifacts"]);
+
+  await page.getByRole("button", { name: "Stop sharing" }).click();
+  await expect(create).toBeVisible();
+  expect(requests).toEqual(["POST /artifacts", "DELETE /artifacts/abc"]);
+
+  await share.click();
+  await expect(create).toBeHidden();
+  await share.click();
+  await expect(create).toBeVisible();
+  await expect(link).toHaveCount(0);
+});
+
+test("offers no way to stop a share the server cannot attribute", async ({ page }) => {
+  const id = await openFixture(page, { retentionDays: 7, maxSize: 1 << 20 });
+  await writeWorkspace(page, id);
+  await page.route(
+    (url) => url.pathname === "/artifacts",
+    (route) =>
+      route.fulfill({
+        status: 201,
+        json: {
+          id: "abc",
+          url: "/artifacts/abc",
+          entry: "reports/deck.html",
+          expiresAt: "2099-01-01T00:00:00Z",
+          revocable: false,
+        },
+      }),
+  );
+
+  await page.getByRole("button", { name: "Share", exact: true }).click();
+  await page.getByRole("button", { name: "Create link" }).click();
+  await expect(page.getByRole("textbox", { name: "Share link" })).toHaveValue(/\/artifacts\/abc$/);
+  await expect(page.getByRole("button", { name: "Create new link" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop sharing" })).toHaveCount(0);
+});
+
+test("names the files it publishes and waits for unsaved edits", async ({ page }) => {
+  const id = await openFixture(page, { retentionDays: 7, maxSize: 1 << 20 });
+  await page.evaluate(async (id) => {
+    await window.artifactsE2E.write(id, "/index.html", "<!doctype html><p>Page</p>");
+    // An upload that sharing would publish along with the page.
+    await window.artifactsE2E.write(id, "/uploads/contract.txt", "confidential\n");
+    window.artifactsE2E.openFile("/uploads/contract.txt");
+  }, id);
+
+  const share = page.getByRole("button", { name: "Share", exact: true });
+  const create = page.getByRole("button", { name: "Create link" });
+  const text = page.getByRole("textbox", { name: "Text" });
+  await expect(text).toHaveValue("confidential\n");
+
+  await share.click();
+  const published = page.getByRole("list", { name: "Files that will be published" }).getByRole("listitem");
+  await expect(published).toHaveCount(2);
+  await expect(published.filter({ hasText: "uploads/contract.txt" })).toBeVisible();
+  await expect(published.filter({ hasText: "index.html" })).toBeVisible();
+  await expect(create).toBeEnabled();
+  await share.click();
+  await expect(create).toBeHidden();
+
+  // The upload reads saved files; an edit still open in the editor would be left out.
+  await text.pressSequentially("draft ");
+  await share.click();
+  await expect(page.getByText("Save or discard your changes to contract.txt first")).toBeVisible();
+  await expect(create).toBeDisabled();
+  await share.click();
+  await expect(create).toBeHidden();
+
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await share.click();
+  await expect(create).toBeEnabled();
+  await expect(page.getByText("Save or discard your changes")).toHaveCount(0);
+});
