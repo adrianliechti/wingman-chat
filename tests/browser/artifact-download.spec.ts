@@ -40,89 +40,49 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole("region", { name: "Artifact panel" }).getByTitle(`Download ${filename}`)).toBeVisible();
 });
 
-for (const surface of ["Artifact panel", "Inline artifact"]) {
-  for (const stage of ["create-writable", "write", "close"] as const) {
-    test(`${surface} reports AbortError during ${stage} after Save is confirmed`, async ({ page }) => {
-      const downloads: string[] = [];
-      page.on("download", (download) => downloads.push(download.suggestedFilename()));
-      await page.evaluate((stage) => {
-        Object.defineProperty(window, "showSaveFilePicker", {
-          configurable: true,
-          value: async () => ({
-            createWritable: async () => {
-              const failure = new DOMException("The save was blocked", "AbortError");
-              if (stage === "create-writable") throw failure;
-              return new WritableStream({
-                write() {
-                  if (stage === "write") throw failure;
-                },
-                close() {
-                  if (stage === "close") throw failure;
-                },
-              });
-            },
-          }),
-        });
-      }, stage);
-      await page.getByRole("region", { name: surface, exact: true }).getByTitle(`Download ${filename}`).click();
-      await expect(page.getByText("Couldn't save the file", { exact: true })).toBeVisible();
-      expect(downloads).toEqual([]);
-    });
-  }
-}
-
-test("repeated native PowerPoint saves commit the original bytes to real writable file streams", async ({ page }) => {
+// Chromium exposes the picker, but artifact downloads must still reach its
+// download manager. A picker call fails the test instead of opening native UI.
+test.beforeEach(async ({ page }) => {
   await page.evaluate(() => {
-    let attempt = 0;
     Object.defineProperty(window, "showSaveFilePicker", {
       configurable: true,
       value: async () => {
-        const root = await navigator.storage.getDirectory();
-        const directory = await root.getDirectoryHandle("download-test-output", { create: true });
-        return directory.getFileHandle(`saved-${++attempt}.pptx`, { create: true });
+        throw new Error("Artifact downloads must use the browser download manager");
       },
     });
   });
-  for (let attempt = 1; attempt <= saveAttempts; attempt++) {
-    await test.step(`native save ${attempt}/${saveAttempts}`, async () => {
-      await page.getByRole("region", { name: "Artifact panel" }).getByTitle(`Download ${filename}`).click();
-      await expect
-        .poll(async () =>
-          page.evaluate(async (attempt) => {
-            try {
-              const root = await navigator.storage.getDirectory();
-              const directory = await root.getDirectoryHandle("download-test-output");
-              const handle = await directory.getFileHandle(`saved-${attempt}.pptx`);
-              return Array.from(new Uint8Array(await (await handle.getFile()).arrayBuffer()));
-            } catch {
-              return null;
-            }
-          }, attempt),
-        )
-        .toEqual([...sourceBytes]);
-    });
-  }
-  await expect(page.getByText("Couldn't save the file", { exact: true })).toHaveCount(0);
 });
 
-test("repeated fallback PowerPoint downloads complete with unchanged bytes and intact ZIP entries", async ({
-  page,
-}) => {
-  await page.evaluate(() =>
-    Object.defineProperty(window, "showSaveFilePicker", { configurable: true, value: undefined }),
-  );
-  for (let attempt = 1; attempt <= saveAttempts; attempt++) {
-    await test.step(`fallback download ${attempt}/${saveAttempts}`, async () => {
-      const [download] = await Promise.all([
-        page.waitForEvent("download", { timeout: 15_000 }),
-        page.getByRole("region", { name: "Inline artifact" }).getByTitle(`Download ${filename}`).click({ delay: 150 }),
-      ]);
-      expect(await download.failure()).toBeNull();
-      expect(download.suggestedFilename()).toBe(filename);
-      const saved = await readFile((await download.path())!);
-      expect(saved).toEqual(sourceBytes);
-      await JSZip.loadAsync(saved, { checkCRC32: true });
-      await download.delete();
-    });
-  }
+for (const surface of ["Artifact panel", "Inline artifact"]) {
+  test(`${surface} repeatedly downloads PowerPoint with unchanged bytes and intact ZIP entries`, async ({ page }) => {
+    for (let attempt = 1; attempt <= saveAttempts; attempt++) {
+      await test.step(`download ${attempt}/${saveAttempts}`, async () => {
+        const [download] = await Promise.all([
+          page.waitForEvent("download", { timeout: 15_000 }),
+          page.getByRole("region", { name: surface, exact: true }).getByTitle(`Download ${filename}`).click(),
+        ]);
+        expect(await download.failure()).toBeNull();
+        expect(download.suggestedFilename()).toBe(filename);
+        const saved = await readFile((await download.path())!);
+        expect(saved).toEqual(sourceBytes);
+        await JSZip.loadAsync(saved, { checkCRC32: true });
+        await download.delete();
+      });
+    }
+    await expect(page.getByText("Couldn't save the file", { exact: true })).toHaveCount(0);
+  });
+}
+
+test("Download all uses the browser download manager and preserves artifact bytes in the ZIP", async ({ page }) => {
+  await page.getByRole("button", { name: "Show file list", exact: true }).click();
+  await page.getByRole("button", { name: "File actions", exact: true }).click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 15_000 }),
+    page.getByRole("menuitem", { name: "Download all", exact: true }).click(),
+  ]);
+  expect(await download.failure()).toBeNull();
+  expect(download.suggestedFilename()).toBe("filesystem.zip");
+  const zip = await JSZip.loadAsync(await readFile((await download.path())!), { checkCRC32: true });
+  expect(await zip.file(filename)!.async("nodebuffer")).toEqual(sourceBytes);
+  await download.delete();
 });

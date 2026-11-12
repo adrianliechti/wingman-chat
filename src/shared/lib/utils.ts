@@ -152,57 +152,8 @@ export function downloadFromUrl(url: string, filename: string = ""): void {
   document.body.removeChild(link);
 }
 
-interface SaveFilePickerWindow {
-  showSaveFilePicker?: (options?: {
-    suggestedName?: string;
-    types?: { description?: string; accept: Record<string, string[]> }[];
-  }) => Promise<FileSystemFileHandle>;
-}
-
-// Once a destination is selected, a failed save must reach the caller rather
-// than being mistaken for picker cancellation or starting a second download.
-// Returns true for a completed save or cancellation, false when unavailable.
-async function saveBlobWithPicker(blob: Blob, filename: string): Promise<boolean> {
-  const showSaveFilePicker = (window as SaveFilePickerWindow).showSaveFilePicker;
-  if (typeof showSaveFilePicker !== "function") return false;
-
-  const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
-  // Picker filters require a MIME essence, without parameters such as charset.
-  const mimeType = blob.type.split(";", 1)[0].trim() || (ext ? mime.getType(ext) : null) || "application/octet-stream";
-  // Picker suffixes allow only ASCII alphanumerics and '+', up to 16 characters
-  // including the dot. Other filenames can still be saved without a filter.
-  const types = /^\.[a-z0-9+]{1,15}$/i.test(ext) ? [{ accept: { [mimeType]: [ext] } }] : undefined;
-
-  let handle: FileSystemFileHandle;
-  try {
-    handle = await showSaveFilePicker.call(window, { suggestedName: filename, types });
-  } catch (error) {
-    if (error instanceof DOMException) {
-      if (error.name === "AbortError") return true;
-      if (["SecurityError", "NotAllowedError"].includes(error.name)) return false;
-    }
-    console.error("Failed to open save dialog:", error);
-    throw error;
-  }
-
-  try {
-    const writable = await handle.createWritable();
-    // pipeTo waits for closing, which commits the file and can still fail.
-    await blob.stream().pipeTo(writable);
-    return true;
-  } catch (error) {
-    console.error("Failed to save file:", error);
-    throw error;
-  }
-}
-
-export async function downloadBlob(
-  blob: Blob,
-  filename: string,
-  { usePicker = true }: { usePicker?: boolean } = {},
-): Promise<void> {
-  if (usePicker && (await saveBlobWithPicker(blob, filename))) return;
-
+/** Everyday downloads follow the user's browser download settings. */
+export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
   const url = URL.createObjectURL(blob);
   downloadFromUrl(url, filename);
   // Revoking synchronously can truncate large downloads (corrupt ZIPs) because
