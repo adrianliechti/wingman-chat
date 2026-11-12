@@ -88,7 +88,7 @@ has been deleted since it was listed is reported and left out, because its data
 is gone rather than unreadable. Any other read error fails the export; it does
 not produce an apparently successful partial ZIP.
 
-Downloads open the save-file picker before taking the snapshot when the browser
+Backup downloads open the save-file picker before taking the snapshot when the browser
 supports it, then stream compressed ZIP chunks directly to disk with
 backpressure. The chosen file is opened for writing only once the snapshot is
 ready: the browser stages the bytes in a sibling file and renames it on close,
@@ -96,6 +96,10 @@ and synced or scanned folders can lock that staging file. A browser write failur
 is retried once and otherwise delivered as an ordinary download, so a locked folder does not
 lose the backup. Other browsers download a Blob assembled from those chunks.
 Cancelling the picker does no snapshot work and leaves the chosen file untouched.
+
+Everyday downloads (artifacts, messages, tables, Canvas media, translations, and
+agent, skill, and plugin exports) use the browser download manager and follow the
+user's browser download settings.
 
 Restore decodes and checks the archive before mutation. Matching file paths are
 replaced, while files absent from a partial backup remain untouched. After validation,

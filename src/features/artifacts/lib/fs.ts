@@ -705,7 +705,7 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
    * Download all files as a zip archive.
    */
   async downloadAsZip(filename: string = "filesystem.zip"): Promise<void> {
-    await downloadBlob(await this.exportZip(), filename, { usePicker: false });
+    await downloadBlob(await this.exportZip(), filename);
   }
 
   /** The workspace as a zip: pages with relative library references plus the referenced libraries. */
@@ -748,7 +748,7 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
     }
 
     const blob = contentToBlob(file.content, file.contentType);
-    await downloadBlob(blob, getFileName(file.path), { usePicker: false });
+    await downloadBlob(blob, getFileName(file.path));
   }
 }
 /** Coordinates UI, tools and interpreter transactions for this chat across instances/tabs. */
