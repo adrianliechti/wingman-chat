@@ -22,6 +22,7 @@ import { useStreamingText } from "@/shared/hooks/useStreamingText";
 import type { ReactNode } from "react";
 import { copyToClipboard } from "@/shared/lib/copy";
 import { isAudioUrl, isVideoUrl } from "@/shared/lib/mediaTypes";
+import { notify } from "@/shared/lib/notify";
 import {
   MARKDOWN_PARSE_OPTIONS,
   markdownExtensions,
@@ -496,7 +497,7 @@ function MarkdownTable({ children, ...props }: React.TableHTMLAttributes<HTMLTab
     const csv = tableElementToCsv(inlineTableRef.current);
     if (!csv) return;
     const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
-    void downloadBlob(blob, TABLE_CSV_FILENAME);
+    downloadBlob(blob, TABLE_CSV_FILENAME).catch((error: unknown) => notify.error("Couldn't save the file", error));
   }, []);
 
   const printTable = useCallback(() => {

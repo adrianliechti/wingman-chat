@@ -386,8 +386,8 @@ export function csvToMarkdownTable(csv: string): string {
 /**
  * Triggers download of a CSV file
  */
-export function downloadCsv(csv: string, filename: string): void {
+export function downloadCsv(csv: string, filename: string): Promise<void> {
   // Prepend UTF-8 BOM so Excel detects encoding correctly
   const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
-  void downloadBlob(blob, filename.endsWith(".csv") ? filename : `${filename}.csv`);
+  return downloadBlob(blob, filename.endsWith(".csv") ? filename : `${filename}.csv`);
 }

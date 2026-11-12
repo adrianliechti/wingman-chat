@@ -1,9 +1,11 @@
 import { StrictMode, useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Markdown } from "../../../src/shared/ui/Markdown";
+import { ConvertButton } from "../../../src/shared/ui/ConvertButton";
 import { prepareInitialEmojiRendering, type EmojiMode } from "../../../src/shared/lib/noto-emoji";
 import { EmojiProvider } from "../../../src/shell/context/EmojiProvider";
 import { ThemeProvider } from "../../../src/shell/context/ThemeProvider";
+import { AppToaster } from "../../../src/shell/components/AppToaster";
 import { useEmoji } from "../../../src/shell/hooks/useEmoji";
 import type { FileSystem } from "../../../src/shared/types/file";
 import "../../../src/index.css";
@@ -51,6 +53,12 @@ function Fixture() {
       >
         {state.content}
       </Markdown>
+      {new URLSearchParams(location.search).has("downloads") && (
+        <>
+          <ConvertButton markdown={state.content} />
+          <AppToaster />
+        </>
+      )}
     </div>
   );
 }

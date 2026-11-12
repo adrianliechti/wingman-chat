@@ -1,6 +1,7 @@
 import { Download, File, PanelRightOpen } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { cn } from "@/shared/lib/cn";
+import { notify } from "@/shared/lib/notify";
 import { fileExtension } from "@/shared/lib/utils";
 import { useArtifacts } from "../hooks/useArtifacts";
 
@@ -49,7 +50,10 @@ export const ArtifactChip = memo(function ArtifactChip({ path, className }: { pa
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!fs) return;
-    fs.downloadFile(path).catch(() => {});
+    fs.downloadFile(path).catch((error) => {
+      console.error("Failed to download file:", error);
+      notify.error("Couldn't save the file", "Check the destination folder and try again.");
+    });
   };
 
   return (

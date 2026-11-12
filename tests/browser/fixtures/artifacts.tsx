@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "../../../src/index.css";
 import { AgentContext, type AgentContextType } from "../../../src/features/agent/context/AgentContext";
+import { ArtifactChip } from "../../../src/features/artifacts/components/ArtifactChip";
 import { ArtifactsDrawer } from "../../../src/features/artifacts/components/ArtifactsDrawer";
 import { ArtifactsProvider } from "../../../src/features/artifacts/context/ArtifactsProvider";
 import { useArtifacts } from "../../../src/features/artifacts/hooks/useArtifacts";
@@ -159,7 +160,14 @@ function Fixture() {
       <button type="button" onClick={artifacts.toggleArtifactsDrawer}>
         Toggle artifacts
       </button>
-      <div style={{ height: "calc(100vh - 32px)" }}>{artifacts.showArtifactsDrawer && <ArtifactsDrawer />}</div>
+      {new URLSearchParams(window.location.search).has("inline-download") && artifacts.activeFile && (
+        <section aria-label="Inline artifact">
+          <ArtifactChip path={artifacts.activeFile} />
+        </section>
+      )}
+      <section aria-label="Artifact panel" style={{ height: "calc(100vh - 32px)" }}>
+        {artifacts.showArtifactsDrawer && <ArtifactsDrawer />}
+      </section>
     </main>
   );
 }

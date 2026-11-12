@@ -4,6 +4,7 @@ import type { ContentPart, MessagePart } from "@tanstack/ai";
 import { cn } from "@/shared/lib/cn";
 import { dataUrlToBytes } from "@/shared/lib/fileContent";
 import { isMediaPart, mediaDataUrl, mediaMimeType, mediaName, type MediaPart } from "@/shared/lib/messages";
+import { notify } from "@/shared/lib/notify";
 import { downloadBlob, downloadFromUrl, fileExtension, formatBytes } from "@/shared/lib/utils";
 import { Markdown } from "./Markdown";
 import { HtmlRenderer } from "./renderers/HtmlRenderer";
@@ -53,7 +54,7 @@ function downloadContent(data: string, filename: string, mimeType: string) {
     downloadFromUrl(data, filename);
   } else {
     const blob = new Blob([data], { type: mimeType });
-    void downloadBlob(blob, filename);
+    downloadBlob(blob, filename).catch((error: unknown) => notify.error("Couldn't save the file", error));
   }
 }
 

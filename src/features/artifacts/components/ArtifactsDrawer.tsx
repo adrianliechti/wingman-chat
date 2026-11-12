@@ -409,7 +409,7 @@ export function ArtifactsDrawer() {
     [fs, activeFile],
   );
 
-  // Download a single artifact by path, logging (not surfacing) failures.
+  // Download a single artifact by path and surface failures to the user.
   const downloadFile = useCallback(
     async (path: string) => {
       if (!fs) return;
@@ -417,6 +417,7 @@ export function ArtifactsDrawer() {
         await fs.downloadFile(path);
       } catch (error) {
         console.error("Failed to download file:", error);
+        notify.error("Couldn't save the file", "Check the destination folder and try again.");
       }
     },
     [fs],
@@ -1112,7 +1113,7 @@ export function ArtifactsDrawer() {
                                     try {
                                       await downloadMarkdownAsDocx(activeFileData.content, `${baseName}.docx`);
                                     } catch (error) {
-                                      console.error("Failed to convert to Word:", error);
+                                      notify.error("Couldn't export Word document", error);
                                     }
                                   }}
                                   className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"

@@ -159,26 +159,40 @@ interface SaveFilePickerWindow {
   }) => Promise<FileSystemFileHandle>;
 }
 
-// Stream a blob to disk via the File System Access API. Returns false when the
-// API is unavailable so callers can fall back to the anchor-download path.
+// Once a destination is selected, a failed save must reach the caller rather
+// than being mistaken for picker cancellation or starting a second download.
+// Returns true for a completed save or cancellation, false when unavailable.
 async function saveBlobWithPicker(blob: Blob, filename: string): Promise<boolean> {
   const showSaveFilePicker = (window as SaveFilePickerWindow).showSaveFilePicker;
   if (typeof showSaveFilePicker !== "function") return false;
 
   const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
-  const mimeType = blob.type || (ext ? mime.getType(ext) : null) || "application/octet-stream";
-  const types = ext ? [{ accept: { [mimeType]: [ext] } }] : undefined;
+  // Picker filters require a MIME essence, without parameters such as charset.
+  const mimeType = blob.type.split(";", 1)[0].trim() || (ext ? mime.getType(ext) : null) || "application/octet-stream";
+  // Picker suffixes allow only ASCII alphanumerics and '+', up to 16 characters
+  // including the dot. Other filenames can still be saved without a filter.
+  const types = /^\.[a-z0-9+]{1,15}$/i.test(ext) ? [{ accept: { [mimeType]: [ext] } }] : undefined;
+
+  let handle: FileSystemFileHandle;
+  try {
+    handle = await showSaveFilePicker.call(window, { suggestedName: filename, types });
+  } catch (error) {
+    if (error instanceof DOMException) {
+      if (error.name === "AbortError") return true;
+      if (["SecurityError", "NotAllowedError"].includes(error.name)) return false;
+    }
+    console.error("Failed to open save dialog:", error);
+    throw error;
+  }
 
   try {
-    const handle = await showSaveFilePicker({ suggestedName: filename, types });
     const writable = await handle.createWritable();
+    // pipeTo waits for closing, which commits the file and can still fail.
     await blob.stream().pipeTo(writable);
     return true;
   } catch (error) {
-    // A user cancelling the picker is expected; swallow it rather than falling
-    // back to a second (anchor) download the user did not ask for.
-    if (error instanceof DOMException && error.name === "AbortError") return true;
-    return false;
+    console.error("Failed to save file:", error);
+    throw error;
   }
 }
 
