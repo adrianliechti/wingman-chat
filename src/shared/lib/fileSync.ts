@@ -521,9 +521,9 @@ export class FileSync {
   /** Download one file by id and adopt it locally. */
   private async applyRemote(id: string, local: Map<string, number>, versions: Map<string, number>): Promise<void> {
     const remote = await api.getFile(id);
-    if (!remote) return;
 
     try {
+      if (!remote) throw new Error(`File ${id} is listed in the backup but its contents are missing.`);
       const { header, bytes } = await decryptFile<FileHeader>(this.dek, remote.data, this.userId, id);
 
       // An existing local collection index always merges — adopting the

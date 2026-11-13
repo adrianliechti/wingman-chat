@@ -205,3 +205,54 @@ for (const upload of ["chat", "file"] as const) {
     });
   }
 }
+
+for (const failure of ["missing", "corrupt"] as const) {
+  test(`${failure} workspace contents report an incomplete restore and recover on retry`, async ({
+    page,
+    context,
+    backupServer,
+  }) => {
+    const { user } = await connect(context, backupServer);
+    await enableBackup(page);
+    await page.evaluate(async (path) => {
+      await window.syncSecurityE2E.saveChat("recoverable backup");
+      await window.syncSecurityE2E.save(path, "recoverable backup");
+    }, filePath);
+    await sync(page);
+
+    const device = await context.browser()!.newContext({ baseURL: new URL(page.url()).origin });
+    try {
+      const { network } = await connect(device, backupServer, user);
+      let failedDownloads = 0;
+      network.interrupt = async (route) => {
+        const request = route.request();
+        if (request.method() !== "GET" || !new URL(request.url()).pathname.includes("/files/")) return false;
+        failedDownloads++;
+        await route.fulfill(
+          failure === "missing"
+            ? { status: 404, body: "Backup contents missing" }
+            : { status: 200, contentType: "application/octet-stream", body: Buffer.from([0, 1, 2, 3]) },
+        );
+        return true;
+      };
+      const restored = await device.newPage();
+      await restored.goto(fixture);
+      await restored.getByRole("button", { name: "Restore backup", exact: true }).click();
+      await restored.getByLabel("PIN", { exact: true }).fill(pin);
+      await restored.getByRole("button", { name: "Restore backup", exact: true }).click();
+      await expect.poll(() => failedDownloads).toBeGreaterThan(0);
+      await expect(restored.getByText("Backup needs attention", { exact: true })).toBeVisible();
+      expect(await restored.evaluate((path) => window.syncSecurityE2E.read(path), filePath)).toBeUndefined();
+      // Healthy chat data remains available even though the workspace restore failed.
+      await expect
+        .poll(() => restored.evaluate(() => window.syncSecurityE2E.readChat()).then(JSON.stringify))
+        .toContain("recoverable backup");
+
+      network.interrupt = undefined;
+      await sync(restored);
+      await expectLocal(restored, "recoverable backup");
+    } finally {
+      await device.close();
+    }
+  });
+}

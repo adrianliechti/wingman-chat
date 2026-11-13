@@ -173,7 +173,7 @@ test("initial backup and restore display confirmed file counts and progress bars
   await expect(restoring).toHaveCount(0);
 });
 
-test("online backup keeps local recovery controls available", async ({ page }, testInfo) => {
+test("online backup keeps local recovery controls in a collapsed section", async ({ page }, testInfo) => {
   await configure(page, true);
   await page.goto("/");
   await page.getByRole("button", { name: "Backups disabled — set a PIN or passkey", exact: true }).click();
@@ -181,9 +181,22 @@ test("online backup keeps local recovery controls available", async ({ page }, t
   await expect(settings.getByRole("heading", { name: "Online backup", exact: true, level: 3 })).toBeVisible();
   await expect(settings.getByRole("heading", { name: "Online backup", exact: true })).toBeVisible();
   await expect(settings.getByRole("button", { name: "Turn on backup", exact: true })).toBeVisible();
-  await expect(settings.getByRole("button", { name: "Download backup", exact: true })).toBeVisible();
-  await expect(settings.getByRole("button", { name: "Restore from file", exact: true })).toBeVisible();
-  await expect(settings.getByRole("region", { name: "Local backup files", exact: true })).toBeVisible();
+  const localFiles = settings.getByRole("region", { name: "Local backup files", exact: true });
+  const localToggle = localFiles.getByRole("button", { name: "Local backup files", exact: true });
+  await expect(localToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(localFiles.getByRole("button", { name: "Download backup", exact: true })).toBeHidden();
+  await expect(localFiles.getByRole("button", { name: "Restore from file", exact: true })).toBeHidden();
+  await localToggle.focus();
+  await page.keyboard.press("Enter");
+  await expect(localToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(localFiles.getByRole("button", { name: "Download backup", exact: true })).toBeVisible();
+  await expect(localFiles.getByRole("button", { name: "Restore from file", exact: true })).toBeVisible();
+  const downloading = page.waitForEvent("download");
+  await localFiles.getByRole("button", { name: "Download backup", exact: true }).click();
+  expect((await downloading).suggestedFilename()).toMatch(/^wingman-backup-.*\.zip$/);
+  await localToggle.click();
+  await expect(localToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(localFiles.getByRole("button", { name: "Download backup", exact: true })).toBeHidden();
   const danger = settings.getByRole("region", { name: "Danger zone", exact: true });
   const toggle = danger.getByRole("button", { name: "Danger zone", exact: true });
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
