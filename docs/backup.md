@@ -138,7 +138,9 @@ are uploaded. Failed writes remain pending in the browser. File and blob uploads
 encrypted files on the chat backend, removed when the request finishes, to bound
 memory. Chat appends encode one incoming batch in memory before uploading it. The backend
 rejects file and blob bodies over 257 MiB and append bodies over 64 MiB with 413;
-the browser splits large chat uploads into several appends below that cap. Files larger than 10 MiB use upload sessions with sequential 10 MiB
+the browser splits large chat uploads into several appends below that cap. Automatic
+chat compaction only publishes snapshots that fit in one append request; larger
+chats retain their complete event history. Files larger than 10 MiB use upload sessions with sequential 10 MiB
 fragments. Throttled requests retry with bounded backoff; interrupted operations
 retry through the existing sync loop. Sessions are not persisted across requests.
 

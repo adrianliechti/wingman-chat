@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatSync, stashPendingTarget } from "@/shared/lib/chatSync";
+import { ChatSync, resetLocalBackupState, stashPendingTarget } from "@/shared/lib/chatSync";
 import { generateDEK } from "@/shared/lib/crypto";
 import * as api from "@/shared/lib/storeClient";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
-import { PersistenceQueue } from "@/shared/lib/persistence";
+import { PersistenceQueue, withPersistenceLock } from "@/shared/lib/persistence";
 import * as opfs from "@/shared/lib/opfs";
 import { assistantMessage, mediaFromDataUrl, text, userMessage } from "@/shared/lib/messages";
 import type { Chat } from "@/shared/types/chat";
@@ -50,6 +50,41 @@ beforeEach(() => {
 });
 
 describe("chat persistence", () => {
+  it("preserves a native save made while backup tracking is being reset", async () => {
+    config.store = true;
+    const value = { ...chat(), title: "before reset" };
+    await storeChat(value);
+    await opfs.writeText("chats/chat/history.jsonl", "");
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    memory.beforeRead = async (path) => {
+      if (path !== "chats/chat/history.jsonl") return;
+      memory.beforeRead = undefined;
+      entered();
+      await blocked;
+    };
+    const resetting = withPersistenceLock("backup-reset", () => resetLocalBackupState());
+    await started;
+    const updated = { ...value, title: "saved during reset", messages: [userMessage("new message")] };
+    const saving = storeChat(updated);
+    try {
+      // Let an unprotected save finish while reset still holds its older snapshot.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      release();
+      await Promise.all([resetting, saving]);
+    }
+    expect(await loadChat(value.id)).toEqual(updated);
+    expect(await opfs.readJson("chats/chat/target.json")).toMatchObject({ title: updated.title });
+    expect(await opfs.readText("chats/chat/history.jsonl")).toBeUndefined();
+  });
+
   it("round-trips native widgets without moving app data back onto tool results", async () => {
     const value = chat();
     value.messages = [

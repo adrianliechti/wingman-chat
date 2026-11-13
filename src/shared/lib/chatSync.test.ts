@@ -16,6 +16,7 @@ import * as opfs from "./opfs-core";
 import * as api from "./storeClient";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
 import { diffChat, encodeLines } from "./chatLog";
+import { encodeHistory, readChatHistory } from "./chatHistoryStorage";
 import type { Chat } from "@/shared/types/chat";
 
 vi.mock("./storeClient", () => ({
@@ -783,6 +784,54 @@ it("splits a large upload across append requests and commits each accepted part"
   expect(await readJson("chats/chat/target.json")).toBeUndefined();
   expect((await readLocalChat("chat", false))?.messages).toHaveLength(12);
 });
+
+it.each([
+  { messageCount: 1, compacts: true },
+  { messageCount: 12, compacts: false },
+])(
+  "compacts only snapshots that fit one append request ($messageCount messages)",
+  { timeout: 60_000 },
+  async ({ messageCount, compacts }) => {
+    const dek = await generateDEK();
+    const value = {
+      ...chat(),
+      messages: Array.from({ length: messageCount }, () => userMessage("x".repeat(4_500_000))),
+    };
+    const stored = await extractChatBlobs(value);
+    await writeText(
+      "chats/chat/history.jsonl",
+      encodeHistory(diffChat(null, stored), { head: 1, hash: ZERO_HASH, count: 49 }),
+    );
+    await writeJson("chats/chat/chat.json", stored);
+    await writeJson("_sync/state.json", {
+      userId: "user",
+      heads: { chat: 1 },
+      lastFrameHash: { chat: ZERO_HASH },
+      entriesSinceCompact: { chat: 49 },
+    });
+    await stashPendingTarget({ ...value, title: "updated title" });
+    const sync = await ChatSync.create({ userId: "user", dek });
+    vi.mocked(api.appendEvents)
+      .mockImplementationOnce(async (_id, seq, events) => ({ newSeq: seq + events.length }))
+      .mockImplementationOnce(async (_id, seq, events) => ({ newSeq: seq + events.length }))
+      .mockRejectedValueOnce(new Error("connection lost during compaction"));
+
+    await sync.flushPending();
+
+    const baseline = (await readChatHistory("chat"))?.chat;
+    expect(baseline?.messages).toHaveLength(value.messages.length);
+    expect(baseline).toEqual(JSON.parse(JSON.stringify({ ...stored, title: "updated title" })));
+    expect(await readJson("chats/chat/target.json")).toBeUndefined();
+    if (compacts) {
+      expect(api.appendEvents).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(api.appendEvents).mock.calls[1][2].length).toBeGreaterThan(1);
+      expect(api.compactChat).toHaveBeenCalledWith("chat", 3);
+    } else {
+      expect(api.appendEvents).toHaveBeenCalledOnce(); // Only the title delta is published.
+      expect(api.compactChat).not.toHaveBeenCalled();
+    }
+  },
+);
 
 it("skips compaction when its snapshot conflicts instead of compacting before a delta", async () => {
   const dek = await generateDEK();

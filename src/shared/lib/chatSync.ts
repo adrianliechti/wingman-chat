@@ -21,7 +21,7 @@ import { isBackupSessionCurrent, withBackupStorage, WORKSPACE_OWNER_KEY } from "
 import { withPersistenceLock } from "./persistence";
 import { chatRetentionCutoff } from "./chatRetention";
 import { chatHistoryPath as historyPath, encodeHistory, readChatHistory } from "./chatHistoryStorage";
-import { completeChatIndexRepair, storeChatIndexEntry } from "./chatIndex";
+import { completeChatIndexRepair } from "./chatIndex";
 import {
   targetPath,
   localChatPath,
@@ -141,18 +141,18 @@ function forgetChatState(state: SyncState, chatId: string): void {
 /** Preserve local snapshots and attachments, but start the next backup from seq 0. */
 export async function resetLocalBackupState(): Promise<void> {
   for (const id of await listDirectories("chats")) {
-    const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
-    const history = await readText(historyPath(id));
-    const stored =
-      target ??
-      (await readJson<StoredChat | LegacyStoredChat>(localChatPath(id))) ??
-      (history ? replayLog(id, decodeLines(history)).chat : null);
-    if (stored) {
-      await writeJson(targetPath(id), normalizeStoredChat(stored));
-      await writeJson(localChatPath(id), normalizeStoredChat(stored));
-      await storeChatIndexEntry(normalizeStoredChat(stored));
-    }
-    await deleteFile(historyPath(id));
+    // Native saves use this lock even while backup is disabled or resetting.
+    // Preserve the snapshot and remove its old baseline as one operation.
+    await withChatTarget(id, async () => {
+      const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
+      const history = await readText(historyPath(id));
+      const stored =
+        target ??
+        (await readJson<StoredChat | LegacyStoredChat>(localChatPath(id))) ??
+        (history ? replayLog(id, decodeLines(history)).chat : null);
+      if (stored) await writeLocalChatSnapshotUnlocked(normalizeStoredChat(stored), true);
+      await deleteFile(historyPath(id));
+    });
   }
   await deleteDirectory(SYNC_DIR);
 }
@@ -714,6 +714,7 @@ export class ChatSync {
    *  Each accepted request is committed locally, so a later failure resumes
    *  from there. A 409 pulls and re-diffs once; snapshots give up instead,
    *  since a re-diffed delta must never be mistaken for a compaction base.
+   *  Snapshots must fit one request so their init cannot publish a partial chat.
    *  Returns the first posted seq, or null when nothing (more) was posted. */
   private async postEntries(chatId: string, entries: LogEntry[], snapshot = false): Promise<number | null> {
     let firstSeq: number | null = null;
@@ -732,8 +733,11 @@ export class ChatSync {
         frames.push({ id: payload.id, frame, hash: prevHash, entries: chunk });
       }
 
+      const batches = appendBatches(frames);
+      if (snapshot && batches.length > 1) return null;
+
       let conflict = false;
-      for (const batch of appendBatches(frames)) {
+      for (const batch of batches) {
         const expectedSeq = this.state.heads[chatId] ?? 0;
         requireChatBackupReady(chatId);
         const res = await api.appendEvents(
