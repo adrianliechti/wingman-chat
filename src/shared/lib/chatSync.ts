@@ -244,6 +244,8 @@ export class ChatSync {
   private dek: StoreKey;
 
   private activity: SyncActivity = { syncing: false, pendingCount: 0, lastSyncAt: null, lastError: null, progress: [] };
+  // A successful upload cannot confirm that a failed restore has recovered, or vice versa.
+  private errors: Record<SyncProgress["direction"], string | null> = { restore: null, backup: null };
   private progress = new SyncProgressTracker(() => this.setActivity({}));
   private activityListeners = new Set<(a: SyncActivity) => void>();
   private remoteChangeListeners = new Set<(chats: Chat[]) => void>();
@@ -294,12 +296,17 @@ export class ChatSync {
     return () => this.remoteChangeListeners.delete(fn);
   }
 
-  private setActivity(patch: Partial<Omit<SyncActivity, "syncing" | "progress">>): void {
+  private setActivity(
+    patch: Partial<Omit<SyncActivity, "syncing" | "progress">>,
+    direction: SyncProgress["direction"] = "backup",
+  ): void {
+    if (patch.lastError !== undefined) this.errors[direction] = patch.lastError;
     const progress = this.progress.snapshot;
     this.activity = {
       ...this.activity,
       pendingCount: new Set([...this.pendingTargets.keys(), ...this.deletions.keys()]).size,
       ...patch,
+      lastError: this.errors.restore ?? this.errors.backup,
       progress,
       syncing: progress.length > 0,
     };
@@ -323,7 +330,7 @@ export class ChatSync {
       try {
         return await this.pullInner(progress);
       } catch (err) {
-        this.setActivity({ lastError: errorMessage(err) });
+        this.setActivity({ lastError: errorMessage(err) }, "restore");
         throw err;
       } finally {
         progress.finish();
@@ -398,7 +405,7 @@ export class ChatSync {
     }
     // Healthy chats are applied and published above; report the first broken one.
     if (failures.length > 0) throw failures[0].reason;
-    this.setActivity({ lastSyncAt: new Date().toISOString(), lastError: null });
+    this.setActivity({ lastSyncAt: new Date().toISOString(), lastError: null }, "restore");
     return out;
   }
 

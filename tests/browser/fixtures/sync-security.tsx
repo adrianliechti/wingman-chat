@@ -4,7 +4,14 @@ import { ConfirmHost } from "../../../src/shell/components/ConfirmHost";
 import { forgetBackup } from "../../../src/shared/lib/rememberedBackup";
 import { initSession } from "../../../src/shared/lib/storeSession";
 import { loadConfig } from "../../../src/shared/config";
-import { clearAll, readJson, readText, writeText } from "../../../src/shared/lib/opfs-core";
+import {
+  clearAll,
+  deleteDirectory,
+  deleteFile,
+  readJson,
+  readText,
+  writeText,
+} from "../../../src/shared/lib/opfs-core";
 import { syncedChatStorage } from "../../../src/features/chat/lib/syncedChatStorage";
 import { readLocalChat } from "../../../src/shared/lib/localChats";
 import { userMessage } from "../../../src/shared/lib/messages";
@@ -19,8 +26,11 @@ declare global {
       clear(): Promise<void>;
       uploadCache(): Promise<unknown>;
       sessionStatus(): Promise<string>;
-      saveChat(text: string): Promise<void>;
-      readChat(): Promise<unknown>;
+      saveChat(text: string, id?: string): Promise<void>;
+      readChat(id?: string): Promise<unknown>;
+      removeChat(id: string): Promise<void>;
+      removeFile(path: string): Promise<void>;
+      removeDirectory(path: string): Promise<void>;
     };
   }
 }
@@ -31,15 +41,18 @@ window.syncSecurityE2E = {
   clear: clearAll,
   uploadCache: () => readJson("_sync/upload-key.json"),
   sessionStatus: async () => (await initSession()).status,
-  saveChat: (text) =>
+  saveChat: (text, id = "reset-chat") =>
     syncedChatStorage.store({
-      id: "reset-chat",
+      id,
       created: new Date("2026-01-01"),
       updated: new Date(),
       model: null,
       messages: [userMessage(text)],
     }),
-  readChat: () => readLocalChat("reset-chat", false),
+  readChat: (id = "reset-chat") => readLocalChat(id, false),
+  removeChat: syncedChatStorage.remove,
+  removeFile: deleteFile,
+  removeDirectory: deleteDirectory,
 };
 await loadConfig();
 createRoot(document.getElementById("root")!).render(

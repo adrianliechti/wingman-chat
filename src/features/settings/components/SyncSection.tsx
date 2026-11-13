@@ -347,7 +347,7 @@ export function SyncSection({
                                 aria-label={label}
                                 max={item.total || 1}
                                 value={item.total === null ? undefined : item.completed}
-                                className="mt-1 block h-1.5 w-full max-w-64 overflow-hidden rounded-full accent-neutral-600 dark:accent-neutral-400"
+                                className="mt-1 block h-1.5 w-full max-w-64 overflow-hidden rounded-full accent-neutral-600 grayscale dark:accent-neutral-400"
                               />
                             </span>
                           );
