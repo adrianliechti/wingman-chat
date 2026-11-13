@@ -9,7 +9,7 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
-// Load builds a Config by reading YAML files and applying environment variable overrides.
+// Load builds a Config from backup JSON, YAML files, and environment overrides.
 func Load() *Config {
 	cfg := &Config{
 		Title:      envOrDefault("TITLE", "Wingman AI"),
@@ -37,12 +37,14 @@ func Load() *Config {
 }
 
 func loadConfigFiles(cfg *Config) {
+	loadBackupJSON(cfg)
 	loadLinks(cfg)
 	loadYAML("tools.yaml", &cfg.Tools)
 	loadYAML("models.yaml", &cfg.Models)
 	loadDrives(cfg)
 	loadYAML("backgrounds.yaml", &cfg.Backgrounds)
 
+	loadYAMLPtr("backup.yaml", &cfg.Backup)
 	loadYAMLPtr("chat.yaml", &cfg.Chat)
 	loadYAMLPtr("translator.yaml", &cfg.Translator)
 	loadYAMLPtr("vision.yaml", &cfg.Vision)
@@ -171,6 +173,17 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Chat = ensurePtr(cfg.Chat)
 		cfg.Chat.Compaction = ensurePtr(cfg.Chat.Compaction)
 		cfg.Chat.Compaction.Threshold = *v
+	}
+
+	if provider := os.Getenv("BACKUP_PROVIDER"); provider != "" {
+		cfg.Backup = ensurePtr(cfg.Backup)
+		cfg.Backup.Provider = provider
+	}
+	if cfg.Backup != nil {
+		envOverride("BACKUP_DRIVE", &cfg.Backup.Drive)
+		if cfg.Backup.Provider == "" {
+			cfg.Backup.Provider = "local"
+		}
 	}
 
 	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)

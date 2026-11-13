@@ -8,6 +8,7 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useProjects } from "@/features/projects/context/ProjectsContext";
 import { AccountLinks, AccountMenu } from "@/features/settings/components/AccountMenu";
 import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
+import { SyncIndicator } from "@/features/settings/components/SyncIndicator";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
@@ -343,6 +344,7 @@ export function AppLayout() {
                     <Coffee size={20} />
                   </button>
                 )}
+                <SyncIndicator onClick={() => openSettings({ advanced: false, section: "backup" })} />
                 {rightActions}
               </div>
               {/* Phones reach the account from the sidebar footer instead. */}

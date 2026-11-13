@@ -144,7 +144,7 @@ export type PendingElicitation = {
 
 export type RiskSeverity = "low" | "medium" | "high";
 
-export type Consent = {
+type Consent = {
   message: string;
   severity?: RiskSeverity;
 };

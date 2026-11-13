@@ -91,7 +91,7 @@ interface RepositoryConfig {
   extractor?: string;
 }
 
-export interface TranslatorProviderConfig {
+interface TranslatorProviderConfig {
   /** Platform translator id, sent as the translate request's model. */
   id: string;
   name?: string;
@@ -125,7 +125,7 @@ export interface CategoryConfig {
   threshold?: number;
 }
 
-export type RiskSeverity = "low" | "medium" | "high";
+type RiskSeverity = "low" | "medium" | "high";
 
 export interface RiskConfig {
   /** Permanent classifier and telemetry identity; keep unchanged when renaming. */
@@ -140,7 +140,7 @@ export interface RiskConfig {
   threshold?: number;
 }
 
-export interface ClassificationConfig {
+interface ClassificationConfig {
   /** Override the model used for classification (defaults to chat.summarizer or the current chat model). */
   model?: string;
   /** Optional reasoning effort forwarded to the classification API; support depends on the gateway. */
@@ -149,7 +149,7 @@ export interface ClassificationConfig {
   threshold?: number;
 }
 
-export interface CompactionConfig {
+interface CompactionConfig {
   threshold?: number;
 }
 
@@ -238,6 +238,7 @@ interface ConfigSchema {
   translator?: TranslatorConfig;
 
   chat?: ChatConfig;
+  backup?: { provider?: "local" | "onedrive"; drive?: string };
   telemetry?: TelemetryConfig;
 }
 
@@ -290,6 +291,7 @@ interface Config {
 
   chat: ChatConfig | null;
 
+  store: boolean;
   telemetry: Required<TelemetryConfig> | null;
 
   backgrounds: BackgroundPackConfig;
@@ -389,6 +391,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       chat: cfg.chat ?? null,
 
+      store: cfg.backup?.provider === "onedrive",
       telemetry: cfg.telemetry != null ? { name: cfg.telemetry.name?.trim() || DEFAULT_TELEMETRY_NAME } : null,
 
       backgrounds: cfg.backgrounds ?? {},

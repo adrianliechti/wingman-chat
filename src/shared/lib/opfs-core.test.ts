@@ -9,6 +9,48 @@ beforeEach(() => {
 });
 
 describe("OPFS writes", () => {
+  it("serializes a directory deletion after an in-flight conditional file write", async () => {
+    memory.put("agents/one/file.txt", "old");
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    memory.beforeWrite = async (path) => {
+      if (path !== "agents/one/file.txt") return;
+      entered();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    };
+    const write = opfs.replaceFileIfUnchanged("agents/one/file.txt", 1000, { blob: new Blob(["remote"]) });
+    await started;
+    let deleted = false;
+    const deletion = opfs.deleteDirectory("agents/one").then(() => {
+      deleted = true;
+    });
+    await Promise.resolve();
+    expect(deleted).toBe(false);
+    release();
+    await Promise.all([write, deletion]);
+    expect(await opfs.readText("agents/one/file.txt")).toBeUndefined();
+  });
+
+  it("serializes log appends and preserves the committed log after a failed append", async () => {
+    memory.put("history.jsonl", "first\n");
+    await Promise.all([
+      opfs.appendBlob("history.jsonl", new Blob(["second\n"])),
+      opfs.appendBlob("history.jsonl", new Blob(["third\n"])),
+    ]);
+    expect(await opfs.readText("history.jsonl")).toBe("first\nsecond\nthird\n");
+    memory.beforeWrite = async () => {
+      throw new Error("disk full");
+    };
+    await expect(opfs.appendBlob("history.jsonl", new Blob(["lost\n"]))).rejects.toThrow("disk full");
+    expect(await opfs.readText("history.jsonl")).toBe("first\nsecond\nthird\n");
+    expect(memory.aborted).toEqual(["history.jsonl"]);
+  });
+
   it("aborts a failed write without committing its partial bytes over the last good file", async () => {
     memory.put("profile.json", '{"name":"Before"}');
     memory.beforeWrite = async () => {

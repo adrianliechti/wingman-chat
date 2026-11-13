@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"github.com/adrianliechti/wingman-chat/pkg/server/me"
 	"github.com/adrianliechti/wingman-chat/pkg/server/otel"
 	"github.com/adrianliechti/wingman-chat/pkg/server/public"
+	storesrv "github.com/adrianliechti/wingman-chat/pkg/server/store"
 )
 
 func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.FS, skillsDir string) http.Handler {
@@ -28,6 +30,14 @@ func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.
 
 	if len(cfg.Drives) > 0 {
 		drive.New(cfg.Drives).Attach(mux, prefix)
+	}
+
+	provider, middleware, err := backupProvider(cfg)
+	if err != nil {
+		panic(fmt.Errorf("store: %w", err))
+	}
+	if provider != nil {
+		storesrv.New(provider, middleware).Attach(mux, prefix)
 	}
 
 	if info, err := os.Stat(skillsDir); err == nil && info.IsDir() {

@@ -5,11 +5,11 @@ import ehWasmUrl from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
 import { withAbort } from "./abortSignals";
 import { collectDuckDbResult, type DuckDbQueryResult } from "./duckdbResult";
 
-export const DUCKDB_MEMORY_LIMIT = "256MB";
-export const DUCKDB_OPERATION_TIMEOUT_MS = 120_000;
+const DUCKDB_MEMORY_LIMIT = "256MB";
+const DUCKDB_OPERATION_TIMEOUT_MS = 120_000;
 
 /** Where the bundled extensions live: `{origin}{base}duckdb/extensions/{version}/{platform}/…`. */
-export function extensionRepository(): string {
+function extensionRepository(): string {
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
   return `${location.origin}${base}duckdb/extensions`;
 }

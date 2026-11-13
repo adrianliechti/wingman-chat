@@ -167,3 +167,14 @@ it.each(["categories", "risks"])("rejects missing, blank, padded, or duplicate I
     error.mockRestore();
   }
 });
+
+it.each([
+  { data: {}, enabled: false },
+  { data: { backup: {} }, enabled: false },
+  { data: { backup: { provider: "local" } }, enabled: false },
+  { data: { store: {} }, enabled: false },
+  { data: { backup: { provider: "server" } }, enabled: false },
+  { data: { backup: { provider: "onedrive", drive: "personal" } }, enabled: true },
+])("selects local or online backup from configuration: $data", async ({ data, enabled }) => {
+  expect((await loadWith(data)).store).toBe(enabled);
+});

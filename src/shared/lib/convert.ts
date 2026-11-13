@@ -14,7 +14,7 @@ const MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const MIME_PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 /** All file types the converter supports — used for file-picker accept filters. */
-export const SUPPORTED_TYPES = [
+const SUPPORTED_TYPES = [
   // Any text MIME the browser reports — covers the bulk of text/data/code files
   // directly. Extensions below catch files the browser mislabels as binary.
   "text/*",

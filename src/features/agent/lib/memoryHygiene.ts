@@ -4,7 +4,7 @@
  * a fixed marker so the surrounding note stays useful.
  */
 
-export const REDACTED_SECRET = "[REDACTED_SECRET]";
+const REDACTED_SECRET = "[REDACTED_SECRET]";
 
 /** Whole-token patterns for well-known credential formats. */
 const TOKEN_PATTERNS: RegExp[] = [

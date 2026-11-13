@@ -59,7 +59,7 @@ export function loadSkillTemplates(): Promise<SkillTemplate[]> {
 }
 
 /** A template's parsed SKILL.md (by its manifest `path`), or null when missing or invalid; nulls are retried later. */
-export function skillTemplateQuery(path: string) {
+function skillTemplateQuery(path: string) {
   return queryOptions({
     queryKey: ["skills", "template", path] as const,
     queryFn: async (): Promise<ParsedSkill | null> => {
@@ -81,7 +81,7 @@ export function loadSkillTemplate(path: string): Promise<ParsedSkill | null> {
   return queryClient.fetchQuery(skillTemplateQuery(path));
 }
 
-export function skillResourceUrl(skillPath: string, resourcePath: string): string {
+function skillResourceUrl(skillPath: string, resourcePath: string): string {
   const base = skillPath.replace(/\/SKILL\.md$/, "");
   const encoded = resourcePath.split("/").map(encodeURIComponent).join("/");
   return `${base}/${encoded}`;

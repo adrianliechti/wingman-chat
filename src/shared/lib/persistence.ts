@@ -45,6 +45,10 @@ export class PersistenceQueue {
     if (!this.batch.store.state.isPending) this.batch.addItem(id);
   }
 
+  hasPending(id: string): boolean {
+    return this.pending.has(id);
+  }
+
   private unschedule(): void {
     this.batch.cancel();
     this.batch.clear();

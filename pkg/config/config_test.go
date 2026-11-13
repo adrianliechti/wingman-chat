@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -347,5 +348,51 @@ func TestTelemetryNameReachesBrowserConfig(t *testing.T) {
 				t.Fatalf("telemetry = %+v, want %+v", cfg.Telemetry, test.want)
 			}
 		})
+	}
+}
+
+func TestBackupProviderConfiguration(t *testing.T) {
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err := os.WriteFile("backup.yaml", []byte("provider: onedrive\ndrive: personal\npath: /data/locks\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BACKUP_PROVIDER", "")
+	t.Setenv("BACKUP_DRIVE", "")
+	t.Setenv("STORE_ENABLED", "")
+	cfg := Load()
+	if cfg.Backup == nil || cfg.Backup.Provider != "onedrive" || cfg.Backup.Drive != "personal" {
+		t.Fatalf("config: %+v", cfg)
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var browser struct {
+		Backup *Backup `json:"backup"`
+	}
+	if err := json.Unmarshal(data, &browser); err != nil {
+		t.Fatal(err)
+	}
+	if browser.Backup == nil || browser.Backup.Provider != cfg.Backup.Provider || browser.Backup.Drive != cfg.Backup.Drive {
+		t.Fatalf("browser: %s", data)
+	}
+	if strings.Contains(string(data), "/data/locks") {
+		t.Fatal("private lock path exposed")
+	}
+	t.Setenv("BACKUP_PROVIDER", "local")
+	cfg = Load()
+	if cfg.Backup.Provider != "local" {
+		t.Fatalf("environment override: %+v", cfg)
 	}
 }

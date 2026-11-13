@@ -9,11 +9,11 @@ const { parser: createSaxParser } = sax;
  * XML traversal, unit conversion, escaping and relationship targets.
  */
 
-export const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-export const R_NS_STRICT = "http://purl.oclc.org/ooxml/officeDocument/relationships";
+const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const R_NS_STRICT = "http://purl.oclc.org/ooxml/officeDocument/relationships";
 export const R_NAMESPACES = [R_NS, R_NS_STRICT] as const;
-export const PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
-export const CONTENT_TYPES_NS = "http://schemas.openxmlformats.org/package/2006/content-types";
+const PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
+const CONTENT_TYPES_NS = "http://schemas.openxmlformats.org/package/2006/content-types";
 export const WORDPROCESSINGML_NAMESPACES = [
   "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
   "http://purl.oclc.org/ooxml/wordprocessingml/main",
@@ -27,7 +27,7 @@ export const SPREADSHEETML_NAMESPACES = [
   "http://purl.oclc.org/ooxml/spreadsheetml/main",
 ] as const;
 
-export const DEFAULT_OOXML_READER_LIMITS = Object.freeze({
+const DEFAULT_OOXML_READER_LIMITS = Object.freeze({
   maxArchiveEntries: 4_096,
   maxArchiveEntryBytes: 128 * 1024 * 1024,
   maxTotalInflatedBytes: 256 * 1024 * 1024,
@@ -39,7 +39,7 @@ export const DEFAULT_OOXML_READER_LIMITS = Object.freeze({
   maxImagePixels: 40_000_000,
   maxTotalImagePixels: 100_000_000,
 });
-export const MAX_OOXML_INPUT_BYTES = 128 * 1024 * 1024;
+const MAX_OOXML_INPUT_BYTES = 128 * 1024 * 1024;
 export const MAX_OOXML_METADATA_ENTRIES = 20_000;
 
 const MAX_OOXML_PARSE_PROBLEMS = 64;
@@ -64,7 +64,7 @@ export class OoxmlResourceLimitError extends Error {
   }
 }
 
-export class OoxmlXmlError extends Error {
+class OoxmlXmlError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "OoxmlXmlError";
@@ -83,7 +83,7 @@ export function assertOoxmlInputSize(input: Blob | ArrayBuffer, maxBytes = MAX_O
   assertOoxmlInputByteLength("byteLength" in input ? input.byteLength : input.size, maxBytes);
 }
 
-export interface OoxmlXmlAttribute {
+interface OoxmlXmlAttribute {
   name: string;
   localName: string;
   namespaceUri?: string;
@@ -421,7 +421,7 @@ export function resolveTargetChecked(partPath: string, target: string): Resolved
   return parts.length > 0 ? { path: parts.join("/") } : { error: `has Target "${target}" resolving to no part` };
 }
 
-export const MEDIA_MIME: Record<string, string> = {
+const MEDIA_MIME: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -444,7 +444,7 @@ export interface OoxmlRelationship extends Rel {
   path?: string;
 }
 
-export interface OoxmlRelationshipProblem {
+interface OoxmlRelationshipProblem {
   message: string;
 }
 

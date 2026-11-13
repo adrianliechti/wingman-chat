@@ -8,7 +8,7 @@ import { child, descend, escapeHtml, sanitizeCssColor } from "./ooxml";
  * falling back to the theme accent palette.
  */
 
-export interface ChartSeries {
+interface ChartSeries {
   name: string;
   color: string;
   values: number[];

@@ -4,7 +4,7 @@ import { createServer } from "vite";
 export const GATEWAY_URL = process.env.WINGMAN_E2E_GATEWAY ?? process.env.WINGMAN_URL ?? "http://localhost:4242";
 export const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.WINGMAN_E2E_TIMEOUT_MS ?? "90000", 10);
 
-export const Role = { User: "user", Assistant: "assistant" };
+const Role = { User: "user", Assistant: "assistant" };
 
 /** Scenario inputs may use the compact `{ role, content: [{ type: "text", text }] }` form; runs take native messages. */
 export function nativeMessage(message) {
@@ -23,10 +23,6 @@ export function nativeMessage(message) {
     };
   });
   return { id: message.id ?? crypto.randomUUID(), role: message.role, parts };
-}
-
-export function user(text) {
-  return nativeMessage({ role: "user", content: [{ type: "text", text }] });
 }
 
 export function messageText(messages) {

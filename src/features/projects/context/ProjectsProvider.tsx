@@ -19,7 +19,7 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
     remove,
     getItems,
     flush,
-  } = usePersistentCollection(projectStorage);
+  } = usePersistentCollection(projectStorage, "projects");
   const [storedProjectId, setStoredProjectId] = useState<string | null>(() => {
     try {
       return localStorage.getItem(PROJECT_STORAGE_KEY);

@@ -276,6 +276,29 @@ PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
 # or: task serve
 ```
 
+For local development, run `task serve` and `task ui` in separate terminals, then
+open the URL printed by Vite using `localhost`. The Go server listens on port
+8080 and uses the configured backup provider (`local` unless set; OneDrive also
+needs a matching connection in `drives.yaml`, and `task ui` must send a Microsoft
+token via `WINGMAN_TOKEN`). It forwards model/platform requests to
+`WINGMAN_URL`, falling back to `OPENAI_BASE_URL`, then `http://localhost:4242`.
+Set `WINGMAN_URL` (and `WINGMAN_TOKEN` if required) when using another platform.
+`task ui` connects the frontend to the Go server at `http://localhost:8080`.
+
+Run the backup resilience browser tests with:
+
+```bash
+npx playwright test tests/browser/backup-resilience.spec.ts --project=chromium
+```
+
+These tests require Go and Playwright Chromium (`npx playwright install chromium`).
+They build and start the real Go backend with temporary storage and isolated test
+accounts. They cover backup and restore on a fresh device, missing API routes,
+offline startup, queued edits surviving reloads, temporary server failures, and
+chat/file uploads interrupted before commit or after commit but before the
+response arrives. Network faults are injected at the browser's backup API boundary;
+the frontend remains available so local editing and recovery can be verified.
+
 Keep `vite-plus`, its core package and the `vite` alias at the same version, and
 pin Vitest to the version bundled with Vite+. React Compiler runs through the
 experimental native `oxc-transform-react` integration in `@vitejs/plugin-react`,
@@ -298,6 +321,14 @@ docker run -it --rm -p 8000:8000 \
   wingman-chat
 # or: task run
 ```
+
+See [How backup works](docs/backup.md) for sync timing, storage, encryption, and recovery.
+
+To enable encrypted OneDrive backups, set `BACKUP_PROVIDER=onedrive` and mount
+your OneDrive connection configuration at `/app/drives.yaml`. The backend
+automatically selects the sole OneDrive connection. See
+[OneDrive authentication and storage](docs/backup.md#onedrive-authentication-and-storage)
+for connection setup. Backup storage requires no persistent server volume.
 
 ## Configuration
 
@@ -415,6 +446,7 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
 
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
+- `BACKUP_PROVIDER` — `local` (default) or `onedrive`. Local uses ZIP backup controls; OneDrive enables online backup and automatically selects the sole OneDrive connection in `drives.yaml`. Configure the same setting with `backup.provider` in `config.json`, or `provider` in `backup.yaml`. Only deployments with multiple OneDrive connections need `BACKUP_DRIVE` / `drive` to select a connection by id. See [backup configuration](docs/backup.md#choose-a-provider) for authentication, concurrency, and migration details. OneDrive requires no persistent or shared volume.
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED` (`TELEMETRY_NAME` — the OpenTelemetry `service.name`, default `wingman-chat`)
@@ -424,7 +456,7 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
 
 YAML files loaded from the working directory (when present) configure models, tools, drives,
 backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`, `links.yaml`,
-`backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
+`backgrounds.yaml`, `backup.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
 `extractor.yaml`, `renderer.yaml`, `repository.yaml`.
 
 In `drives.yaml`, the OBO `auth` fields (`issuer`, `client_id`, `client_secret`, and

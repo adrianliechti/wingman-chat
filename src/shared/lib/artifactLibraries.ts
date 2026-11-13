@@ -14,7 +14,7 @@ import lucideUrl from "virtual:artifact-library-url/lucide";
 import tailwindUrl from "virtual:artifact-library-url/tailwind";
 import threeUrl from "virtual:artifact-library-url/three";
 
-export const LIBRARY_FOLDER = ".lib";
+const LIBRARY_FOLDER = ".lib";
 
 export interface ArtifactLibrary {
   /** File name under `.lib/`. */

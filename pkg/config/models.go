@@ -33,6 +33,8 @@ type Config struct {
 
 	Chat *Chat `json:"chat,omitempty" yaml:"chat,omitempty"`
 
+	Backup *Backup `json:"backup,omitempty" yaml:"backup,omitempty"`
+
 	Telemetry *Telemetry `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
 
 	Backgrounds map[string][]Background `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
@@ -201,6 +203,13 @@ type Risk struct {
 	Severity    string  `json:"severity,omitempty" yaml:"severity,omitempty"`
 	Message     string  `json:"message,omitempty" yaml:"message,omitempty"`
 	Threshold   float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+}
+
+// Backup selects local ZIP backups (the default) or OneDrive.
+// Drive references an existing OneDrive connection in drives.yaml.
+type Backup struct {
+	Provider string `json:"provider" yaml:"provider"`
+	Drive    string `json:"drive,omitempty" yaml:"drive,omitempty"`
 }
 
 type Translator struct {

@@ -332,5 +332,8 @@
       "th",
       "vi"
     ]
+  },
+  "backup": {
+    "provider": "local"
   }
 }

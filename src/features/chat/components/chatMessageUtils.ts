@@ -195,7 +195,7 @@ export function isToolOnlyMessage(message: UIMessage): boolean {
 }
 
 /** Tool rounds, possibly with reasoning, but no reply: work a finished turn can fold away. */
-export function isActivityMessage(message: UIMessage): boolean {
+function isActivityMessage(message: UIMessage): boolean {
   if (message.role !== "assistant" || message.parts.length === 0 || messageMetadata(message).error) return false;
   return (
     message.parts.some((part) => part.type === "tool-call") &&
@@ -208,7 +208,7 @@ export function isActivityMessage(message: UIMessage): boolean {
 }
 
 /** A result that must stay visible standalone (interactive/rich), never folded. */
-export function isRichToolResult(result: ToolResultPart): boolean {
+function isRichToolResult(result: ToolResultPart): boolean {
   if (isFailedResult(result)) return true;
   // Inline media (images/audio/files) is worth keeping in view.
   return toolResultContent(result).some(isMediaPart);
@@ -237,7 +237,7 @@ export function leadingReasoning(message: UIMessage | undefined): string[] {
 }
 
 /** Every thought a tool group folds: its own rounds' reasoning, then the reply's opening reasoning. */
-export function groupThoughts(messages: readonly UIMessage[], indices: number[], reply?: number): string[] {
+function groupThoughts(messages: readonly UIMessage[], indices: number[], reply?: number): string[] {
   return [
     ...indices.flatMap((index) => thoughts(messages[index])),
     ...(reply === undefined ? [] : leadingReasoning(messages[reply])),
@@ -419,5 +419,3 @@ export function summarizeActivity(messages: readonly UIMessage[], indices: numbe
   const count = groupThoughts(messages, indices, reply).length;
   return count ? `${summary} and ${plural(count, "thought")}` : summary;
 }
-
-export { getToolCallPreview } from "@/shared/lib/toolPreview";

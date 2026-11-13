@@ -39,7 +39,7 @@ export interface OverlayDelta {
   deletes: string[];
 }
 
-export interface OverlayCommitSummary {
+interface OverlayCommitSummary {
   created: number;
   updated: number;
   deleted: number;
@@ -62,7 +62,7 @@ export interface MutationOptions {
 /** A revision log entry plus whether it matches the live file. */
 export type ArtifactRevisionListing = ArtifactRevisionEntry & { current: boolean };
 
-export interface ArtifactIngestResult {
+interface ArtifactIngestResult {
   paths: string[];
   pathMap: Record<string, string>;
   mutations: ArtifactMutation[];

@@ -77,6 +77,28 @@ export class ChatStore {
     );
   }
 
+  /** Adopt remote manifests while preserving edits still waiting for a durable save. */
+  applyRemoteChats = (remote: Chat[]): void => {
+    const protectedIds = new Set(
+      this.snapshot.chats.filter((chat) => this.queue.hasPending(chat.id)).map((chat) => chat.id),
+    );
+    for (const id of this.edits.keys()) protectedIds.add(id);
+    for (const id of this.loading.keys()) protectedIds.add(id);
+    const visible = remote.filter((chat) => !this.deleted.has(chat.id) && !protectedIds.has(chat.id));
+    const remoteIds = new Set(visible.map((chat) => chat.id));
+    for (const id of this.records.keys()) {
+      if (!protectedIds.has(id) && !remoteIds.has(id)) this.records.delete(id);
+    }
+    for (const chat of visible) {
+      if (this.records.has(chat.id)) this.records.set(chat.id, chat);
+    }
+    const local = this.snapshot.chats.filter((chat) => protectedIds.has(chat.id));
+    this.publish(
+      [...local, ...visible.map(chatEntry)].sort((a, b) => (b.updated?.getTime() ?? 0) - (a.updated?.getTime() ?? 0)),
+      true,
+    );
+  };
+
   loadChat = (id: string): Promise<Chat> => {
     if (this.deleted.has(id)) return Promise.reject(new Error(`Chat ${id} was deleted`));
     const cached = this.records.get(id);

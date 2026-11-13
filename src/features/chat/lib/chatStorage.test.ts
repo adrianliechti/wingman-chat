@@ -1,13 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ChatSync, resetLocalBackupState, stashPendingTarget } from "@/shared/lib/chatSync";
+import { generateDEK } from "@/shared/lib/crypto";
+import * as api from "@/shared/lib/storeClient";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
-import { PersistenceQueue } from "@/shared/lib/persistence";
+import { PersistenceQueue, withPersistenceLock } from "@/shared/lib/persistence";
 import * as opfs from "@/shared/lib/opfs";
 import { assistantMessage, mediaFromDataUrl, text, userMessage } from "@/shared/lib/messages";
 import type { Chat } from "@/shared/types/chat";
 import { loadChat, loadChatIndex, removeChat, storeChat } from "./chatStorage";
 import { createAttachmentLoader } from "./chatAttachments";
 
-const config = vi.hoisted(() => ({ chat: { retentionDays: 0 } }));
+vi.mock("@/shared/lib/storeClient", () => ({
+  listChats: vi.fn(),
+  readEvents: vi.fn(),
+  appendEvents: vi.fn(),
+  headBlob: vi.fn(),
+  deleteChat: vi.fn(),
+}));
+const config = vi.hoisted(() => ({ chat: { retentionDays: 0 }, store: false }));
 vi.mock("@/shared/config", () => ({ getConfig: () => config }));
 const memory = new MemoryOpfs();
 const chat = (id = "chat"): Chat => ({
@@ -22,6 +32,7 @@ const image = (value = "YWJj", name?: string) => mediaFromDataUrl(`data:image/jp
 beforeEach(() => {
   memory.reset();
   config.chat.retentionDays = 0;
+  config.store = false;
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => memory.root } });
   vi.stubGlobal(
     "FileReader",
@@ -39,6 +50,41 @@ beforeEach(() => {
 });
 
 describe("chat persistence", () => {
+  it("preserves a native save made while backup tracking is being reset", async () => {
+    config.store = true;
+    const value = { ...chat(), title: "before reset" };
+    await storeChat(value);
+    await opfs.writeText("chats/chat/history.jsonl", "");
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    memory.beforeRead = async (path) => {
+      if (path !== "chats/chat/history.jsonl") return;
+      memory.beforeRead = undefined;
+      entered();
+      await blocked;
+    };
+    const resetting = withPersistenceLock("backup-reset", () => resetLocalBackupState());
+    await started;
+    const updated = { ...value, title: "saved during reset", messages: [userMessage("new message")] };
+    const saving = storeChat(updated);
+    try {
+      // Let an unprotected save finish while reset still holds its older snapshot.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      release();
+      await Promise.all([resetting, saving]);
+    }
+    expect(await loadChat(value.id)).toEqual(updated);
+    expect(await opfs.readJson("chats/chat/target.json")).toMatchObject({ title: updated.title });
+    expect(await opfs.readText("chats/chat/history.jsonl")).toBeUndefined();
+  });
+
   it("round-trips native widgets without moving app data back onto tool results", async () => {
     const value = chat();
     value.messages = [
@@ -84,26 +130,85 @@ describe("chat persistence", () => {
       vi.restoreAllMocks();
     }
   });
-  it("reads only the index at startup and resolves attachment copies when requested", async () => {
-    const value = chat();
-    value.messages = [userMessage([image()])];
-    await storeChat(value);
+  it.each([false, true])(
+    "reads only metadata at startup with online backup %s and resolves attachments on demand",
+    async (online) => {
+      config.store = online;
+      const value = chat();
+      value.messages = [userMessage([image()])];
+      await storeChat(value);
+      const reads: string[] = [];
+      memory.beforeRead = async (path) => {
+        reads.push(path);
+      };
+      expect(await loadChatIndex()).toHaveLength(1);
+      expect(reads).toEqual(["chats/index.json"]);
+      const manifest = (await loadChat(value.id, false))!;
+      expect(reads).toEqual([
+        "chats/index.json",
+        "chats/chat/chat.json",
+        ...(online ? ["chats/chat/target.json"] : []),
+      ]);
+      expect(JSON.stringify(manifest.messages)).toContain("blob:sha256-");
+      const load = createAttachmentLoader(value.id);
+      expect(await load(manifest.messages)).toMatchObject(value.messages);
+      expect(JSON.stringify(manifest.messages)).toContain("blob:sha256-");
+      const readCount = reads.length;
+      await load(manifest.messages);
+      expect(reads).toHaveLength(readCount);
+    },
+  );
+
+  it("keeps indexed flat chats visible when online backup is enabled", async () => {
+    config.store = true;
+    memory.put("chats/old.json", JSON.stringify(await opfs.extractChatBlobs(chat("old"))));
+    await opfs.upsertIndexEntry("chats", { id: "old", title: "Older chat", updated: "2026-01-02" });
     const reads: string[] = [];
     memory.beforeRead = async (path) => {
       reads.push(path);
     };
-    expect(await loadChatIndex()).toHaveLength(1);
+    expect(await loadChatIndex()).toMatchObject([{ id: "old", title: "Older chat" }]);
     expect(reads).toEqual(["chats/index.json"]);
-    const manifest = (await loadChat(value.id, false))!;
-    expect(reads).toEqual(["chats/index.json", "chats/chat/chat.json"]);
-    expect(JSON.stringify(manifest.messages)).toContain("blob:sha256-");
-    const load = createAttachmentLoader(value.id);
-    expect(await load(manifest.messages)).toMatchObject(value.messages);
-    expect(JSON.stringify(manifest.messages)).toContain("blob:sha256-");
-    const readCount = reads.length;
-    await load(manifest.messages);
-    expect(reads).toHaveLength(readCount);
+    expect(await loadChat("old", false)).toMatchObject({ id: "old" });
   });
+
+  it("keeps healthy chat listings available when another indexed or unindexed transcript is corrupt", async () => {
+    config.store = true;
+    await storeChat(chat("healthy"));
+    await storeChat(chat("broken"));
+    memory.put("chats/broken/chat.json", "{invalid");
+    memory.put("chats/unindexed/chat.json", "{invalid");
+    expect((await loadChatIndex()).map((entry) => entry.id).sort()).toEqual(["broken", "healthy"]);
+    expect(await loadChat("healthy", false)).toMatchObject({ id: "healthy" });
+  });
+
+  it.each([false, true])(
+    "repairs an interrupted metadata update with online backup %s without scanning healthy transcripts",
+    async (online) => {
+      config.store = online;
+      const original = { ...chat(), title: "original" };
+      await storeChat(original);
+      await storeChat(chat("healthy"));
+      const updated = { ...original, title: "updated", projectId: "project", updated: new Date(Date.now() + 1000) };
+      memory.beforeWrite = async (path) => {
+        if (path === "chats/index.json") throw new Error("index write failed");
+      };
+      await expect(storeChat(updated)).rejects.toThrow("index write failed");
+      memory.beforeWrite = undefined;
+      const reads: string[] = [];
+      memory.beforeRead = async (path) => {
+        reads.push(path);
+      };
+      expect((await loadChatIndex()).find((entry) => entry.id === original.id)).toMatchObject({
+        title: updated.title,
+        projectId: updated.projectId,
+        updated: updated.updated,
+      });
+      expect(reads.some((path) => path.startsWith("chats/healthy/"))).toBe(false);
+      expect(await opfs.listFiles("_sync/chat-index")).toEqual([]);
+      expect(await loadChat(original.id, false)).toMatchObject(updated);
+    },
+  );
 
   it("round-trips the native record: identities, usage, phases, resume, metadata and rich tool output", async () => {
     const value = chat();
@@ -326,3 +431,100 @@ describe("chat persistence", () => {
     });
   });
 });
+
+it("keeps an online-saved chat visible and editable after switching to local backups without server requests", async () => {
+  vi.mocked(api.appendEvents).mockImplementation(async (_id, seq, events) => ({ newSeq: seq + events.length }));
+  vi.mocked(api.headBlob).mockResolvedValue(true);
+  const dek = await generateDEK();
+  const sync = await ChatSync.create({ userId: "user", dek });
+  const value = chat();
+  value.messages = [userMessage("saved online")];
+  await sync.saveChat(value);
+  await vi.waitFor(async () => expect(await opfs.readJson("chats/chat/target.json")).toBeUndefined());
+  expect(await opfs.fileExists("chats/chat/history.jsonl")).toBe(true);
+  expect(await opfs.fileExists("chats/chat/chat.json")).toBe(true);
+  vi.mocked(api.appendEvents).mockClear();
+  expect((await loadChatIndex()).map((entry) => entry.id)).toContain(value.id);
+  expect(await loadChat(value.id)).toMatchObject(value);
+  const edited = {
+    ...value,
+    updated: new Date(Date.now() + 1000),
+    messages: [...value.messages, userMessage("edited locally")],
+  };
+  await storeChat(edited);
+  expect(await loadChat(value.id)).toMatchObject(edited);
+  expect(api.appendEvents).not.toHaveBeenCalled();
+  const resumed = await ChatSync.create({ userId: "user", dek });
+  await resumed.flushPending();
+  expect(api.appendEvents).toHaveBeenCalled();
+});
+
+it("includes pending online chats in local mode even before any sync state was committed", async () => {
+  const value = chat("pending-chat");
+  await stashPendingTarget(value);
+  expect(await opfs.fileExists("_sync/state.json")).toBe(false);
+  expect((await loadChatIndex()).map((entry) => entry.id)).toContain(value.id);
+  expect(await loadChat(value.id)).toMatchObject(value);
+});
+
+it("defers online retention until reconciliation instead of deleting a stale startup snapshot", async () => {
+  config.store = true;
+  config.chat.retentionDays = 1;
+  const expired = { ...chat("expired"), updated: new Date("2000-01-01") };
+  await storeChat(expired);
+  await storeChat(chat("recent"));
+  await opfs.writeJson("_sync/state.json", { userId: "user", heads: { expired: 1 }, lastFrameHash: {} });
+  await opfs.writeText("drafts/chat-expired/draft.json", "{}");
+  expect((await loadChatIndex()).map((entry) => entry.id)).toEqual(["recent", "expired"]);
+  expect(await opfs.fileExists("chats/expired/chat.json")).toBe(true);
+  expect(await opfs.fileExists("drafts/chat-expired/draft.json")).toBe(true);
+  expect(await opfs.readJson("_sync/deletes/u-user/expired.json")).toBeUndefined();
+  expect(api.deleteChat).not.toHaveBeenCalled();
+});
+
+it("does not resurrect stale chat index entries after an online deletion", async () => {
+  config.store = true;
+  await storeChat(chat("deleted"));
+  await opfs.deleteDirectory("chats/deleted");
+  expect(await loadChatIndex()).toEqual([]);
+});
+
+it("recovers a local edit from the shared pending target if the native save fails", async () => {
+  const value = chat();
+  await storeChat(value);
+  await stashPendingTarget(value);
+  const edited = { ...value, title: "Pending local edit", messages: [userMessage("recover this edit")] };
+  memory.beforeWrite = async (path) => {
+    if (path === "chats/chat/chat.json") throw new Error("disk full");
+  };
+  await expect(storeChat(edited)).rejects.toThrow("disk full");
+  memory.beforeWrite = undefined;
+  expect(await loadChat(value.id)).toMatchObject(edited);
+  expect((await loadChatIndex()).find((entry) => entry.id === value.id)?.title).toBe(edited.title);
+  expect(await opfs.readJson("chats/chat/target.json")).toMatchObject({ title: edited.title });
+});
+
+it.each([false, true])(
+  "keeps an uploaded local edit after a failed native save with engine restart %s",
+  async (restart) => {
+    config.store = true;
+    vi.mocked(api.appendEvents).mockImplementation(async (_id, seq, events) => ({ newSeq: seq + events.length }));
+    vi.mocked(api.headBlob).mockResolvedValue(true);
+    const dek = await generateDEK();
+    const original = chat();
+    await storeChat(original);
+    const sync = await ChatSync.create({ userId: "user", dek });
+    await sync.flushPending();
+    const updated = { ...original, title: "recover this update", messages: [userMessage("new message")] };
+    memory.beforeWrite = async (path) => {
+      if (path === "chats/chat/chat.json") throw new Error("native write failed");
+    };
+    await expect(storeChat(updated)).rejects.toThrow("native write failed");
+    memory.beforeWrite = undefined;
+    const recovered = restart ? await ChatSync.create({ userId: "user", dek }) : sync;
+    await recovered.flushPending();
+    expect(await opfs.readJson("chats/chat/target.json")).toBeUndefined();
+    expect(await loadChat(original.id, false)).toMatchObject(updated);
+    expect(await opfs.listFiles("_sync/chat-index")).toEqual([]);
+  },
+);

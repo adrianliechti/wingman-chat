@@ -50,7 +50,7 @@ export async function getChatBlob(chatId: string, blobId: string): Promise<Blob 
 /**
  * Delete a blob from a chat's blobs folder.
  */
-export async function deleteChatBlob(chatId: string, blobId: string): Promise<void> {
+async function deleteChatBlob(chatId: string, blobId: string): Promise<void> {
   await deleteFile(`chats/${chatId}/blobs/${blobId}.bin`);
 }
 
@@ -242,7 +242,7 @@ function runtimeFields({ resume, metadata }: Pick<Chat, "resume" | "metadata">) 
 /**
  * Extract all binary data from a chat and store as blobs in chat folder.
  * Returns a StoredChat suitable for JSON serialization.
- * Note: Artifacts should be saved separately via saveArtifacts().
+ * Note: Artifacts are persisted separately by the artifact filesystem.
  */
 export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
   const blobs = new Map<string, Promise<string>>();
@@ -286,7 +286,7 @@ export function restoreChatManifest(stored: StoredChat): Chat {
 /**
  * Rehydrate all blob references in a stored chat.
  * Returns a Chat with all media restored as data.
- * Note: Artifacts should be loaded separately via loadArtifacts().
+ * Note: Artifacts are loaded separately by the artifact filesystem.
  */
 export async function rehydrateChatBlobs(stored: StoredChat): Promise<Chat> {
   const chat = restoreChatManifest(stored);

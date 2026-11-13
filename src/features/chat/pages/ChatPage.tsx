@@ -697,5 +697,3 @@ export function ChatPage() {
     </div>
   );
 }
-
-export default ChatPage;

@@ -336,7 +336,7 @@ const MODEL_TYPE_CUES: [ModelType, RegExp][] = [
   ],
 ];
 
-export function isModelType(value: unknown): value is ModelType {
+function isModelType(value: unknown): value is ModelType {
   return value === "completer" || MODEL_TYPE_CUES.some(([type]) => type === value);
 }
 
