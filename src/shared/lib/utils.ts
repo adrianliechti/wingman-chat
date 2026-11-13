@@ -152,43 +152,8 @@ export function downloadFromUrl(url: string, filename: string = ""): void {
   document.body.removeChild(link);
 }
 
-interface SaveFilePickerWindow {
-  showSaveFilePicker?: (options?: {
-    suggestedName?: string;
-    types?: { description?: string; accept: Record<string, string[]> }[];
-  }) => Promise<FileSystemFileHandle>;
-}
-
-// Stream a blob to disk via the File System Access API. Returns false when the
-// API is unavailable so callers can fall back to the anchor-download path.
-async function saveBlobWithPicker(blob: Blob, filename: string): Promise<boolean> {
-  const showSaveFilePicker = (window as SaveFilePickerWindow).showSaveFilePicker;
-  if (typeof showSaveFilePicker !== "function") return false;
-
-  const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
-  const mimeType = blob.type || (ext ? mime.getType(ext) : null) || "application/octet-stream";
-  const types = ext ? [{ accept: { [mimeType]: [ext] } }] : undefined;
-
-  try {
-    const handle = await showSaveFilePicker({ suggestedName: filename, types });
-    const writable = await handle.createWritable();
-    await blob.stream().pipeTo(writable);
-    return true;
-  } catch (error) {
-    // A user cancelling the picker is expected; swallow it rather than falling
-    // back to a second (anchor) download the user did not ask for.
-    if (error instanceof DOMException && error.name === "AbortError") return true;
-    return false;
-  }
-}
-
-export async function downloadBlob(
-  blob: Blob,
-  filename: string,
-  { usePicker = true }: { usePicker?: boolean } = {},
-): Promise<void> {
-  if (usePicker && (await saveBlobWithPicker(blob, filename))) return;
-
+/** Everyday downloads follow the user's browser download settings. */
+export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
   const url = URL.createObjectURL(blob);
   downloadFromUrl(url, filename);
   // Revoking synchronously can truncate large downloads (corrupt ZIPs) because

@@ -9,7 +9,7 @@ import type JSZip from "jszip";
 import { withArtifactWorkspaceLock } from "@/features/artifacts/lib/workspaceCoordinator";
 import { parseSkillFileForImport } from "@/features/skills/lib/skillParser";
 import { fileExists, getDirectory, getRoot } from "./opfs-core";
-import { downloadZip, generateZipBlob } from "./zipStreams";
+import { saveZip, generateZipBlob } from "./zipStreams";
 import { flushForBackup, withPersistenceLock } from "./persistence";
 import { STORAGE_COLLECTIONS } from "./opfs-index";
 import { readZipFiles, restoreFiles, type RestoreResult } from "./opfs-restore";
@@ -244,14 +244,14 @@ export async function importFolderFromZip(
 }
 
 /**
- * Export a folder as a ZIP and trigger a browser download.
+ * Back up a folder as a ZIP, preferring a save picker when available.
  */
 export async function downloadFolderAsZip(
   folderPath: string,
   filename: string,
   onProgress?: ZipProgressHandler,
 ): Promise<void> {
-  await downloadZip(filename, () => createFolderZip(folderPath), onProgress);
+  await saveZip(filename, () => createFolderZip(folderPath), onProgress);
 }
 
 /** Export selected top-level OPFS folders together in a single ZIP. */
@@ -266,7 +266,7 @@ export async function downloadFoldersAsZip(
     if (path.includes("/")) throw new Error(`Only top-level paths can be exported: ${path}`);
   }
 
-  await downloadZip(
+  await saveZip(
     filename,
     async () => {
       const JSZip = (await import("jszip")).default;

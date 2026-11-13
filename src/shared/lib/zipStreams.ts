@@ -64,12 +64,17 @@ export function readZipEntryBlob(entry: JSZip.JSZipObject): Promise<Blob> {
   return new Response(readable(streamable.internalStream("uint8array"))).blob();
 }
 
-/** Open the picker before snapshot/compression work can consume the user gesture. */
+/** Download an export through the browser download manager. */
 export async function downloadZip(
   filename: string,
   createZip: () => Promise<JSZip>,
   onProgress?: Progress,
 ): Promise<void> {
+  await downloadBlob(await generateZipBlob(await createZip(), onProgress), filename);
+}
+
+/** Backups open the picker before snapshot/compression work can consume the user gesture. */
+export async function saveZip(filename: string, createZip: () => Promise<JSZip>, onProgress?: Progress): Promise<void> {
   const picker =
     typeof window === "undefined"
       ? undefined
@@ -97,7 +102,7 @@ export async function downloadZip(
     if (await writeToFile(handle, zip, onProgress)) return;
   }
   onProgress?.(0);
-  await downloadBlob(await generateZipBlob(zip, onProgress), filename, { usePicker: false });
+  await downloadBlob(await generateZipBlob(zip, onProgress), filename);
   if (handle) {
     notify.warning("Archive download started", "The chosen file could not be written. Check your browser downloads.");
   }

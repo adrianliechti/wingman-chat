@@ -451,10 +451,10 @@ export function ChatPage() {
         style={contentRightOffset ? { marginRight: contentRightOffset } : undefined}
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
-          {(chatLoading && (showChatLoading || messages.length === 0)) || chatError ? (
-            <div className="m-auto p-6 text-sm text-neutral-500" role={chatError ? "alert" : "status"}>
-              {chatError ?? "Loading conversation…"}
-              {chatError && selectedChatId && (
+          {chatError ? (
+            <div className="m-auto p-6 text-sm text-neutral-500" role="alert">
+              {chatError}
+              {selectedChatId && (
                 <button
                   type="button"
                   className="ml-3 underline"
@@ -466,7 +466,7 @@ export function ChatPage() {
                 </button>
               )}
             </div>
-          ) : messages.length === 0 ? (
+          ) : chatLoading && (showChatLoading || messages.length === 0) ? null : messages.length === 0 ? (
             <div className="flex-1 flex items-center justify-center pt-16 relative">
               <div className="flex flex-col items-center text-center relative z-10 w-full max-w-4xl px-4 mb-16 md:mb-32">
                 {/* Logo - only show if no background image is available */}
