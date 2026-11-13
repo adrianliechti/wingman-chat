@@ -64,6 +64,7 @@ export interface ServerChatMeta {
   id: string;
   headSeq: number;
   updated: string; // RFC 3339
+  deleted?: boolean;
 }
 
 export interface KeystoreResponse {
@@ -166,8 +167,15 @@ export async function compactChat(chatId: string, beforeSeq: number): Promise<vo
   await fetchOrThrow(url, { method: "POST" });
 }
 
-export async function deleteChat(chatId: string): Promise<void> {
-  await ensureOk(await storeFetch(`${PREFIX}/chats/${encodeURIComponent(chatId)}`, { method: "DELETE" }), true);
+/** A changed chat head returns 412; transient backup conflicts remain 409. */
+export async function deleteChat(chatId: string, expectedSeq: number): Promise<void> {
+  await ensureOk(
+    await storeFetch(`${PREFIX}/chats/${encodeURIComponent(chatId)}`, {
+      method: "DELETE",
+      headers: { "X-Expected-Seq": String(expectedSeq) },
+    }),
+    true,
+  );
 }
 
 export async function headBlob(blobId: string): Promise<boolean> {

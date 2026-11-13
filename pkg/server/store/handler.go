@@ -329,8 +329,17 @@ func (h *Handler) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chatID := r.PathValue("id")
+	expectedSeq, err := strconv.ParseInt(r.Header.Get("X-Expected-Seq"), 10, 64)
+	if err != nil || expectedSeq < 0 {
+		http.Error(w, "valid X-Expected-Seq required", http.StatusBadRequest)
+		return
+	}
 
-	if err := h.store.DeleteChat(r.Context(), userID, chatID); err != nil {
+	if err := h.store.DeleteChat(r.Context(), userID, chatID, expectedSeq); err != nil {
+		if errors.Is(err, store.ErrSeqConflict) {
+			http.Error(w, err.Error(), http.StatusPreconditionFailed)
+			return
+		}
 		writeStoreError(w, err)
 		return
 	}

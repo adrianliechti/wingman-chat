@@ -12,6 +12,7 @@ import { fileExists, getDirectory, getRoot } from "./opfs-core";
 import { saveZip, generateZipBlob } from "./zipStreams";
 import { flushForBackup, withPersistenceLock } from "./persistence";
 import { STORAGE_COLLECTIONS } from "./opfs-index";
+import { withChatTarget } from "./localChats";
 import { readZipFiles, restoreFiles, type RestoreResult } from "./opfs-restore";
 export { rebuildFolderIndex } from "./opfs-index";
 
@@ -81,7 +82,7 @@ export async function addDirectoryToZip(handle: FileSystemDirectoryHandle, zipFo
           console.warn(`Skipped a folder that was deleted while the backup was running: ${childPath}`);
         }
       };
-      if (path === "chats") await withArtifactWorkspaceLock(name, copy);
+      if (path === "chats") await withChatTarget(name, () => withArtifactWorkspaceLock(name, copy));
       else await copy();
     }
   }

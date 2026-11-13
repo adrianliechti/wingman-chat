@@ -34,7 +34,7 @@ func (p *Provider) ListChats(ctx context.Context, userID string) ([]store.ChatMe
 	}
 	out := make([]store.ChatMeta, 0, len(state.Chats))
 	for id, ch := range state.Chats {
-		out = append(out, store.ChatMeta{ID: id, HeadSeq: ch.Head, Updated: ch.Updated})
+		out = append(out, store.ChatMeta{ID: id, HeadSeq: ch.Head, Updated: ch.Updated, Deleted: ch.Deleted})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out, nil
@@ -91,6 +91,7 @@ func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expe
 	}
 	ch.Segments = append(ch.Segments, part)
 	ch.Updated = part.Updated
+	ch.Deleted = false
 	state.Chats[chatID] = ch
 	if err := p.save(ctx, userID, state); err != nil {
 		p.discard(ctx, userID, err, part.Name)
@@ -188,7 +189,7 @@ func (p *Provider) ReadEvents(ctx context.Context, userID, chatID string, fromSe
 		return nil, err
 	}
 	ch, ok := state.Chats[chatID]
-	if !ok {
+	if !ok || ch.Deleted {
 		return nil, store.ErrNotFound
 	}
 	reader := &eventReader{provider: p, ctx: ctx, userID: userID, from: fromSeq}
@@ -210,7 +211,7 @@ func (p *Provider) ReadEvents(ctx context.Context, userID, chatID string, fromSe
 	}
 	return reader, nil
 }
-func (p *Provider) DeleteChat(ctx context.Context, userID, chatID string) error {
+func (p *Provider) DeleteChat(ctx context.Context, userID, chatID string, expectedSeq int64) error {
 	if err := validateID(chatID); err != nil {
 		return err
 	}
@@ -219,10 +220,15 @@ func (p *Provider) DeleteChat(ctx context.Context, userID, chatID string) error 
 		return err
 	}
 	ch, ok := state.Chats[chatID]
-	if !ok {
+	if !ok || ch.Deleted {
 		return nil
 	}
-	delete(state.Chats, chatID)
+	if ch.Head != expectedSeq {
+		return store.ErrSeqConflict
+	}
+	// Keep an advanced cursor after deletion. A pending local edit can recreate
+	// this ID with an init snapshot, while stale devices cannot reuse its head.
+	state.Chats[chatID] = chat{Head: ch.Head + 1, Deleted: true, Updated: time.Now().UTC()}
 	if err := p.save(ctx, userID, state); err != nil {
 		return err
 	}
@@ -240,7 +246,7 @@ func (p *Provider) CompactChat(ctx context.Context, userID, chatID string, befor
 		return err
 	}
 	ch, ok := state.Chats[chatID]
-	if !ok {
+	if !ok || ch.Deleted {
 		return store.ErrNotFound
 	}
 	if beforeSeq > ch.Head {

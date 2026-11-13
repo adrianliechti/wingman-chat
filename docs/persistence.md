@@ -227,6 +227,16 @@ remote version. Ordinary new uploads and pending local changes continue normally
 When an unlocked browser finds a remotely deleted chat, it removes an unchanged
 local copy. Pending local edits and their attachments survive and upload as a
 fresh chat log, matching file sync's preference for preserving unsynced work.
+Chat deletion requests carry the last confirmed sequence. A newer server head
+rejects the deletion; the local deletion journal is cancelled so a subsequent
+pull can restore that newer copy. Server tombstones advance the sequence and
+recreation continues above it, allowing devices that missed the deletion to
+adopt the new init snapshot. Online retention runs only after reconciliation,
+skips failed chat downloads, and checks both the pending and confirmed timestamps
+under the snapshot lock before expiring a chat. ZIP export takes that same lock
+while choosing and reading the snapshot, preventing upload acknowledgement from
+removing an outbox file mid-export. Upgrade the backend and reload open browsers
+together: older clients without deletion preconditions are refused.
 A local file deletion only applies to the version this browser last synced; if
 another device changed the file since, its edit wins and is restored on the next pull.
 

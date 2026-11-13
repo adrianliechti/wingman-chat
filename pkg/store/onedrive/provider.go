@@ -89,6 +89,7 @@ type segment struct {
 }
 type chat struct {
 	Head     int64     `json:"head"`
+	Deleted  bool      `json:"deleted,omitempty"`
 	Updated  time.Time `json:"updated"`
 	Segments []segment `json:"segments"`
 	Recent   []string  `json:"recent,omitempty"`

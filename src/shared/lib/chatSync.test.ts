@@ -18,8 +18,10 @@ import { MemoryOpfs } from "./test-support/memoryOpfs";
 import { diffChat, encodeLines } from "./chatLog";
 import { encodeHistory, readChatHistory } from "./chatHistoryStorage";
 import type { Chat } from "@/shared/types/chat";
+import { exportFolderAsZip } from "./opfs-zip";
 
-vi.mock("./storeClient", () => ({
+vi.mock("./storeClient", async (original) => ({
+  ServerError: (await original<typeof import("./storeClient")>()).ServerError,
   listChats: vi.fn(),
   readEvents: vi.fn(),
   appendEvents: vi.fn(),
@@ -32,12 +34,16 @@ vi.mock("./storeClient", () => ({
 const memory = new MemoryOpfs();
 
 /** Web Locks with real exclusion; shared requests (the reset fence) run concurrently. */
-function stubWebLocks(): void {
+function stubWebLocks(onAcquire?: (name: string) => void): void {
   const locks = new Map<string, Promise<unknown>>();
   const request = (name: string, options: unknown, callback?: () => Promise<unknown>) => {
     const fn = typeof options === "function" ? (options as () => Promise<unknown>) : callback!;
     if (typeof options === "object" && options && "mode" in options && options.mode === "shared") return fn();
-    const result = (locks.get(name) ?? Promise.resolve()).then(fn, fn);
+    const run = () => {
+      onAcquire?.(name);
+      return fn();
+    };
+    const result = (locks.get(name) ?? Promise.resolve()).then(run, run);
     locks.set(
       name,
       result.catch(() => {}),
@@ -86,7 +92,180 @@ it("expires an incoming old backup without reviving its chat or draft", async ()
   expect(await sync.pull()).toEqual([]);
   expect(await readLocalChat(old.id, false)).toBeUndefined();
   expect(await readJson("drafts/chat-chat/draft.json")).toBeUndefined();
-  await vi.waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith(old.id));
+  await vi.waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith(old.id, 1));
+});
+
+it("preserves an expired local baseline when its newer remote version cannot be downloaded", async () => {
+  const dek = await generateDEK();
+  const old = { ...chat(), updated: new Date("2000-01-01") };
+  const frame = await encryptEvent(
+    dek,
+    { prevHash: ZERO_HASH, body: diffChat(null, await extractChatBlobs(old)) },
+    "user",
+    "chat",
+    1,
+  );
+  vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 1, updated: "2000-01-01" }]);
+  vi.mocked(api.readEvents).mockResolvedValue([{ seq: 1, id: "old", frame }]);
+  await (await ChatSync.create({ userId: "user", dek })).pull();
+  await writeJson("drafts/chat-chat/draft.json", { content: "keep draft" });
+  const sync = await ChatSync.create({ userId: "user", dek, retentionDays: 30 });
+  vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 2, updated: new Date().toISOString() }]);
+  vi.mocked(api.readEvents).mockRejectedValue(new Error("temporary download failure"));
+  await expect(sync.pull()).rejects.toThrow("temporary download failure");
+  await sync.flushPending();
+  expect(api.deleteChat).not.toHaveBeenCalled();
+  expect(await readLocalChat("chat", false)).toBeDefined();
+  expect(await readJson("drafts/chat-chat/draft.json")).toEqual({ content: "keep draft" });
+  expect(await readJson("_sync/deletes/u-user/chat.json")).toBeUndefined();
+});
+
+it("does not expire a newer confirmed version hidden by an older pending target", async () => {
+  const dek = await generateDEK();
+  const current = { ...chat(), updated: new Date() };
+  const frame = await encryptEvent(
+    dek,
+    { prevHash: ZERO_HASH, body: diffChat(null, await extractChatBlobs(current)) },
+    "user",
+    "chat",
+    1,
+  );
+  vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 1, updated: current.updated.toISOString() }]);
+  vi.mocked(api.readEvents).mockResolvedValue([{ seq: 1, id: "current", frame }]);
+  await (await ChatSync.create({ userId: "user", dek })).pull();
+  await stashPendingTarget({ ...current, updated: new Date("2000-01-01") });
+  const sync = await ChatSync.create({ userId: "user", dek, retentionDays: 30 });
+  await sync.pull();
+  expect(await readLocalChat("chat", false)).toBeDefined();
+  expect(api.deleteChat).not.toHaveBeenCalled();
+});
+
+it("cancels a stale offline deletion and restores the other device's newer work", async () => {
+  const dek = await generateDEK();
+  const original = chat();
+  const sync = await ChatSync.create({ userId: "user", dek });
+  await sync.saveChat(original);
+  await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
+  const first = vi.mocked(api.appendEvents).mock.calls[0][2][0].frame;
+  vi.mocked(api.deleteChat).mockRejectedValue(new Error("offline"));
+  await sync.deleteChat("chat");
+  await vi.waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith("chat", 1));
+  expect(await readJson("_sync/deletes/u-user/chat.json")).toMatchObject({ expectedSeq: 1 });
+  vi.mocked(api.deleteChat).mockRejectedValue(new api.ServerError(412, "newer remote edit"));
+  const fresh = await ChatSync.create({ userId: "user", dek });
+  await fresh.flushPending();
+  expect(await readJson("_sync/deletes/u-user/chat.json")).toBeUndefined();
+  const updated = { ...original, title: "other device's work", updated: new Date() };
+  const second = await encryptEvent(
+    dek,
+    {
+      prevHash: await hashFrame(first),
+      body: diffChat(await extractChatBlobs(original), await extractChatBlobs(updated)),
+    },
+    "user",
+    "chat",
+    2,
+  );
+  vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 2, updated: updated.updated.toISOString() }]);
+  vi.mocked(api.readEvents).mockResolvedValue([
+    { seq: 1, id: "first", frame: first },
+    { seq: 2, id: "second", frame: second },
+  ]);
+  expect(await fresh.pull()).toMatchObject([{ title: "other device's work" }]);
+});
+
+it.each([409, 503])("retains a deletion journal after a transient server failure (%s)", async (status) => {
+  await stashPendingDeletion("chat", "user");
+  vi.mocked(api.deleteChat).mockRejectedValue(new api.ServerError(status, "retry backup request"));
+  const sync = await ChatSync.create({ userId: "user", dek: await generateDEK() });
+  await sync.flushPending();
+  expect(await readJson("_sync/deletes/u-user/chat.json")).toMatchObject({ id: "chat", expectedSeq: 0 });
+});
+
+it("recreates a deleted log above its tombstone and updates a device that missed the deletion", async () => {
+  const dek = await generateDEK();
+  const original = chat();
+  const sync = await ChatSync.create({ userId: "user", dek });
+  await sync.saveChat(original);
+  await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
+  const staleDevice = new Map(memory.files);
+  const release = beginChatBackupPause("chat");
+  try {
+    await sync.saveChat({ ...original, title: "offline work survives" });
+    vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 2, deleted: true, updated: "2026-01-03" }]);
+    expect(await sync.pull()).toMatchObject([{ title: "offline work survives" }]);
+    expect(await readJson("_sync/state.json")).toMatchObject({ tombstones: { chat: 2 }, heads: {} });
+  } finally {
+    await finishChatBackupPause(release);
+  }
+  // The tombstone cursor and pending target must also survive a page reload.
+  vi.mocked(api.appendEvents).mockClear();
+  const reloaded = await ChatSync.create({ userId: "user", dek });
+  await reloaded.flushPending();
+  expect(api.appendEvents).toHaveBeenCalledWith("chat", 2, expect.any(Array));
+  const recreated = vi.mocked(api.appendEvents).mock.calls[0][2][0];
+  expect(await decryptEvent(dek, recreated.frame, "user", "chat", 3)).toMatchObject({
+    body: [{ type: "init" }, { title: "offline work survives" }, { type: "message" }],
+  });
+  // A third device kept its old head and never saw the tombstone.
+  memory.reset();
+  for (const [path, blob] of staleDevice) memory.put(path, blob);
+  vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 3, updated: "2026-01-04" }]);
+  vi.mocked(api.readEvents).mockResolvedValue([{ seq: 3, ...recreated }]);
+  const third = await ChatSync.create({ userId: "user", dek });
+  expect(await third.pull()).toMatchObject([{ title: "offline work survives", messages: original.messages }]);
+  expect(await readJson("_sync/state.json")).toMatchObject({ heads: { chat: 3 }, tombstones: {} });
+});
+
+it("adopts a tombstone after an append conflict without an intervening pull", async () => {
+  const dek = await generateDEK();
+  await stashPendingTarget(chat());
+  vi.mocked(api.appendEvents)
+    .mockResolvedValueOnce(null)
+    .mockImplementation(async (_id, seq, events) => ({ newSeq: seq + events.length }));
+  vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 8, deleted: true, updated: "2026-01-04" }]);
+  const sync = await ChatSync.create({ userId: "user", dek });
+  await sync.flushPending();
+  expect(api.appendEvents).toHaveBeenNthCalledWith(1, "chat", 0, expect.any(Array));
+  expect(api.appendEvents).toHaveBeenNthCalledWith(2, "chat", 8, expect.any(Array));
+  expect(await readJson("chats/chat/target.json")).toBeUndefined();
+  expect(await readJson("_sync/state.json")).toMatchObject({ heads: { chat: 9 }, tombstones: {} });
+});
+
+it("completes a root backup overlapping chat deletion without reversing collection and target locks", async () => {
+  let watching = false;
+  let draftsLocked!: () => void;
+  const exportingHasDrafts = new Promise<void>((resolve) => {
+    draftsLocked = resolve;
+  });
+  stubWebLocks((name) => {
+    if (watching && name === "wingman:collection:drafts") draftsLocked();
+  });
+  const sync = await ChatSync.create({ userId: "user", dek: await generateDEK() });
+  await sync.saveChat(chat());
+  await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
+  let finishDeletion!: () => void;
+  let deletionStarted!: () => void;
+  const deletingHasTarget = new Promise<void>((resolve) => {
+    deletionStarted = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    finishDeletion = resolve;
+  });
+  memory.beforeWrite = async (path) => {
+    if (path === "_sync/deletes/u-user/chat.json") {
+      deletionStarted();
+      await blocked;
+    }
+  };
+  const deleting = sync.deleteChat("chat");
+  await deletingHasTarget;
+  watching = true;
+  const exporting = exportFolderAsZip("/");
+  await exportingHasDrafts;
+  finishDeletion();
+  await Promise.all([deleting, exporting]);
+  expect(await readLocalChat("chat", false)).toBeUndefined();
 });
 
 it("picks up another locally committed chat while an earlier upload is in flight", async () => {
@@ -370,8 +549,8 @@ it("retains deletions made by stale tabs offline for a later session", async () 
   vi.mocked(api.deleteChat).mockResolvedValue(undefined);
   const fresh = await ChatSync.create({ userId: "user", dek });
   await fresh.flushPending();
-  expect(api.deleteChat).toHaveBeenCalledWith("first");
-  expect(api.deleteChat).toHaveBeenCalledWith("second");
+  expect(api.deleteChat).toHaveBeenCalledWith("first", 0);
+  expect(api.deleteChat).toHaveBeenCalledWith("second", 0);
   expect(await readJson("_sync/deletes/u-user/first.json")).toBeUndefined();
   expect(await readJson("_sync/deletes/u-user/second.json")).toBeUndefined();
 });
@@ -568,7 +747,7 @@ it("finishes an active upload before a local storage deletion without resurrecti
     finishAppend();
     await deleting;
     await sync.flushPending();
-    await vi.waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith("chat"));
+    await vi.waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith("chat", 1));
     expect(await readLocalChat("chat")).toBeUndefined();
     expect(await readLocalMirror(false)).toEqual([]);
     expect(await readJson("_sync/state.json")).toMatchObject({ heads: {}, lastFrameHash: {} });
@@ -622,7 +801,7 @@ it("retains shared server attachments when one of their chats is deleted", async
   await vi.waitFor(async () => expect(await readJson("chats/second/target.json")).toBeUndefined());
   await sync.deleteChat("first");
   await sync.flushPending();
-  await vi.waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith("first"));
+  await vi.waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith("first", 1));
   expect(await readLocalChat("second", false)).toMatchObject({ id: "second" });
 });
 

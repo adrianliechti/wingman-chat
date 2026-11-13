@@ -141,7 +141,9 @@ export async function loadChatIndex(): Promise<ChatEntry[]> {
       };
       // Only retention candidates need a manifest read. Verify the saved date
       // before deletion: an interrupted index update can leave an older date.
-      if (cutoff && summary.updated && summary.updated < cutoff) {
+      // Online retention runs after reconciliation, when another device's newer
+      // timestamp is known. Startup must not expire a stale offline snapshot.
+      if (!getConfig().store && cutoff && summary.updated && summary.updated < cutoff) {
         try {
           const chat = await loadChat(entry.id, false);
           if (!chat) continue;

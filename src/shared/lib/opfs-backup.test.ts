@@ -5,6 +5,7 @@ import { readZipFiles, restoreFiles } from "./opfs-restore";
 import { PersistenceQueue, registerPersistenceQueue } from "./persistence";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
 import { downloadBlob } from "./utils";
+import { withChatTarget } from "./localChats";
 
 vi.mock("./utils", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./utils")>()),
@@ -55,6 +56,47 @@ it("exports native chat snapshots without device sync tracking and imports them 
   expect(result.restoredFiles).toBe(1);
   expect(await opfs.readJson("chats/chat/target.json")).toMatchObject({ projectId: "project", agentId: "agent" });
   expect(await opfs.readText("_sync/state.json")).toBe("private baselines");
+});
+
+it("holds the chat snapshot through export while sync acknowledges and clears its outbox", async () => {
+  const snapshot = storedChat("chat", { title: "latest pending snapshot" });
+  memory.put("chats/chat/chat.json", storedChat("chat", { title: "older snapshot" }));
+  memory.put("chats/chat/target.json", snapshot);
+  memory.put("chats/chat/history.jsonl", "confirmed log");
+  let finishRead!: () => void;
+  let readStarted!: () => void;
+  const reading = new Promise<void>((resolve) => {
+    readStarted = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    finishRead = resolve;
+  });
+  memory.beforeRead = async (path) => {
+    if (path === "chats/chat/target.json") {
+      readStarted();
+      await blocked;
+    }
+  };
+  const exporting = opfs.exportFolderAsZip("/");
+  await reading;
+  let acknowledged = false;
+  const acknowledging = withChatTarget("chat", async () => {
+    await opfs.writeText("chats/chat/chat.json", snapshot);
+    await opfs.deleteFile("chats/chat/target.json");
+    acknowledged = true;
+  });
+  try {
+    await Promise.resolve();
+    expect(acknowledged).toBe(false);
+  } finally {
+    finishRead();
+  }
+  const archive = await JSZip.loadAsync(await (await exporting).arrayBuffer());
+  await acknowledging;
+  expect(await archive.file("chats/chat/chat.json")!.async("string")).toBe(snapshot);
+  expect(archive.file("chats/chat/target.json")).toBeNull();
+  expect(archive.file("chats/chat/history.jsonl")).toBeNull();
+  expect(acknowledged).toBe(true);
 });
 
 describe("backup and restore", () => {

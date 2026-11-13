@@ -67,6 +67,8 @@ interface SyncState {
   userId: string;
   heads: Record<string, number>;
   lastFrameHash: Record<string, string>;
+  /** Deleted logs retain their cursor so a new init never reuses a sequence. */
+  tombstones?: Record<string, number>;
   /** Number of events on the server since the last compaction for this chat. */
   entriesSinceCompact?: Record<string, number>;
 }
@@ -78,14 +80,17 @@ const COMPACT_THRESHOLD = 50;
 interface PendingDeletion {
   id: string;
   token: string;
+  expectedSeq?: number;
 }
 const deleteDir = (userId: string) => `_sync/deletes/u-${encodeURIComponent(userId)}`;
 const deletePath = (userId: string, id: string) => `${deleteDir(userId)}/${encodeURIComponent(id)}.json`;
 const withDeletionLock = <T>(userId: string, id: string, operation: () => Promise<T>) =>
   withPersistenceLock(`chat-deletion:${encodeURIComponent(userId)}:${encodeURIComponent(id)}`, operation);
 
-async function journalDeletion(userId: string, id: string): Promise<void> {
-  await withDeletionLock(userId, id, () => writeJson(deletePath(userId, id), { id, token: crypto.randomUUID() }));
+async function journalDeletion(userId: string, id: string, expectedSeq: number): Promise<void> {
+  await withDeletionLock(userId, id, () =>
+    writeJson(deletePath(userId, id), { id, token: crypto.randomUUID(), expectedSeq }),
+  );
 }
 
 async function pendingDeletions(userId: string): Promise<PendingDeletion[]> {
@@ -117,6 +122,9 @@ async function saveChatState(state: SyncState, chatId: string): Promise<void> {
     const disk = (await readJson<SyncState>(STATE_FILE)) ?? { userId: state.userId, heads: {}, lastFrameHash: {} };
     if (disk.userId !== state.userId) return;
     const counts = (disk.entriesSinceCompact ??= {});
+    const tombstones = (disk.tombstones ??= {});
+    if (state.tombstones?.[chatId] === undefined) delete tombstones[chatId];
+    else tombstones[chatId] = state.tombstones[chatId];
     if (state.heads[chatId] === undefined) {
       delete disk.heads[chatId];
       delete disk.lastFrameHash[chatId];
@@ -136,6 +144,7 @@ function forgetChatState(state: SyncState, chatId: string): void {
   delete state.heads[chatId];
   delete state.lastFrameHash[chatId];
   if (state.entriesSinceCompact) delete state.entriesSinceCompact[chatId];
+  if (state.tombstones) delete state.tombstones[chatId];
 }
 
 /** Preserve local snapshots and attachments, but start the next backup from seq 0. */
@@ -192,7 +201,9 @@ async function stashPendingDeletionUnlocked(chatId: string, userId?: string): Pr
   await withPersistenceLock(`chat-sync:${encodeURIComponent(owner)}:${encodeURIComponent(chatId)}`, () =>
     withChatTarget(chatId, async () => {
       const state = (await loadState()) ?? { userId: owner, heads: {}, lastFrameHash: {} };
-      await journalDeletion(owner, chatId);
+      const head =
+        (await readChatHistory(chatId))?.checkpoint?.head ?? state.heads[chatId] ?? state.tombstones?.[chatId] ?? 0;
+      await journalDeletion(owner, chatId, head);
       forgetChatState(state, chatId);
       await saveChatState(state, chatId);
       await deleteDirectory(`chats/${chatId}`);
@@ -263,6 +274,10 @@ export class ChatSync {
     this.dek = dek;
   }
 
+  private headSeq(chatId: string): number {
+    return this.state.heads[chatId] ?? this.state.tombstones?.[chatId] ?? 0;
+  }
+
   // public API ----------------------------------------------------------
 
   /** Watch sync activity (in-flight, pending count, last sync, last error). */
@@ -326,18 +341,24 @@ export class ChatSync {
     const remote = await api.listChats();
     await this.refreshDeletions();
     const pending = remote.filter(
-      (meta) => !this.deletions.has(meta.id) && meta.headSeq > (this.state.heads[meta.id] ?? 0),
+      (meta) =>
+        !this.deletions.has(meta.id) &&
+        (meta.deleted ? meta.headSeq !== this.state.tombstones?.[meta.id] : meta.headSeq > this.headSeq(meta.id)),
     );
     progress.setTotal(pending.length);
 
     // Pull in parallel; one broken chat must not hide changes to the others.
     const results = await Promise.allSettled(
       pending.map(async (meta) => {
-        await this.applyRemoteEvents(meta.id, meta.headSeq);
+        if (meta.deleted) await this.applyRemoteDeletion(meta.id, meta.headSeq);
+        else await this.applyRemoteEvents(meta.id, meta.headSeq);
         progress.advance();
       }),
     );
     const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    const failedIds = new Set(
+      pending.filter((_, index) => results[index].status === "rejected").map((meta) => meta.id),
+    );
     for (const failure of failures) console.warn("chatSync.pull: chat restore failed", failure.reason);
 
     // Apply remote deletions only to baselines that existed before this listing.
@@ -347,22 +368,7 @@ export class ChatSync {
       if (remoteIds.has(id)) continue;
       await this.withChat(id, async () => {
         if (this.state.heads[id] !== head) return;
-        await withChatTarget(id, async () => {
-          const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
-          if (target) {
-            // Keep offline edits and their attachments; the next upload starts
-            // a fresh log rather than diffing against the deleted server copy.
-            this.pendingTargets.set(id, normalizeStoredChat(target));
-            await deleteFile(historyPath(id));
-          } else {
-            await deleteDirectory(`chats/${id}`);
-            await removeIndexEntry("chats", id);
-            await completeChatIndexRepair(id);
-          }
-          this.lastSynced.delete(id);
-          forgetChatState(this.state, id);
-          await saveChatState(this.state, id);
-        });
+        await this.applyRemoteDeletionLocked(id);
       });
     }
 
@@ -370,11 +376,9 @@ export class ChatSync {
     const cutoff = chatRetentionCutoff(this.retentionDays);
     if (cutoff) {
       for (const id of new Set([...this.pendingTargets.keys(), ...this.lastSynced.keys()])) {
+        if (failedIds.has(id)) continue;
         await this.withChat(id, async () => {
-          const stored = this.pendingTargets.get(id) ?? this.lastSynced.get(id);
-          if (stored?.updated && new Date(stored.updated) < cutoff && !isChatBackupPaused(id)) {
-            await this.deleteChatUnlocked(id);
-          }
+          await this.deleteChatUnlocked(id, cutoff);
         });
       }
     }
@@ -421,19 +425,32 @@ export class ChatSync {
     );
   }
 
-  private async deleteChatUnlocked(chatId: string): Promise<void> {
-    await journalDeletion(this.userId, chatId);
-    this.pendingTargets.delete(chatId);
-    this.lastSynced.delete(chatId);
-    forgetChatState(this.state, chatId);
-    await saveChatState(this.state, chatId);
-    this.setActivity({});
-
-    await withChatTarget(chatId, async () => {
+  private async deleteChatUnlocked(chatId: string, retentionCutoff?: Date): Promise<void> {
+    const deleted = await withChatTarget(chatId, async () => {
+      // Native saves do not take the network lock. Recheck their durable target
+      // under its own lock before expiring a chat inspected earlier in this pull.
+      if (retentionCutoff) {
+        const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
+        const versions = [target, this.lastSynced.get(chatId)].filter((stored) => stored != null);
+        if (
+          !versions.length ||
+          versions.some((stored) => !stored.updated || !(new Date(stored.updated) < retentionCutoff)) ||
+          isChatBackupPaused(chatId)
+        )
+          return false;
+      }
+      await journalDeletion(this.userId, chatId, this.headSeq(chatId));
+      this.pendingTargets.delete(chatId);
+      this.lastSynced.delete(chatId);
+      forgetChatState(this.state, chatId);
+      await saveChatState(this.state, chatId);
+      this.setActivity({});
       await deleteDirectory(`chats/${chatId}`);
       await removeIndexEntry("chats", chatId);
       await completeChatIndexRepair(chatId);
+      return true;
     });
+    if (!deleted) return;
     await withPersistenceLock("collection:drafts", () =>
       deleteDirectory(`drafts/${encodeURIComponent(`chat-${chatId}`)}`),
     );
@@ -597,8 +614,11 @@ export class ChatSync {
     const count = history?.checkpoint?.count ?? (history && owned ? disk.entriesSinceCompact?.[chatId] : undefined);
     if (head === undefined) {
       forgetChatState(this.state, chatId);
+      const deletedHead = owned ? disk.tombstones?.[chatId] : undefined;
+      if (deletedHead !== undefined) (this.state.tombstones ??= {})[chatId] = deletedHead;
     } else {
       this.state.heads[chatId] = head;
+      if (this.state.tombstones) delete this.state.tombstones[chatId];
       this.state.lastFrameHash[chatId] = hash ?? ZERO_HASH;
       if (count === undefined) delete this.state.entriesSinceCompact?.[chatId];
       else (this.state.entriesSinceCompact ??= {})[chatId] = count;
@@ -619,16 +639,21 @@ export class ChatSync {
     if (head !== disk?.heads[chatId] || hash !== disk?.lastFrameHash[chatId]) await saveChatState(this.state, chatId);
   }
 
-  private async pushDelete(del: { id: string }): Promise<boolean> {
+  private async pushDelete(del: PendingDeletion): Promise<boolean> {
     try {
       if (!canRestore(this.dek)) throw new Error("Unlock restore before deleting a server backup.");
       requireChatBackupReady(del.id);
-      await api.deleteChat(del.id);
+      // Journals from older clients have no safe version. A zero precondition
+      // preserves any existing backup rather than guessing its current head.
+      await api.deleteChat(del.id, del.expectedSeq ?? 0);
       // Content-addressed blobs can be shared by other chats or devices.
       // Keep them until account reset; deleting without a reference index loses data.
       return true;
     } catch (err) {
       if (err instanceof BackupPausedError) return false;
+      // A newer edit wins over this deletion. Drop its journal so the next pull
+      // restores the current server copy instead of suppressing it forever.
+      if (err instanceof api.ServerError && err.status === 412) return true;
       this.setActivity({ lastError: errorMessage(err) });
       console.warn(`chatSync: server delete failed for ${del.id}`, err);
       return false;
@@ -724,7 +749,7 @@ export class ChatSync {
       const chunks = chunkEntries(entries);
       const frames: { id: string; frame: string; hash: string; entries: LogEntry[] }[] = [];
       let prevHash = this.state.lastFrameHash[chatId] ?? ZERO_HASH;
-      let seq = this.state.heads[chatId] ?? 0;
+      let seq = this.headSeq(chatId);
       for (const chunk of chunks) {
         seq += 1;
         const payload = { id: crypto.randomUUID(), ts: new Date().toISOString(), prevHash, body: chunk };
@@ -738,7 +763,7 @@ export class ChatSync {
 
       let conflict = false;
       for (const batch of batches) {
-        const expectedSeq = this.state.heads[chatId] ?? 0;
+        const expectedSeq = this.headSeq(chatId);
         requireChatBackupReady(chatId);
         const res = await api.appendEvents(
           chatId,
@@ -763,8 +788,11 @@ export class ChatSync {
       requireChatBackupReady(chatId);
       if (!canRestore(this.dek))
         throw new Error("Another device changed this chat. Unlock restore to reconcile before uploading.");
-      // We already hold this chat's lock.
-      await this.applyRemoteEventsLocked(chatId, this.state.heads[chatId] ?? 0);
+      // We already hold this chat's lock. A deleted log has no events to read;
+      // adopt its tombstone cursor before encrypting a fresh init snapshot.
+      const remote = (await api.listChats()).find((meta) => meta.id === chatId);
+      if (remote?.deleted) await this.applyRemoteDeletionLocked(chatId, remote.headSeq);
+      else await this.applyRemoteEventsLocked(chatId, this.headSeq(chatId));
       const target = this.pendingTargets.get(chatId);
       if (!target) return firstSeq;
       entries = diffChat(this.lastSynced.get(chatId) ?? null, target);
@@ -782,6 +810,7 @@ export class ChatSync {
     else this.lastSynced.delete(chatId);
 
     this.state.heads[chatId] = head;
+    if (this.state.tombstones) delete this.state.tombstones[chatId];
     this.state.lastFrameHash[chatId] = hash;
     (this.state.entriesSinceCompact ??= {})[chatId] = count;
     await saveChatState(this.state, chatId);
@@ -831,10 +860,39 @@ export class ChatSync {
     await writeBlob(historyPath(chatId), new Blob([enc.encode(encodeHistory(entries, checkpoint))]));
   }
 
+  /** Adopt a deletion cursor while preserving unsynced work and its attachments. */
+  private applyRemoteDeletion(chatId: string, head: number): Promise<void> {
+    return this.withChat(chatId, () => this.applyRemoteDeletionLocked(chatId, head));
+  }
+
+  private async applyRemoteDeletionLocked(chatId: string, head?: number): Promise<void> {
+    // An upload or another tab may have advanced the log after this listing.
+    if (head !== undefined && this.headSeq(chatId) >= head) return;
+    await withDeletionLock(this.userId, chatId, async () => {
+      if (await readJson(deletePath(this.userId, chatId))) return;
+      await withChatTarget(chatId, async () => {
+        const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
+        if (target) {
+          this.pendingTargets.set(chatId, normalizeStoredChat(target));
+          await deleteFile(historyPath(chatId));
+        } else {
+          await deleteDirectory(`chats/${chatId}`);
+          await removeIndexEntry("chats", chatId);
+          await completeChatIndexRepair(chatId);
+          this.pendingTargets.delete(chatId);
+        }
+        this.lastSynced.delete(chatId);
+        forgetChatState(this.state, chatId);
+        if (head !== undefined) (this.state.tombstones ??= {})[chatId] = head;
+        await saveChatState(this.state, chatId);
+      });
+    });
+  }
+
   /** Pull events up to expectedHead and apply them. Returns whether anything changed. */
   private applyRemoteEvents(chatId: string, expectedHead: number): Promise<boolean> {
     return this.withChat(chatId, async () => {
-      const head = this.state.heads[chatId] ?? 0;
+      const head = this.headSeq(chatId);
       // Another tab may already have pulled this range.
       if (head >= expectedHead) return false;
       return this.applyRemoteEventsLocked(chatId, head, expectedHead);
@@ -848,7 +906,7 @@ export class ChatSync {
       // A journaled deletion beats the server copy — don't resurrect it.
       if (await readJson(deletePath(this.userId, chatId))) return false;
       // Another tab may already have applied part of the range.
-      fromSeq = Math.max(fromSeq, this.state.heads[chatId] ?? 0);
+      fromSeq = Math.max(fromSeq, this.headSeq(chatId));
 
       const events = await api.readEvents(chatId, fromSeq);
       if (events.length === 0) {
@@ -857,7 +915,7 @@ export class ChatSync {
         return false;
       }
 
-      let head = this.state.heads[chatId] ?? 0;
+      let head = this.headSeq(chatId);
       let lastHash = this.state.lastFrameHash[chatId] ?? ZERO_HASH;
       let baseline = this.lastSynced.get(chatId) ?? null;
 
@@ -920,6 +978,7 @@ export class ChatSync {
       if (baseline) this.lastSynced.set(chatId, baseline);
       else this.lastSynced.delete(chatId);
       this.state.heads[chatId] = head;
+      if (this.state.tombstones) delete this.state.tombstones[chatId];
       this.state.lastFrameHash[chatId] = lastHash;
       await withChatTarget(chatId, async () => {
         if (baseline && !(await readJson(targetPath(chatId)))) {

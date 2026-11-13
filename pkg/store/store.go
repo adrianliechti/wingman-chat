@@ -13,6 +13,7 @@ type ChatMeta struct {
 	ID      string    `json:"id"`
 	HeadSeq int64     `json:"headSeq"`
 	Updated time.Time `json:"updated"`
+	Deleted bool      `json:"deleted,omitempty"`
 }
 
 // FileMeta describes one entry of a user's synced file tree. The file id
@@ -81,8 +82,10 @@ type Provider interface {
 	//   {"seq":<int>,"id":"<uuid>","frame":"<base64>"}\n
 	ReadEvents(ctx context.Context, userID, chatID string, fromSeq int64) (io.ReadCloser, error)
 
-	// DeleteChat removes the chat and its event history.
-	DeleteChat(ctx context.Context, userID, chatID string) error
+	// DeleteChat removes event history only if expectedSeq matches the current
+	// head. Retain a tombstone with an advanced head so recreation cannot reuse
+	// sequence numbers. Repeating a delete of an existing tombstone succeeds.
+	DeleteChat(ctx context.Context, userID, chatID string, expectedSeq int64) error
 
 	// CompactChat drops every log entry whose seq < beforeSeq. The head
 	// seq is preserved (we shrink from the front, not the back). It is

@@ -311,12 +311,46 @@ func TestDeleteChat(t *testing.T) {
 
 	appendEvents(t, srv, "alice", chatID, 0, event("e1", "YQ=="))
 
-	res := do(t, srv, "alice", "DELETE", "/v1/chats/"+chatID, "", nil)
+	res := do(t, srv, "alice", "DELETE", "/v1/chats/"+chatID, "", map[string]string{"X-Expected-Seq": "1"})
 	wantStatus(t, res, http.StatusNoContent)
 
 	res = do(t, srv, "alice", "GET", "/v1/chats", "", nil)
-	if body := strings.TrimSpace(readBody(t, res)); body != "[]" {
-		t.Fatalf("chat should be gone: %s", body)
+	var chats []store.ChatMeta
+	if err := json.NewDecoder(res.Body).Decode(&chats); err != nil || len(chats) != 1 || !chats[0].Deleted || chats[0].HeadSeq != 2 {
+		t.Fatalf("expected deletion cursor: %+v (%v)", chats, err)
+	}
+}
+
+func TestChatDeletionRejectsStaleVersionsAndPreservesRecreatedLogs(t *testing.T) {
+	srv := protectedTestServer(t)
+	path := "/v1/chats/chat-delete-safe"
+	appendEvents(t, srv, "alice", "chat-delete-safe", 0, event("e1", "YQ=="), event("e2", "Yg=="))
+	for _, headers := range []map[string]string{nil, {"X-Expected-Seq": "-1"}, {"X-Expected-Seq": "invalid"}} {
+		wantStatus(t, do(t, srv, "alice", "DELETE", path, "", headers), http.StatusBadRequest)
+	}
+	// An offline deletion at head 1 must not erase a subsequent append at head 2.
+	wantStatus(t, do(t, srv, "alice", "DELETE", path, "", map[string]string{"X-Expected-Seq": "1"}), http.StatusPreconditionFailed)
+	res := do(t, srv, "alice", "GET", path+"/events", "", nil)
+	wantStatus(t, res, http.StatusOK)
+	if body := readBody(t, res); !strings.Contains(body, `"seq":2`) {
+		t.Fatalf("stale deletion removed newer events: %s", body)
+	}
+	for range 2 {
+		wantStatus(t, do(t, srv, "alice", "DELETE", path, "", map[string]string{"X-Expected-Seq": "2"}), http.StatusNoContent)
+	}
+	wantStatus(t, do(t, srv, "alice", "GET", path+"/events", "", nil), http.StatusNotFound)
+	wantStatus(t, do(t, srv, "alice", "POST", path+"/events", event("stale", "Yw=="), map[string]string{"X-Expected-Seq": "2"}), http.StatusConflict)
+	// Recreation starts above the tombstone, rather than reusing sequence 1.
+	recreated := appendEvents(t, srv, "alice", "chat-delete-safe", 3, event("new", "ZA=="))
+	if recreated.NewSeq != 4 {
+		t.Fatalf("recreated head = %d, want 4", recreated.NewSeq)
+	}
+	// A retried old deletion (lost acknowledgement) cannot erase the replacement.
+	wantStatus(t, do(t, srv, "alice", "DELETE", path, "", map[string]string{"X-Expected-Seq": "2"}), http.StatusPreconditionFailed)
+	res = do(t, srv, "alice", "GET", path+"/events?fromSeq=2", "", nil)
+	wantStatus(t, res, http.StatusOK)
+	if body := readBody(t, res); !strings.Contains(body, `"seq":4`) || strings.Contains(body, `"seq":1`) {
+		t.Fatalf("replacement log: %s", body)
 	}
 }
 

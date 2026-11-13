@@ -175,12 +175,12 @@ func TestChatAppendReplayCompactionAndIsolation(t *testing.T) {
 		}
 	})
 	withSession(func(ctx context.Context) {
-		if err := p.DeleteChat(ctx, "alice", "chat-1234"); err != nil {
+		if err := p.DeleteChat(ctx, "alice", "chat-1234", 3); err != nil {
 			t.Fatal(err)
 		}
 	})
 	withSession(func(ctx context.Context) {
-		if chats, err := p.ListChats(ctx, "alice"); err != nil || len(chats) != 0 {
+		if chats, err := p.ListChats(ctx, "alice"); err != nil || len(chats) != 1 || !chats[0].Deleted || chats[0].HeadSeq != 4 {
 			t.Fatalf("delete: %+v %v", chats, err)
 		}
 	})

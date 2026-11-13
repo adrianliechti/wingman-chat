@@ -257,6 +257,14 @@ other; ordinary file conflicts use modification times. Remote deletion removes
 unchanged local copies, while pending local edits survive and can upload again.
 Pending chat deletions use a separate per-chat local journal so simultaneous
 offline deletions in different tabs cannot overwrite each other.
+Chat deletions apply only to the server head this browser last confirmed. If
+another device has saved newer work, the deletion is cancelled and its current
+copy is restored on the next pull. Deleted chat logs retain a metadata tombstone
+with an advanced sequence, so offline edits can recreate a chat without reusing
+an older log's sequence numbers. Tombstones contain no transcript data and remain
+until account reset. Online retention waits for reconciliation and skips chats
+whose newer backup could not be downloaded; startup never expires stale local
+snapshots before that check.
 
 When a different account signs in on a browser with an existing local workspace,
 online backup stops rather than deleting the previous account’s data. The local
