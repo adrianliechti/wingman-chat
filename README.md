@@ -324,9 +324,9 @@ docker run -it --rm -p 8000:8000 \
 
 See [How backup works](docs/backup.md) for sync timing, storage, encryption, and recovery.
 
-To enable encrypted OneDrive backups, mount a `config.json` containing
-`{"backup":{"provider":"onedrive","drive":"onedrive"}}` at `/app/config.json`
-and your OneDrive connection configuration at `/app/drives.yaml`. See
+To enable encrypted OneDrive backups, set `BACKUP_PROVIDER=onedrive` and mount
+your OneDrive connection configuration at `/app/drives.yaml`. The backend
+automatically selects the sole OneDrive connection. See
 [OneDrive authentication and storage](docs/backup.md#onedrive-authentication-and-storage)
 for connection setup. Backup storage requires no persistent server volume.
 
@@ -446,7 +446,7 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
 
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
-- `BACKUP_PROVIDER` — `local` (default) or `onedrive`. Local uses ZIP backup controls; OneDrive enables online backup. Configure the same setting with `backup.provider` in `config.json`, or `provider` in `backup.yaml`. For OneDrive, `BACKUP_DRIVE` / `drive` selects an existing connection from `drives.yaml`. See [backup configuration](docs/backup.md#choose-a-provider) for authentication, concurrency, and migration details. OneDrive requires no persistent or shared volume.
+- `BACKUP_PROVIDER` — `local` (default) or `onedrive`. Local uses ZIP backup controls; OneDrive enables online backup and automatically selects the sole OneDrive connection in `drives.yaml`. Configure the same setting with `backup.provider` in `config.json`, or `provider` in `backup.yaml`. Only deployments with multiple OneDrive connections need `BACKUP_DRIVE` / `drive` to select a connection by id. See [backup configuration](docs/backup.md#choose-a-provider) for authentication, concurrency, and migration details. OneDrive requires no persistent or shared volume.
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED` (`TELEMETRY_NAME` — the OpenTelemetry `service.name`, default `wingman-chat`)

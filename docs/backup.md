@@ -28,19 +28,30 @@ provider or using `"backup": {}` selects local backups.
 }
 ```
 
-For online backups, set the `backup` section in `config.json`:
+For online backups in Kubernetes, add one environment variable to the Wingman
+container, using your existing OneDrive connection in `/app/drives.yaml`:
+
+```yaml
+env:
+  - name: BACKUP_PROVIDER
+    value: "onedrive"
+```
+
+The backend automatically selects the sole OneDrive connection. Only deployments
+with multiple OneDrive connections need `BACKUP_DRIVE` set to the chosen
+connection's `id` in `drives.yaml` (or `drive` in the file-based backup configuration).
+
+Alternatively, set the `backup` section in `config.json`:
 
 ```json
 {
   "backup": {
-    "provider": "onedrive",
-    "drive": "onedrive"
+    "provider": "onedrive"
   }
 }
 ```
 
-`drive` references the connection's id in `drives.yaml` and can be omitted when
-there is exactly one OneDrive connection. The providers are `local` (ZIP files) and
+The providers are `local` (ZIP files) and
 `onedrive` (encrypted OneDrive storage). The backend reads the first existing file in this order: `config.json`
 in its working directory, `public/config.json` for local development, then
 `dist/config.json` for built assets. Only the `backup` section is read by the
@@ -52,13 +63,11 @@ Alternatively, configure `backup.yaml` using the existing OneDrive connection:
 
 ```yaml
 provider: onedrive
-drive: onedrive # The connection's id in drives.yaml
 ```
 
-The backend exposes this as `backup: { provider: "onedrive", drive: "onedrive" }`
+The backend exposes this as `backup: { provider: "onedrive" }`
 in `/config.json`; `onedrive` enables online backup controls, while
-`local` keeps the ZIP backup controls. `drive` may be
-omitted when exactly one OneDrive connection exists. Unknown providers or missing
+`local` keeps the ZIP backup controls. Unknown providers or missing
 or ambiguous connections fail startup. When both are present, `backup.yaml`
 overrides JSON. Environment overrides `BACKUP_PROVIDER` and `BACKUP_DRIVE` take
 precedence over both. Restart the backend after changing configuration.
