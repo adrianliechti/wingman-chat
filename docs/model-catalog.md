@@ -147,6 +147,14 @@ own supported efforts instead of inheriting a vendor profile.
 - [Gemini thinking](https://ai.google.dev/gemini-api/docs/thinking): Gemini
   3.7/3.8 Flash have low/medium/high, while 3.6 also has minimal. Gemini 3 Pro has
   low/high; 3.1 Pro also has medium. Image and live models are not chat profiles.
+- [Gemini 4 Hydrogen](https://aistudio.google.com/docs/models/gemini-4-hydrogen)
+  (reviewed November 14, 2026): low, medium, high (default), xhigh. Input,
+  thinking, and output share a 1,048,576-token window. Synchronous output is
+  capped at 65,536 tokens; longer output requires long decode, which the gateway
+  does not enable. Sampling parameters are omitted; only implicit caching applies.
+- [Gemini 4 Carbon](https://aistudio.google.com/docs/models/gemini-4-carbon)
+  (reviewed November 14, 2026): low, medium (default), high; the same unified
+  window and synchronous output capacity as Argon.
 - [Gemini 4 Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)
   (reviewed October 13, 2026): low, medium (default), high. Input, thinking, and
   output share a 1,048,576-token window; synchronous output stops at 65,536
@@ -174,6 +182,13 @@ by default. A deployment that adds support can override `supportedBackgrounds`.
 [Gemini image settings](https://ai.google.dev/gemini-api/docs/image-generation)
 distinguish 2.5/Flash Lite's 1K output from 3 Pro's 1K–4K and 3.1 Flash's
 additional 512px output.
+[Nano Banana 2.1](https://aistudio.google.com/docs/models/gemini-nano-banana-2.1)
+(`gemini-nano-banana-2.1`, reviewed November 14, 2026) supports 1K/2K/4K,
+without 512px. Nano Banana 2.1, 3.1 Flash Image, and
+[Nano Banana 2 Lite](https://aistudio.google.com/docs/models/gemini-3.1-flash-lite-image)
+(`gemini-3.1-flash-lite-image`, 1K only) expose the gateway's additional
+1:4, 4:1, 1:8, and 8:1 aspect ratios. These image models stay in the renderer
+picker and do not inherit chat reasoning controls.
 
 Compaction thresholds are operational budgets that leave room for output and
 recovery. They are not advertised context-window sizes. Small/local deployments
@@ -226,7 +241,7 @@ configured; such an override cannot be clamped until the deployment supplies a
 capacity.
 
 Examples of documented capacities (reviewed September 23, 2026; Haiku 5.5 added
-October 8, 2026; GPT-6.1 Terra added October 26, 2026):
+October 8, 2026; GPT-6.1 Terra added October 26, 2026; Gemini 4 Hydrogen added November 14, 2026):
 
 | Model                                                                                                                            | Capacity | Default chat budget |
 | -------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
@@ -238,6 +253,8 @@ October 8, 2026; GPT-6.1 Terra added October 26, 2026):
 | [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5)                                                                     | 128,000  | 64,000              |
 | [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview)                                                | 128,000  | 64,000              |
 | [Claude Sonnet 4.6 on Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html) | 64,000   | 64,000              |
+| [Gemini 4 Hydrogen](https://aistudio.google.com/docs/models/gemini-4-hydrogen)                                                  | 65,536   | 64,000              |
+| [Gemini 4 Carbon](https://aistudio.google.com/docs/models/gemini-4-carbon)                                                      | 65,536   | 64,000              |
 | [Gemini 4 Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)                                                    | 65,536   | 64,000              |
 | [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)                                                | 65,536   | 64,000              |
 | [GPT-4.1](https://developers.openai.com/api/docs/models/gpt-4.1)                                                                 | 32,768   | 32,768              |

@@ -182,9 +182,9 @@
         "label": "Claude Haiku 5.5"
       },
       {
-        "model": "gemini-3.8-flash",
+        "model": "gemini-4-hydrogen",
         "effort": "high",
-        "label": "Gemini 3.8 Flash"
+        "label": "Gemini 4 Hydrogen"
       },
       {
         "model": "gpt-6.1-terra",
@@ -210,6 +210,11 @@
         "model": "claude-opus-5-5",
         "effort": "medium",
         "label": "Claude Opus 5.5"
+      },
+      {
+        "model": "gemini-4-carbon",
+        "effort": "medium",
+        "label": "Gemini 4 Carbon"
       },
       {
         "model": "gpt-6-astra",

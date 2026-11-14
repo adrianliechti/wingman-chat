@@ -157,6 +157,8 @@ describe("model output budgets", () => {
     ["eu.anthropic.claude-haiku-5-5", 64_000],
     ["google/gemini-3.1-pro-preview", 64_000],
     ["gemini-4-argon", 64_000],
+    ["gemini-4-carbon", 64_000],
+    ["gemini-4-hydrogen", 64_000],
     ["gemini-3.8-flash", 64_000],
     ["gemini-2.5-flash-lite", 64_000],
     ["gpt-4.1-mini", 32_768],
@@ -271,6 +273,34 @@ describe("reasoning effort levels", () => {
     },
   );
 
+  it.each(["gemini-4-hydrogen", "google/gemini-4-hydrogen", "gemini-4-hydrogen-2026-11-13"])(
+    "configures Hydrogen's fourth thinking level and shared-window output limit: %s",
+    (id) => {
+      const [model] = configureModels([{ id, name: "Gemini 4 Hydrogen" }], []);
+      expect(model).toMatchObject({
+        supportedEfforts: ["low", "medium", "high", "xhigh"],
+        defaultEffort: "high",
+        maxOutputTokens: 65_536,
+      });
+      expect(minimalEffort(model)).toBe("low");
+      expect(outputTokenAllowance(model.maxOutputTokens, 128_000)).toBe(65_536);
+      expect(compactThreshold(id)).toBe(200_000);
+    },
+  );
+
+  it.each(["gemini-4-carbon", "google/gemini-4-carbon", "gemini-4-argon"])(
+    "configures the Gemini 4 reasoning models: %s",
+    (id) => {
+      const [model] = configureModels([{ id, name: id }], []);
+      expect(model).toMatchObject({
+        supportedEfforts: ["low", "medium", "high"],
+        defaultEffort: "medium",
+        maxOutputTokens: 65_536,
+      });
+      expect(compactThreshold(id)).toBe(200_000);
+    },
+  );
+
   it("distinguishes Gemini revisions and never invents effort settings for non-chat or future models", () => {
     expect(supportedEfforts("gemini-4-argon")).toEqual(["low", "medium", "high"]);
     expect(defaultEffort("gemini-4-argon")).toBe("medium");
@@ -279,6 +309,8 @@ describe("reasoning effort levels", () => {
     expect(supportedEfforts("gemini-3.6-flash")).toEqual(["minimal", "low", "medium", "high"]);
     expect(supportedEfforts("gemini-3-pro-preview")).toEqual(["low", "high"]);
     for (const id of [
+      "gemini-4-hydrogen-pro",
+      "gemini-4-hydrogen-image",
       "gemini-embedding-2",
       "gemini-3.1-flash-image",
       "gemini-3.1-flash-live-preview",
@@ -484,6 +516,22 @@ describe("configured model catalogue", () => {
     expect(rendererCapabilities("gemini-3.1-flash-image").resolutions).toEqual(["512", "1K", "2K", "4K"]);
     expect(rendererCapabilities("gemini-3-pro-image").resolutions).toEqual(["1K", "2K", "4K"]);
     expect(rendererCapabilities("gpt-image-20").backgrounds).toBeUndefined();
+  });
+
+  it.each([
+    ["gemini-nano-banana-2.1", ["1K", "2K", "4K"]],
+    ["google/gemini-nano-banana-2.1", ["1K", "2K", "4K"]],
+    ["gemini-3.1-flash-lite-image", ["1K"]],
+    ["gemini-3.1-flash-image", ["512", "1K", "2K", "4K"]],
+  ] as const)("exposes current Gemini image controls for %s", (id, resolutions) => {
+    expect(modelType(id)).toBe("renderer");
+    const caps = rendererCapabilities(id);
+    expect(caps.resolutions).toEqual(resolutions);
+    expect(caps.aspectRatios).toEqual(expect.arrayContaining(["1:4", "4:1", "1:8", "8:1"]));
+    expect(caps.qualities).toBeUndefined();
+    expect(caps.backgrounds).toBeUndefined();
+    expect(supportedEfforts(id)).toBeUndefined();
+    expect(rendererCapabilities("gemini-3-pro-image").aspectRatios).not.toContain("8:1");
   });
 
   it("maps GPT Image 2.6 vector, animation and complexity output", () => {

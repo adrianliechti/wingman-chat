@@ -96,7 +96,8 @@ const MODEL_PROFILES: ModelProfile[] = [
   [/\b(?:sonnet-4(?:\.[05])?|haiku-4\.5)(?=$|[-/:])/, undefined, undefined, 64_000],
   [/\bopus-4\.1(?=$|[-/:])/, undefined, undefined, 32_000],
 
-  [/\bgemini-?4-argon\b/, ["low", "medium", "high"], "medium", 65_536],
+  [/\bgemini-?4-hydrogen(?=$|[/:]|-\d{4})/, ["low", "medium", "high", "xhigh"], "high", 65_536],
+  [/\bgemini-?4-(?:carbon|argon)(?=$|[/:]|-\d{4})/, ["low", "medium", "high"], "medium", 65_536],
   [/\bgemini-?3\.[78]-flash\b/, ["low", "medium", "high"], "medium", 65_536],
   [/\bgemini-?3\.1-pro\b/, ["low", "medium", "high"], "high", 65_536],
   [/\bgemini-?3-pro\b/, ["low", "high"], "high", 65_536],
@@ -268,13 +269,26 @@ export function rendererCapabilities(id: string): RendererCapabilities {
   // ── Google Gemini image ("nano-banana") ── no quality tiers; the size lever is
   // a 1K/2K/4K output resolution instead.
   if (/gemini.*image|nano-?banana/.test(lowerId)) {
+    const extendedAspects = /nano-?banana-2[.-]1|gemini-?3[.-]1-flash-(?:lite-)?image/.test(lowerId);
     const resolutions: ImageResolution[] = /gemini-?3[.-]1-flash-image/.test(lowerId)
       ? ["512", "1K", "2K", "4K"]
-      : /gemini-?3(?:[.-]1)?-(?:pro|flash)-image|nano-?banana-pro/.test(lowerId)
+      : /gemini-?3(?:[.-]1)?-(?:pro|flash)-image|nano-?banana-pro|nano-?banana-2[.-]1/.test(lowerId)
         ? ["1K", "2K", "4K"]
         : ["1K"];
     return {
-      aspectRatios: ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
+      aspectRatios: [
+        "1:1",
+        "3:2",
+        "2:3",
+        "3:4",
+        "4:3",
+        "4:5",
+        "5:4",
+        "9:16",
+        "16:9",
+        "21:9",
+        ...(extendedAspects ? ["1:4", "4:1", "1:8", "8:1"] : []),
+      ],
       resolutions,
     };
   }
