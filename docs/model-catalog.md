@@ -253,8 +253,8 @@ October 8, 2026; GPT-6.1 Terra added October 26, 2026; Gemini 4 Hydrogen added N
 | [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5)                                                                     | 128,000  | 64,000              |
 | [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview)                                                | 128,000  | 64,000              |
 | [Claude Sonnet 4.6 on Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html) | 64,000   | 64,000              |
-| [Gemini 4 Hydrogen](https://aistudio.google.com/docs/models/gemini-4-hydrogen)                                                  | 65,536   | 64,000              |
-| [Gemini 4 Carbon](https://aistudio.google.com/docs/models/gemini-4-carbon)                                                      | 65,536   | 64,000              |
+| [Gemini 4 Hydrogen](https://aistudio.google.com/docs/models/gemini-4-hydrogen)                                                   | 65,536   | 64,000              |
+| [Gemini 4 Carbon](https://aistudio.google.com/docs/models/gemini-4-carbon)                                                       | 65,536   | 64,000              |
 | [Gemini 4 Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)                                                    | 65,536   | 64,000              |
 | [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)                                                | 65,536   | 64,000              |
 | [GPT-4.1](https://developers.openai.com/api/docs/models/gpt-4.1)                                                                 | 32,768   | 32,768              |

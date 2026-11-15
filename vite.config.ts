@@ -6,7 +6,6 @@ import { configDefaults } from "vitest/config";
 import { artifactLibrarySourcesPlugin } from "./scripts/artifact-library-sources";
 import { pdfjsAssetsPlugin } from "./scripts/pdfjs-assets";
 import { skillsDevPlugin } from "./scripts/skills-dev";
-import { tanstackResponsePhases } from "./scripts/tanstack-response-phases";
 
 const src = path.resolve(import.meta.dirname, "src");
 
@@ -21,7 +20,7 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, "tests/e2e/**", "tests/browser/**"],
     // Run the upstream source conformance suite against Vite Plus's Vitest
     // instance instead of loading a second runner through the package's peer.
-    server: { deps: { inline: ["@tanstack/ai-skills", "@tanstack/ai-openai", "@tanstack/openai-base"] } },
+    server: { deps: { inline: ["@tanstack/ai-skills"] } },
   },
   resolve: {
     alias: {
@@ -31,7 +30,6 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    rolldownOptions: { plugins: [tanstackResponsePhases()] },
     exclude: ["pyodide"],
     // Discover lazy interpreter dependencies before a run starts; otherwise
     // cold runs can invalidate chunks already being loaded by another page.
@@ -72,7 +70,6 @@ export default defineConfig({
     },
   },
   plugins: [
-    tanstackResponsePhases(),
     react({ compiler: { target: "19" } }),
     tailwindcss(),
     skillsDevPlugin(),

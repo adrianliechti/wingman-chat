@@ -363,7 +363,7 @@ export function ChatSidebar() {
                 setShowSidebar(false);
               }
             }}
-            className={`flex-1 min-w-0 pr-8 text-left text-base md:pr-0 md:group-hover:pr-8 md:group-focus-within:pr-8 md:text-sm ${isActive ? "font-medium" : "text-neutral-700 dark:text-neutral-300"}`}
+            className={`flex-1 min-w-0 pr-8 text-left text-base md:text-sm ${isActive ? "font-medium" : "text-neutral-700 dark:text-neutral-300"}`}
             title={displayTitle}
             aria-label={displayTitle}
             aria-describedby={

@@ -53,7 +53,7 @@ calls create their own thread ids. Compaction summaries use
 
 ## Markdown compatibility
 
-Code blocks and source editor mirrors share a lazy `@tanstack/highlight@1.2.11`
+Code blocks and source editor mirrors share a lazy `@tanstack/highlight@1.2.12`
 registry with all 79 shipped definitions (including plaintext). Unknown languages
 and sources over 30,000 characters stay readable as plain text. React renders
 `tokenize()` output directly, preserving source whitespace and escaping code as
@@ -237,11 +237,11 @@ including Office documents and text files beyond the native adapter's PDF-only
 document contract. Upload preservation and text extraction remain independent
 of this request serialization.
 
-`scripts/tanstack-response-phases.ts` temporarily patches `@tanstack/openai-base`
-1.0.2 in Vite transforms, dependency prebundling, and tests. It records item
-lengths and restores boundaries when core merges adjacent text. Remove the
-plugin once [the upstream fix](https://github.com/TanStack/ai/pull/2087) ships. Live display phases and final-only
-structured-output selection still use the gateway adapter.
+`@tanstack/ai` 1.3.0 and `@tanstack/openai-base` 1.0.3 shipped
+[native answer-item replay](https://github.com/TanStack/ai/pull/2087). The adapter
+records item lengths and restores boundaries when core merges adjacent text,
+so no Vite transform or dependency prebundling patch is needed. Live display
+phases and final-only structured-output selection still use the gateway adapter.
 
 Dictation uses the native recorder's encoded blob directly, following the
 [audio recording guide](https://tanstack.com/ai/latest/docs/media/audio-recording).
