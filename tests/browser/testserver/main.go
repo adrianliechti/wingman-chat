@@ -2,16 +2,16 @@
 package main
 
 import (
-	"github.com/adrianliechti/wingman-chat/internal/testgraph"
 	"github.com/adrianliechti/wingman-chat/pkg/config"
 	"github.com/adrianliechti/wingman-chat/pkg/server"
 	"github.com/adrianliechti/wingman-chat/pkg/server/identity"
+	"github.com/adrianliechti/wingman-chat/pkg/store/onedrive/onedrivetest"
 	"net/http"
 	"os"
 )
 
 func main() {
-	http.DefaultClient = &http.Client{Transport: &testgraph.Accounts{}}
+	http.DefaultClient = &http.Client{Transport: &onedrivetest.Accounts{}}
 	cfg := &config.Config{Backup: &config.Backup{Provider: "onedrive"}, Drives: []config.Drive{{ID: "test", Type: "onedrive"}}}
 	handler := server.New(cfg, "/api", config.PlatformURL(), "", os.DirFS("dist"), "skills")
 	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

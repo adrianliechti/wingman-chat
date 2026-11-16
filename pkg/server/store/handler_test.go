@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/adrianliechti/wingman-chat/internal/testgraph"
 	"github.com/adrianliechti/wingman-chat/pkg/server/identity"
 	"github.com/adrianliechti/wingman-chat/pkg/store"
 	"github.com/adrianliechti/wingman-chat/pkg/store/onedrive"
+	"github.com/adrianliechti/wingman-chat/pkg/store/onedrive/onedrivetest"
 )
 
 func newTestServer(t *testing.T) *httptest.Server {
@@ -515,7 +515,7 @@ func TestBackupsRequireProtection(t *testing.T) {
 func newTestStore(t *testing.T) *onedrive.Provider {
 	t.Helper()
 	previous := http.DefaultClient
-	http.DefaultClient = &http.Client{Transport: &testgraph.Accounts{}}
+	http.DefaultClient = &http.Client{Transport: &onedrivetest.Accounts{}}
 	defer func() { http.DefaultClient = previous }()
 	return onedrive.New()
 }

@@ -13,15 +13,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/adrianliechti/wingman-chat/internal/testgraph"
 	storesrv "github.com/adrianliechti/wingman-chat/pkg/server/store"
 	"github.com/adrianliechti/wingman-chat/pkg/store"
+	"github.com/adrianliechti/wingman-chat/pkg/store/onedrive/onedrivetest"
 )
 
-func newTestProvider(t *testing.T) (*Provider, *testgraph.Graph) {
+func newTestProvider(t *testing.T) (*Provider, *onedrivetest.Graph) {
 	t.Helper()
 	p := New()
-	graph := &testgraph.Graph{Folders: map[string]map[string][]byte{}}
+	graph := &onedrivetest.Graph{Folders: map[string]map[string][]byte{}}
 	p.client = &http.Client{Transport: graph}
 	p.tempDir = t.TempDir()
 	return p, graph

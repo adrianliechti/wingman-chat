@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/adrianliechti/wingman-chat/internal/testgraph"
 	"github.com/adrianliechti/wingman-chat/pkg/store"
+	"github.com/adrianliechti/wingman-chat/pkg/store/onedrive/onedrivetest"
 )
 
-func dataObjects(graph *testgraph.Graph) int {
+func dataObjects(graph *onedrivetest.Graph) int {
 	graph.Mu.Lock()
 	defer graph.Mu.Unlock()
 	count := 0

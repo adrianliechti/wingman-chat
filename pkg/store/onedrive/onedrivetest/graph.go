@@ -1,5 +1,5 @@
-// Package testgraph provides an in-memory Microsoft Graph transport for integration tests.
-package testgraph
+// Package onedrivetest provides an in-memory Microsoft Graph transport for integration tests.
+package onedrivetest
 
 import (
 	"bytes"
