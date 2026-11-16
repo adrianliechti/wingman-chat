@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  adoptLocalWorkspace,
   assertWorkspaceOwner,
   completePendingBackupReset,
   prepareBackupAccount,
   recordBackupAccount,
 } from "./backupReset";
-import { BACKUP_GENERATION_KEY, BACKUP_RESET_KEY, WORKSPACE_OWNER_KEY } from "./backupLifecycle";
+import { BACKUP_GENERATION_KEY, BACKUP_RESET_KEY, WORKSPACE_OWNER_KEY, WorkspaceOwnerError } from "./backupLifecycle";
 import { readJson, writeJson } from "./opfs-core";
 import { resetLocalBackupState } from "./chatSync";
-import { resetBackup } from "./storeClient";
+import { fetchMe, resetBackup } from "./storeClient";
 import { forgetBackup } from "./rememberedBackup";
 
 vi.mock("./rememberedBackup", () => ({ forgetBackup: vi.fn() }));
@@ -69,6 +70,25 @@ it("blocks a different account's existing sync state", async () => {
   vi.mocked(readJson).mockResolvedValue({ userId: "bob" });
   await expect(assertWorkspaceOwner("alice")).rejects.toThrow(/another account/);
   expect(localStorage.getItem(WORKSPACE_OWNER_KEY)).toBeNull();
+});
+
+it("adopts another account's workspace by clearing its sync tracking", async () => {
+  const reload = vi.fn();
+  vi.stubGlobal("window", { location: { reload } });
+  localStorage.setItem(WORKSPACE_OWNER_KEY, "old-id");
+  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "old-id", phase: "delete" }));
+  vi.mocked(fetchMe).mockResolvedValue({ id: "new-id" } as never);
+  await expect(assertWorkspaceOwner("new-id")).rejects.toThrow(WorkspaceOwnerError);
+
+  await adoptLocalWorkspace();
+
+  expect(resetLocalBackupState).toHaveBeenCalledOnce();
+  expect(forgetBackup).toHaveBeenCalledOnce();
+  expect(resetBackup).not.toHaveBeenCalled();
+  expect(localStorage.getItem(BACKUP_RESET_KEY)).toBeNull();
+  expect(reload).toHaveBeenCalledOnce();
+  await assertWorkspaceOwner("new-id");
+  expect(localStorage.getItem(WORKSPACE_OWNER_KEY)).toBe("new-id");
 });
 
 describe("backup account tracking", () => {

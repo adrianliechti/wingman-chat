@@ -5,7 +5,7 @@ import { PIN_MAX_LENGTH, PIN_MIN_LENGTH } from "@/shared/lib/keystore";
 import { supportsPasskeys } from "@/shared/lib/passkey";
 import { notify } from "@/shared/lib/notify";
 import { confirm } from "@/shared/lib/confirm";
-import { requestBackupReset } from "@/shared/lib/backupReset";
+import { adoptLocalWorkspace, requestBackupReset } from "@/shared/lib/backupReset";
 import { type SyncHealth, useSyncStatus } from "../hooks/useSyncStatus";
 import { describeSyncProgress } from "@/shared/lib/syncProgress";
 import { BackupSetup, type BackupSetupStep } from "./BackupSetup";
@@ -55,6 +55,7 @@ export function SyncSection({
     pinProtected,
     passkeyProtected,
     remembered,
+    ownerMismatch,
   } = useSyncStatus();
   const [backupBytes, setBackupBytes] = useState<number | null>(null);
   useEffect(() => {
@@ -122,6 +123,25 @@ export function SyncSection({
       await requestBackupReset();
     } catch (err) {
       notify.error("Couldn't reset backups", err);
+      setBusy(false);
+    }
+  }
+
+  async function onAdoptWorkspace() {
+    if (
+      !(await confirm({
+        title: "Use this workspace with your account?",
+        message:
+          "The chats and files in this browser were saved under a different account ID. They stay on this browser and will be backed up to your current account once you turn on backup. Only continue if this data is yours. Open tabs will reload.",
+        confirmLabel: "Use with my account",
+      }))
+    )
+      return;
+    setBusy(true);
+    try {
+      await adoptLocalWorkspace();
+    } catch (err) {
+      notify.error("Couldn't use this workspace", err);
       setBusy(false);
     }
   }
@@ -407,6 +427,16 @@ export function SyncSection({
             <p role="alert" className="text-xs text-neutral-600 dark:text-neutral-300">
               {lastError}
             </p>
+          )}
+          {status === "error" && ownerMismatch && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onAdoptWorkspace()}
+              className="inline-flex items-center justify-center rounded-lg bg-neutral-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+            >
+              {busy ? "Switching…" : "Use with my account"}
+            </button>
           )}
           {active && lastError && (
             <details className="min-w-0 text-xs text-neutral-500 dark:text-neutral-400">

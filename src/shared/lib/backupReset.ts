@@ -6,6 +6,7 @@ import {
   BACKUP_GENERATION_KEY,
   BACKUP_RESET_KEY,
   WORKSPACE_OWNER_KEY,
+  WorkspaceOwnerError,
   invalidateBackupSessions,
   markBackupReset,
 } from "./backupLifecycle";
@@ -53,21 +54,38 @@ export async function completePendingBackupReset(userId: string): Promise<void> 
   });
 }
 
-const otherAccount =
-  "This browser contains another account's local workspace. Sign back in to export it before clearing local data.";
-
 /** Check before starting engines: a browser's local workspace belongs to one account. */
 export async function assertWorkspaceOwner(userId: string): Promise<void> {
   await withPersistenceLock("backup-reset", async () => {
     const owner = localStorage.getItem(WORKSPACE_OWNER_KEY);
-    if (owner && owner !== userId) throw new Error(otherAccount);
+    if (owner && owner !== userId) throw new WorkspaceOwnerError();
     const states = await Promise.all([
       readJson<{ userId: string }>("_sync/state.json"),
       readJson<{ userId: string }>("_sync/files.json"),
     ]);
-    if (states.some((state) => state && state.userId !== userId)) throw new Error(otherAccount);
+    if (states.some((state) => state && state.userId !== userId)) throw new WorkspaceOwnerError();
     localStorage.setItem(WORKSPACE_OWNER_KEY, userId);
   });
+}
+
+/**
+ * Bind a workspace owned by another account ID (e.g. after the identity
+ * provider's subject changed) to the signed-in account. Local chats and files
+ * are kept; the old sync tracking and device trust are dropped so the next
+ * backup starts fresh and nothing from the old backup looks remotely deleted.
+ */
+export async function adoptLocalWorkspace(): Promise<void> {
+  const user = await fetchMe();
+  await flushPersistence();
+  await withPersistenceLock("backup-reset", async () => {
+    invalidateBackupSessions();
+    // A pending reset for the old account can no longer be completed by this one.
+    localStorage.removeItem(BACKUP_RESET_KEY);
+    await forgetBackup();
+    await resetLocalBackupState();
+    localStorage.setItem(WORKSPACE_OWNER_KEY, user.id);
+  });
+  window.location.reload();
 }
 
 const BACKUP_ACCOUNT_FILE = "_sync/backup.json";

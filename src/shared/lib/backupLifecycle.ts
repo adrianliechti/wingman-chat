@@ -4,6 +4,16 @@ export const WORKSPACE_OWNER_KEY = "wingman:workspace-owner";
 export const BACKUP_RESET_KEY = "wingman:backup-reset";
 export const BACKUP_GENERATION_KEY = "wingman:backup-generation";
 
+/** Local workspace was bound to a different account ID than the signed-in one. */
+export class WorkspaceOwnerError extends Error {
+  constructor() {
+    super(
+      "This browser contains another account's local workspace. Sign back in to export it, or use it with this account.",
+    );
+    this.name = "WorkspaceOwnerError";
+  }
+}
+
 function generation(): string | null {
   return typeof localStorage === "undefined" ? null : localStorage.getItem(BACKUP_GENERATION_KEY);
 }

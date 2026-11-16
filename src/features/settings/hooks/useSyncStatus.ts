@@ -3,6 +3,7 @@ import * as storeSession from "@/shared/lib/storeSession";
 import type { SyncActivity } from "@/shared/lib/chatSync";
 import type { FileSyncActivity } from "@/shared/lib/fileSync";
 import type { SyncProgress } from "@/shared/lib/syncProgress";
+import { WorkspaceOwnerError } from "@/shared/lib/backupLifecycle";
 
 type SessionStatus = "disabled" | "initializing" | "setup" | "locked" | "ready" | "error";
 
@@ -24,6 +25,8 @@ interface SyncStatus {
   pinProtected: boolean;
   passkeyProtected: boolean;
   remembered: boolean;
+  /** Local workspace belongs to another account ID; it can be adopted. */
+  ownerMismatch: boolean;
 }
 
 function computeHealth(session: SessionStatus, chat: SyncActivity | null, files: FileSyncActivity | null): SyncHealth {
@@ -51,6 +54,7 @@ export function useSyncStatus(): SyncStatus {
   const [pinProtected, setPinProtected] = useState(false);
   const [passkeyProtected, setPasskeyProtected] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [ownerMismatch, setOwnerMismatch] = useState(false);
   const [chat, setChat] = useState<SyncActivity | null>(null);
   const [files, setFiles] = useState<FileSyncActivity | null>(null);
 
@@ -63,6 +67,7 @@ export function useSyncStatus(): SyncStatus {
       setSession(s.status);
       setRemembered(s.status === "ready" && s.remembered);
       setInitError(s.status === "error" ? (s.error instanceof Error ? s.error.message : String(s.error)) : null);
+      setOwnerMismatch(s.status === "error" && s.error instanceof WorkspaceOwnerError);
       if (s.status === "setup" || s.status === "ready" || s.status === "locked") {
         setPinProtected(s.keystore.keystore.pinProtected === true);
         setPasskeyProtected(s.keystore.keystore.passkeyProtected === true);
@@ -105,5 +110,6 @@ export function useSyncStatus(): SyncStatus {
     pinProtected,
     passkeyProtected,
     remembered,
+    ownerMismatch,
   };
 }

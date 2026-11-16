@@ -1,5 +1,5 @@
 import { SyncProgressTracker, type SyncProgress } from "./syncProgress";
-import { isBackupSessionCurrent, withBackupStorage } from "./backupLifecycle";
+import { isBackupSessionCurrent, withBackupStorage, WorkspaceOwnerError } from "./backupLifecycle";
 import { withPersistenceLock } from "./persistence";
 import { publishStorageChanges } from "./storageChanges";
 /**
@@ -217,11 +217,7 @@ export class FileSync {
   /** accountId is the keystore ID bound into ciphertext. */
   static async create(opts: { userId: string; accountId: string; dek: RootKey }): Promise<FileSync> {
     const state = await readJson<FileSyncState>(STATE_FILE);
-    if (state && state.userId !== opts.userId) {
-      throw new Error(
-        "This browser contains another account's local workspace. Sign back in to export it before clearing local data.",
-      );
-    }
+    if (state && state.userId !== opts.userId) throw new WorkspaceOwnerError();
     return new FileSync(opts.userId, opts.accountId, opts.dek, state ?? { userId: opts.userId, entries: {} });
   }
 
