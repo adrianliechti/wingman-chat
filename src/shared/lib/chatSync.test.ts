@@ -19,6 +19,7 @@ import { diffChat, encodeLines } from "./chatLog";
 import { encodeHistory, readChatHistory } from "./localChats";
 import type { Chat } from "@/shared/types/chat";
 import { exportFolderAsZip } from "./opfs-zip";
+import { generateStoreKey } from "./test-support/storeKey";
 
 vi.mock("./storeClient", async (original) => ({
   ServerError: (await original<typeof import("./storeClient")>()).ServerError,
@@ -73,7 +74,7 @@ beforeEach(() => {
 });
 
 it("expires an incoming old backup without reviving its chat or draft", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const old = { ...chat(), updated: new Date("2000-01-01") };
   const frame = await encryptEvent(
     dek,
@@ -96,7 +97,7 @@ it("expires an incoming old backup without reviving its chat or draft", async ()
 });
 
 it("preserves an expired local baseline when its newer remote version cannot be downloaded", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const old = { ...chat(), updated: new Date("2000-01-01") };
   const frame = await encryptEvent(
     dek,
@@ -121,7 +122,7 @@ it("preserves an expired local baseline when its newer remote version cannot be 
 });
 
 it("does not expire a newer confirmed version hidden by an older pending target", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const current = { ...chat(), updated: new Date() };
   const frame = await encryptEvent(
     dek,
@@ -141,7 +142,7 @@ it("does not expire a newer confirmed version hidden by an older pending target"
 });
 
 it("cancels a stale offline deletion and restores the other device's newer work", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const original = chat();
   const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
   await sync.saveChat(original);
@@ -177,13 +178,13 @@ it("cancels a stale offline deletion and restores the other device's newer work"
 it.each([409, 503])("retains a deletion journal after a transient server failure (%s)", async (status) => {
   await stashPendingDeletion("chat", "user");
   vi.mocked(api.deleteChat).mockRejectedValue(new api.ServerError(status, "retry backup request"));
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   await sync.flushPending();
   expect(await readJson("_sync/deletes/u-user/chat.json")).toMatchObject({ id: "chat", expectedSeq: 0 });
 });
 
 it("recreates a deleted log above its tombstone and updates a device that missed the deletion", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const original = chat();
   const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
   await sync.saveChat(original);
@@ -218,7 +219,7 @@ it("recreates a deleted log above its tombstone and updates a device that missed
 });
 
 it("adopts a tombstone after an append conflict without an intervening pull", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   await stashPendingTarget(chat());
   vi.mocked(api.appendEvents)
     .mockResolvedValueOnce(null)
@@ -241,7 +242,7 @@ it("completes a root backup overlapping chat deletion without reversing collecti
   stubWebLocks((name) => {
     if (watching && name === "wingman:collection:drafts") draftsLocked();
   });
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   await sync.saveChat(chat());
   await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
   let finishDeletion!: () => void;
@@ -270,7 +271,7 @@ it("completes a root backup overlapping chat deletion without reversing collecti
 
 it("picks up another locally committed chat while an earlier upload is in flight", async () => {
   stubWebLocks();
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   let release!: () => void;
   vi.mocked(api.appendEvents).mockImplementationOnce(async (_id, seq, events) => {
     await new Promise<void>((resolve) => {
@@ -295,7 +296,7 @@ it("reports completed chats during initial backup and clears progress afterwards
   for (const id of ["first", "second"]) {
     await writeJson(`chats/${id}/chat.json`, await extractChatBlobs({ ...chat(), id }));
   }
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   const activity: SyncActivity[] = [];
   sync.subscribeActivity((value) => activity.push(value));
   await sync.flushPending();
@@ -309,7 +310,7 @@ it("reports completed chats during initial backup and clears progress afterwards
 });
 
 it("reports restored chats and clears progress when a remote read fails", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const frame = await encryptEvent(
     dek,
     { prevHash: ZERO_HASH, body: [{ type: "init", id: "first", created: "2026-01-01", model: null }] },
@@ -344,7 +345,7 @@ it("reports restored chats and clears progress when a remote read fails", async 
 });
 
 it("resets backup baselines while preserving chats, pending edits, attachments, and workspace files", async () => {
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   const value = chat();
   await sync.saveChat(value);
   await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
@@ -360,13 +361,13 @@ it("resets backup baselines while preserving chats, pending edits, attachments, 
   expect(await readJson("_sync/upload-key.json")).toBeUndefined();
   expect(await readJson("_sync/files.json")).toBeUndefined();
   vi.mocked(api.appendEvents).mockClear();
-  const fresh = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const fresh = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   await fresh.flushPending();
   expect(api.appendEvents).toHaveBeenCalledWith("chat", 0, expect.any(Array));
 });
 
 it("saves and reloads the native transcript, resume pointer and metadata through the encrypted log", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
   const value = chat();
   value.projectId = "project";
@@ -386,7 +387,7 @@ for (const reload of [false, true]) {
   it.each(["_sync/state.json", "chats/chat/chat.json", "chats/index.json"])(
     `recovers a downloaded delta exactly once after a failed %s write ${reload ? "and reload" : "on retry"}`,
     async (failedPath) => {
-      const dek = await generateDEK();
+      const dek = await generateStoreKey();
       const original = await extractChatBlobs(chat());
       const updated = { ...original, title: "remote update", messages: [...original.messages, userMessage("two")] };
       const first = await encryptEvent(dek, { prevHash: ZERO_HASH, body: diffChat(null, original) }, "user", "chat", 1);
@@ -425,13 +426,13 @@ it("reads older histories whose final message is larger than the checkpoint read
   await writeText("chats/chat/history.jsonl", encodeLines(entries));
   await writeJson("_sync/state.json", { userId: "user", heads: { chat: 1 }, lastFrameHash: { chat: ZERO_HASH } });
   vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 1, updated: "2026-01-02" }]);
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   expect(await sync.pull()).toMatchObject([value]);
   expect(await readLocalChat("chat", false)).toMatchObject(value);
 });
 
 it("recovers an acknowledged upload after its checkpoint cache fails without appending the message twice", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
   await stashPendingTarget(chat());
   await sync.flushPending();
@@ -455,7 +456,7 @@ it("promotes a flat local chat into the backup outbox and keeps its original byt
   const stored = await extractChatBlobs(value);
   memory.put("chats/chat.json", JSON.stringify(stored));
   await opfs.upsertIndexEntry("chats", { id: "chat", updated: "2026-01-02" });
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   expect(await readLocalChat("chat", false)).toMatchObject(value);
   expect(await readText("chats/chat/chat.legacy.json")).toBe(JSON.stringify(stored));
   expect(await readText("chats/chat.json")).toBeUndefined();
@@ -467,7 +468,7 @@ it("keeps a pending edit when promoting a local-only chat", async () => {
   const stored = await extractChatBlobs(chat());
   memory.put("chats/chat/chat.json", JSON.stringify({ ...stored, title: "older" }));
   memory.put("chats/chat/target.json", JSON.stringify({ ...stored, title: "pending" }));
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   expect(await sync.pull()).toMatchObject([{ title: "pending", resume: chat().resume }]);
   expect(await readLocalMirror(false)).toMatchObject([{ title: "pending" }]);
 });
@@ -540,7 +541,7 @@ it("deletes a never-synced local chat without inventing an account owner", async
 });
 
 it("retains deletions made by stale tabs offline for a later session", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const first = await ChatSync.create({ userId: "user", accountId: "user", dek });
   const second = await ChatSync.create({ userId: "user", accountId: "user", dek });
   vi.mocked(api.deleteChat).mockRejectedValue(new Error("offline"));
@@ -567,7 +568,7 @@ it("journals concurrent deletions with a shared backup lock", async () => {
 });
 
 it("keeps a replacement deletion when an earlier request is acknowledged", async () => {
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   await stashPendingDeletion("chat", "user");
   let release!: () => void;
   vi.mocked(api.deleteChat)
@@ -590,7 +591,7 @@ it("keeps a replacement deletion when an earlier request is acknowledged", async
 });
 
 it("keeps streaming snapshots local and uploads only the final transcript after request completion", async () => {
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   const release = beginChatBackupPause("chat");
   try {
     for (const text of ["one", "one two", "one two three"]) {
@@ -614,7 +615,7 @@ it("defers an upload if streaming starts while event encryption is still pending
     release = beginChatBackupPause("chat");
     return encrypt(...args);
   });
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   let syncing = false;
   const unsubscribe = sync.subscribeActivity((activity) => {
     syncing = activity.syncing;
@@ -637,7 +638,7 @@ it("defers an upload if streaming starts while event encryption is still pending
 });
 
 it("preserves offline edits and attachments when another device deletes the server chat", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
   await sync.saveChat(chat());
   await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
@@ -664,7 +665,7 @@ it("preserves offline edits and attachments when another device deletes the serv
 });
 
 it("applies remote deletion to an unchanged local chat without resurrecting it", async () => {
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   await sync.saveChat(chat());
   await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
   vi.mocked(api.appendEvents).mockClear();
@@ -683,7 +684,7 @@ it("recovers a pending target after a crash between history deletion and baselin
     lastFrameHash: { chat: "deleted-server-frame" },
     entriesSinceCompact: { chat: 100 },
   });
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   await sync.flushPending();
   expect(api.appendEvents).toHaveBeenCalledWith("chat", 0, expect.any(Array));
   expect((await readLocalChat("chat", false))?.title).toBe("durable offline edit");
@@ -692,7 +693,7 @@ it("recovers a pending target after a crash between history deletion and baselin
 it("waits for a pending target to become durable before applying remote deletion", async () => {
   // Browser backup operations hold shared reset locks and may run concurrently.
   stubWebLocks();
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   await sync.saveChat(chat());
   await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
   const release = beginChatBackupPause("chat");
@@ -742,7 +743,7 @@ it("finishes an active upload before a local storage deletion without resurrecti
     await blocked;
     return { newSeq: seq + events.length };
   });
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   await sync.saveChat(chat());
   await started;
   const deleting = stashPendingDeletion("chat", "user");
@@ -763,7 +764,7 @@ it("finishes an active upload before a local storage deletion without resurrecti
 it.each(["missing", "corrupt", "network"])(
   "retries a %s attachment without advancing the restored chat head",
   async (failure) => {
-    const dek = await generateDEK();
+    const dek = await generateStoreKey();
     const value = { ...chat(), messages: [userMessage([mediaFromDataUrl("data:image/png;base64,YWJj")])] };
     const stored = await extractChatBlobs(value);
     const [blobId] = collectChatBlobIds(stored);
@@ -791,14 +792,14 @@ it("keeps a chat pending when a referenced attachment is missing locally and rem
   memory.reset();
   await writeJson("chats/chat/target.json", stored);
   vi.mocked(api.headBlob).mockResolvedValue(false);
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   await sync.flushPending();
   expect(api.appendEvents).not.toHaveBeenCalled();
   expect(await readJson("chats/chat/target.json")).toEqual(JSON.parse(JSON.stringify(stored)));
 });
 
 it("retains shared server attachments when one of their chats is deleted", async () => {
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   const messages = [userMessage([mediaFromDataUrl("data:image/png;base64,YWJj")])];
   for (const id of ["first", "second"]) await sync.saveChat({ ...chat(), id, messages });
   await sync.flushPending();
@@ -812,7 +813,7 @@ it("retains shared server attachments when one of their chats is deleted", async
 it.each(["decryption", "chain", "gap"])(
   "rejects a %s failure without committing earlier frames from the batch",
   async (failure) => {
-    const dek = await generateDEK();
+    const dek = await generateStoreKey();
     const frame = await encryptEvent(
       dek,
       { prevHash: ZERO_HASH, body: diffChat(null, await extractChatBlobs(chat())) },
@@ -850,7 +851,7 @@ it.each(["decryption", "chain", "gap"])(
 );
 
 it("rejects a complete HTTP response that omits the advertised final chat frames", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const frame = await encryptEvent(
     dek,
     { prevHash: ZERO_HASH, body: diffChat(null, await extractChatBlobs(chat())) },
@@ -869,7 +870,7 @@ it("rejects a complete HTTP response that omits the advertised final chat frames
 
 it("shares one baseline between tabs so events are neither re-applied nor diffed against stale state", async () => {
   stubWebLocks();
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const frames: { seq: number; id: string; frame: string }[] = [];
   vi.mocked(api.appendEvents).mockImplementation(async (_id, seq, events) => {
     if (seq !== frames.length) return null;
@@ -910,7 +911,7 @@ it("shares one baseline between tabs so events are neither re-applied nor diffed
 it("keeps a locked tab's save while an unlocked tab clears its acknowledged target", async () => {
   stubWebLocks();
   await stashPendingTarget(chat());
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateDEK() });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   let release!: () => void;
   const blocked = new Promise<void>((resolve) => {
     release = resolve;
@@ -941,7 +942,7 @@ it("keeps a locked tab's save while an unlocked tab clears its acknowledged targ
 });
 
 it("splits a large upload across append requests and commits each accepted part", { timeout: 60_000 }, async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const big = "x".repeat(4_500_000);
   const messages = Array.from({ length: 12 }, () => userMessage(big));
   const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
@@ -975,7 +976,7 @@ it.each([
   "compacts only snapshots that fit one append request ($messageCount messages)",
   { timeout: 60_000 },
   async ({ messageCount, compacts }) => {
-    const dek = await generateDEK();
+    const dek = await generateStoreKey();
     const value = {
       ...chat(),
       messages: Array.from({ length: messageCount }, () => userMessage("x".repeat(4_500_000))),
@@ -1017,7 +1018,7 @@ it.each([
 );
 
 it("skips compaction when its snapshot conflicts instead of compacting before a delta", async () => {
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
   const value = chat();
   // The 50th logged entry triggers compaction.

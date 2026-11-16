@@ -43,11 +43,7 @@ describe("public-key upload encryption", () => {
     await expect(decryptBlob(unlocked, blob, "alice", "blob")).rejects.toThrow();
   });
 
-  it("keeps old symmetric history decryptable only with the unlocked root", async () => {
-    const root = { kid: unlocked.kid, raw: unlocked.raw };
-    const old = await encryptEvent(root, { legacy: true }, "alice", "chat", 1);
-    expect(await decryptEvent(unlocked, old, "alice", "chat", 1)).toEqual({ legacy: true });
-    await expect(decryptEvent(uploader, old, "alice", "chat", 1)).rejects.toThrow(/Unlock/);
+  it("rejects malformed envelopes", async () => {
     const malformed = new Uint8Array([3, 9, 255, 255]);
     await expect(decryptBlob(unlocked, malformed, "alice", "blob")).rejects.toThrow(/length/);
   });

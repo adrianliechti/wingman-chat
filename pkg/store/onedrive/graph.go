@@ -154,8 +154,8 @@ type driveItem struct {
 	Folder *json.RawMessage `json:"folder"`
 }
 
-// The delegated /me drive isolates Microsoft accounts. Keep a readable folder
-// name without changing the account identity used in encrypted AAD.
+// The delegated /me drive isolates Microsoft accounts, so one fixed folder
+// name serves every user.
 func (p *Provider) folder(ctx context.Context) (string, error) {
 	session, err := sessionFrom(ctx)
 	if err != nil {

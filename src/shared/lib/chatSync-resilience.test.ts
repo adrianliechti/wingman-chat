@@ -1,12 +1,12 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { Chat } from "@/shared/types/chat";
 import { ChatSync, stashPendingTarget, type SyncActivity } from "./chatSync";
-import { generateDEK } from "./crypto";
 import { readLocalChat } from "./localChats";
 import { mediaFromDataUrl, userMessage } from "./messages";
 import { readJson, readText } from "./opfs-core";
 import * as api from "./storeClient";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
+import { generateStoreKey } from "./test-support/storeKey";
 
 vi.mock("./storeClient", async (original) => ({
   ServerError: (await original<typeof import("./storeClient")>()).ServerError,
@@ -56,7 +56,7 @@ beforeEach(() => {
 it.each(["restore", "backup"] as const)(
   "keeps a failed %s visible until that direction succeeds, even if the other direction succeeds",
   async (direction) => {
-    const sync = await ChatSync.create({ userId: "alice", accountId: "alice", dek: await generateDEK() });
+    const sync = await ChatSync.create({ userId: "alice", accountId: "alice", dek: await generateStoreKey() });
     let activity!: SyncActivity;
     sync.subscribeActivity((value) => (activity = value));
     const message = `${direction} interrupted`;
@@ -81,7 +81,7 @@ for (const updating of [false, true]) {
   it.each(["before commit", "lost acknowledgement", "history write", "state write", "snapshot write", "index write"])(
     `recovers ${updating ? "an update" : "an initial upload"} after %s and restart without duplicating messages`,
     async (failure) => {
-      const dek = await generateDEK();
+      const dek = await generateStoreKey();
       const sync = await ChatSync.create({ userId: "alice", accountId: "alice", dek });
       const original = chat();
       if (updating) {
@@ -146,7 +146,7 @@ for (const updating of [false, true]) {
 it.each([false, true])(
   "restarts an interrupted attachment upload (server committed: %s) before publishing its chat",
   async (committed) => {
-    const dek = await generateDEK();
+    const dek = await generateStoreKey();
     const value = { ...chat(), messages: [userMessage([mediaFromDataUrl("data:image/png;base64,YWJj")])] };
     await stashPendingTarget(value);
     const put = vi.mocked(api.putBlob).getMockImplementation()!;

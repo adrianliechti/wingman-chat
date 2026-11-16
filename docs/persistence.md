@@ -240,12 +240,11 @@ together: older clients without deletion preconditions are refused.
 A local file deletion only applies to the version this browser last synced; if
 another device changed the file since, its edit wins and is restored on the next pull.
 
-Existing version 2 symmetric history stays readable with the protected root key.
-An unlocked session provisions the backup key pair once without replacing old
-history. Switching PIN/passkey protection rewraps the same root and preserves the
-backup key envelope. The backend rejects updates that drop or change that envelope,
-including updates from older clients, to prevent orphaning encrypted data. Restart
-the Go backend when upgrading to this format before using automatic uploads.
+All backup content uses the hybrid RSA-OAEP envelope; only the backup private key
+is sealed directly with the root key. The first unlocked session provisions the
+backup key pair. Switching PIN/passkey protection rewraps the same root and
+preserves the backup key envelope. The backend rejects updates that drop or
+change that envelope or the account ID, to prevent orphaning encrypted data.
 
 Passkey protection uses WebAuthn PRF and HKDF-SHA256. OAuth2 Proxy still handles
 identity; no extra Entra configuration is needed. PRF results accept standard

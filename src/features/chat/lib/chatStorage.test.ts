@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatSync, resetLocalBackupState, stashPendingTarget } from "@/shared/lib/chatSync";
-import { generateDEK } from "@/shared/lib/crypto";
 import * as api from "@/shared/lib/storeClient";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import { PersistenceQueue, withPersistenceLock } from "@/shared/lib/persistence";
@@ -9,6 +8,7 @@ import { assistantMessage, mediaFromDataUrl, text, userMessage } from "@/shared/
 import type { Chat } from "@/shared/types/chat";
 import { loadChat, loadChatIndex, removeChat, storeChat } from "./chatStorage";
 import { createAttachmentLoader } from "./chatAttachments";
+import { generateStoreKey } from "@/shared/lib/test-support/storeKey";
 
 vi.mock("@/shared/lib/storeClient", () => ({
   listChats: vi.fn(),
@@ -435,7 +435,7 @@ describe("chat persistence", () => {
 it("keeps an online-saved chat visible and editable after switching to local backups without server requests", async () => {
   vi.mocked(api.appendEvents).mockImplementation(async (_id, seq, events) => ({ newSeq: seq + events.length }));
   vi.mocked(api.headBlob).mockResolvedValue(true);
-  const dek = await generateDEK();
+  const dek = await generateStoreKey();
   const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
   const value = chat();
   value.messages = [userMessage("saved online")];
@@ -510,7 +510,7 @@ it.each([false, true])(
     config.store = true;
     vi.mocked(api.appendEvents).mockImplementation(async (_id, seq, events) => ({ newSeq: seq + events.length }));
     vi.mocked(api.headBlob).mockResolvedValue(true);
-    const dek = await generateDEK();
+    const dek = await generateStoreKey();
     const original = chat();
     await storeChat(original);
     const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });

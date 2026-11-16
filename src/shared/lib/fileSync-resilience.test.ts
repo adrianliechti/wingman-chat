@@ -5,6 +5,7 @@ import { generateBackupKeys } from "./backupCrypto";
 import { deleteFile, readBlob, readJson, readText, writeBlob, writeText } from "./opfs-core";
 import * as api from "./storeClient";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
+import { generateStoreKey } from "./test-support/storeKey";
 
 vi.mock("./storeClient", async (original) => ({
   ServerError: (await original<typeof import("./storeClient")>()).ServerError,
@@ -52,7 +53,7 @@ beforeEach(() => {
 afterEach(() => sync?.stop());
 
 it("reports a listed but missing file as an incomplete restore and retries without losing healthy files", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const paths = ["agents/healthy.md", "agents/missing.md"];
   for (const path of paths) {
     const id = await idFor(path);
@@ -108,7 +109,7 @@ it.each([
 });
 
 it("retries a restore after local storage fills without marking the file as restored", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const path = "agents/recovered.md";
   const id = await idFor(path);
   remote.set(id, {
@@ -131,7 +132,7 @@ it("retries a restore after local storage fills without marking the file as rest
 });
 
 it("keeps an edit made during upload pending until its own bytes reach the backup", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const path = "agents/in-flight.md";
   sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   sync.subscribeActivity((value) => (activity = value));
@@ -165,7 +166,7 @@ it("keeps an edit made during upload pending until its own bytes reach the backu
 });
 
 it.each([0, 1, 3])("resumes a multi-file backup after %s confirmed uploads and a restart", async (accepted) => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const paths = Array.from({ length: 5 }, (_, index) => `agents/file-${index}.md`);
   for (const path of paths) await writeText(path, `contents of ${path}`);
   const put = vi.mocked(api.putFile).getMockImplementation()!;
@@ -197,7 +198,7 @@ it.each([0, 1, 3])("resumes a multi-file backup after %s confirmed uploads and a
 it.each(["upload", "restore"])(
   "recovers when the local tracking write fails after a successful %s",
   async (direction) => {
-    const key = await generateDEK();
+    const key = await generateStoreKey();
     const path = "agents/checkpoint.md";
     const id = await idFor(path);
     if (direction === "upload") await writeText(path, "durable contents");
@@ -229,7 +230,7 @@ it.each(["upload", "restore"])(
 it.each([false, true])(
   "retries an interrupted deletion after restart (server committed: %s) without resurrecting the file",
   async (committed) => {
-    const key = await generateDEK();
+    const key = await generateStoreKey();
     const path = "agents/deleted.md";
     await writeText(path, "remove me");
     sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
@@ -263,7 +264,7 @@ it.each([false, true])(
 it.each(["network", "truncated ciphertext", "local quota"])(
   "preserves the last good local file when an updated download fails due to %s",
   async (failure) => {
-    const key = await generateDEK();
+    const key = await generateStoreKey();
     const path = "agents/updated.md";
     const id = await idFor(path);
     await writeText(path, "last good version");

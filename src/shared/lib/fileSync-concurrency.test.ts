@@ -59,8 +59,8 @@ it.each(["file", "directory"])(
     );
     const { FileSync: FileSyncA } = await import("./fileSync");
     const opfsA = await import("./opfs-core");
-    const { generateDEK } = await import("./crypto");
-    const key = await generateDEK();
+    const { generateStoreKey } = await import("./test-support/storeKey");
+    const key = await generateStoreKey();
     const a = await FileSyncA.create({ userId: "alice", accountId: "alice", dek: key });
     engines.push(a);
     a.start();

@@ -107,8 +107,8 @@ environment:
 
 The backend trusts these headers and does not authenticate requests itself. The
 proxy must validate the session, strip/overwrite client-supplied `X-Forwarded-*`
-headers, and be the only route to the backend. A client `Authorization` header is
-not used to select the user.
+headers, and be the only route to the backend. The forwarded Microsoft token, not
+`X-Forwarded-User`, selects the OneDrive backup.
 
 ### OneDrive authentication and storage
 

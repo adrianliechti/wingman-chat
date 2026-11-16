@@ -25,8 +25,8 @@ import {
   type DEK,
   type RootKey,
   type UploadKey,
-  encryptBlob,
-  decryptBlob,
+  openWithRoot,
+  sealWithRoot,
   fromBase64,
   generateDEK,
   hasRawKey,
@@ -205,6 +205,10 @@ export async function unlockWithPasskey(state: KeystoreState): Promise<DEK> {
   return unlockPasskeyEnvelope(state.keystore.passkey, state.keystore.accountId, state.keystore.kid);
 }
 
+function privateKeyAad(accountId: string, kid: number): string {
+  return `backup-private:${accountId}:${kid}`;
+}
+
 /** Provision the backup key pair once while unlocked; its private key is sealed with the root key. */
 export async function enableBackupUploads<K extends RootKey>(
   state: KeystoreState,
@@ -219,7 +223,7 @@ export async function enableBackupUploads<K extends RootKey>(
   if (!current.keystore.backup) {
     const pair = await generateBackupKeys();
     const privateBytes = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey));
-    const encryptedPrivateKey = toBase64(await encryptBlob(root, privateBytes, accountId, `backup-private:${dek.kid}`));
+    const encryptedPrivateKey = toBase64(await sealWithRoot(root, privateBytes, privateKeyAad(accountId, dek.kid)));
     privateBytes.fill(0);
     const backup = {
       generation: crypto.randomUUID(),
@@ -232,11 +236,10 @@ export async function enableBackupUploads<K extends RootKey>(
   }
   const envelope = current.keystore.backup!;
   const publicKey = await importBackupPublicKey(fromBase64(envelope.publicKey));
-  const privateBytes = await decryptBlob(
+  const privateBytes = await openWithRoot(
     root,
     fromBase64(envelope.encryptedPrivateKey),
-    accountId,
-    `backup-private:${dek.kid}`,
+    privateKeyAad(accountId, dek.kid),
   );
   const privateKey = await importBackupPrivateKey(privateBytes);
   privateBytes.fill(0);

@@ -12,6 +12,7 @@ import {
   listArtifactRevisionEntries,
 } from "./opfs-artifacts";
 import { artifactRevision } from "@/shared/types/artifact";
+import { generateStoreKey } from "./test-support/storeKey";
 
 vi.mock("./storeClient", async (importOriginal) => ({
   ServerError: (await importOriginal<typeof import("./storeClient")>()).ServerError,
@@ -38,7 +39,7 @@ beforeEach(() => {
 afterEach(() => sync?.stop());
 
 it("restores an attachment's pinned revision even when its live artifact has changed", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const remote = new Map<string, { data: Uint8Array; etag: string }>();
   vi.mocked(api.putFile).mockImplementation(async (id, data) => {
     remote.set(id, { data, etag: "etag" });
@@ -73,7 +74,7 @@ it("restores an attachment's pinned revision even when its live artifact has cha
 });
 
 it("does not restore an unknown remote file after its directory is deleted during download", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const path = "agents/one/remote.md";
   const id = await idFor(path);
   memory.put("agents/one/local.md", "local");
@@ -96,7 +97,7 @@ it("does not restore an unknown remote file after its directory is deleted durin
 });
 
 it.each(["update", "deletion"])("preserves a local edit made while a remote %s is being listed", async (kind) => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const path = "agents/one/AGENTS.md";
   const id = await idFor(path);
   memory.put(path, "old");
@@ -123,7 +124,7 @@ it.each(["update", "deletion"])("preserves a local edit made while a remote %s i
 });
 
 it("backs up current artifacts, immutable revisions, and workspace data without chat internals", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const paths = [
     "chats/one/artifacts/nested/report.html",
     "chats/one/artifacts/chart.png",
@@ -168,7 +169,7 @@ it("backs up current artifacts, immutable revisions, and workspace data without 
 });
 
 it("restores artifacts, immutable revisions, and saved app data while refusing chat manifests", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const paths = [
     "chats/one/artifacts/nested/report.html",
     "chats/one/artifact-state/%2Freport.html.json",
@@ -198,7 +199,7 @@ it("restores artifacts, immutable revisions, and saved app data while refusing c
 });
 
 it("tracks artifact edits and file/folder/chat deletions through OPFS mutations", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   sync.start();
   await sync.fullSync();
@@ -251,7 +252,7 @@ it("uploads binary artifacts with a public upload key and applies remote deletio
 });
 
 it("keeps nested directory version markers out of the file upload queue", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   memory.put("agents/one/AGENTS.md", "agent");
   sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   sync.start();
@@ -268,7 +269,7 @@ it("keeps nested directory version markers out of the file upload queue", async 
 });
 
 it("reports a corrupt remote file as an incomplete restore and retries it", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const path = "agents/one/AGENTS.md";
   const id = await idFor(path);
   vi.mocked(api.listFiles).mockResolvedValue([{ id, etag: "remote", updated: "2026-01-01", size: 3 }]);
@@ -291,7 +292,7 @@ it("reports a corrupt remote file as an incomplete restore and retries it", asyn
 });
 
 it("reports an incomplete restore when a remote file's id does not belong to its path", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const data = await encryptFile(
     key,
     { path: "plugins/x/run.js", mtime: 2000 },
@@ -312,7 +313,7 @@ it("reports an incomplete restore when a remote file's id does not belong to its
 });
 
 it("keeps a newer remote edit when a stale local deletion conflicts", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const path = "agents/one/AGENTS.md";
   const id = await idFor(path);
   sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
@@ -334,7 +335,7 @@ it("keeps a newer remote edit when a stale local deletion conflicts", async () =
 });
 
 it("preserves skill index entries whose IDs differ from their folder names", async () => {
-  const key = await generateDEK();
+  const key = await generateStoreKey();
   const index = JSON.stringify([{ id: "skill-uuid", title: "my-skill", updated: "2026-01-01" }]);
   memory.put("skills/index.json", index);
   memory.put("skills/my-skill/SKILL.md", "skill content");

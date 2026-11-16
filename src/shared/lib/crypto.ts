@@ -3,21 +3,24 @@
  *
  * Threat model:
  *   - Server is *not* trusted to read chat contents.
- *   - Server *is* trusted to identify the user (via reverse-proxy headers).
+ *   - Account isolation comes from the storage provider (the delegated
+ *     Microsoft Graph token), not from this code.
  *   - PIN, when set, protects the DEK against storage-theft scenarios. A PIN
  *     is low-entropy: it is brute-forceable offline
  *     if the wrapped DEK leaks, so Argon2id only raises the cost per guess.
  *
  * Primitives:
  *   - Argon2id (64 MiB, t=3) + HKDF-SHA256 → 256-bit KEK from PIN + salt.
- *   - AES-256-GCM with random 12-byte nonce for both DEK-wrap and event/blob.
+ *   - Events, attachments and files: a fresh AES-256-GCM key per item,
+ *     wrapped with RSA-OAEP-3072 (backupCrypto.ts). The RSA private key is
+ *     sealed with the root key (DEK); the DEK is wrapped by PIN or passkey.
  *   - AAD pins identity into ciphertext (accountId:chatId:seq for events,
  *     accountId:blobId for blobs; accountId comes from the keystore).
  *     Wrong AAD ⇒ decrypt fails.
  *   - Hash chain inside event plaintext (prevHash) detects reordered,
  *     dropped or misplaced frames.
  *
- * Not covered: authorship. Backup frames (v3) are sealed to a public key the
+ * Not covered: authorship. Content is sealed to a public key the
  * server also holds, so a compromised server can create frames that decrypt
  * and chain correctly. AAD and the hash chain catch corruption and mix-ups,
  * not forgery; that would need a signing key the server never sees.
@@ -29,9 +32,6 @@ const SALT_BYTES = 16;
 const NONCE_BYTES = 12;
 const DEK_BYTES = 32;
 const GCM_TAG_BYTES = 16;
-
-/** Leading magic byte of the versioned frame envelope (see below). */
-const FRAME_V2 = 0x02;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -109,8 +109,9 @@ export type RootKey = DEK | DeviceKey;
 
 export type StoreKey = RootKey | UploadKey;
 
-export function canRestore(key: StoreKey): key is RootKey {
-  return key.raw !== undefined || key.key !== undefined;
+/** Restoring needs the backup private key, which only an unlocked root provides. */
+export function canRestore(key: StoreKey): boolean {
+  return key.backup?.privateKey !== undefined;
 }
 
 export function hasRawKey(key: StoreKey): key is DEK {
@@ -238,63 +239,48 @@ export async function unwrapDEKWithPin(w: WrappedDek, pin: string, userId: strin
   return { raw, kid };
 }
 
-// Event encryption -------------------------------------------------------
+// Content encryption -----------------------------------------------------
 //
-// Wire format for a "frame" (the base64 payload the server stores):
-//   0x02 || kid(1) || nonce(12) || ciphertext || tag(16)
-//
-// The kid byte is a routing hint, not authenticated data — a tampered kid
-// selects the wrong key and the GCM tag check fails, same as any other
-// corruption.
+// Events, attachments and files always use the hybrid backup envelope
+// (backupCrypto.ts), so uploads need only the public key.
 
-async function aesGcmEncryptBytes(dek: StoreKey, plaintext: Uint8Array, aad: string): Promise<Bytes> {
-  if (dek.backup) return encryptBackup(dek.backup, dek.kid, plaintext, aad);
-  if (!canRestore(dek)) throw new Error("Missing encryption key.");
-  const key = await importDekForAesGcm(dek);
+async function seal(key: StoreKey, plaintext: Uint8Array, aad: string): Promise<Bytes> {
+  if (!key.backup) throw new Error("Missing backup encryption key.");
+  return encryptBackup(key.backup, key.kid, plaintext, aad);
+}
+
+function open(key: StoreKey, bytes: Bytes, aad: string): Promise<Bytes> {
+  return decryptBackup(key.backup, key.kid, bytes, aad);
+}
+
+// Root sealing -----------------------------------------------------------
+//
+// Only the backup private key is sealed directly with the root key:
+//   nonce(12) || ciphertext || tag(16)
+
+export async function sealWithRoot(root: RootKey, plaintext: Uint8Array, aad: string): Promise<Bytes> {
   const nonce = randomBytes(NONCE_BYTES);
   const ct = new Uint8Array(
     await crypto.subtle.encrypt(
       { name: "AES-GCM", iv: nonce, additionalData: encodeUtf8(aad) },
-      key,
+      await importDekForAesGcm(root),
       bufFrom(plaintext),
     ),
   );
-  const out = new Uint8Array(new ArrayBuffer(2 + nonce.length + ct.length)) as Bytes;
-  out[0] = FRAME_V2;
-  out[1] = dek.kid;
-  out.set(nonce, 2);
-  out.set(ct, 2 + nonce.length);
+  const out = new Uint8Array(new ArrayBuffer(nonce.length + ct.length)) as Bytes;
+  out.set(nonce);
+  out.set(ct, nonce.length);
   return out;
 }
 
-async function aesGcmEncrypt(dek: StoreKey, plaintext: Uint8Array, aad: string): Promise<string> {
-  return toBase64(await aesGcmEncryptBytes(dek, plaintext, aad));
-}
-
-async function aesGcmDecrypt(dek: StoreKey, frame: string, aad: string): Promise<Bytes> {
-  return aesGcmDecryptBytes(dek, fromBase64(frame), aad);
-}
-
-async function aesGcmDecryptBytes(dek: StoreKey, bytes: Bytes, aad: string): Promise<Bytes> {
-  if (bytes[0] === 3) return decryptBackup(dek.backup, dek.kid, bytes, aad);
-  if (!canRestore(dek)) throw new Error("Unlock with your PIN or passkey to restore server data.");
-  if (bytes.length < 2 + NONCE_BYTES + GCM_TAG_BYTES) {
-    throw new Error("frame too short");
-  }
-  if (bytes[0] !== FRAME_V2) {
-    throw new Error(`unknown frame version ${bytes[0]}`);
-  }
-  if (bytes[1] !== dek.kid) {
-    throw new Error(`frame encrypted with unknown key id ${bytes[1]} (have ${dek.kid})`);
-  }
-
-  const nonce = bufFrom(bytes.slice(2, 2 + NONCE_BYTES));
-  const ct = bufFrom(bytes.slice(2 + NONCE_BYTES));
-  const key = await importDekForAesGcm(dek);
-  const pt = new Uint8Array(
-    await crypto.subtle.decrypt({ name: "AES-GCM", iv: nonce, additionalData: encodeUtf8(aad) }, key, ct),
+export async function openWithRoot(root: RootKey, sealed: Uint8Array, aad: string): Promise<Bytes> {
+  if (sealed.length < NONCE_BYTES + GCM_TAG_BYTES) throw new Error("sealed key too short");
+  const pt = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: bufFrom(sealed.slice(0, NONCE_BYTES)), additionalData: encodeUtf8(aad) },
+    await importDekForAesGcm(root),
+    bufFrom(sealed.slice(NONCE_BYTES)),
   );
-  return bufFrom(pt);
+  return new Uint8Array(pt) as Bytes;
 }
 
 function eventAad(userId: string, chatId: string, seq: number): string {
@@ -313,7 +299,7 @@ export async function encryptEvent(
   seq: number,
 ): Promise<string> {
   const json = JSON.stringify(payload);
-  return aesGcmEncrypt(dek, encodeUtf8(json), eventAad(userId, chatId, seq));
+  return toBase64(await seal(dek, encodeUtf8(json), eventAad(userId, chatId, seq)));
 }
 
 export async function decryptEvent<T = unknown>(
@@ -323,16 +309,16 @@ export async function decryptEvent<T = unknown>(
   chatId: string,
   seq: number,
 ): Promise<T> {
-  const pt = await aesGcmDecrypt(dek, frame, eventAad(userId, chatId, seq));
+  const pt = await open(dek, fromBase64(frame), eventAad(userId, chatId, seq));
   return JSON.parse(decoder.decode(pt)) as T;
 }
 
 export async function encryptBlob(dek: StoreKey, data: Uint8Array, userId: string, blobId: string): Promise<Bytes> {
-  return aesGcmEncryptBytes(dek, data, blobAad(userId, blobId));
+  return seal(dek, data, blobAad(userId, blobId));
 }
 
 export async function decryptBlob(dek: StoreKey, data: Uint8Array, userId: string, blobId: string): Promise<Bytes> {
-  return aesGcmDecryptBytes(dek, bufFrom(data), blobAad(userId, blobId));
+  return open(dek, bufFrom(data), blobAad(userId, blobId));
 }
 
 // File envelope ------------------------------------------------------------
@@ -358,7 +344,7 @@ export async function encryptFile(
   plaintext.set(headerBytes, 0);
   plaintext[headerBytes.length] = 0x0a;
   plaintext.set(bytes, headerBytes.length + 1);
-  return aesGcmEncryptBytes(dek, plaintext, fileAad(userId, fileId));
+  return seal(dek, plaintext, fileAad(userId, fileId));
 }
 
 export async function decryptFile<T>(
@@ -367,7 +353,7 @@ export async function decryptFile<T>(
   userId: string,
   fileId: string,
 ): Promise<{ header: T; bytes: Bytes }> {
-  const pt = await aesGcmDecryptBytes(dek, bufFrom(data), fileAad(userId, fileId));
+  const pt = await open(dek, bufFrom(data), fileAad(userId, fileId));
   const nl = pt.indexOf(0x0a);
   if (nl < 0) throw new Error("file envelope: missing header");
   const header = JSON.parse(decoder.decode(pt.slice(0, nl))) as T;
