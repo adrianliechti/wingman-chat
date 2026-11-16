@@ -1,6 +1,6 @@
 import { readLocalChat, readLocalMirror } from "./localChats";
 import { beginChatBackupPause, finishChatBackupPause } from "./chatBackupActivity";
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ChatSync,
   type SyncActivity,
@@ -958,4 +958,118 @@ it("skips compaction when its snapshot conflicts instead of compacting before a 
   await sync.flushPending();
   await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
   expect(api.compactChat).not.toHaveBeenCalled();
+});
+
+describe("pending edits made without another device's newer events", () => {
+  const hello = userMessage("hello");
+  const v1 = (): Chat => ({
+    id: "chat",
+    created: new Date("2026-01-01"),
+    updated: new Date("2026-01-02"),
+    model: null,
+    messages: [hello],
+  });
+
+  /** Server log whose events turn each state into the next; seq starts at 1. */
+  async function serve(dek: Awaited<ReturnType<typeof generateStoreKey>>, states: Chat[]) {
+    const frames: { seq: number; id: string; frame: string }[] = [];
+    let previous = null;
+    for (const [index, state] of states.entries()) {
+      const next = await extractChatBlobs(state);
+      const body = diffChat(previous, next);
+      frames.push({
+        seq: index + 1,
+        id: `e${index}`,
+        frame: await encryptEvent(dek, { body }, "user", "chat", index + 1),
+      });
+      previous = next;
+    }
+    vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: frames.length, updated: "2026-01-05" }]);
+    vi.mocked(api.readEvents).mockImplementation(async (_id, from) => frames.filter((frame) => frame.seq > from));
+  }
+
+  async function posted(dek: Awaited<ReturnType<typeof generateStoreKey>>, chatId: string) {
+    const calls = vi.mocked(api.appendEvents).mock.calls.filter(([id]) => id === chatId);
+    return Promise.all(
+      calls.map(
+        async ([, seq, events]) =>
+          (await decryptEvent<{ body: { type: string }[] }>(dek, events[0].frame, "user", chatId, seq + 1)).body,
+      ),
+    );
+  }
+
+  it("keeps a divergent local edit and backs up the other device's version as a conflicted copy first", async () => {
+    const dek = await generateStoreKey();
+    await serve(dek, [v1()]);
+    await (await ChatSync.create({ userId: "user", accountId: "user", dek })).pull();
+    const remote = { ...v1(), messages: [hello, userMessage("B: one"), userMessage("B: two")] };
+    await serve(dek, [v1(), remote]);
+    const offline = userMessage("A: offline");
+    await stashPendingTarget({ ...v1(), baseSeq: 1, messages: [hello, offline] });
+
+    const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
+    await sync.pull();
+    await sync.flushPending();
+
+    const calls = vi.mocked(api.appendEvents).mock.calls.map(([id]) => id);
+    const copyId = calls.find((id) => id.startsWith("conflict-"))!;
+    expect(copyId).toBeDefined();
+    expect(calls.indexOf(copyId)).toBeLessThan(calls.indexOf("chat"));
+    const copy = await readLocalChat(copyId, false);
+    expect(copy?.customTitle).toBe("Untitled chat (conflicted copy)");
+    expect(copy?.messages.map((m) => m.id)).toEqual(remote.messages.map((m) => m.id));
+    expect((await readLocalChat("chat", false))?.messages.map((m) => m.id)).toEqual([hello.id, offline.id]);
+  });
+
+  it("adopts a newer backup over an older copy left by a reset instead of truncating it", async () => {
+    const dek = await generateStoreKey();
+    await serve(dek, [v1()]);
+    await (await ChatSync.create({ userId: "user", accountId: "user", dek })).pull();
+    await resetLocalBackupState();
+    const newer = { ...v1(), messages: [...v1().messages, userMessage("newer one"), userMessage("newer two")] };
+    await serve(dek, [newer]);
+
+    const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
+    await sync.pull();
+    await sync.flushPending();
+
+    expect(api.appendEvents).not.toHaveBeenCalled();
+    expect(await readJson("chats/chat/target.json")).toBeUndefined();
+    expect((await readLocalChat("chat", false))?.messages).toHaveLength(3);
+  });
+
+  it("appends a stale edit that extends the newer backup without truncating it", async () => {
+    const dek = await generateStoreKey();
+    await serve(dek, [v1()]);
+    await (await ChatSync.create({ userId: "user", accountId: "user", dek })).pull();
+    await serve(dek, [v1(), { ...v1(), title: "renamed elsewhere" }]);
+    await stashPendingTarget({ ...v1(), baseSeq: 1, messages: [...v1().messages, userMessage("A: next")] });
+
+    const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
+    await sync.pull();
+    await sync.flushPending();
+
+    const bodies = await posted(dek, "chat");
+    expect(bodies.flat().map((entry) => entry.type)).not.toContain("truncate");
+    expect(bodies.flat().map((entry) => entry.type)).toContain("message");
+    expect(vi.mocked(api.appendEvents).mock.calls.some(([id]) => id.startsWith("conflict-"))).toBe(false);
+  });
+
+  it("uploads destructive edits made from the latest backup, including after its own uploads", async () => {
+    const dek = await generateStoreKey();
+    const answered = { ...v1(), messages: [...v1().messages, userMessage("first answer")] };
+    await serve(dek, [answered]);
+    await (await ChatSync.create({ userId: "user", accountId: "user", dek })).pull();
+    const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
+    await sync.saveChat({ ...answered, baseSeq: 1, messages: [...v1().messages, userMessage("regenerated")] });
+    await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
+    await sync.saveChat({ ...answered, baseSeq: 1, messages: [...v1().messages, userMessage("regenerated again")] });
+    await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
+
+    expect((await posted(dek, "chat")).map((body) => body.map((entry) => entry.type))).toEqual([
+      ["replace"],
+      ["replace"],
+    ]);
+    expect(vi.mocked(api.appendEvents).mock.calls.some(([id]) => id.startsWith("conflict-"))).toBe(false);
+  });
 });

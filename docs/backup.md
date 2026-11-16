@@ -211,8 +211,14 @@ On a new browser, sign in and choose **Restore backup**, then use your PIN or
 passkey. There is no automatic recovery if you lose both methods and all unlocked
 devices. Passkeys require a compatible provider and the same site hostname.
 
-Sync is not collaborative editing: concurrent chat changes can overwrite each
-other; ordinary file conflicts use modification times. Remote deletion removes
+Sync is not collaborative editing, but a chat edit never silently removes
+messages another device added. Each pending edit records which backup version it
+started from. When another device's changes arrived after that, an older copy
+adopts the backup, an edit that only adds to it uploads normally, and a divergent
+edit keeps this device's version while the other version is first backed up as a
+separate "(conflicted copy)" chat. Chats restored from a ZIP or left after a
+reset count as having an unknown origin. An open, idle chat follows newer changes
+from other devices. Ordinary file conflicts use modification times. Remote deletion removes
 unchanged local copies, while pending local edits survive and can upload again.
 Pending chat deletions use a separate per-chat local journal so simultaneous
 offline deletions in different tabs cannot overwrite each other.

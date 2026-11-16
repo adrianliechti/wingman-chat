@@ -232,10 +232,11 @@ function isoDate(value: Date | null): string | null {
 }
 
 /** Runtime state is kept only while it has content, so idle chats stay small. */
-function runtimeFields({ resume, metadata }: Pick<Chat, "resume" | "metadata">) {
+function runtimeFields({ resume, metadata, baseSeq }: Pick<Chat, "resume" | "metadata" | "baseSeq">) {
   return {
     ...(resume ? { resume } : {}),
     ...(metadata && Object.keys(metadata).length ? { metadata } : {}),
+    ...(typeof baseSeq === "number" ? { baseSeq } : {}),
   };
 }
 

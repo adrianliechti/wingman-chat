@@ -54,7 +54,11 @@ it("exports native chat snapshots without device sync tracking and imports them 
     ]),
   );
   expect(result.restoredFiles).toBe(1);
-  expect(await opfs.readJson("chats/chat/target.json")).toMatchObject({ projectId: "project", agentId: "agent" });
+  expect(await opfs.readJson("chats/chat/target.json")).toMatchObject({
+    projectId: "project",
+    agentId: "agent",
+    baseSeq: -1,
+  });
   expect(await opfs.readText("_sync/state.json")).toBe("private baselines");
 });
 

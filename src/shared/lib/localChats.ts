@@ -118,6 +118,9 @@ function storeChatIndexEntry(chat: StoredChat): Promise<void> {
 interface ChatCheckpoint {
   head: number;
   count: number;
+  /** Highest sequence received from another device that local edits have not
+   *  yet incorporated. Pending edits derived from an older base are stale. */
+  remote?: number;
 }
 
 type HistoryEntry = LogEntry | ({ type: "checkpoint" } & ChatCheckpoint);
@@ -140,7 +143,12 @@ export async function readChatHistory(id: string, known?: { head: number; chat: 
   let checkpoint: ChatCheckpoint | undefined;
   if (start === 0 || boundary >= 0) {
     const last = JSON.parse(tail.slice(boundary + 1)) as HistoryEntry;
-    if (last.type === "checkpoint") checkpoint = { head: last.head, count: last.count };
+    if (last.type === "checkpoint")
+      checkpoint = {
+        head: last.head,
+        count: last.count,
+        ...(last.remote !== undefined ? { remote: last.remote } : {}),
+      };
   }
   if (known && checkpoint?.head === known.head) return { chat: known.chat, checkpoint };
 

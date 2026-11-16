@@ -41,6 +41,10 @@ interface Session {
   sidecar: RunSidecar;
   native: UIMessage[];
   hydrated: ChatPersistedState | null;
+  /** Backup sequence the live transcript derives from; see Chat.baseSeq. */
+  baseSeq?: number;
+  /** The record messages this runtime last loaded or saved. */
+  persisted?: UIMessage[];
   interrupts: ChatInterruptState | null;
   toolWaiters: Set<() => void>;
   pendingSends: Map<string, () => void>;
@@ -344,6 +348,8 @@ export function useChatRun({
         if (!saved) return null;
         session.hydrated = { messages: saved.messages, resume: saved.resume };
         session.native = saved.messages;
+        session.persisted = saved.messages;
+        session.baseSeq = saved.baseSeq;
         return session.hydrated;
       },
       setItem: (_key, state) => {
@@ -365,16 +371,28 @@ export function useChatRun({
         )
           return;
         session.hydrated = null;
-        updateChat(session.id, () => ({ messages: session.sidecar.apply(state.messages), resume: state.resume }), {
-          preserveDates: true,
-        });
+        // Carry the transcript's own base: the record may already hold another device's newer copy.
+        updateChat(
+          session.id,
+          () => {
+            const messages = session.sidecar.apply(state.messages);
+            session.persisted = messages;
+            return { messages, resume: state.resume, baseSeq: session.baseSeq };
+          },
+          { preserveDates: true },
+        );
       },
       removeItem: () => {
         if (storageOwnerRef.current !== session) return;
         session.native = [];
         const saved = getChat(session.id);
         if (saved && (saved.messages.length || saved.resume))
-          updateChat(session.id, () => ({ messages: [], resume: undefined, metadata: undefined }));
+          updateChat(session.id, () => ({
+            messages: [],
+            resume: undefined,
+            metadata: undefined,
+            baseSeq: session.baseSeq,
+          }));
       },
     },
     onChunk: (chunk) => {
@@ -427,6 +445,22 @@ export function useChatRun({
     }
   }, [ai.messages, ai.queue, session]);
   const isResponding = ai.isLoading || !!streamingMessage;
+  // Follow another device's newer copy of the open chat while this one is idle,
+  // so the next send extends it instead of creating a conflicted copy.
+  const record = chatId === session.id ? getChat(session.id) : undefined;
+  const busy = isResponding || ai.interrupts.length > 0 || ai.queue.length > 0;
+  useEffect(() => {
+    if (!record || storageOwnerRef.current !== session || !session.persisted) return;
+    if ((record.baseSeq ?? 0) <= (session.baseSeq ?? 0)) return;
+    if (record.messages !== session.persisted) {
+      if (busy) return;
+      session.hydrated = { messages: record.messages, resume: record.resume };
+      session.native = record.messages;
+      session.persisted = record.messages;
+      ai.setMessages(record.messages);
+    }
+    session.baseSeq = record.baseSeq;
+  }, [record, busy, session, ai]);
   const status: ChatContextType["status"] =
     pendingElicitation || ai.interrupts.length
       ? "waiting"

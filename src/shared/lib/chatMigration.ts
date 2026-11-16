@@ -649,7 +649,11 @@ function normalizeTextSegments(message: UIMessage): UIMessage {
 
 /** Whatever shape is on disk, as the current record. */
 export function normalizeStoredChat(stored: StoredChat | LegacyStoredChat): StoredChat {
-  if (isLegacyStoredChat(stored)) return normalizeStoredChat(migrateLegacyChat(stored));
+  if (isLegacyStoredChat(stored)) {
+    const { baseSeq } = stored as { baseSeq?: unknown };
+    const migrated = normalizeStoredChat(migrateLegacyChat(stored));
+    return typeof baseSeq === "number" ? { ...migrated, baseSeq } : migrated;
+  }
   if (stored.version !== STORED_CHAT_VERSION) return stored;
   if (stored.resume?.pendingInterrupts?.some((interrupt) => !readInterruptBinding(interrupt))) {
     // A partial batch cannot resume safely. Keep the transcript and let the

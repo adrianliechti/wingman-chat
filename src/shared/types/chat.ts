@@ -268,6 +268,11 @@ export interface Chat extends ChatPersistedState {
   model: Model | null;
   messages: UIMessage[];
   metadata?: ChatMetadata;
+  /**
+   * Local-only: the confirmed backup sequence this content was derived from.
+   * -1 marks an unknown origin (restored or reset). Never uploaded.
+   */
+  baseSeq?: number;
 }
 
 /** Sidebar metadata; conversation bodies and attachments are loaded separately. */

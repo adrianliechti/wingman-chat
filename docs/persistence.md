@@ -250,8 +250,14 @@ ChatSync backs up chat metadata, transcripts, and referenced message attachments
 Both backup modes keep the native `chat.json` snapshot locally. Online saves
 commit an outbox snapshot before starting backup initialization or network work;
 confirmed event logs are backup baselines rather than the UI's storage format.
-Each local history commit includes its sequence and compaction count
-in the same atomic write. The shared sync-state file caches those checkpoints;
+Each local history commit includes its sequence, compaction count, and the
+latest sequence received from another device in the same atomic write. Chat
+snapshots carry a local-only `baseSeq` naming the confirmed sequence they were
+derived from (`-1` after a ZIP restore or backup reset); the live chat runtime
+keeps its own. A pending snapshot whose base predates the latest remote sequence
+is never diffed destructively: it adopts the backup when it is a prefix of it,
+appends when it extends it, and otherwise first uploads the backup's version as
+a conflicted copy (with a deterministic ID, so retries reuse it). The shared sync-state file caches those checkpoints;
 recovery trusts the history if a later cache or snapshot write failed, preventing
 an acknowledged event from being applied twice. Older histories remain readable
 and gain a checkpoint on their next commit.

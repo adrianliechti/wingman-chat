@@ -63,6 +63,8 @@ interface SyncState {
   tombstones?: Record<string, number>;
   /** Number of events on the server since the last compaction for this chat. */
   entriesSinceCompact?: Record<string, number>;
+  /** In memory only; persisted in each history checkpoint. See ChatCheckpoint.remote. */
+  remoteHeads?: Record<string, number>;
 }
 
 /** Threshold of entries that triggers an automatic compaction. Keeps fresh
@@ -138,6 +140,14 @@ function forgetChatState(state: SyncState, chatId: string): void {
   delete state.heads[chatId];
   if (state.entriesSinceCompact) delete state.entriesSinceCompact[chatId];
   if (state.tombstones) delete state.tombstones[chatId];
+  if (state.remoteHeads) delete state.remoteHeads[chatId];
+}
+
+function isPrefix(prefix: StoredChat["messages"], messages: StoredChat["messages"]): boolean {
+  return (
+    prefix.length <= messages.length &&
+    prefix.every((message, index) => JSON.stringify(message) === JSON.stringify(messages[index]))
+  );
 }
 
 /** Preserve local snapshots and attachments, but start the next backup from seq 0. */
@@ -152,7 +162,8 @@ export async function resetLocalBackupState(): Promise<void> {
         target ??
         (await readJson<StoredChat | LegacyStoredChat>(localChatPath(id))) ??
         (history ? replayLog(id, decodeLines(history)).chat : null);
-      if (stored) await writeLocalChatSnapshotUnlocked(normalizeStoredChat(stored), true);
+      // The next backup has a different sequence space, so the origin is unknown.
+      if (stored) await writeLocalChatSnapshotUnlocked({ ...normalizeStoredChat(stored), baseSeq: -1 }, true);
       await deleteFile(historyPath(id));
     });
   }
@@ -234,6 +245,8 @@ export class ChatSync {
   private deletions = new Map<string, PendingDeletion>();
   private flushing = false;
   private flushAgain = false;
+  /** A conflict resolution changed chats the UI shows. */
+  private viewChanged = false;
   private readonly userId: string;
   private readonly accountId: string;
   private readonly retentionDays?: number;
@@ -381,14 +394,8 @@ export class ChatSync {
       }
     }
 
-    // Compose the visible chat list: pending target if any, else lastSynced.
     await this.refreshDeletions();
-    const out: Chat[] = [];
-    for (const id of new Set([...this.pendingTargets.keys(), ...this.lastSynced.keys()])) {
-      if (this.deletions.has(id)) continue;
-      const stored = this.pendingTargets.get(id) ?? this.lastSynced.get(id);
-      if (stored) out.push(restoreChatManifest(stored));
-    }
+    const out = this.composeChats();
 
     // Adopting another tab's baseline changes the view even without a download.
     if (before.size !== this.lastSynced.size || [...before].some(([id, chat]) => this.lastSynced.get(id) !== chat)) {
@@ -398,6 +405,24 @@ export class ChatSync {
     if (failures.length > 0) throw failures[0].reason;
     this.setActivity({ lastSyncAt: new Date().toISOString(), lastError: null }, "restore");
     return out;
+  }
+
+  /** Visible chat list: pending target if any, else the confirmed baseline. */
+  private composeChats(): Chat[] {
+    const out: Chat[] = [];
+    for (const id of new Set([...this.pendingTargets.keys(), ...this.lastSynced.keys()])) {
+      if (this.deletions.has(id)) continue;
+      const pending = this.pendingTargets.get(id);
+      const confirmed = this.lastSynced.get(id);
+      const stored = pending ?? (confirmed && this.withBase(id, confirmed));
+      if (stored) out.push(restoreChatManifest(stored));
+    }
+    return out;
+  }
+
+  /** Content projected from the confirmed baseline has seen its current head. */
+  private withBase(chatId: string, stored: StoredChat): StoredChat {
+    return { ...stored, baseSeq: this.headSeq(chatId) };
   }
 
   /** Persist a chat as a delta: local mirror first (offline-safe), then
@@ -522,6 +547,12 @@ export class ChatSync {
       this.setActivity(failed ? {} : { lastSyncAt: new Date().toISOString(), lastError: null });
     }
 
+    if (this.viewChanged) {
+      this.viewChanged = false;
+      const chats = this.composeChats();
+      for (const l of this.remoteChangeListeners) l(chats);
+    }
+
     // Work that arrived mid-flush was skipped by the re-entrancy guard.
     if (
       this.flushAgain ||
@@ -571,7 +602,7 @@ export class ChatSync {
             this.pendingTargets.set(id, stored);
             await writeLocalChatSnapshotUnlocked(stored, true);
           } else if (!(await fileExists(localChatPath(id))) && chat) {
-            await writeLocalChatSnapshotUnlocked(chat, false);
+            await writeLocalChatSnapshotUnlocked(this.withBase(id, chat), false);
           }
         }),
       );
@@ -612,6 +643,9 @@ export class ChatSync {
       if (this.state.tombstones) delete this.state.tombstones[chatId];
       if (count === undefined) delete this.state.entriesSinceCompact?.[chatId];
       else (this.state.entriesSinceCompact ??= {})[chatId] = count;
+      const remote = history?.checkpoint?.remote;
+      if (remote === undefined) delete this.state.remoteHeads?.[chatId];
+      else (this.state.remoteHeads ??= {})[chatId] = remote;
     }
     if (history?.chat) this.lastSynced.set(chatId, history.chat);
     else this.lastSynced.delete(chatId);
@@ -622,7 +656,7 @@ export class ChatSync {
         this.pendingTargets.delete(chatId);
         if (history?.chat && head !== disk?.heads[chatId]) {
           // Finish projecting a history commit interrupted before its checkpoint cache.
-          await writeLocalChatSnapshotUnlocked(history.chat, false);
+          await writeLocalChatSnapshotUnlocked(this.withBase(chatId, history.chat), false);
         }
       }
     });
@@ -678,7 +712,15 @@ export class ChatSync {
     const target = this.pendingTargets.get(chatId);
     if (!target) return true;
 
-    const entries = diffChat(this.lastSynced.get(chatId) ?? null, target);
+    let entries: LogEntry[];
+    try {
+      entries = await this.resolveEntries(chatId);
+    } catch (err) {
+      this.setActivity({ lastError: errorMessage(err) });
+      console.warn(`chatSync.flushChat(${chatId}): conflict resolution failed`, err);
+      return false;
+    }
+    if (!this.pendingTargets.has(chatId)) return true; // the newer backup was adopted
     if (entries.length === 0) {
       await this.clearPendingTarget(chatId, target);
       return true;
@@ -700,6 +742,85 @@ export class ChatSync {
     await this.clearPendingTarget(chatId, target);
     await this.maybeCompact(chatId);
     return true;
+  }
+
+  private remoteCheckpoint(chatId: string): { remote?: number } {
+    const remote = this.state.remoteHeads?.[chatId];
+    return remote === undefined ? {} : { remote };
+  }
+
+  /**
+   * Entries that move the server to the pending target without losing work.
+   * A target whose base predates another device's events may lack those
+   * messages: a plain diff would truncate them. Instead an older copy adopts
+   * the backup, an extension of it uploads normally, and a divergent edit keeps
+   * this chat while the backup's version is saved as a conflicted copy.
+   */
+  private async resolveEntries(chatId: string): Promise<LogEntry[]> {
+    const target = this.pendingTargets.get(chatId);
+    if (!target) return [];
+    const baseline = this.lastSynced.get(chatId) ?? null;
+    const base = target.baseSeq ?? 0;
+    if (!baseline || base >= (this.state.remoteHeads?.[chatId] ?? 0)) return diffChat(baseline, target);
+    if (!isPrefix(baseline.messages, target.messages)) {
+      if (isPrefix(target.messages, baseline.messages)) {
+        await this.adoptBaseline(chatId, target, baseline);
+        return [];
+      }
+      await this.forkConflict(chatId, baseline);
+    }
+    await this.rebase(chatId, base);
+    return diffChat(baseline, target);
+  }
+
+  /** The target now incorporates every remote event; edits derived from its base are current. */
+  private async rebase(chatId: string, base: number): Promise<void> {
+    (this.state.remoteHeads ??= {})[chatId] = base;
+    const head = this.state.heads[chatId];
+    if (head === undefined) return;
+    const count = this.state.entriesSinceCompact?.[chatId] ?? 0;
+    await appendBlob(historyPath(chatId), new Blob([enc.encode(encodeHistory([], { head, count, remote: base }))]));
+  }
+
+  /** Replace an older local copy with the newer backup instead of truncating it. */
+  private async adoptBaseline(chatId: string, target: StoredChat, baseline: StoredChat): Promise<void> {
+    await withChatTarget(chatId, async () => {
+      const current = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
+      if (current && JSON.stringify(current) !== JSON.stringify(target)) {
+        this.pendingTargets.set(chatId, normalizeStoredChat(current));
+        return;
+      }
+      await writeLocalChatSnapshotUnlocked(this.withBase(chatId, baseline), false);
+      await deleteFile(targetPath(chatId));
+      this.pendingTargets.delete(chatId);
+      this.viewChanged = true;
+    });
+    this.setActivity({});
+  }
+
+  /**
+   * Preserve the backup's divergent version, with its attachments, as a new
+   * chat. It is backed up before this chat replaces it on the server. The ID
+   * derives from the replaced head, so a retry reuses the same copy.
+   */
+  private async forkConflict(chatId: string, baseline: StoredChat): Promise<void> {
+    const digest = await crypto.subtle.digest("SHA-256", enc.encode(`${chatId}:${this.headSeq(chatId)}`));
+    const id = `conflict-${Array.from(new Uint8Array(digest).slice(0, 16), (b) => b.toString(16).padStart(2, "0")).join("")}`;
+    const { baseSeq: _base, resume: _resume, customIndex: _index, ...rest } = baseline;
+    const name = baseline.customTitle || baseline.title || "Untitled chat";
+    const copy: StoredChat = { ...rest, id, customTitle: `${name} (conflicted copy)` };
+    // A retry must not overwrite edits already made to the copy.
+    if (!(await fileExists(localChatPath(id)))) {
+      for (const blobId of collectChatBlobIds(baseline)) {
+        const blob = await getChatBlob(chatId, blobId);
+        if (blob) await writeBlob(`chats/${id}/blobs/${blobId}.bin`, blob);
+      }
+      await writeLocalChatSnapshot(copy, true);
+    }
+    this.viewChanged = true;
+    if (!(await this.withChat(id, () => this.flushChat(id)))) {
+      throw new Error("Couldn't back up the conflicted copy; the chat will retry.");
+    }
   }
 
   /** Drop the pending target — unless a newer save replaced it while the
@@ -775,9 +896,7 @@ export class ChatSync {
       const remote = (await api.listChats()).find((meta) => meta.id === chatId);
       if (remote?.deleted) await this.applyRemoteDeletionLocked(chatId, remote.headSeq);
       else await this.applyRemoteEventsLocked(chatId, this.headSeq(chatId));
-      const target = this.pendingTargets.get(chatId);
-      if (!target) return firstSeq;
-      entries = diffChat(this.lastSynced.get(chatId) ?? null, target);
+      entries = await this.resolveEntries(chatId);
       if (entries.length === 0) return firstSeq;
     }
     throw new PostConflictAfterRetry();
@@ -786,7 +905,10 @@ export class ChatSync {
   /** Apply entries the server accepted to the local log, baseline and head. */
   private async commitPosted(chatId: string, entries: LogEntry[], head: number): Promise<void> {
     const count = entries[0]?.type === "init" ? 1 : (this.state.entriesSinceCompact?.[chatId] ?? 0) + entries.length;
-    await appendBlob(historyPath(chatId), new Blob([enc.encode(encodeHistory(entries, { head, count }))]));
+    await appendBlob(
+      historyPath(chatId),
+      new Blob([enc.encode(encodeHistory(entries, { head, count, ...this.remoteCheckpoint(chatId) }))]),
+    );
     const merged = applyEntries(this.lastSynced.get(chatId) ?? null, entries, chatId);
     if (merged) this.lastSynced.set(chatId, merged);
     else this.lastSynced.delete(chatId);
@@ -833,7 +955,11 @@ export class ChatSync {
     }
 
     // Replace the local log with just the surviving snapshot entry.
-    const checkpoint = { head: this.state.heads[chatId], count: this.state.entriesSinceCompact?.[chatId] ?? 1 };
+    const checkpoint = {
+      head: this.state.heads[chatId],
+      count: this.state.entriesSinceCompact?.[chatId] ?? 1,
+      ...this.remoteCheckpoint(chatId),
+    };
     await writeBlob(historyPath(chatId), new Blob([enc.encode(encodeHistory(entries, checkpoint))]));
   }
 
@@ -939,19 +1065,21 @@ export class ChatSync {
       // Confirm attachments before committing history/head so a failed download
       // retries on the next pull, even if no new events have arrived.
       if (baseline) await this.downloadMissingBlobs(chatId, baseline);
-      const checkpoint = encodeHistory([], { head, count: entryCount });
+      // Pending edits made before these events no longer describe the latest chat.
+      const checkpoint = encodeHistory([], { head, count: entryCount, remote: head });
       const text = new Blob([enc.encode(appendedText.join("") + checkpoint)]);
       if (logWasReset) await writeBlob(historyPath(chatId), text);
       else await appendBlob(historyPath(chatId), text);
 
       (this.state.entriesSinceCompact ??= {})[chatId] = entryCount;
+      (this.state.remoteHeads ??= {})[chatId] = head;
       if (baseline) this.lastSynced.set(chatId, baseline);
       else this.lastSynced.delete(chatId);
       this.state.heads[chatId] = head;
       if (this.state.tombstones) delete this.state.tombstones[chatId];
       await withChatTarget(chatId, async () => {
         if (baseline && !(await readJson(targetPath(chatId)))) {
-          await writeLocalChatSnapshotUnlocked(baseline, false);
+          await writeLocalChatSnapshotUnlocked({ ...baseline, baseSeq: head }, false);
         }
       });
       return true;

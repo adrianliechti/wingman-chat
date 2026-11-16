@@ -306,8 +306,14 @@ export async function restoreFiles(
     const changes = new Map<string, Blob | undefined>(files);
     // Imported snapshots replace a conversation locally and enter its outbox.
     // An old pending target must not hide the newly imported native record.
+    // Their backup origin is unknown here, so sync must not let them truncate newer work.
     for (const [path, blob] of files) {
-      if (/^chats\/[^/]+\/chat\.json$/.test(path)) changes.set(path.replace(/chat\.json$/, "target.json"), blob);
+      if (!blob || !/^chats\/[^/]+\/chat\.json$/.test(path)) continue;
+      const record = JSON.parse(await blob.text()) as Record<string, unknown>;
+      changes.set(
+        path.replace(/chat\.json$/, "target.json"),
+        new Blob([JSON.stringify({ ...record, baseSeq: -1 })], { type: "application/json" }),
+      );
     }
     for (const path of removals) changes.set(path, undefined);
     await prepareAgentFileImport(changes);
