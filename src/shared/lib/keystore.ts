@@ -16,12 +16,6 @@
 import * as api from "./storeClient";
 import { readJson, writeJson } from "./opfs-core";
 import { generateBackupKeys, importBackupPublicKey, importBackupPrivateKey } from "./backupCrypto";
-
-interface BackupEnvelope {
-  generation?: string;
-  publicKey: string;
-  encryptedPrivateKey: string;
-}
 import { createPasskeyEnvelope, unlockPasskeyEnvelope, type PasskeyEnvelope } from "./passkey";
 import {
   type DEK,
@@ -38,6 +32,12 @@ import {
   unwrapDEKWithPin,
   wrapDEKWithPin,
 } from "./crypto";
+
+interface BackupEnvelope {
+  generation?: string;
+  publicKey: string;
+  encryptedPrivateKey: string;
+}
 
 export const PIN_MIN_LENGTH = 8;
 export const PIN_MAX_LENGTH = 32;
@@ -186,19 +186,6 @@ async function savePin(state: KeystoreState, dek: DEK, pin: string, userId: stri
     ? { ...pinState, passkeyProtected: true, passkey: state.keystore.passkey }
     : pinState;
   return saveProtected(state, ks);
-}
-
-/**
- * Re-wrap the DEK with a new PIN. Requires the old PIN to unlock first.
- */
-export async function changePin(
-  state: KeystoreState,
-  oldPin: string,
-  newPin: string,
-  userId: string,
-): Promise<KeystoreState> {
-  const dek = await unlockWithPin(state, oldPin, userId);
-  return setPin(state, dek, newPin, userId);
 }
 
 /** Add or replace a passkey after verification, preserving any PIN protection. */

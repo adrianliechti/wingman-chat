@@ -26,15 +26,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("keystore protection methods", () => {
-  it("reports an incorrect PIN clearly when unlocking or changing it", async () => {
+  it("reports an incorrect PIN without writing protection changes", async () => {
     const prepared = await keystore.prepareSetup();
     const pin = await keystore.setPin(prepared.state, prepared.dek, "12345678", "alice");
     vi.mocked(api.putKeystore).mockClear();
 
     await expect(keystore.unlockWithPin(pin, "wrong-pin", "alice")).rejects.toThrow("Incorrect PIN. Please try again.");
-    await expect(keystore.changePin(pin, "wrong-pin", "87654321", "alice")).rejects.toThrow(
-      "Incorrect PIN. Please try again.",
-    );
     expect(api.putKeystore).not.toHaveBeenCalled();
     expect(await keystore.unlockWithPin(pin, "12345678", "alice")).toEqual(prepared.dek);
   });
@@ -63,7 +60,8 @@ describe("keystore protection methods", () => {
     const again = await keystore.setPasskey(pin, dek, "alice");
     expect(await keystore.unlockWithPasskey(again, "alice")).toEqual(dek);
     expect(await keystore.unlockWithPin(again, "12345678", "alice")).toEqual(dek);
-    const changed = await keystore.changePin(again, "12345678", "98765432", "alice");
+    const unlocked = await keystore.unlockWithPin(again, "12345678", "alice");
+    const changed = await keystore.setPin(again, unlocked, "98765432", "alice");
     expect(await keystore.unlockWithPasskey(changed, "alice")).toEqual(dek);
     expect(await keystore.unlockWithPin(changed, "98765432", "alice")).toEqual(dek);
     await expect(keystore.unlockWithPin(changed, "12345678", "alice")).rejects.toThrow();

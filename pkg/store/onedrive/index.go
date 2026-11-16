@@ -11,9 +11,38 @@ import (
 	"net/url"
 	"reflect"
 	"slices"
+	"time"
 
 	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
+
+type object struct {
+	Name    string    `json:"name"`
+	ETag    string    `json:"etag"`
+	Size    int64     `json:"size"`
+	Updated time.Time `json:"updated"`
+}
+type segment struct {
+	object
+	First int64 `json:"first"`
+	Last  int64 `json:"last"`
+}
+type chat struct {
+	Head     int64     `json:"head"`
+	Deleted  bool      `json:"deleted,omitempty"`
+	Updated  time.Time `json:"updated"`
+	Segments []segment `json:"segments"`
+	Recent   []string  `json:"recent,omitempty"`
+}
+type index struct {
+	Generation string            `json:"generation,omitempty"`
+	ResetIDs   map[string]bool   `json:"resetIds,omitempty"`
+	Version    int               `json:"version"`
+	Keystore   []byte            `json:"keystore,omitempty"`
+	Chats      map[string]chat   `json:"chats"`
+	Files      map[string]object `json:"files"`
+	Blobs      map[string]object `json:"blobs"`
+}
 
 const indexAttempts = 5
 

@@ -42,21 +42,3 @@ func writeStoreError(w http.ResponseWriter, err error) {
 	}
 	http.Error(w, err.Error(), status)
 }
-
-func (h *Handler) handleResetBackup(w http.ResponseWriter, r *http.Request) {
-	userID, _, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	// A non-simple header prevents cross-origin form submissions. Reset needs
-	// the signed-in account, not the lost PIN/passkey used for decryption.
-	if r.Header.Get("X-Confirm-Backup-Reset") != "true" {
-		http.Error(w, "Backup reset confirmation required", http.StatusBadRequest)
-		return
-	}
-	if err := h.store.ResetUser(r.Context(), userID, r.Header.Get("X-Backup-Reset-ID")); err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}

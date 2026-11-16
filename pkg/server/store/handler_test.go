@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/adrianliechti/wingman-chat/internal/testgraph"
+	"github.com/adrianliechti/wingman-chat/pkg/server/identity"
 	"github.com/adrianliechti/wingman-chat/pkg/store"
 	"github.com/adrianliechti/wingman-chat/pkg/store/onedrive"
 )
@@ -113,9 +114,30 @@ func protectedTestServer(t *testing.T) *httptest.Server {
 func TestRequireUser(t *testing.T) {
 	srv := newTestServer(t)
 
-	for _, path := range []string{"/v1/me", "/v1/chats", "/v1/keystore"} {
-		res := do(t, srv, "", "GET", path, "", nil)
-		wantStatus(t, res, http.StatusUnauthorized)
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/v1/me"},
+		{"GET", "/v1/keystore"},
+		{"PUT", "/v1/keystore"},
+		{"DELETE", "/v1/backup"},
+		{"GET", "/v1/backup/usage"},
+		{"GET", "/v1/chats"},
+		{"GET", "/v1/chats/chat-1234/events"},
+		{"POST", "/v1/chats/chat-1234/events"},
+		{"POST", "/v1/chats/chat-1234/compact"},
+		{"DELETE", "/v1/chats/chat-1234"},
+		{"GET", "/v1/blobs/blob-1234"},
+		{"HEAD", "/v1/blobs/blob-1234"},
+		{"PUT", "/v1/blobs/blob-1234"},
+		{"DELETE", "/v1/blobs/blob-1234"},
+		{"GET", "/v1/files"},
+		{"GET", "/v1/files/file-1234"},
+		{"PUT", "/v1/files/file-1234"},
+		{"DELETE", "/v1/files/file-1234"},
+	} {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			res := do(t, srv, "", route.method, route.path, "", nil)
+			wantStatus(t, res, http.StatusUnauthorized)
+		})
 	}
 }
 
@@ -499,7 +521,7 @@ func newTestStore(t *testing.T) *onedrive.Provider {
 }
 func testStoreMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, _, _ := userFromRequest(r)
-		next.ServeHTTP(w, r.WithContext(onedrive.WithToken(r.Context(), user)))
+		user, _ := identity.FromRequest(r)
+		next.ServeHTTP(w, r.WithContext(onedrive.WithToken(r.Context(), user.Key)))
 	})
 }

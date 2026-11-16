@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/adrianliechti/wingman-chat/pkg/server/identity"
 	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
 
@@ -74,13 +75,9 @@ func sizedBase64(value string, size int) bool {
 
 // Legacy plaintext keystores remain readable for a protected upgrade, but may
 // not be used for backup operations, including by an already-open old frontend.
-func (h *Handler) requireProtection(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		userID, _, ok := requireUser(w, r)
-		if !ok {
-			return
-		}
-		key, _, err := h.store.GetKeystore(r.Context(), userID)
+func (h *Handler) requireProtection(next userHandler) userHandler {
+	return func(w http.ResponseWriter, r *http.Request, user identity.User) {
+		key, _, err := h.store.GetKeystore(r.Context(), user.Key)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			writeStoreError(w, err)
 			return
@@ -99,6 +96,6 @@ func (h *Handler) requireProtection(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "Backup changed. Reload and unlock before syncing", http.StatusConflict)
 			return
 		}
-		next(w, r)
+		next(w, r, user)
 	}
 }
