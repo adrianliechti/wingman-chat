@@ -24,7 +24,7 @@ export function invalidateBackupSessions(): void {
 
 export function markBackupReset(userId: string): void {
   invalidateBackupSessions();
-  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId, phase: "delete", resetId: crypto.randomUUID() }));
+  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId, phase: "delete" }));
 }
 
 /** Shared by whole sync operations, including their local response continuations.

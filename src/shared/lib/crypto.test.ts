@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  canRestore,
   decryptBlob,
   decryptEvent,
   decryptFile,
@@ -9,14 +8,10 @@ import {
   encryptFile,
   fromBase64,
   generateDEK,
-  hashFrame,
-  openWithRoot,
-  sealWithRoot,
   toBase64,
   toDeviceKey,
   unwrapDEKWithPin,
   wrapDEKWithPin,
-  ZERO_HASH,
 } from "./crypto";
 import { generateStoreKey } from "./test-support/storeKey";
 
@@ -24,10 +19,6 @@ describe("base64", () => {
   it("round-trips bytes", () => {
     const bytes = new Uint8Array([0, 1, 2, 255, 128, 64]);
     expect(fromBase64(toBase64(bytes))).toEqual(bytes);
-  });
-
-  it("ZERO_HASH is 32 zero bytes", () => {
-    expect(fromBase64(ZERO_HASH)).toEqual(new Uint8Array(32));
   });
 });
 
@@ -52,23 +43,9 @@ describe("event encryption", () => {
     await expect(decryptEvent(await generateStoreKey(), frame, "user1", "chat1", 1)).rejects.toThrow();
   });
 
-  it("stamps the hybrid envelope with the key id", async () => {
-    const dek = await generateStoreKey(7);
-    const bytes = fromBase64(await encryptEvent(dek, { x: 1 }, "user1", "chat1", 1));
-    expect(bytes[0]).toBe(3);
-    expect(bytes[1]).toBe(7);
-  });
-
-  it("rejects frames for another key id or without the hybrid header", async () => {
-    const dek = await generateStoreKey(2);
-    const frame = await encryptEvent(dek, { x: 1 }, "user1", "chat1", 1);
-    await expect(decryptEvent({ ...dek, kid: 1 }, frame, "user1", "chat1", 1)).rejects.toThrow(/Invalid backup/);
-    const symmetric = toBase64(new Uint8Array(64).fill(0x02, 0, 1));
-    await expect(decryptEvent(dek, symmetric, "user1", "chat1", 1)).rejects.toThrow(/Invalid backup/);
-  });
-
-  it("requires the backup public key to encrypt", async () => {
-    await expect(encryptEvent(await generateDEK(), { x: 1 }, "user1", "chat1", 1)).rejects.toThrow(/backup/);
+  it("rejects truncated frames", async () => {
+    const dek = await generateStoreKey();
+    await expect(decryptEvent(dek, toBase64(new Uint8Array(20)), "user1", "chat1", 1)).rejects.toThrow(/too short/);
   });
 });
 
@@ -106,21 +83,21 @@ describe("file envelope", () => {
 
 describe("PIN wrapping", () => {
   it("wraps and unwraps the DEK", async () => {
-    const dek = await generateDEK();
+    const dek = generateDEK();
     const wrapped = await wrapDEKWithPin(dek, "1234", "user1");
     const unwrapped = await unwrapDEKWithPin(wrapped, "1234", "user1");
     expect(toBase64(unwrapped.raw)).toBe(toBase64(dek.raw));
   });
 
   it("rejects a wrong PIN and a wrong user", async () => {
-    const dek = await generateDEK();
+    const dek = generateDEK();
     const wrapped = await wrapDEKWithPin(dek, "1234", "user1");
     await expect(unwrapDEKWithPin(wrapped, "9999", "user1")).rejects.toThrow();
     await expect(unwrapDEKWithPin(wrapped, "1234", "user2")).rejects.toThrow();
   });
 
   it("uses Argon2id and rejects other KDFs", async () => {
-    const dek = await generateDEK();
+    const dek = generateDEK();
     const wrapped = await wrapDEKWithPin(dek, "correct horse", "user1");
     expect(wrapped.kdf).toMatchObject({ name: "argon2id", m: 65536, t: 3, p: 1 });
     expect(toBase64((await unwrapDEKWithPin(wrapped, "correct horse", "user1")).raw)).toBe(toBase64(dek.raw));
@@ -129,38 +106,21 @@ describe("PIN wrapping", () => {
   });
 
   it("rejects hostile Argon2id parameters before deriving", async () => {
-    const dek = await generateDEK();
+    const dek = generateDEK();
     const wrapped = await wrapDEKWithPin(dek, "1234", "user1");
     const huge = { ...wrapped, kdf: { ...wrapped.kdf, m: 4 * 1024 * 1024 } };
     await expect(unwrapDEKWithPin(huge, "1234", "user1")).rejects.toThrow(/unsupported/);
   });
 });
 
-describe("root sealing", () => {
-  it("opens with a device key that never exposes the root key bytes", async () => {
-    const dek = await generateDEK();
+describe("device keys", () => {
+  it("decrypt without exposing the root key bytes", async () => {
+    const dek = generateDEK();
     const device = await toDeviceKey(dek);
     expect(device.key.extractable).toBe(false);
     await expect(crypto.subtle.exportKey("raw", device.key)).rejects.toThrow();
-    const sealed = await sealWithRoot(dek, new Uint8Array([7]), "backup-private:a:1");
-    expect(await openWithRoot(device, sealed, "backup-private:a:1")).toEqual(new Uint8Array([7]));
-    await expect(openWithRoot(device, sealed, "backup-private:b:1")).rejects.toThrow();
-    await expect(openWithRoot(await generateDEK(), sealed, "backup-private:a:1")).rejects.toThrow();
-  });
-
-  it("restores only with the backup private key", async () => {
-    const dek = await generateStoreKey();
-    expect(canRestore(dek)).toBe(true);
-    expect(canRestore(await generateDEK())).toBe(false);
-    expect(canRestore({ kid: 1, backup: { publicKey: dek.backup!.publicKey } })).toBe(false);
-  });
-});
-
-describe("hashFrame", () => {
-  it("is deterministic and content-sensitive", async () => {
-    const a = toBase64(new Uint8Array([1, 2, 3]));
-    const b = toBase64(new Uint8Array([1, 2, 4]));
-    expect(await hashFrame(a)).toBe(await hashFrame(a));
-    expect(await hashFrame(a)).not.toBe(await hashFrame(b));
+    const frame = await encryptEvent(dek, { x: 7 }, "user1", "chat1", 1);
+    expect(await decryptEvent(device, frame, "user1", "chat1", 1)).toEqual({ x: 7 });
+    await expect(decryptEvent(device, frame, "user2", "chat1", 1)).rejects.toThrow();
   });
 });

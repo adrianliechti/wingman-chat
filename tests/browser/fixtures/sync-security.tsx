@@ -4,14 +4,7 @@ import { ConfirmHost } from "../../../src/shell/components/ConfirmHost";
 import { forgetBackup } from "../../../src/shared/lib/rememberedBackup";
 import { initSession } from "../../../src/shared/lib/storeSession";
 import { loadConfig } from "../../../src/shared/config";
-import {
-  clearAll,
-  deleteDirectory,
-  deleteFile,
-  readJson,
-  readText,
-  writeText,
-} from "../../../src/shared/lib/opfs-core";
+import { clearAll, deleteDirectory, deleteFile, readText, writeText } from "../../../src/shared/lib/opfs-core";
 import { syncedChatStorage } from "../../../src/features/chat/lib/syncedChatStorage";
 import { readLocalChat } from "../../../src/shared/lib/localChats";
 import { userMessage } from "../../../src/shared/lib/messages";
@@ -24,7 +17,6 @@ declare global {
       save(path: string, value: string): Promise<void>;
       read(path: string): Promise<string | undefined>;
       clear(): Promise<void>;
-      uploadCache(): Promise<unknown>;
       sessionStatus(): Promise<string>;
       saveChat(text: string, id?: string): Promise<void>;
       readChat(id?: string): Promise<unknown>;
@@ -39,7 +31,6 @@ window.syncSecurityE2E = {
   save: writeText,
   read: readText,
   clear: clearAll,
-  uploadCache: () => readJson("_sync/upload-key.json"),
   sessionStatus: async () => (await initSession()).status,
   saveChat: (text, id = "reset-chat") =>
     syncedChatStorage.store({

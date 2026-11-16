@@ -15,7 +15,7 @@ import (
 func TestProtectedKeystoreValidation(t *testing.T) {
 	encode := func(size int) string { return base64.StdEncoding.EncodeToString(make([]byte, size)) }
 	passkey := map[string]any{
-		"version": 2, "kid": 1, "accountId": testAccountID, "pinProtected": false, "passkeyProtected": true,
+		"accountId": testAccountID, "generation": "test-generation", "pinProtected": false, "passkeyProtected": true,
 		"passkey": map[string]any{"credentialId": encode(32), "rpId": "localhost", "salt": encode(32), "nonce": encode(12), "wrappedDek": encode(48)},
 	}
 	data, _ := json.Marshal(passkey)
@@ -34,17 +34,13 @@ func TestProtectedKeystoreValidation(t *testing.T) {
 		t.Fatal("valid combined PIN and passkey rejected")
 	}
 	for _, body := range []string{
-		strings.Replace(string(data), `"version":2`, `"version":1`, 1),
-		strings.Replace(string(data), `"kid":1`, `"kid":0`, 1),
+		strings.Replace(string(data), `"generation":"test-generation"`, `"generation":""`, 1),
 		strings.Replace(string(data), `"pinProtected":false`, `"pinProtected":true`, 1),
 		strings.Replace(string(data), `"salt":"`+encode(32)+`"`, `"salt":"invalid"`, 1),
 		strings.Replace(string(data), `"rpId":"localhost"`, `"rpId":""`, 1),
-		`{"dek":null,` + string(data)[1:],
-		`{"dek":"plaintext",` + string(data)[1:],
 		strings.Replace(protectedTestKey("weak"), `"t":3`, `"t":1`, 1),
 		strings.Replace(string(dualData), `"t":3`, `"t":1`, 1),
 		strings.Replace(string(dualData), `"rpId":"localhost"`, `"rpId":""`, 1),
-		`{"dek":null,` + string(dualData)[1:],
 		strings.Replace(string(data), `"accountId":"`+testAccountID+`",`, ``, 1),
 		strings.Replace(string(data), testAccountID, ``, 1),
 		strings.Replace(string(data), testAccountID, `Not-Hex`, 1),
@@ -58,7 +54,7 @@ func TestProtectedKeystoreValidation(t *testing.T) {
 
 func TestUnprotectedKeystoreBlocksBackup(t *testing.T) {
 	provider := newTestStore(t)
-	unprotected := `{"version":2,"kid":1,"pinProtected":false,"dek":"plain-key"}`
+	unprotected := `{"pinProtected":false}`
 	if _, err := provider.PutKeystore(onedrive.WithToken(context.Background(), "alice"), []byte(unprotected), "*"); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +74,7 @@ func TestArgon2idKeystoreValidation(t *testing.T) {
 	encode := func(size int) string { return base64.StdEncoding.EncodeToString(make([]byte, size)) }
 	key := func(kdf map[string]any) []byte {
 		data, _ := json.Marshal(map[string]any{
-			"version": 2, "kid": 1, "accountId": testAccountID, "pinProtected": true,
+			"accountId": testAccountID, "generation": "test-generation", "pinProtected": true,
 			"wrappedDek": encode(48), "nonce": encode(12), "kdf": kdf,
 		})
 		return data

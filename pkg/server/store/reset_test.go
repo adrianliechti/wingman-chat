@@ -44,24 +44,18 @@ func TestBackupGenerationRejectsOldDeviceAfterReset(t *testing.T) {
 		if err := json.Unmarshal([]byte(protectedTestKey("")), &key); err != nil {
 			t.Fatal(err)
 		}
-		key["backup"] = map[string]string{"generation": generation, "publicKey": "public", "encryptedPrivateKey": "encrypted"}
+		key["generation"] = generation
 		data, err := json.Marshal(key)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return string(data)
 	}
-	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", makeKey("old-generation"), nil), http.StatusNoContent)
+	create := map[string]string{"If-None-Match": "*"}
+	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", makeKey("old-generation"), create), http.StatusNoContent)
 	wantStatus(t, do(t, srv, "alice", "DELETE", "/v1/backup", "", map[string]string{"X-Confirm-Backup-Reset": "true"}), http.StatusNoContent)
-	var incomplete map[string]any
-	if err := json.Unmarshal([]byte(protectedTestKey("")), &incomplete); err != nil {
-		t.Fatal(err)
-	}
-	delete(incomplete, "backup")
-	setupKey, _ := json.Marshal(incomplete)
-	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", string(setupKey), nil), http.StatusNoContent)
-	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/blobs/blob-1234", "old ciphertext", map[string]string{"X-Backup-Generation": "old-generation"}), http.StatusConflict)
-	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", makeKey("new-generation"), nil), http.StatusNoContent)
+	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/blobs/blob-1234", "old ciphertext", map[string]string{"X-Backup-Generation": "old-generation"}), http.StatusForbidden)
+	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", makeKey("new-generation"), create), http.StatusNoContent)
 	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/blobs/blob-1234", "old ciphertext", map[string]string{"X-Backup-Generation": "old-generation"}), http.StatusConflict)
 	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/blobs/blob-1234", "new ciphertext", map[string]string{"X-Backup-Generation": "new-generation"}), http.StatusNoContent)
 }

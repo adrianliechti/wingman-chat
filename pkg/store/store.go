@@ -59,14 +59,13 @@ type Provider interface {
 	BackupSize(ctx context.Context) (int64, error)
 
 	// ResetUser removes backup data and keys, fencing concurrent stale writes.
-	ResetUser(ctx context.Context, resetID string) error
+	ResetUser(ctx context.Context) error
 
 	// GetKeystore returns the raw keystore bytes and an opaque etag.
 	// Returns ErrNotFound if no keystore exists yet for the user.
 	GetKeystore(ctx context.Context) (data []byte, etag string, err error)
 
 	// PutKeystore replaces the keystore atomically.
-	//   ifMatch == ""     → unconditional replace
 	//   ifMatch == "*"    → create only (fail with ErrKeystoreConflict if exists)
 	//   ifMatch == "<x>"  → CAS, must match current etag
 	PutKeystore(ctx context.Context, data []byte, ifMatch string) (etag string, err error)
@@ -141,32 +140,17 @@ const MaxObjectBytes = 256<<20 + 1<<20
 // MaxAppendBytes caps one append request body (all JSONL event lines).
 const MaxAppendBytes = 64 << 20 // 64 MiB
 
-// PreservesAccountID prevents a keystore update from orphaning existing
-// ciphertext, which is bound to the keystore's account ID.
-func PreservesAccountID(current, next []byte) bool {
+// PreservesIdentity prevents a keystore update from orphaning existing
+// ciphertext, which is bound to the keystore's account ID, or from un-fencing
+// devices that were stopped by a backup generation change.
+func PreservesIdentity(current, next []byte) bool {
 	if len(current) == 0 {
 		return true
 	}
-	var previous, replacement struct {
-		AccountID string `json:"accountId"`
+	type identity struct {
+		AccountID  string `json:"accountId"`
+		Generation string `json:"generation"`
 	}
-	return json.Unmarshal(current, &previous) == nil && json.Unmarshal(next, &replacement) == nil && previous.AccountID == replacement.AccountID
-}
-
-// PreservesBackupKey prevents a protection update from orphaning existing
-// ciphertext by dropping or replacing its asymmetric backup key envelope.
-func PreservesBackupKey(current, next []byte) bool {
-	var previous, replacement map[string]json.RawMessage
-	if json.Unmarshal(current, &previous) != nil || len(previous["backup"]) == 0 || string(previous["backup"]) == "null" {
-		return true
-	}
-	if json.Unmarshal(next, &replacement) != nil {
-		return false
-	}
-	var oldKey, newKey struct {
-		Generation          string `json:"generation"`
-		PublicKey           string `json:"publicKey"`
-		EncryptedPrivateKey string `json:"encryptedPrivateKey"`
-	}
-	return json.Unmarshal(previous["backup"], &oldKey) == nil && json.Unmarshal(replacement["backup"], &newKey) == nil && oldKey.PublicKey == newKey.PublicKey && oldKey.EncryptedPrivateKey == newKey.EncryptedPrivateKey && oldKey.Generation == newKey.Generation
+	var previous, replacement identity
+	return json.Unmarshal(current, &previous) == nil && json.Unmarshal(next, &replacement) == nil && previous == replacement
 }

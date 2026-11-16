@@ -6,14 +6,9 @@ import (
 	"log"
 	"net/url"
 	"strings"
-
-	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
 
-func (p *Provider) ResetUser(ctx context.Context, resetID string) error {
-	if !resourceID.MatchString(resetID) {
-		return store.ErrInvalidID
-	}
+func (p *Provider) ResetUser(ctx context.Context) error {
 	// Read the control item separately so damaged index contents cannot
 	// prevent recovery.
 	if _, err := p.folder(ctx); err != nil {
@@ -25,34 +20,12 @@ func (p *Provider) ResetUser(ctx context.Context, resetID string) error {
 		return err
 	}
 
-	// Remember completed reset IDs across subsequent backups and resets. A retry
-	// after an uncertain response must never erase a newly enrolled backup.
-	previous, observed, readErr := p.readIndex(ctx)
-	if readErr == nil {
-		if observed.ID != control.ID || observed.ETag != control.ETag {
-			return store.ErrBackupConflict
-		}
-		if previous.ResetIDs[resetID] {
-			return nil
-		}
-	} else {
-		if !errors.Is(readErr, errInvalidIndex) {
-			return readErr
-		}
-		previous = emptyIndex()
-	}
-
 	names, err := p.resetObjects(ctx)
 	if err != nil {
 		return err
 	}
 	empty := emptyIndex()
 	empty.Generation = newObject()
-	empty.ResetIDs = previous.ResetIDs
-	if empty.ResetIDs == nil {
-		empty.ResetIDs = map[string]bool{}
-	}
-	empty.ResetIDs[resetID] = true
 	// Keep the index item: deleting/recreating it would let stale writers
 	// resurrect a backup. Publishing a fresh generation fences all old requests.
 	if err := p.commit(ctx, empty, control); err != nil {
@@ -101,7 +74,7 @@ func (p *Provider) resetObjects(ctx context.Context) ([]string, error) {
 			return nil, err
 		}
 		for _, item := range page.Value {
-			if (strings.HasPrefix(item.Name, "data-") || strings.HasPrefix(item.Name, "probe-")) && objectName.MatchString(item.Name) {
+			if strings.HasPrefix(item.Name, "data-") && objectName.MatchString(item.Name) {
 				names = append(names, item.Name)
 			}
 		}

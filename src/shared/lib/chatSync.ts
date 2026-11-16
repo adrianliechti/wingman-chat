@@ -35,16 +35,7 @@ import { normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
 import type { Chat } from "@/shared/types/chat";
 import { applyEntries, chunkEntries, decodeLines, diffChat, encodeLines, type LogEntry, replayLog } from "./chatLog";
 import * as api from "./storeClient";
-import {
-  type StoreKey,
-  canRestore,
-  decryptBlob,
-  decryptEvent,
-  encryptBlob,
-  encryptEvent,
-  hashFrame,
-  ZERO_HASH,
-} from "./crypto";
+import { type RootKey, decryptBlob, decryptEvent, encryptBlob, encryptEvent } from "./crypto";
 import { collectChatBlobIds, extractChatBlobs, getChatBlob, restoreChatManifest, type StoredChat } from "./opfs-chat";
 import {
   appendBlob,
@@ -68,7 +59,6 @@ const enc = new TextEncoder();
 interface SyncState {
   userId: string;
   heads: Record<string, number>;
-  lastFrameHash: Record<string, string>;
   /** Deleted logs retain their cursor so a new init never reuses a sequence. */
   tombstones?: Record<string, number>;
   /** Number of events on the server since the last compaction for this chat. */
@@ -125,7 +115,7 @@ async function loadState(): Promise<SyncState | undefined> {
  *  stale tab can never roll back heads that another tab advanced. */
 async function saveChatState(state: SyncState, chatId: string): Promise<void> {
   await withPersistenceLock("chat-sync-state", async () => {
-    const disk = (await readJson<SyncState>(STATE_FILE)) ?? { userId: state.userId, heads: {}, lastFrameHash: {} };
+    const disk = (await readJson<SyncState>(STATE_FILE)) ?? { userId: state.userId, heads: {} };
     if (disk.userId !== state.userId) return;
     const counts = (disk.entriesSinceCompact ??= {});
     const tombstones = (disk.tombstones ??= {});
@@ -133,11 +123,9 @@ async function saveChatState(state: SyncState, chatId: string): Promise<void> {
     else tombstones[chatId] = state.tombstones[chatId];
     if (state.heads[chatId] === undefined) {
       delete disk.heads[chatId];
-      delete disk.lastFrameHash[chatId];
       delete counts[chatId];
     } else {
       disk.heads[chatId] = state.heads[chatId];
-      disk.lastFrameHash[chatId] = state.lastFrameHash[chatId];
       const count = state.entriesSinceCompact?.[chatId];
       if (count === undefined) delete counts[chatId];
       else counts[chatId] = count;
@@ -148,7 +136,6 @@ async function saveChatState(state: SyncState, chatId: string): Promise<void> {
 
 function forgetChatState(state: SyncState, chatId: string): void {
   delete state.heads[chatId];
-  delete state.lastFrameHash[chatId];
   if (state.entriesSinceCompact) delete state.entriesSinceCompact[chatId];
   if (state.tombstones) delete state.tombstones[chatId];
 }
@@ -206,7 +193,7 @@ async function stashPendingDeletionUnlocked(chatId: string, userId?: string): Pr
   // deletion removes history; otherwise that response can recreate the chat.
   await withPersistenceLock(`chat-sync:${encodeURIComponent(owner)}:${encodeURIComponent(chatId)}`, () =>
     withChatTarget(chatId, async () => {
-      const state = (await loadState()) ?? { userId: owner, heads: {}, lastFrameHash: {} };
+      const state = (await loadState()) ?? { userId: owner, heads: {} };
       const head =
         (await readChatHistory(chatId))?.checkpoint?.head ?? state.heads[chatId] ?? state.tombstones?.[chatId] ?? 0;
       await journalDeletion(owner, chatId, head);
@@ -225,7 +212,7 @@ interface ChatSyncOptions {
   userId: string;
   /** Keystore ID bound into ciphertext. */
   accountId: string;
-  dek: StoreKey;
+  dek: RootKey;
   retentionDays?: number;
 }
 
@@ -250,7 +237,7 @@ export class ChatSync {
   private readonly userId: string;
   private readonly accountId: string;
   private readonly retentionDays?: number;
-  private dek: StoreKey;
+  private readonly dek: RootKey;
 
   private activity: SyncActivity = { syncing: false, pendingCount: 0, lastSyncAt: null, lastError: null, progress: [] };
   // A successful upload cannot confirm that a failed restore has recovered, or vice versa.
@@ -259,12 +246,12 @@ export class ChatSync {
   private activityListeners = new Set<(a: SyncActivity) => void>();
   private remoteChangeListeners = new Set<(chats: Chat[]) => void>();
 
-  constructor(userId: string, accountId: string, dek: StoreKey, initialState?: SyncState, retentionDays?: number) {
+  constructor(userId: string, accountId: string, dek: RootKey, initialState?: SyncState, retentionDays?: number) {
     this.userId = userId;
     this.accountId = accountId;
     this.retentionDays = retentionDays;
     this.dek = dek;
-    this.state = initialState ?? { userId, heads: {}, lastFrameHash: {} };
+    this.state = initialState ?? { userId, heads: {} };
   }
 
   static async create(opts: ChatSyncOptions): Promise<ChatSync> {
@@ -279,11 +266,6 @@ export class ChatSync {
     await sync.refreshDeletions();
     sync.setActivity({});
     return sync;
-  }
-
-  /** Grant restore access for this page without replacing engines with writes in flight. */
-  setKey(dek: StoreKey): void {
-    this.dek = dek;
   }
 
   private headSeq(chatId: string): number {
@@ -333,7 +315,6 @@ export class ChatSync {
   }
 
   private async pullUnlocked(): Promise<Chat[]> {
-    if (!canRestore(this.dek)) throw new Error("Unlock with your PIN or passkey to restore server data.");
     if (this.pullInFlight) return this.pullInFlight;
     this.pullInFlight = (async () => {
       const progress = this.progress.begin("restore");
@@ -618,16 +599,9 @@ export class ChatSync {
     const previous = this.lastSynced.get(chatId);
     const history = await readChatHistory(
       chatId,
-      previous
-        ? {
-            head: this.state.heads[chatId],
-            hash: this.state.lastFrameHash[chatId],
-            chat: previous,
-          }
-        : undefined,
+      previous ? { head: this.state.heads[chatId], chat: previous } : undefined,
     );
     const head = history?.checkpoint?.head ?? (history && owned ? disk.heads[chatId] : undefined);
-    const hash = history?.checkpoint?.hash ?? (history && owned ? disk.lastFrameHash[chatId] : undefined);
     const count = history?.checkpoint?.count ?? (history && owned ? disk.entriesSinceCompact?.[chatId] : undefined);
     if (head === undefined) {
       forgetChatState(this.state, chatId);
@@ -636,7 +610,6 @@ export class ChatSync {
     } else {
       this.state.heads[chatId] = head;
       if (this.state.tombstones) delete this.state.tombstones[chatId];
-      this.state.lastFrameHash[chatId] = hash ?? ZERO_HASH;
       if (count === undefined) delete this.state.entriesSinceCompact?.[chatId];
       else (this.state.entriesSinceCompact ??= {})[chatId] = count;
     }
@@ -647,18 +620,17 @@ export class ChatSync {
       if (target) this.pendingTargets.set(chatId, normalizeStoredChat(target));
       else {
         this.pendingTargets.delete(chatId);
-        if (history?.chat && (head !== disk?.heads[chatId] || hash !== disk?.lastFrameHash[chatId])) {
+        if (history?.chat && head !== disk?.heads[chatId]) {
           // Finish projecting a history commit interrupted before its checkpoint cache.
           await writeLocalChatSnapshotUnlocked(history.chat, false);
         }
       }
     });
-    if (head !== disk?.heads[chatId] || hash !== disk?.lastFrameHash[chatId]) await saveChatState(this.state, chatId);
+    if (head !== disk?.heads[chatId]) await saveChatState(this.state, chatId);
   }
 
   private async pushDelete(del: PendingDeletion): Promise<boolean> {
     try {
-      if (!canRestore(this.dek)) throw new Error("Unlock restore before deleting a server backup.");
       requireChatBackupReady(del.id);
       await api.deleteChat(del.id, del.expectedSeq);
       // Content-addressed blobs can be shared by other chats or devices.
@@ -759,18 +731,16 @@ export class ChatSync {
   private async postEntries(chatId: string, entries: LogEntry[], snapshot = false): Promise<number | null> {
     let firstSeq: number | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
-      // One frame per chunk, hash-chained in order. A first-sync snapshot
-      // of a long chat easily exceeds the server's per-frame cap as a single frame.
+      // One frame per chunk. A first-sync snapshot of a long chat easily
+      // exceeds the server's per-frame cap as a single frame.
       const chunks = chunkEntries(entries);
-      const frames: { id: string; frame: string; hash: string; entries: LogEntry[] }[] = [];
-      let prevHash = this.state.lastFrameHash[chatId] ?? ZERO_HASH;
+      const frames: { id: string; frame: string; entries: LogEntry[] }[] = [];
       let seq = this.headSeq(chatId);
       for (const chunk of chunks) {
         seq += 1;
-        const payload = { id: crypto.randomUUID(), ts: new Date().toISOString(), prevHash, body: chunk };
+        const payload = { id: crypto.randomUUID(), ts: new Date().toISOString(), body: chunk };
         const frame = await encryptEvent(this.dek, payload, this.accountId, chatId, seq);
-        prevHash = await hashFrame(frame);
-        frames.push({ id: payload.id, frame, hash: prevHash, entries: chunk });
+        frames.push({ id: payload.id, frame, entries: chunk });
       }
 
       const batches = appendBatches(frames);
@@ -794,15 +764,12 @@ export class ChatSync {
           chatId,
           batch.flatMap((item) => item.entries),
           res.newSeq,
-          batch.at(-1)!.hash,
         );
       }
       if (!conflict) return firstSeq;
       if (snapshot) return null;
 
       requireChatBackupReady(chatId);
-      if (!canRestore(this.dek))
-        throw new Error("Another device changed this chat. Unlock restore to reconcile before uploading.");
       // We already hold this chat's lock. A deleted log has no events to read;
       // adopt its tombstone cursor before encrypting a fresh init snapshot.
       const remote = (await api.listChats()).find((meta) => meta.id === chatId);
@@ -817,16 +784,15 @@ export class ChatSync {
   }
 
   /** Apply entries the server accepted to the local log, baseline and head. */
-  private async commitPosted(chatId: string, entries: LogEntry[], head: number, hash: string): Promise<void> {
+  private async commitPosted(chatId: string, entries: LogEntry[], head: number): Promise<void> {
     const count = entries[0]?.type === "init" ? 1 : (this.state.entriesSinceCompact?.[chatId] ?? 0) + entries.length;
-    await appendBlob(historyPath(chatId), new Blob([enc.encode(encodeHistory(entries, { head, hash, count }))]));
+    await appendBlob(historyPath(chatId), new Blob([enc.encode(encodeHistory(entries, { head, count }))]));
     const merged = applyEntries(this.lastSynced.get(chatId) ?? null, entries, chatId);
     if (merged) this.lastSynced.set(chatId, merged);
     else this.lastSynced.delete(chatId);
 
     this.state.heads[chatId] = head;
     if (this.state.tombstones) delete this.state.tombstones[chatId];
-    this.state.lastFrameHash[chatId] = hash;
     (this.state.entriesSinceCompact ??= {})[chatId] = count;
     await saveChatState(this.state, chatId);
   }
@@ -867,11 +833,7 @@ export class ChatSync {
     }
 
     // Replace the local log with just the surviving snapshot entry.
-    const checkpoint = {
-      head: this.state.heads[chatId],
-      hash: this.state.lastFrameHash[chatId],
-      count: this.state.entriesSinceCompact?.[chatId] ?? 1,
-    };
+    const checkpoint = { head: this.state.heads[chatId], count: this.state.entriesSinceCompact?.[chatId] ?? 1 };
     await writeBlob(historyPath(chatId), new Blob([enc.encode(encodeHistory(entries, checkpoint))]));
   }
 
@@ -915,7 +877,7 @@ export class ChatSync {
   }
 
   /** Apply events after fromSeq to local state (history file + in-memory
-   *  baseline + head + hash). The caller holds this chat's lock. */
+   *  baseline + head). The caller holds this chat's lock. */
   private async applyRemoteEventsLocked(chatId: string, fromSeq: number, expectedHead = fromSeq): Promise<boolean> {
     const applied = await withDeletionLock(this.userId, chatId, async () => {
       // A journaled deletion beats the server copy — don't resurrect it.
@@ -931,7 +893,6 @@ export class ChatSync {
       }
 
       let head = this.headSeq(chatId);
-      let lastHash = this.state.lastFrameHash[chatId] ?? ZERO_HASH;
       let baseline = this.lastSynced.get(chatId) ?? null;
 
       const appendedText: string[] = [];
@@ -941,7 +902,7 @@ export class ChatSync {
       for (const e of events) {
         if (e.seq <= head) continue; // already applied
 
-        type RemotePayload = { id: string; ts: string; prevHash: string; body: LogEntry[] };
+        type RemotePayload = { id: string; ts: string; body: LogEntry[] };
         let payload: RemotePayload;
         try {
           payload = await decryptEvent<RemotePayload>(this.dek, e.frame, this.accountId, chatId, e.seq);
@@ -959,10 +920,6 @@ export class ChatSync {
           throw new Error(`Incomplete backup for ${chatId}: expected sequence ${head + 1}, received ${e.seq}.`);
         }
 
-        if (!isReset && payload.prevHash !== lastHash) {
-          throw new Error(`Backup integrity check failed for ${chatId}@${e.seq}.`);
-        }
-
         if (isReset) {
           // Compaction snapshot — discard prior state and replay fresh.
           baseline = null;
@@ -972,8 +929,6 @@ export class ChatSync {
         baseline = applyEntries(baseline, entries, chatId);
         appendedText.push(encodeLines(entries));
         entryCount = isReset ? 1 : entryCount + entries.length;
-
-        lastHash = await hashFrame(e.frame);
         head = e.seq;
       }
 
@@ -984,7 +939,7 @@ export class ChatSync {
       // Confirm attachments before committing history/head so a failed download
       // retries on the next pull, even if no new events have arrived.
       if (baseline) await this.downloadMissingBlobs(chatId, baseline);
-      const checkpoint = encodeHistory([], { head, hash: lastHash, count: entryCount });
+      const checkpoint = encodeHistory([], { head, count: entryCount });
       const text = new Blob([enc.encode(appendedText.join("") + checkpoint)]);
       if (logWasReset) await writeBlob(historyPath(chatId), text);
       else await appendBlob(historyPath(chatId), text);
@@ -994,7 +949,6 @@ export class ChatSync {
       else this.lastSynced.delete(chatId);
       this.state.heads[chatId] = head;
       if (this.state.tombstones) delete this.state.tombstones[chatId];
-      this.state.lastFrameHash[chatId] = lastHash;
       await withChatTarget(chatId, async () => {
         if (baseline && !(await readJson(targetPath(chatId)))) {
           await writeLocalChatSnapshotUnlocked(baseline, false);

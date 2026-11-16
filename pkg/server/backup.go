@@ -1,7 +1,6 @@
 package server
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"strings"
@@ -39,22 +38,8 @@ func backupProvider(cfg *config.Config) (store.Provider, func(http.Handler) http
 			}
 		}
 		p := storeonedrive.New()
-		identity := connection.ID
-		if connection.Auth != nil {
-			identity += "\x00" + connection.Auth.Issuer + "\x00" + connection.Auth.ClientID
-		}
-		destination := fmt.Sprintf("onedrive-%x", sha256.Sum256([]byte(identity)))
 		middleware := func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// /me identifies the signed-in account for local sync state without accessing OneDrive.
-				// Match the registered pattern: r.URL.Path is decoded, so an encoded
-				// id such as "x%2Fv1%2Fme" would otherwise skip the token check.
-				if strings.HasSuffix(r.Pattern, "/v1/me") {
-					w.Header().Set("X-Backup-Destination", destination)
-					w.Header().Set("Cache-Control", "no-store")
-					next.ServeHTTP(w, r)
-					return
-				}
 				token := ""
 				if value, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 					token = value

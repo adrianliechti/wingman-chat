@@ -93,14 +93,14 @@ export function completeChatIndexRepair(id: string): Promise<void> {
 }
 
 /** The caller holds the chat target lock through snapshot and index commits. */
-export async function withChatIndexUpdate(id: string, operation: () => Promise<void>): Promise<void> {
+async function withChatIndexUpdate(id: string, operation: () => Promise<void>): Promise<void> {
   await writeJson(repairPath(id), { id });
   await operation();
   await completeChatIndexRepair(id);
 }
 
 /** Shared by local saves, recovery, and incoming backup changes. */
-export function storeChatIndexEntry(chat: StoredChat): Promise<void> {
+function storeChatIndexEntry(chat: StoredChat): Promise<void> {
   const entry: IndexEntry = {
     id: chat.id,
     projectId: chat.projectId,
@@ -117,7 +117,6 @@ export function storeChatIndexEntry(chat: StoredChat): Promise<void> {
 
 interface ChatCheckpoint {
   head: number;
-  hash: string;
   count: number;
 }
 
@@ -130,7 +129,7 @@ export function encodeHistory(entries: LogEntry[], checkpoint: ChatCheckpoint): 
   return encodeLines(entries) + JSON.stringify({ type: "checkpoint", ...checkpoint }) + "\n";
 }
 
-export async function readChatHistory(id: string, known?: { head: number; hash: string; chat: StoredChat }) {
+export async function readChatHistory(id: string, known?: { head: number; chat: StoredChat }) {
   const file = await readBlob(chatHistoryPath(id));
   if (!file?.size) return undefined;
   // Check only the trailing checkpoint before deciding whether to replay a
@@ -141,10 +140,9 @@ export async function readChatHistory(id: string, known?: { head: number; hash: 
   let checkpoint: ChatCheckpoint | undefined;
   if (start === 0 || boundary >= 0) {
     const last = JSON.parse(tail.slice(boundary + 1)) as HistoryEntry;
-    if (last.type === "checkpoint") checkpoint = { head: last.head, hash: last.hash, count: last.count };
+    if (last.type === "checkpoint") checkpoint = { head: last.head, count: last.count };
   }
-  if (known && checkpoint?.head === known.head && checkpoint.hash === known.hash)
-    return { chat: known.chat, checkpoint };
+  if (known && checkpoint?.head === known.head) return { chat: known.chat, checkpoint };
 
   const entries: LogEntry[] = [];
   for (const entry of decodeLines(await file.text()) as HistoryEntry[]) {

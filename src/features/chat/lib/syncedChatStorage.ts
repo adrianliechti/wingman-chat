@@ -7,7 +7,7 @@ function uploadPending(): void {
   void storeSession
     .initSession()
     .then(async (session) => {
-      if (session.status === "ready" || session.status === "upload-only") await session.sync.flushPending();
+      if (session.status === "ready") await session.sync.flushPending();
     })
     .catch((error) => console.warn("Couldn't back up pending chats", error));
 }

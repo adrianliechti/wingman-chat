@@ -11,7 +11,7 @@ async function configure(page: Page, online?: boolean, store = true) {
       json: { models: [], ...(online ? { backup: { provider: "onedrive" } } : {}), ...(store ? { store: {} } : {}) },
     }),
   );
-  await page.route("**/api/v1/**", (route) => {
+  await page.route(/\/api\/v1\/|\/me$/, (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/backup/usage")) return route.fulfill({ json: { bytes: 12949914 } });
@@ -41,7 +41,7 @@ test("PIN setup stays visible until the optional passkey step is ready", async (
     provisioningStarted = resolve;
   });
   await page.route("**/api/v1/keystore", async (route) => {
-    if (route.request().method() === "PUT" && route.request().postDataJSON().backup) {
+    if (route.request().method() === "PUT") {
       provisioningStarted();
       await provisioning;
     }

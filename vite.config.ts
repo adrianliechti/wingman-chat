@@ -1,6 +1,7 @@
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import type { ProxyOptions } from "vite";
 import { defineConfig } from "vite-plus";
 import { configDefaults } from "vitest/config";
 import { artifactLibrarySourcesPlugin } from "./scripts/artifact-library-sources";
@@ -19,6 +20,17 @@ const wingmanUser = process.env.WINGMAN_USER || "default";
 const wingmanHeaders: Record<string, string> = {
   Authorization: `Bearer ${wingmanToken}`,
   "X-Forwarded-User": wingmanUser,
+};
+
+const impersonate: ProxyOptions["configure"] = (proxy) => {
+  proxy.on("proxyReq", (proxyReq, req) => {
+    if (!req.headers.authorization) {
+      proxyReq.setHeader("Authorization", wingmanHeaders.Authorization);
+    }
+    if (!req.headers["x-forwarded-user"]) {
+      proxyReq.setHeader("X-Forwarded-User", wingmanHeaders["X-Forwarded-User"]);
+    }
+  });
 };
 
 // https://vite.dev/config/
@@ -68,16 +80,12 @@ export default defineConfig({
         ws: true,
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api/, ""),
-        configure: (proxy) => {
-          proxy.on("proxyReq", (proxyReq, req) => {
-            if (!req.headers.authorization) {
-              proxyReq.setHeader("Authorization", wingmanHeaders.Authorization);
-            }
-            if (!req.headers["x-forwarded-user"]) {
-              proxyReq.setHeader("X-Forwarded-User", wingmanHeaders["X-Forwarded-User"]);
-            }
-          });
-        },
+        configure: impersonate,
+      },
+      "^/me$": {
+        target: wingmanUrl,
+        changeOrigin: true,
+        configure: impersonate,
       },
     },
   },

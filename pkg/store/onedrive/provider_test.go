@@ -47,7 +47,7 @@ func readAll(t *testing.T, r io.ReadCloser, err error) []byte {
 
 func TestBackupRoundTripAndConflicts(t *testing.T) {
 	p, _ := newTestProvider(t)
-	key := []byte(`{ "version": 2, "backup": {"publicKey":"public","encryptedPrivateKey":"private"} }`)
+	key := []byte(`{"accountId":"a","generation":"g"}`)
 	var keyETag, fileETag string
 	withSession(func(ctx context.Context) {
 		var err error
@@ -61,8 +61,8 @@ func TestBackupRoundTripAndConflicts(t *testing.T) {
 		if err != nil || !bytes.Equal(data, key) || etag != keyETag {
 			t.Fatalf("keystore: %s %s %v", data, etag, err)
 		}
-		if _, err = p.PutKeystore(ctx, []byte(`{"version":2}`), etag); !errors.Is(err, store.ErrKeystoreConflict) {
-			t.Fatalf("lost envelope accepted: %v", err)
+		if _, err = p.PutKeystore(ctx, []byte(`{"accountId":"a"}`), etag); !errors.Is(err, store.ErrKeystoreConflict) {
+			t.Fatalf("lost generation accepted: %v", err)
 		}
 		if _, err = p.PutKeystore(ctx, key, "*"); !errors.Is(err, store.ErrKeystoreConflict) {
 			t.Fatalf("create overwrite: %v", err)
@@ -116,7 +116,7 @@ func TestBackupRoundTripAndConflicts(t *testing.T) {
 		}
 	})
 	ctx := WithToken(context.Background(), "graph-token")
-	if err := p.ResetUser(ctx, newObject()); err != nil {
+	if err := p.ResetUser(ctx); err != nil {
 		t.Fatal(err)
 	}
 	withSession(func(ctx context.Context) {
@@ -126,19 +126,22 @@ func TestBackupRoundTripAndConflicts(t *testing.T) {
 	})
 }
 
-func TestKeystoreKeepsAccountID(t *testing.T) {
+func TestKeystoreKeepsIdentity(t *testing.T) {
 	p, _ := newTestProvider(t)
 	withSession(func(ctx context.Context) {
-		etag, err := p.PutKeystore(ctx, []byte(`{"version":2,"accountId":"a"}`), "*")
+		etag, err := p.PutKeystore(ctx, []byte(`{"accountId":"a","generation":"g"}`), "*")
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, next := range []string{`{"version":2}`, `{"version":2,"accountId":"b"}`} {
+		for _, next := range []string{`{"generation":"g"}`, `{"accountId":"b","generation":"g"}`, `{"accountId":"a","generation":"h"}`} {
 			if _, err := p.PutKeystore(ctx, []byte(next), etag); !errors.Is(err, store.ErrKeystoreConflict) {
-				t.Fatalf("account ID replaced by %s: %v", next, err)
+				t.Fatalf("identity replaced by %s: %v", next, err)
 			}
 		}
-		if _, err := p.PutKeystore(ctx, []byte(`{"version":2,"accountId":"a","kid":2}`), etag); err != nil {
+		if _, err := p.PutKeystore(ctx, []byte(`{"accountId":"a","generation":"g"}`), ""); !errors.Is(err, store.ErrKeystoreConflict) {
+			t.Fatalf("unconditional keystore write accepted: %v", err)
+		}
+		if _, err := p.PutKeystore(ctx, []byte(`{"accountId":"a","generation":"g","note":2}`), etag); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -295,7 +298,9 @@ func TestBackupHTTPAPI(t *testing.T) {
 		r.Header.Set("X-Backup-Generation", "test-generation")
 		r.Header.Set("X-Expected-Seq", "0")
 		r.Header.Set("X-Confirm-Backup-Reset", "true")
-		r.Header.Set("X-Backup-Reset-ID", "test-reset-1234")
+		if path == "keystore" {
+			r.Header.Set("If-None-Match", "*")
+		}
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
 		if w.Code != expected {
@@ -307,9 +312,8 @@ func TestBackupHTTPAPI(t *testing.T) {
 	call("GET", "chats", "", 403)
 	encode := func(size int) string { return base64.StdEncoding.EncodeToString(make([]byte, size)) }
 	key, _ := json.Marshal(map[string]any{
-		"version": 2, "kid": 1, "accountId": "0123456789abcdef0123456789abcdef", "pinProtected": true, "wrappedDek": encode(48), "nonce": encode(12),
-		"kdf":    map[string]any{"name": "argon2id", "salt": encode(16), "m": 65536, "t": 3, "p": 1},
-		"backup": map[string]any{"generation": "test-generation", "publicKey": "public", "encryptedPrivateKey": "private"},
+		"accountId": "0123456789abcdef0123456789abcdef", "generation": "test-generation", "pinProtected": true, "wrappedDek": encode(48), "nonce": encode(12),
+		"kdf": map[string]any{"name": "argon2id", "salt": encode(16), "m": 65536, "t": 3, "p": 1},
 	})
 	call("PUT", "keystore", string(key), 204)
 	call("POST", "chats/chat-1234/events", `{"id":"event-1234","frame":"ciphertext"}`, 200)
@@ -359,7 +363,7 @@ func TestMissingRemoteBlobCanBeReuploaded(t *testing.T) {
 func TestHTTPRestoreRejectsInterruptedSegmentDownload(t *testing.T) {
 	p, graph := newTestProvider(t)
 	withSession(func(ctx context.Context) {
-		key := []byte(`{"version":2,"kid":1,"accountId":"0123456789abcdef0123456789abcdef","backup":{"generation":"test-generation"},"passkeyProtected":true,"passkey":{"credentialId":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","rpId":"localhost","salt":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","nonce":"AAAAAAAAAAAAAAAA","wrappedDek":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}`)
+		key := []byte(`{"accountId":"0123456789abcdef0123456789abcdef","generation":"test-generation","passkeyProtected":true,"passkey":{"credentialId":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","rpId":"localhost","salt":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","nonce":"AAAAAAAAAAAAAAAA","wrappedDek":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}`)
 		if _, err := p.PutKeystore(ctx, key, "*"); err != nil {
 			t.Fatal(err)
 		}

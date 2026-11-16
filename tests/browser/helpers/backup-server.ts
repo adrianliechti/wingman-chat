@@ -48,7 +48,7 @@ export const test = base.extend<{}, { backupServer: string }>({
           .poll(
             async () => {
               if (child?.exitCode !== null) throw new Error(`Backup server exited: ${logs}`);
-              return fetch(`${url}/api/v1/me`, { headers: { "X-Forwarded-User": "health-check" } })
+              return fetch(`${url}/me`, { headers: { "X-Forwarded-User": "health-check" } })
                 .then((response) => response.status)
                 .catch(() => 0);
             },

@@ -1,6 +1,12 @@
-import { beforeEach, expect, it, vi } from "vitest";
-import { completePendingBackupReset } from "./backupReset";
-import { BACKUP_RESET_KEY } from "./backupLifecycle";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  assertWorkspaceOwner,
+  completePendingBackupReset,
+  prepareBackupAccount,
+  recordBackupAccount,
+} from "./backupReset";
+import { BACKUP_GENERATION_KEY, BACKUP_RESET_KEY, WORKSPACE_OWNER_KEY } from "./backupLifecycle";
+import { readJson, writeJson } from "./opfs-core";
 import { resetLocalBackupState } from "./chatSync";
 import { resetBackup } from "./storeClient";
 import { forgetBackup } from "./rememberedBackup";
@@ -8,6 +14,7 @@ import { forgetBackup } from "./rememberedBackup";
 vi.mock("./rememberedBackup", () => ({ forgetBackup: vi.fn() }));
 
 vi.mock("./chatSync", () => ({ resetLocalBackupState: vi.fn() }));
+vi.mock("./opfs-core", () => ({ readJson: vi.fn(), writeJson: vi.fn() }));
 vi.mock("./storeClient", () => ({ resetBackup: vi.fn(), fetchMe: vi.fn() }));
 vi.mock("./persistence", () => ({
   flushPersistence: vi.fn(),
@@ -25,7 +32,7 @@ beforeEach(() => {
 });
 
 it("retries failed local cleanup without deleting a new online backup", async () => {
-  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete", resetId: "reset-1234" }));
+  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete" }));
   vi.mocked(resetLocalBackupState).mockRejectedValueOnce(new Error("disk unavailable"));
   await expect(completePendingBackupReset("alice")).rejects.toThrow("disk unavailable");
   expect(JSON.parse(localStorage.getItem(BACKUP_RESET_KEY)!)).toEqual({ userId: "alice", phase: "local" });
@@ -37,26 +44,71 @@ it("retries failed local cleanup without deleting a new online backup", async ()
 });
 
 it("does not reset a different signed-in account", async () => {
-  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete", resetId: "reset-1234" }));
+  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete" }));
   await expect(completePendingBackupReset("bob")).rejects.toThrow("Sign in to the account");
   expect(resetBackup).not.toHaveBeenCalled();
   expect(resetLocalBackupState).not.toHaveBeenCalled();
 });
 
 it("preserves the pending reset when server deletion fails", async () => {
-  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete", resetId: "reset-1234" }));
+  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete" }));
   vi.mocked(resetBackup).mockRejectedValueOnce(new Error("offline"));
   await expect(completePendingBackupReset("alice")).rejects.toThrow("offline");
   expect(JSON.parse(localStorage.getItem(BACKUP_RESET_KEY)!).phase).toBe("delete");
   expect(resetLocalBackupState).not.toHaveBeenCalled();
 });
 
-it("reuses the same reset ID after an uncertain server response", async () => {
-  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete", resetId: "reset-1234" }));
-  vi.mocked(resetBackup).mockRejectedValueOnce(new Error("connection lost"));
-  await expect(completePendingBackupReset("alice")).rejects.toThrow("connection lost");
-  expect(JSON.parse(localStorage.getItem(BACKUP_RESET_KEY)!).resetId).toBe("reset-1234");
-  await completePendingBackupReset("alice");
-  expect(resetBackup).toHaveBeenNthCalledWith(1, "reset-1234");
-  expect(resetBackup).toHaveBeenNthCalledWith(2, "reset-1234");
+it("binds the local workspace to its first account", async () => {
+  await assertWorkspaceOwner("alice");
+  await assertWorkspaceOwner("alice");
+  await expect(assertWorkspaceOwner("bob")).rejects.toThrow(/another account/);
+  expect(localStorage.getItem(WORKSPACE_OWNER_KEY)).toBe("alice");
+});
+
+it("blocks a different account's existing sync state", async () => {
+  vi.mocked(readJson).mockResolvedValue({ userId: "bob" });
+  await expect(assertWorkspaceOwner("alice")).rejects.toThrow(/another account/);
+  expect(localStorage.getItem(WORKSPACE_OWNER_KEY)).toBeNull();
+});
+
+describe("backup account tracking", () => {
+  let files: Map<string, unknown>;
+  beforeEach(() => {
+    files = new Map();
+    vi.mocked(readJson).mockImplementation(async (path: string) => (files.get(path) ?? null) as never);
+    vi.mocked(writeJson).mockImplementation(async (path: string, value: unknown) => void files.set(path, value));
+  });
+
+  it("keeps tracking for the recorded backup", async () => {
+    await recordBackupAccount("account-a");
+    files.set("_sync/state.json", { userId: "alice", heads: { chat: 3 } });
+    expect(await prepareBackupAccount("account-a")).toBe(true);
+    expect(resetLocalBackupState).not.toHaveBeenCalled();
+  });
+
+  it("clears tracking from another backup instead of treating its chats as deleted", async () => {
+    await recordBackupAccount("account-a");
+    expect(await prepareBackupAccount("account-b")).toBe(false);
+    expect(forgetBackup).toHaveBeenCalledOnce();
+    expect(resetLocalBackupState).toHaveBeenCalledOnce();
+    expect(localStorage.getItem(BACKUP_GENERATION_KEY)).not.toBeNull();
+  });
+
+  it("clears tracking when the server has no backup", async () => {
+    await recordBackupAccount("account-a");
+    expect(await prepareBackupAccount(null)).toBe(false);
+    expect(resetLocalBackupState).toHaveBeenCalledOnce();
+  });
+
+  it("clears unrecorded baselines only when the server has no backup", async () => {
+    files.set("_sync/files.json", { userId: "alice", entries: {} });
+    files.set("_sync/state.json", { userId: "alice", heads: {} });
+    expect(await prepareBackupAccount(null)).toBe(true);
+    expect(await prepareBackupAccount("account-a")).toBe(true);
+    files.set("_sync/state.json", { userId: "alice", heads: { chat: 3 } });
+    expect(await prepareBackupAccount("account-a")).toBe(true);
+    expect(resetLocalBackupState).not.toHaveBeenCalled();
+    expect(await prepareBackupAccount(null)).toBe(false);
+    expect(resetLocalBackupState).toHaveBeenCalledOnce();
+  });
 });

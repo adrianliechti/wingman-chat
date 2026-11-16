@@ -473,7 +473,7 @@ it("defers online retention until reconciliation instead of deleting a stale sta
   const expired = { ...chat("expired"), updated: new Date("2000-01-01") };
   await storeChat(expired);
   await storeChat(chat("recent"));
-  await opfs.writeJson("_sync/state.json", { userId: "user", heads: { expired: 1 }, lastFrameHash: {} });
+  await opfs.writeJson("_sync/state.json", { userId: "user", heads: { expired: 1 } });
   await opfs.writeText("drafts/chat-expired/draft.json", "{}");
   expect((await loadChatIndex()).map((entry) => entry.id)).toEqual(["recent", "expired"]);
   expect(await opfs.fileExists("chats/expired/chat.json")).toBe(true);

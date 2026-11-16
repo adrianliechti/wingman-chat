@@ -18,7 +18,7 @@ func TestResetRecoversCorruptIndex(t *testing.T) {
 				t.Fatal(err)
 			}
 			graph.Folders["backup"][indexName] = []byte(content)
-			if err := p.ResetUser(testSession(), newObject()); err != nil {
+			if err := p.ResetUser(testSession()); err != nil {
 				t.Fatalf("cannot reset corrupt backup: %v", err)
 			}
 			files, err := p.ListFiles(testSession())
@@ -44,7 +44,7 @@ func TestCorruptIndexResetDoesNotDeleteConcurrentReplacement(t *testing.T) {
 	p.client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if !replaced && strings.HasSuffix(r.URL.Path, "/children") && r.Method == "GET" {
 			replaced = true
-			if err := writer.ResetUser(testSession(), newObject()); err != nil {
+			if err := writer.ResetUser(testSession()); err != nil {
 				return nil, err
 			}
 			if _, err := writer.PutObject(testSession(), store.FileObject, "new-file1", strings.NewReader("new"), "*"); err != nil {
@@ -53,44 +53,12 @@ func TestCorruptIndexResetDoesNotDeleteConcurrentReplacement(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession(), newObject()); !errors.Is(err, store.ErrBackupConflict) {
+	if err := p.ResetUser(testSession()); !errors.Is(err, store.ErrBackupConflict) {
 		t.Fatalf("stale reset succeeded: %v", err)
 	}
 	reader, _, err := writer.GetObject(testSession(), store.FileObject, "new-file1")
 	if got := string(readAll(t, reader, err)); got != "new" {
 		t.Fatalf("reset deleted concurrent backup: %q", got)
-	}
-}
-
-func TestResetRetryDoesNotEraseNewBackup(t *testing.T) {
-	p, _ := newTestProvider(t)
-	if err := p.ResetUser(testSession(), "reset-first-1234"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := p.PutObject(testSession(), store.FileObject, "new-file1", strings.NewReader("new"), "*"); err != nil {
-		t.Fatal(err)
-	}
-	// An unacknowledged response must not make this retry reset the new backup.
-	if err := p.ResetUser(testSession(), "reset-first-1234"); err != nil {
-		t.Fatal(err)
-	}
-	reader, _, err := p.GetObject(testSession(), store.FileObject, "new-file1")
-	if got := string(readAll(t, reader, err)); got != "new" {
-		t.Fatalf("retry removed new data: %q", got)
-	}
-	// Remember old IDs across later resets as well.
-	if err := p.ResetUser(testSession(), "reset-second-1234"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := p.PutObject(testSession(), store.FileObject, "new-file2", strings.NewReader("newer"), "*"); err != nil {
-		t.Fatal(err)
-	}
-	if err := p.ResetUser(testSession(), "reset-first-1234"); err != nil {
-		t.Fatal(err)
-	}
-	reader, _, err = p.GetObject(testSession(), store.FileObject, "new-file2")
-	if got := string(readAll(t, reader, err)); got != "newer" {
-		t.Fatalf("old retry removed new data: %q", got)
 	}
 }
 
@@ -105,7 +73,7 @@ func TestResetSucceedsWhenOldObjectCleanupFails(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession(), "reset-cleanup-1234"); err != nil {
+	if err := p.ResetUser(testSession()); err != nil {
 		t.Fatal(err)
 	}
 	files, err := p.ListFiles(testSession())

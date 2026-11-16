@@ -21,7 +21,7 @@ const REQUEST_TIMEOUT_MS = 60_000;
 const TRANSFER_TIMEOUT_MS = 10 * 60_000;
 
 async function storeFetch(input: string, init?: RequestInit): Promise<Response> {
-  if (!isBackupSessionCurrent() && !input.endsWith("/me")) {
+  if (!isBackupSessionCurrent()) {
     throw new Error("Backup reset in progress. Reload before syncing.");
   }
   const headers = new Headers(init?.headers);
@@ -45,17 +45,16 @@ function conditionalHeaders(opts: ConditionalOptions, base: Record<string, strin
 }
 
 /** Only the signed-in account is needed; restore secrets may have been lost. */
-export async function resetBackup(resetId: string): Promise<void> {
+export async function resetBackup(): Promise<void> {
   const res = await fetch(`${PREFIX}/backup`, {
     method: "DELETE",
-    headers: { "X-Confirm-Backup-Reset": "true", "X-Backup-Reset-ID": resetId },
+    headers: { "X-Confirm-Backup-Reset": "true" },
   });
   await ensureOk(res);
 }
 
 interface ServerUser {
   id: string;
-  backupDestination: string;
 }
 
 interface ServerChatMeta {
@@ -100,10 +99,14 @@ async function fetchOrThrow(input: string, init?: RequestInit): Promise<Response
   return ensureOk(await storeFetch(input, init));
 }
 
+/** The signed-in account, served by /me outside the backup API. */
 export async function fetchMe(): Promise<ServerUser> {
-  const res = await fetchOrThrow(`${PREFIX}/me`);
-  const user: ServerUser = await res.json();
-  return { ...user, backupDestination: res.headers.get("X-Backup-Destination") ?? "" };
+  const res = await ensureOk(
+    await fetch("/me", { cache: "no-store", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }),
+  );
+  const user: Partial<ServerUser> = await res.json();
+  if (!user.id) throw new ServerError(401, "Sign in to use online backup.");
+  return { id: user.id };
 }
 
 export async function getKeystore(): Promise<KeystoreResponse | null> {
@@ -113,10 +116,10 @@ export async function getKeystore(): Promise<KeystoreResponse | null> {
   return { data: await res.text(), etag };
 }
 
-type PutKeystoreOptions = ConditionalOptions;
+type PutKeystoreOptions = { ifMatch: string; ifNoneMatch?: never } | { ifMatch?: never; ifNoneMatch: "*" };
 
 /** Returns the new ETag, or throws ServerError(412) on CAS mismatch. */
-export async function putKeystore(json: string, opts: PutKeystoreOptions = {}): Promise<string> {
+export async function putKeystore(json: string, opts: PutKeystoreOptions): Promise<string> {
   const headers = conditionalHeaders(opts, { "Content-Type": "application/json" });
   const res = await storeFetch(`${PREFIX}/keystore`, { method: "PUT", headers, body: json });
   if (res.status === 412) throw new ServerError(412, "keystore conflict");

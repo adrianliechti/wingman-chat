@@ -18,11 +18,11 @@ async function expectStableSyncHeight(page: Page) {
   await page.setViewportSize(originalViewport);
 }
 
-// Exercise upload-only sessions separately from the UI action that stops all sync.
-async function enterUploadOnlyMode(page: Page) {
+// Forget this device's remembered key without the UI action that stops all sync.
+async function forgetDevice(page: Page) {
   await page.evaluate(() => window.syncSecurityE2E.forgetUnlock());
   await page.reload();
-  await expect(page.getByText("Backup is running", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true })).toBeVisible();
 }
 
 test("PIN and passkey protection survive reload and permit PIN changes", async ({ page, context, browserName }) => {
@@ -49,7 +49,7 @@ test("PIN and passkey protection survive reload and permit PIN changes", async (
   await context.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
   );
-  await context.route("**/api/v1/**", async (route) => {
+  await context.route(/\/api\/v1\/|\/me$/, async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
@@ -129,7 +129,6 @@ test("PIN and passkey protection survive reload and permit PIN changes", async (
     await expect(tab.getByRole("button", { name: "Turn on backup", exact: true })).toHaveCount(0);
     await expect(tab.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true })).toBeVisible();
     expect(await tab.evaluate(() => window.syncSecurityE2E.sessionStatus())).toBe("locked");
-    expect(await tab.evaluate(() => window.syncSecurityE2E.uploadCache())).toBeUndefined();
   }
   await page.evaluate(() => window.syncSecurityE2E.save("chats/stopped/artifacts/local.txt", "kept locally"));
   await page.waitForTimeout(2200);
@@ -146,21 +145,14 @@ test("PIN and passkey protection survive reload and permit PIN changes", async (
   await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Backup options", exact: true })).toBeVisible();
-  await enterUploadOnlyMode(page);
-  await page.reload();
-  await expect(page.getByText("Backup is running", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true })).toBeVisible();
-  await expectStableSyncHeight(page);
   await page.evaluate(() => window.syncSecurityE2E.save("agents/upload-test/AGENTS.md", "automatically uploaded"));
   await expect.poll(() => files.size).toBe(1);
-  expect([...files.values()][0].bytes[0]).toBe(3);
   expect(fileDownloads).toBe(0);
-  expect(Object.keys((await page.evaluate(() => window.syncSecurityE2E.uploadCache())) as object).sort()).toEqual([
-    "kid",
-    "publicKey",
-    "userId",
-  ]);
-  // Simulate a new browser with no local data or trusted public-key cache.
+  await forgetDevice(page);
+  await page.evaluate(() => window.syncSecurityE2E.save("agents/locked/AGENTS.md", "kept locally"));
+  await page.waitForTimeout(2200);
+  expect(files.size).toBe(1);
+  // Simulate a new browser with no local data.
   await page.evaluate(() => window.syncSecurityE2E.clear());
   await page.reload();
   await expect(page.getByText("Ready to restore", { exact: true })).toBeVisible();
@@ -196,8 +188,7 @@ test("PIN and passkey protection survive reload and permit PIN changes", async (
   expect(stored).toHaveProperty("passkey");
   await page.reload();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
-  await enterUploadOnlyMode(page);
-  await page.reload();
+  await forgetDevice(page);
   await expect(page.getByLabel("PIN", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Use PIN instead", exact: true }).click();
   await expect(page.getByLabel("PIN", { exact: true })).toBeFocused();
@@ -218,7 +209,7 @@ test("initialization failures show the backend error", async ({ page }) => {
   await page.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
   );
-  await page.route("**/api/v1/me", (route) => route.fulfill({ status: 401, body: "unauthorized" }));
+  await page.route("**/me", (route) => route.fulfill({ status: 401, body: "unauthorized" }));
   await page.goto("/tests/browser/fixtures/sync-security.html");
   await expect(page.getByText("401: unauthorized", { exact: true })).toBeVisible();
 });
@@ -230,7 +221,7 @@ test("new backups stay local until PIN protection is configured", async ({ page 
   await page.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
   );
-  await page.route("**/api/v1/**", (route) => {
+  await page.route(/\/api\/v1\/|\/me$/, (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
@@ -275,44 +266,6 @@ test("new backups stay local until PIN protection is configured", async ({ page 
   await expect(page.getByRole("button", { name: "Remove PIN", exact: true })).toHaveCount(0);
 });
 
-test("PIN setup recovers when protection saves but backup key provisioning fails", async ({ page }) => {
-  let key: Record<string, unknown> | null = null;
-  let revision = 0;
-  let failProvisioning = true;
-  await page.route("**/config.json", (route) =>
-    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
-  );
-  await page.route("**/api/v1/**", (route) => {
-    const request = route.request();
-    const path = new URL(request.url()).pathname;
-    if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (!path.endsWith("/keystore")) return route.fulfill({ json: [] });
-    if (request.method() === "GET")
-      return key ? route.fulfill({ json: key, headers: { ETag: `"${revision}"` } }) : route.fulfill({ status: 404 });
-    const next = request.postDataJSON() as Record<string, unknown>;
-    if (next.backup && failProvisioning) {
-      failProvisioning = false;
-      return route.fulfill({ status: 500, body: "Temporary provisioning failure" });
-    }
-    if (key) expect(request.headers()["if-match"]).toBe(`"${revision}"`);
-    key = next;
-    revision++;
-    return route.fulfill({ status: 204, headers: { ETag: `"${revision}"` } });
-  });
-  await page.goto("http://localhost:4175/tests/browser/fixtures/sync-security.html");
-  await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
-  await page.getByLabel("New PIN", { exact: true }).fill("12345678");
-  await page.getByLabel("Confirm PIN", { exact: true }).fill("12345678");
-  await page.getByRole("button", { name: "Create PIN", exact: true }).click();
-  await expect(page.getByText("Ready to restore", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("PIN", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
-  await page.getByLabel("PIN", { exact: true }).fill("12345678");
-  await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
-  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
-  expect(revision).toBe(2);
-});
-
 test("reset confirms deletion, keeps local files, resets other tabs, and permits fresh backups", async ({
   page,
   context,
@@ -325,7 +278,7 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
   await context.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
   );
-  await context.route("**/api/v1/**", (route) => {
+  await context.route(/\/api\/v1\/|\/me$/, (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
@@ -343,8 +296,17 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
       revision++;
       return route.fulfill({ status: 204, headers: { ETag: `"${revision}"` } });
     }
+    if (path.endsWith("/files"))
+      return route.fulfill({
+        json: [...files].map(([file, entry]) => ({
+          id: file.split("/").at(-1),
+          etag: entry.etag,
+          size: entry.bytes.length,
+          updated: new Date().toISOString(),
+        })),
+      });
     if (request.method() === "PUT" && path.includes("/files/")) {
-      expect(key?.backup).toBeTruthy();
+      expect(key?.generation).toBeTruthy();
       expect(request.headers()["x-backup-key"]).toBeUndefined();
       uploads++;
       files.set(path, { bytes: request.postDataBuffer()!, etag: String(uploads) });
@@ -360,15 +322,14 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
   await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
-  await enterUploadOnlyMode(page);
-  const originalPublicKey = (key!.backup as { publicKey: string }).publicKey;
+  const originalGeneration = key!.generation;
   await page.evaluate(() => window.syncSecurityE2E.save("agents/keep/AGENTS.md", "keep me"));
   await expect.poll(() => uploads).toBe(1);
   await page.reload();
-  await expect(page.getByText("Backup is running", { exact: true })).toBeVisible();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   const other = await context.newPage();
   await other.goto(fixture);
-  await expect(other.getByText("Backup is running", { exact: true })).toBeVisible();
+  await expect(other.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Danger zone", exact: true }).click();
   await page.getByRole("button", { name: "Reset online backup", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("Local chats and files stay on this browser");
@@ -382,7 +343,6 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
   expect(resets).toBe(1);
   expect(key).toBeNull();
   expect(files.size).toBe(0);
-  expect(await page.evaluate(() => window.syncSecurityE2E.uploadCache())).toBeUndefined();
   expect(await page.evaluate(() => window.syncSecurityE2E.read("agents/keep/AGENTS.md"))).toBe("keep me");
   await other.close();
   await page.reload();
@@ -395,7 +355,7 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await expect.poll(() => uploads).toBe(2);
-  expect((key!.backup as { publicKey: string }).publicKey).not.toBe(originalPublicKey);
+  expect(key!.generation).not.toBe(originalGeneration);
 });
 
 test("a failed reset preserves local data and retries on reload", async ({ page }) => {
@@ -404,7 +364,7 @@ test("a failed reset preserves local data and retries on reload", async ({ page 
   await page.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
   );
-  await page.route("**/api/v1/**", (route) => {
+  await page.route(/\/api\/v1\/|\/me$/, (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
     if (path.endsWith("/backup")) {
@@ -441,7 +401,7 @@ test("reset waits for a peer upload's local writes and fences the stale tab afte
   await context.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
   );
-  await context.route("**/api/v1/**", async (route) => {
+  await context.route(/\/api\/v1\/|\/me$/, async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
@@ -471,7 +431,6 @@ test("reset waits for a peer upload's local writes and fences the stale tab afte
   await page.getByRole("button", { name: "Create PIN", exact: true }).click();
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
-  await enterUploadOnlyMode(page);
   const peer = await context.newPage();
   // Simulate a tab whose reset notification is delayed/suppressed. Correctness
   // must come from the storage gate and generation, not the reload notification.
@@ -482,7 +441,7 @@ test("reset waits for a peer upload's local writes and fences the stale tab afte
     }),
   );
   await peer.goto("/tests/browser/fixtures/sync-security.html");
-  await expect(peer.getByText("Backup is running", { exact: true })).toBeVisible();
+  await expect(peer.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await peer.evaluate(() => window.syncSecurityE2E.saveChat("retained during reset"));
   await expect.poll(() => appends).toBe(1);
   await page.getByRole("button", { name: "Danger zone", exact: true }).click();
@@ -521,7 +480,7 @@ test("PIN setup validates before sending data when passkeys are unavailable", as
   await page.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
   );
-  await page.route("**/api/v1/**", (route) => {
+  await page.route(/\/api\/v1\/|\/me$/, (route) => {
     const request = route.request();
     if (request.method() !== "GET") writes++;
     const path = new URL(request.url()).pathname;
@@ -557,7 +516,7 @@ test("danger zone stays at the bottom and scrolls with the whole section in shor
   await page.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
   );
-  await page.route("**/api/v1/**", (route) => {
+  await page.route(/\/api\/v1\/|\/me$/, (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
     if (path.endsWith("/keystore")) return route.fulfill({ status: 404 });
@@ -592,7 +551,7 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
   await page.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
   );
-  await page.route("**/api/v1/**", (route) => {
+  await page.route(/\/api\/v1\/|\/me$/, (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: userId } });
@@ -644,7 +603,7 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
         };
       }),
   );
-  expect(device).toEqual({ fields: ["key", "kid", "protection", "userId"], extractable: false, exportable: false });
+  expect(device).toEqual({ fields: ["key", "protection", "userId"], extractable: false, exportable: false });
 
   await page.getByRole("button", { name: "Change PIN", exact: true }).click();
   await page.getByLabel("Current PIN", { exact: true }).fill("12345678");
@@ -677,14 +636,14 @@ test("remembered PIN devices resume sync and reject changed account or backup pr
   stored = { ...original, nonce: "different-protection" };
   const beforeProtectionChange = chatPulls;
   await page.reload();
-  await expect(page.getByRole("button", { name: "Unlock backup", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true })).toBeVisible();
   expect(chatPulls).toBe(beforeProtectionChange);
   stored = original;
   await page.reload();
-  await expect(page.getByRole("button", { name: "Unlock backup", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Unlock backup", exact: true }).click();
+  await expect(page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
   await page.getByLabel("PIN", { exact: true }).fill("87654321");
-  await page.getByRole("button", { name: "Unlock backup", exact: true }).click();
+  await page.getByRole("button", { name: /^(Unlock backup|Restore backup)$/, exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();

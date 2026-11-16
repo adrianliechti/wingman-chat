@@ -8,7 +8,7 @@ import {
   stashPendingDeletion,
   stashPendingTarget,
 } from "./chatSync";
-import { decryptEvent, encryptBlob, encryptEvent, generateDEK, hashFrame, ZERO_HASH } from "./crypto";
+import { decryptEvent, encryptBlob, encryptEvent } from "./crypto";
 import { mediaFromDataUrl, userMessage } from "./messages";
 import { collectChatBlobIds, extractChatBlobs } from "./opfs-chat";
 import { readJson, readText, writeJson, writeText } from "./opfs-core";
@@ -79,7 +79,6 @@ it("expires an incoming old backup without reviving its chat or draft", async ()
   const frame = await encryptEvent(
     dek,
     {
-      prevHash: ZERO_HASH,
       body: diffChat(null, await extractChatBlobs(old)),
     },
     "user",
@@ -99,13 +98,7 @@ it("expires an incoming old backup without reviving its chat or draft", async ()
 it("preserves an expired local baseline when its newer remote version cannot be downloaded", async () => {
   const dek = await generateStoreKey();
   const old = { ...chat(), updated: new Date("2000-01-01") };
-  const frame = await encryptEvent(
-    dek,
-    { prevHash: ZERO_HASH, body: diffChat(null, await extractChatBlobs(old)) },
-    "user",
-    "chat",
-    1,
-  );
+  const frame = await encryptEvent(dek, { body: diffChat(null, await extractChatBlobs(old)) }, "user", "chat", 1);
   vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 1, updated: "2000-01-01" }]);
   vi.mocked(api.readEvents).mockResolvedValue([{ seq: 1, id: "old", frame }]);
   await (await ChatSync.create({ userId: "user", accountId: "user", dek })).pull();
@@ -124,13 +117,7 @@ it("preserves an expired local baseline when its newer remote version cannot be 
 it("does not expire a newer confirmed version hidden by an older pending target", async () => {
   const dek = await generateStoreKey();
   const current = { ...chat(), updated: new Date() };
-  const frame = await encryptEvent(
-    dek,
-    { prevHash: ZERO_HASH, body: diffChat(null, await extractChatBlobs(current)) },
-    "user",
-    "chat",
-    1,
-  );
+  const frame = await encryptEvent(dek, { body: diffChat(null, await extractChatBlobs(current)) }, "user", "chat", 1);
   vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 1, updated: current.updated.toISOString() }]);
   vi.mocked(api.readEvents).mockResolvedValue([{ seq: 1, id: "current", frame }]);
   await (await ChatSync.create({ userId: "user", accountId: "user", dek })).pull();
@@ -160,7 +147,6 @@ it("cancels a stale offline deletion and restores the other device's newer work"
   const second = await encryptEvent(
     dek,
     {
-      prevHash: await hashFrame(first),
       body: diffChat(await extractChatBlobs(original), await extractChatBlobs(updated)),
     },
     "user",
@@ -313,7 +299,7 @@ it("reports restored chats and clears progress when a remote read fails", async 
   const dek = await generateStoreKey();
   const frame = await encryptEvent(
     dek,
-    { prevHash: ZERO_HASH, body: [{ type: "init", id: "first", created: "2026-01-01", model: null }] },
+    { body: [{ type: "init", id: "first", created: "2026-01-01", model: null }] },
     "user",
     "first",
     1,
@@ -390,14 +376,8 @@ for (const reload of [false, true]) {
       const dek = await generateStoreKey();
       const original = await extractChatBlobs(chat());
       const updated = { ...original, title: "remote update", messages: [...original.messages, userMessage("two")] };
-      const first = await encryptEvent(dek, { prevHash: ZERO_HASH, body: diffChat(null, original) }, "user", "chat", 1);
-      const second = await encryptEvent(
-        dek,
-        { prevHash: await hashFrame(first), body: diffChat(original, updated) },
-        "user",
-        "chat",
-        2,
-      );
+      const first = await encryptEvent(dek, { body: diffChat(null, original) }, "user", "chat", 1);
+      const second = await encryptEvent(dek, { body: diffChat(original, updated) }, "user", "chat", 2);
       vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 1, updated: "2026-01-02" }]);
       vi.mocked(api.readEvents).mockResolvedValue([{ seq: 1, id: "first", frame: first }]);
       const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
@@ -424,7 +404,7 @@ it("reads older histories whose final message is larger than the checkpoint read
   const value = { ...chat(), messages: [userMessage("large older message ".repeat(1000))] };
   const entries = diffChat(null, await extractChatBlobs(value));
   await writeText("chats/chat/history.jsonl", encodeLines(entries));
-  await writeJson("_sync/state.json", { userId: "user", heads: { chat: 1 }, lastFrameHash: { chat: ZERO_HASH } });
+  await writeJson("_sync/state.json", { userId: "user", heads: { chat: 1 } });
   vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 1, updated: "2026-01-02" }]);
   const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   expect(await sync.pull()).toMatchObject([value]);
@@ -473,44 +453,6 @@ it("keeps a pending edit when promoting a local-only chat", async () => {
   expect(await readLocalMirror(false)).toMatchObject([{ title: "pending" }]);
 });
 
-it("uploads a chat with only its public key and defers conflicting server changes until restore", async () => {
-  const { generateBackupKeys } = await import("./backupCrypto");
-  const pair = await generateBackupKeys();
-  const key = { kid: 1, backup: { publicKey: pair.publicKey } };
-  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: key });
-  await sync.saveChat(chat());
-  await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
-  const posted = vi.mocked(api.appendEvents).mock.calls[0][2][0];
-  const restoreKey = { ...(await generateDEK()), backup: { publicKey: pair.publicKey, privateKey: pair.privateKey } };
-  expect(await decryptEvent(restoreKey, posted.frame, "user", "chat", 1)).toMatchObject({
-    body: [{ type: "init" }, {}, {}],
-  });
-  await expect(sync.pull()).rejects.toThrow(/Unlock/);
-  vi.mocked(api.appendEvents).mockResolvedValue(null);
-  await sync.saveChat({ ...chat(), title: "offline edit" });
-  await vi.waitFor(() => expect(api.appendEvents).toHaveBeenCalledTimes(2), { timeout: 30_000 });
-  expect(api.readEvents).not.toHaveBeenCalled();
-  expect(api.listChats).not.toHaveBeenCalled();
-  expect(await readJson("chats/chat/target.json")).toMatchObject({ title: "offline edit" });
-  expect((await readLocalChat("chat", false))?.title).toBe("offline edit");
-});
-
-it("journals local chat deletions without deleting server backups while restore is locked", async () => {
-  const { generateBackupKeys } = await import("./backupCrypto");
-  const pair = await generateBackupKeys();
-  const sync = await ChatSync.create({
-    userId: "user",
-    accountId: "user",
-    dek: { kid: 1, backup: { publicKey: pair.publicKey } },
-  });
-  await sync.saveChat(chat());
-  await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
-  await sync.deleteChat("chat");
-  await sync.flushPending();
-  expect(api.deleteChat).not.toHaveBeenCalled();
-  expect(await readJson("_sync/deletes/u-user/chat.json")).toMatchObject({ id: "chat", token: expect.any(String) });
-});
-
 it("keeps local chat deletion available before backup protection setup", async () => {
   memory.put("chats/chat/chat.json", JSON.stringify(await extractChatBlobs(chat())));
   await stashPendingDeletion("chat", "user");
@@ -522,13 +464,12 @@ it("keeps local chat deletion available before backup protection setup", async (
 
 it("journals offline deletions under the persisted owner when session initialization fails", async () => {
   memory.put("chats/chat/chat.json", JSON.stringify(await extractChatBlobs(chat())));
-  await writeJson("_sync/state.json", { userId: "user", heads: { chat: 1 }, lastFrameHash: { chat: "hash" } });
+  await writeJson("_sync/state.json", { userId: "user", heads: { chat: 1 } });
   await stashPendingDeletion("chat");
   expect(await readLocalChat("chat")).toBeUndefined();
   expect(await readJson("_sync/state.json")).toMatchObject({
     userId: "user",
     heads: {},
-    lastFrameHash: {},
   });
   expect(await readJson("_sync/deletes/u-user/chat.json")).toMatchObject({ id: "chat", token: expect.any(String) });
 });
@@ -649,7 +590,7 @@ it("preserves offline edits and attachments when another device deletes the serv
     expect(await sync.pull()).toMatchObject([{ title: "offline edit" }]);
     expect(await readText("chats/chat/history.jsonl")).toBeUndefined();
     expect(await readText("chats/chat/blobs/attachment.bin")).toBe("local attachment");
-    expect(await readJson("_sync/state.json")).toMatchObject({ heads: {}, lastFrameHash: {} });
+    expect(await readJson("_sync/state.json")).toMatchObject({ heads: {} });
   } finally {
     await finishChatBackupPause(release);
   }
@@ -681,7 +622,6 @@ it("recovers a pending target after a crash between history deletion and baselin
   await writeJson("_sync/state.json", {
     userId: "user",
     heads: { chat: 17 },
-    lastFrameHash: { chat: "deleted-server-frame" },
     entriesSinceCompact: { chat: 100 },
   });
   const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
@@ -755,7 +695,7 @@ it("finishes an active upload before a local storage deletion without resurrecti
     await vi.waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith("chat", 1));
     expect(await readLocalChat("chat")).toBeUndefined();
     expect(await readLocalMirror(false)).toEqual([]);
-    expect(await readJson("_sync/state.json")).toMatchObject({ heads: {}, lastFrameHash: {} });
+    expect(await readJson("_sync/state.json")).toMatchObject({ heads: {} });
   } finally {
     finishAppend();
   }
@@ -768,7 +708,7 @@ it.each(["missing", "corrupt", "network"])(
     const value = { ...chat(), messages: [userMessage([mediaFromDataUrl("data:image/png;base64,YWJj")])] };
     const stored = await extractChatBlobs(value);
     const [blobId] = collectChatBlobIds(stored);
-    const frame = await encryptEvent(dek, { prevHash: ZERO_HASH, body: diffChat(null, stored) }, "user", "chat", 1);
+    const frame = await encryptEvent(dek, { body: diffChat(null, stored) }, "user", "chat", 1);
     memory.reset(); // Fresh device has neither the manifest nor its attachment.
     vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 1, updated: "2026-01-02" }]);
     vi.mocked(api.readEvents).mockResolvedValue([{ id: "event", seq: 1, frame }]);
@@ -810,17 +750,11 @@ it("retains shared server attachments when one of their chats is deleted", async
   expect(await readLocalChat("second", false)).toMatchObject({ id: "second" });
 });
 
-it.each(["decryption", "chain", "gap"])(
+it.each(["decryption", "misplaced", "gap"])(
   "rejects a %s failure without committing earlier frames from the batch",
   async (failure) => {
     const dek = await generateStoreKey();
-    const frame = await encryptEvent(
-      dek,
-      { prevHash: ZERO_HASH, body: diffChat(null, await extractChatBlobs(chat())) },
-      "user",
-      "chat",
-      1,
-    );
+    const frame = await encryptEvent(dek, { body: diffChat(null, await extractChatBlobs(chat())) }, "user", "chat", 1);
     const seq = failure === "gap" ? 3 : 2;
     const second =
       failure === "decryption"
@@ -828,12 +762,11 @@ it.each(["decryption", "chain", "gap"])(
         : await encryptEvent(
             dek,
             {
-              prevHash: failure === "chain" ? "wrong" : await hashFrame(frame),
               body: [{ type: "meta", title: "updated" }],
             },
             "user",
             "chat",
-            seq,
+            failure === "misplaced" ? seq + 1 : seq,
           );
     vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: seq, updated: "2026-01-02" }]);
     vi.mocked(api.readEvents).mockResolvedValue([
@@ -852,13 +785,7 @@ it.each(["decryption", "chain", "gap"])(
 
 it("rejects a complete HTTP response that omits the advertised final chat frames", async () => {
   const dek = await generateStoreKey();
-  const frame = await encryptEvent(
-    dek,
-    { prevHash: ZERO_HASH, body: diffChat(null, await extractChatBlobs(chat())) },
-    "user",
-    "chat",
-    1,
-  );
+  const frame = await encryptEvent(dek, { body: diffChat(null, await extractChatBlobs(chat())) }, "user", "chat", 1);
   vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 2, updated: "2026-01-02" }]);
   vi.mocked(api.readEvents).mockResolvedValue([{ id: "first", seq: 1, frame }]);
   const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
@@ -982,15 +909,11 @@ it.each([
       messages: Array.from({ length: messageCount }, () => userMessage("x".repeat(4_500_000))),
     };
     const stored = await extractChatBlobs(value);
-    await writeText(
-      "chats/chat/history.jsonl",
-      encodeHistory(diffChat(null, stored), { head: 1, hash: ZERO_HASH, count: 49 }),
-    );
+    await writeText("chats/chat/history.jsonl", encodeHistory(diffChat(null, stored), { head: 1, count: 49 }));
     await writeJson("chats/chat/chat.json", stored);
     await writeJson("_sync/state.json", {
       userId: "user",
       heads: { chat: 1 },
-      lastFrameHash: { chat: ZERO_HASH },
       entriesSinceCompact: { chat: 49 },
     });
     await stashPendingTarget({ ...value, title: "updated title" });

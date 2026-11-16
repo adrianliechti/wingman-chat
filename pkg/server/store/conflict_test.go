@@ -23,7 +23,7 @@ func (conflictingStore) CompactChat(context.Context, string, int64) error {
 func (conflictingStore) DeleteObject(context.Context, store.ObjectKind, string, string) error {
 	return store.ErrObjectConflict
 }
-func (conflictingStore) ResetUser(context.Context, string) error {
+func (conflictingStore) ResetUser(context.Context) error {
 	return store.ErrBackupConflict
 }
 

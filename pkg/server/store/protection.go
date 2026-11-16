@@ -14,14 +14,12 @@ import (
 // Validate the key envelope, never the encrypted contents or the user's secret.
 func protectedKeystore(data []byte) bool {
 	var key struct {
-		Version          int             `json:"version"`
-		Kid              int             `json:"kid"`
-		AccountID        string          `json:"accountId"`
-		DEK              json.RawMessage `json:"dek"`
-		PIN              bool            `json:"pinProtected"`
-		PasskeyProtected bool            `json:"passkeyProtected"`
-		Wrapped          string          `json:"wrappedDek"`
-		Nonce            string          `json:"nonce"`
+		AccountID        string `json:"accountId"`
+		Generation       string `json:"generation"`
+		PIN              bool   `json:"pinProtected"`
+		PasskeyProtected bool   `json:"passkeyProtected"`
+		Wrapped          string `json:"wrappedDek"`
+		Nonce            string `json:"nonce"`
 		KDF              struct {
 			Name   string `json:"name"`
 			Salt   string `json:"salt"`
@@ -37,10 +35,10 @@ func protectedKeystore(data []byte) bool {
 			Wrapped      string `json:"wrappedDek"`
 		} `json:"passkey"`
 	}
-	if json.Unmarshal(data, &key) != nil || key.Version != 2 || key.Kid < 1 || key.Kid > 255 || len(key.DEK) != 0 || (!key.PIN && !key.PasskeyProtected) {
+	if json.Unmarshal(data, &key) != nil || (!key.PIN && !key.PasskeyProtected) {
 		return false
 	}
-	if !accountID.MatchString(key.AccountID) {
+	if !accountID.MatchString(key.AccountID) || strings.TrimSpace(key.Generation) == "" {
 		return false
 	}
 	if key.PIN {
@@ -83,12 +81,10 @@ func (h *Handler) requireProtection(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		var envelope struct {
-			Backup struct {
-				Generation string `json:"generation"`
-			} `json:"backup"`
+			Generation string `json:"generation"`
 		}
 		_ = json.Unmarshal(key, &envelope)
-		if envelope.Backup.Generation == "" || r.Header.Get("X-Backup-Generation") != envelope.Backup.Generation {
+		if r.Header.Get("X-Backup-Generation") != envelope.Generation {
 			http.Error(w, "Backup changed. Reload and unlock before syncing", http.StatusConflict)
 			return
 		}

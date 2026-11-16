@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FileSync, type FileSyncActivity } from "./fileSync";
-import { decryptFile, encryptFile, generateDEK } from "./crypto";
+import { decryptFile, encryptFile } from "./crypto";
 import { deleteDirectory, deleteFile, readText, writeJson, writeText } from "./opfs-core";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
 import * as api from "./storeClient";
@@ -227,28 +227,6 @@ it("tracks artifact edits and file/folder/chat deletions through OPFS mutations"
     await sync.flushDirty();
     expect(api.deleteFile).toHaveBeenCalledWith(latestId, { ifMatch: "etag" });
   }
-});
-
-it("uploads binary artifacts with a public upload key and applies remote deletion after unlock", async () => {
-  const { generateBackupKeys } = await import("./backupCrypto");
-  const pair = await generateBackupKeys();
-  const path = "chats/one/artifacts/nested/data.bin";
-  const bytes = new Uint8Array([0, 255, 128, 1]);
-  memory.put(path, new Blob([bytes]));
-  sync = await FileSync.create({
-    userId: "alice",
-    accountId: "alice",
-    dek: { kid: 1, backup: { publicKey: pair.publicKey } },
-  });
-  await sync.fullSync();
-  expect(api.listFiles).not.toHaveBeenCalled();
-  const [id, cipher] = vi.mocked(api.putFile).mock.calls[0];
-  const key = { ...(await generateDEK()), backup: pair };
-  expect((await decryptFile(key, cipher, "alice", id)).bytes).toEqual(bytes);
-  sync.setKey(key);
-  await sync.fullSync();
-  expect(await readText(path)).toBeUndefined();
-  expect(api.putFile).toHaveBeenCalledOnce();
 });
 
 it("keeps nested directory version markers out of the file upload queue", async () => {

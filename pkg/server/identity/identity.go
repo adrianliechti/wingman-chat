@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// User is served by /me. ID is a hash of X-Forwarded-User, so the raw proxy
+// User.ID is served by /me. It is a hash of X-Forwarded-User, so the raw proxy
 // subject is never exposed to the browser.
 type User struct {
 	ID string `json:"id"`

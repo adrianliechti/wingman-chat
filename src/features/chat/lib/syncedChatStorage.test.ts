@@ -33,8 +33,8 @@ it.each(["setup", "locked", "error", "disabled"])(
   },
 );
 
-it.each(["ready", "upload-only"])("backs up committed local deletions while backup is %s", async (status) => {
-  initSession.mockResolvedValue({ status, sync: { flushPending } });
+it("backs up committed local deletions while backup is ready", async () => {
+  initSession.mockResolvedValue({ status: "ready", sync: { flushPending } });
   await syncedChatStorage.remove("deleted");
   await vi.waitFor(() => expect(flushPending).toHaveBeenCalledOnce());
   expect(removeChat).toHaveBeenCalledWith("deleted");

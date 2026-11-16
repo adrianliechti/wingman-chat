@@ -4,23 +4,14 @@ import type { SyncActivity } from "@/shared/lib/chatSync";
 import type { FileSyncActivity } from "@/shared/lib/fileSync";
 import type { SyncProgress } from "@/shared/lib/syncProgress";
 
-type SessionStatus = "disabled" | "initializing" | "setup" | "locked" | "upload-only" | "ready" | "error";
+type SessionStatus = "disabled" | "initializing" | "setup" | "locked" | "ready" | "error";
 
 /** One word the UI can trust: is everything on the server or not. */
-export type SyncHealth =
-  | "setup"
-  | "disabled"
-  | "connecting"
-  | "locked"
-  | "error"
-  | "syncing"
-  | "pending"
-  | "upload-only"
-  | "synced";
+export type SyncHealth = "setup" | "disabled" | "connecting" | "locked" | "error" | "syncing" | "pending" | "synced";
 
 /** States that need the user to act before backups run normally. */
 export function needsAttention(health: SyncHealth): boolean {
-  return health === "error" || health === "locked" || health === "setup" || health === "upload-only";
+  return health === "error" || health === "locked" || health === "setup";
 }
 
 interface SyncStatus {
@@ -51,7 +42,7 @@ function computeHealth(session: SessionStatus, chat: SyncActivity | null, files:
   if (chat?.lastError || files?.lastError) return "error";
   if (chat?.syncing || files?.syncing) return "syncing";
   if ((chat?.pendingCount ?? 0) + (files?.pendingCount ?? 0) > 0) return "pending";
-  return session === "upload-only" ? "upload-only" : "synced";
+  return "synced";
 }
 
 export function useSyncStatus(): SyncStatus {
@@ -72,11 +63,11 @@ export function useSyncStatus(): SyncStatus {
       setSession(s.status);
       setRemembered(s.status === "ready" && s.remembered);
       setInitError(s.status === "error" ? (s.error instanceof Error ? s.error.message : String(s.error)) : null);
-      if (s.status === "setup" || s.status === "ready" || s.status === "locked" || s.status === "upload-only") {
+      if (s.status === "setup" || s.status === "ready" || s.status === "locked") {
         setPinProtected(s.keystore.keystore.pinProtected === true);
         setPasskeyProtected(s.keystore.keystore.passkeyProtected === true);
       }
-      if (s.status === "ready" || s.status === "upload-only") {
+      if (s.status === "ready") {
         unsubChat?.();
         unsubFiles?.();
         unsubChat = s.sync.subscribeActivity(setChat);

@@ -115,10 +115,10 @@ func TestConcurrentResourceEditsConflict(t *testing.T) {
 		a, b := testSession(), testSession()
 		p.load(a)
 		p.load(b)
-		if _, err := p.PutKeystore(a, []byte(`{"version":2}`), "*"); err != nil {
+		if _, err := p.PutKeystore(a, []byte(`{"note":1}`), "*"); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := p.PutKeystore(b, []byte(`{"version":2,"kid":2}`), "*"); !errors.Is(err, store.ErrKeystoreConflict) {
+		if _, err := p.PutKeystore(b, []byte(`{"note":2}`), "*"); !errors.Is(err, store.ErrKeystoreConflict) {
 			t.Fatalf("lost keystore CAS: %v", err)
 		}
 	})
@@ -141,7 +141,7 @@ func TestResetFencesInFlightUpload(t *testing.T) {
 		t.Run(map[bool]string{false: "empty-backup", true: "existing-backup"}[populated], func(t *testing.T) {
 			p, _ := newTestProvider(t)
 			if populated {
-				if _, err := p.PutKeystore(testSession(), []byte(`{"version":2}`), "*"); err != nil {
+				if _, err := p.PutKeystore(testSession(), []byte(`{"note":1}`), "*"); err != nil {
 					t.Fatal(err)
 				}
 				if _, err := p.PutObject(testSession(), store.FileObject, "old-file1", strings.NewReader("old"), "*"); err != nil {
@@ -155,7 +155,7 @@ func TestResetFencesInFlightUpload(t *testing.T) {
 				finished <- err
 			}()
 			<-input.started
-			resetErr := p.ResetUser(testSession(), newObject())
+			resetErr := p.ResetUser(testSession())
 			if resetErr != nil {
 				close(input.resume)
 				<-finished
@@ -163,7 +163,7 @@ func TestResetFencesInFlightUpload(t *testing.T) {
 			}
 			// Configure a fresh backup before the old upload completes. Its generation
 			// must still fence the upload even when the old backup had no keystore.
-			_, keyErr := p.PutKeystore(testSession(), []byte(`{"version":2,"kid":2}`), "*")
+			_, keyErr := p.PutKeystore(testSession(), []byte(`{"note":2}`), "*")
 			_, fileErr := p.PutObject(testSession(), store.FileObject, "new-file1", strings.NewReader("new"), "*")
 			close(input.resume)
 			if err := <-finished; !errors.Is(err, store.ErrBackupConflict) {
@@ -182,14 +182,15 @@ func TestResetFencesInFlightUpload(t *testing.T) {
 
 func TestProtectionChangeFencesStaleUpload(t *testing.T) {
 	p, _ := newTestProvider(t)
-	if _, err := p.PutKeystore(testSession(), []byte(`{"version":2,"kid":1}`), "*"); err != nil {
+	if _, err := p.PutKeystore(testSession(), []byte(`{"note":1}`), "*"); err != nil {
 		t.Fatal(err)
 	}
 	stale := testSession()
-	if _, _, err := p.GetKeystore(stale); err != nil {
+	_, etag, err := p.GetKeystore(stale)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.PutKeystore(testSession(), []byte(`{"version":2,"kid":2}`), ""); err != nil {
+	if _, err := p.PutKeystore(testSession(), []byte(`{"note":2}`), etag); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.PutObject(stale, store.FileObject, "file-1234", strings.NewReader("stale"), ""); !errors.Is(err, store.ErrBackupConflict) {
@@ -259,7 +260,7 @@ func TestUncertainCommitKeepsPublishedObjects(t *testing.T) {
 
 func TestKeystoreUpdateMergesConcurrentContent(t *testing.T) {
 	p, _ := newTestProvider(t)
-	if _, err := p.PutKeystore(testSession(), []byte(`{"version":2,"kid":1}`), "*"); err != nil {
+	if _, err := p.PutKeystore(testSession(), []byte(`{"note":1}`), "*"); err != nil {
 		t.Fatal(err)
 	}
 	ctx := testSession()
@@ -302,7 +303,7 @@ func TestResetCleansOrphansAndPreservesNewBackup(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession(), newObject()); err != nil {
+	if err := p.ResetUser(testSession()); err != nil {
 		t.Fatal(err)
 	}
 	files, err := p.ListFiles(testSession())
@@ -327,38 +328,8 @@ func TestResetRejectsUntrustedListingContinuation(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession(), newObject()); err == nil {
+	if err := p.ResetUser(testSession()); err == nil {
 		t.Fatal("untrusted continuation accepted")
-	}
-}
-
-func TestConditionalWriteProbeFailsClosed(t *testing.T) {
-	for _, ignored := range []string{"If-Match", "create-only"} {
-		t.Run(ignored, func(t *testing.T) {
-			p, graph := newTestProvider(t)
-			p.client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-				if r.Method == "PUT" && strings.Contains(r.URL.Path, "probe-") {
-					r = r.Clone(r.Context())
-					if ignored == "If-Match" {
-						r.Header.Del("If-Match")
-					}
-					if ignored == "create-only" {
-						copyURL := *r.URL
-						copyURL.RawQuery = ""
-						r.URL = &copyURL
-					}
-				}
-				return graph.RoundTrip(r)
-			})}
-			if _, err := p.PutKeystore(testSession(), []byte(`{"version":2}`), "*"); err == nil {
-				t.Fatal("unsupported concurrency silently accepted")
-			}
-			for _, objects := range graph.Folders {
-				if len(objects) != 0 {
-					t.Fatalf("unsafe index published or probe leaked: %v", slices.Collect(maps.Keys(objects)))
-				}
-			}
-		})
 	}
 }
 
@@ -387,7 +358,7 @@ func TestResetFollowsListingPages(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession(), newObject()); err != nil {
+	if err := p.ResetUser(testSession()); err != nil {
 		t.Fatal(err)
 	}
 	if pages != 2 {

@@ -99,16 +99,13 @@ func TestOneDriveMiddlewareRequiresTokenAndScopesRoutes(t *testing.T) {
 	for _, test := range []struct {
 		path   string
 		status int
-	}{{"/api/v1/me", 200}, {"/api/v1/keystore", 401}, {"/api/v1/models", 204}} {
+	}{{"/api/v1/keystore", 401}, {"/api/v1/models", 204}} {
 		r := httptest.NewRequest("GET", test.path, nil)
 		r.Header.Set("X-Forwarded-User", "alice")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
 		if w.Code != test.status {
 			t.Fatalf("%s: %d %s", test.path, w.Code, w.Body.String())
-		}
-		if test.path == "/api/v1/me" && w.Header().Get("X-Backup-Destination") == "" {
-			t.Fatal("resolved destination missing")
 		}
 	}
 	// With no exchange configured, forwarding a Graph token reaches the provider.
@@ -267,41 +264,6 @@ func TestInvalidExchangeConfigurationFailsStartup(t *testing.T) {
 	}
 }
 
-func TestBackupDestinationIdentity(t *testing.T) {
-	useFakeMicrosoft(t)
-	destination := func(cfg *config.Config) string {
-		t.Helper()
-		w := request(serveBackup(t, cfg), "GET", "/api/v1/me")
-		if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" {
-			t.Fatalf("me: %d cache=%q", w.Code, w.Header().Get("Cache-Control"))
-		}
-		return w.Header().Get("X-Backup-Destination")
-	}
-	auth := config.DriveAuth{Issuer: "https://login.test/tenant", ClientID: "app", ClientSecret: "secret"}
-	base := destination(oboConfig(auth))
-	if base != destination(oboConfig(auth)) {
-		t.Fatal("destination is not stable across restarts")
-	}
-	if strings.Contains(base, "personal") || strings.Contains(base, "secret") || strings.Contains(base, "app") {
-		t.Fatalf("destination leaks configuration: %s", base)
-	}
-	rotated := auth
-	rotated.ClientSecret = "rotated"
-	if destination(oboConfig(rotated)) != base {
-		t.Fatal("rotating the client secret changed the backup destination")
-	}
-	otherClient := auth
-	otherClient.ClientID = "other-app"
-	otherDrive := oboConfig(auth)
-	otherDrive.Drives[0].ID = "work"
-	noAuth := &config.Config{Backup: &config.Backup{Provider: "onedrive"}, Drives: []config.Drive{{ID: "personal", Type: "onedrive"}}}
-	for name, cfg := range map[string]*config.Config{"client": oboConfig(otherClient), "drive": otherDrive, "no auth": noAuth} {
-		if destination(cfg) == base {
-			t.Fatalf("%s change kept the same destination", name)
-		}
-	}
-}
-
 func TestOneDriveTokenHeaderPrecedence(t *testing.T) {
 	for _, test := range []struct {
 		name    string
@@ -331,7 +293,7 @@ func TestOneDriveTokenHeaderPrecedence(t *testing.T) {
 	}
 }
 
-func TestEveryOneDriveRouteExceptMeRequiresToken(t *testing.T) {
+func TestEveryOneDriveRouteRequiresToken(t *testing.T) {
 	source, err := os.ReadFile("store/handler.go")
 	if err != nil {
 		t.Fatal(err)
@@ -344,17 +306,9 @@ func TestEveryOneDriveRouteExceptMeRequiresToken(t *testing.T) {
 	mux := serveBackup(t, &config.Config{Backup: &config.Backup{Provider: "onedrive"}, Drives: []config.Drive{{ID: "personal", Type: "onedrive"}}})
 	for _, route := range routes {
 		method, path := route[1], "/api"+strings.ReplaceAll(route[2], "{id}", "chat-0001")
-		if path == "/api/v1/me" {
-			continue
-		}
 		if w := request(mux, method, path); w.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s without token: %d", method, path, w.Code)
 		}
-	}
-	// The decoded path ends in /v1/me, but the route is not the identity endpoint.
-	w := request(mux, "GET", "/api/v1/files/x%2Fv1%2Fme")
-	if w.Code != http.StatusUnauthorized || w.Header().Get("X-Backup-Destination") != "" {
-		t.Errorf("encoded /v1/me suffix bypassed the token check: %d", w.Code)
 	}
 	if len(fake.graphTokens) != 0 {
 		t.Fatalf("Graph called without a token: %q", fake.graphTokens)

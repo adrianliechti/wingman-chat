@@ -91,8 +91,8 @@ async function deriveWrappingKey(result: unknown, salt: string, userId: string):
   );
 }
 
-function aad(userId: string, kid: number): Uint8Array<ArrayBuffer> {
-  return new TextEncoder().encode(`wingman:passkey:keystore:${userId}:${kid}`);
+function aad(userId: string): Uint8Array<ArrayBuffer> {
+  return new TextEncoder().encode(`wingman:passkey:keystore:${userId}`);
 }
 
 export async function createPasskeyEnvelope(dek: DEK, userId: string): Promise<PasskeyEnvelope> {
@@ -129,7 +129,7 @@ export async function createPasskeyEnvelope(dek: DEK, userId: string): Promise<P
       : await deriveWrappingKey(creationResult, salt, userId);
   const nonce = randomBytes(12);
   const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: nonce, additionalData: aad(userId, dek.kid) },
+    { name: "AES-GCM", iv: nonce, additionalData: aad(userId) },
     key,
     dek.raw,
   );
@@ -141,20 +141,20 @@ export async function createPasskeyEnvelope(dek: DEK, userId: string): Promise<P
     wrappedDek: toBase64(new Uint8Array(ciphertext)),
   };
   // Always verify a fresh assertion can unwrap the key before replacing the keystore.
-  const verified = await unlockPasskeyEnvelope(envelope, userId, dek.kid);
+  const verified = await unlockPasskeyEnvelope(envelope, userId);
   if (!verified.raw.every((byte, index) => byte === dek.raw[index])) throw new Error("Passkey verification failed.");
   return envelope;
 }
 
-export async function unlockPasskeyEnvelope(envelope: PasskeyEnvelope, userId: string, kid: number): Promise<DEK> {
+export async function unlockPasskeyEnvelope(envelope: PasskeyEnvelope, userId: string): Promise<DEK> {
   const key = await wrappingKey(envelope.credentialId, envelope.rpId, envelope.salt, userId);
   const raw = new Uint8Array(
     await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: fromBase64(envelope.nonce), additionalData: aad(userId, kid) },
+      { name: "AES-GCM", iv: fromBase64(envelope.nonce), additionalData: aad(userId) },
       key,
       fromBase64(envelope.wrappedDek),
     ),
   );
   if (raw.length !== 32) throw new Error("Invalid encryption key length.");
-  return { raw, kid };
+  return { raw };
 }

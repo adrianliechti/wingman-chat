@@ -174,46 +174,34 @@ restore lets the user review the report and defer that reload.
 
 When the deployment enables OneDrive backups, Settings → Backup & Restore offers
 required PIN or passkey protection. New accounts keep their key in memory and
-make no backup requests until protection is configured. Existing unprotected
-accounts enter setup and retain their old key for a protected upgrade, preserving
-their existing history. Local edits and deletions remain usable during setup.
-Protection can be changed; removing it requires deleting the online backup with
-Reset backups. After one unlock/setup, encrypted uploads
-continue across page reloads without a prompt. The browser retains a public
-upload key, pinned to the user and key ID in `_sync/upload-key.json`; remembered
-devices also retain the local root key described below. A new browser
-or changed public key requires an unlock before automatic uploads are enabled.
-Local OPFS chats and files remain plaintext and available while restore is locked.
+make no backup requests until protection is configured. Local edits and
+deletions remain usable during setup. Protection can be changed; removing it
+requires deleting the online backup with Reset backups. Local OPFS chats and
+files remain plaintext and available while backup is locked.
 
-New payloads use hybrid encryption: a fresh random AES-256-GCM key for each event
-frame, attachment, or file is wrapped using RSA-OAEP-SHA256 with a 3072-bit public
-key. Both layers bind the user/resource context and key ID. Version 3 envelopes
-carry the wrapped content key, random nonce, ciphertext, and authentication tag.
-The private RSA key is stored on the server encrypted under the existing root
-key; that root remains protected by the user's PIN or passkey. RSA private keys remain in memory only. After successful setup or unlock,
-the root key is stored as a non-extractable AES-GCM `CryptoKey` in a separate local
-IndexedDB database, bound to the signed-in account and a SHA-256 fingerprint of the
-complete protected keystore. Older raw-byte records are converted on the next load.
-This database is neither uploaded nor included in OPFS ZIP exports/imports. Access
-to the browser profile grants use of that saved decryption key, but its bytes cannot
-be read back. Protection changes on a remembered device therefore re-authenticate
-with an existing passkey or PIN first.
+Each event frame, attachment, or file is encrypted with AES-256-GCM using the
+root key and a fresh random nonce (`nonce || ciphertext || tag`). The additional
+authenticated data binds the account ID, resource, and (for chat frames) sequence
+number, so frames cannot be reordered, moved between chats, or replayed under
+another sequence. The root key is protected by the user's PIN or passkey. After
+successful setup or unlock, the root key is stored as a non-extractable AES-GCM
+`CryptoKey` in a separate local IndexedDB database, bound to the signed-in account
+and a SHA-256 fingerprint of the complete protected keystore. This database is
+neither uploaded nor included in OPFS ZIP exports/imports. Access to the browser
+profile grants use of that saved key, but its bytes cannot be read back.
+Protection changes on a remembered device therefore re-authenticate with an
+existing passkey or PIN first.
 
-PIN wraps use Argon2id (64 MiB, t=3, p=1) followed by HKDF-SHA256.
-Backups with legacy peppered PINs must be migrated using a passkey or the
-previous version, as described in [How backup works](backup.md).
-Legacy PBKDF2-SHA256 wraps remain readable and are re-wrapped after a successful PIN
-unlock. The backend accepts only bounded Argon2id parameters. “Stop sync on this device” removes
-the saved key and public upload key, then reloads open tabs to stop uploads and
-incoming sync. The backend rejects unprotected
-keystore writes, protection downgrades, and all backup operations without a valid
-PIN- or passkey-protected keystore. Legacy plaintext keystore reads remain
-available only so a user can upgrade protection without losing old backups.
+PIN wraps use Argon2id (64 MiB, t=3, p=1) followed by HKDF-SHA256. The backend
+accepts only bounded Argon2id parameters. “Stop sync on this device” removes the
+saved key, then reloads open tabs to stop uploads and incoming sync. The backend
+rejects keystore writes without `If-Match` or `If-None-Match: *`, unprotected
+keystores, and all backup operations without a valid PIN- or passkey-protected
+keystore.
 
-Unlocking backup enables incoming cross-device changes immediately and for the
+Unlocking backup starts uploads and incoming cross-device changes for the
 remainder of the page session. Remembered devices automatically unlock and resume
-incoming sync on later visits. Other devices resume uploads only after reload.
-Setup and unlock automatically remember the device without an extra setting.
+sync on later visits; other browsers stay locked until the next unlock. Setup and unlock automatically remember the device without an extra setting.
 “Stop sync on this device” in Backup options flushes local persistence and reloads
 open tabs immediately. Uploads and incoming sync stay off until an explicit unlock.
 A changed account or protected
@@ -221,9 +209,6 @@ keystore invalidates saved device access. Changing protection on this device
 refreshes remembered access. Backup reset and clearing all local data remove it.
 New browsers without local chats offer “Restore backup”; existing local sessions
 offer “Unlock backup”. Clearing browser site data requires a fresh unlock.
-Upload conflicts and server deletions wait for an unlocked restore; an upload-only
-browser never downloads ciphertext to reconcile a conflict or overwrites a newer
-remote version. Ordinary new uploads and pending local changes continue normally.
 When an unlocked browser finds a remotely deleted chat, it removes an unchanged
 local copy. Pending local edits and their attachments survive and upload as a
 fresh chat log, matching file sync's preference for preserving unsynced work.
@@ -240,11 +225,9 @@ together: older clients without deletion preconditions are refused.
 A local file deletion only applies to the version this browser last synced; if
 another device changed the file since, its edit wins and is restored on the next pull.
 
-All backup content uses the hybrid RSA-OAEP envelope; only the backup private key
-is sealed directly with the root key. The first unlocked session provisions the
-backup key pair. Switching PIN/passkey protection rewraps the same root and
-preserves the backup key envelope. The backend rejects updates that drop or
-change that envelope or the account ID, to prevent orphaning encrypted data.
+Switching PIN/passkey protection rewraps the same root key. The backend rejects
+keystore updates that change the account ID or backup generation, to prevent
+orphaning encrypted data or un-fencing devices from before a reset.
 
 Passkey protection uses WebAuthn PRF and HKDF-SHA256. OAuth2 Proxy still handles
 identity; no extra Entra configuration is needed. PRF results accept standard
@@ -267,7 +250,7 @@ ChatSync backs up chat metadata, transcripts, and referenced message attachments
 Both backup modes keep the native `chat.json` snapshot locally. Online saves
 commit an outbox snapshot before starting backup initialization or network work;
 confirmed event logs are backup baselines rather than the UI's storage format.
-Each local history commit includes its sequence, frame hash, and compaction count
+Each local history commit includes its sequence and compaction count
 in the same atomic write. The shared sync-state file caches those checkpoints;
 recovery trusts the history if a later cache or snapshot write failed, preventing
 an acknowledged event from being applied twice. Older histories remain readable
@@ -335,7 +318,7 @@ Settings → Backup & Restore → Reset backups permanently deletes the signed-i
 account's OneDrive keystore, chat logs, attachments, and workspace backups. It works
 without the old PIN/passkey. Confirmation reloads open tabs and stops active
 responses after flushing local persistence. Local chats and files stay available;
-only backup tracking and the cached upload key are cleared. Backups remain off
+only backup tracking and the remembered device key are cleared. Backups remain off
 until protection is configured again, at which point local data uploads under
 fresh keys. Passkeys held by a password manager or security key must be removed
 there separately.
@@ -348,8 +331,12 @@ acknowledged online deletion.
 
 Conditional index commits reject requests that began before a reset or
 keystore change. A backup generation in the protected keystore also rejects
-requests started later by an old device. Reset IDs make a retried reset safe
-after another device has configured a new backup.
+requests started later by an old device. Other browsers notice the reset (or a
+switched backup destination) by the changed keystore account ID; they clear
+their sync tracking instead of treating previously synced chats as remotely
+deleted, so their local data uploads again into the new backup. A reset whose
+response was lost is retried on the next load and also removes a backup that
+another device configured in between.
 
 ## Verification
 

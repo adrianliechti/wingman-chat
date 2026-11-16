@@ -5,24 +5,27 @@
  *   1. App boots → init() resolves the keystore.
  *      - No keystore → setup; choose PIN/passkey before uploading.
  *      - Remembered device + matching protected keystore → automatic unlocked sync.
- *      - Protected keystore + trusted public cache → upload-only, no decryption key.
- *      - No trusted public cache → unlock once to provision uploads.
+ *      - Otherwise → locked; unlock with PIN or passkey to sync.
  *   2. useChats / migration code waits on whenReady() before touching sync.
  *   3. Protection changes rewrap the existing DEK and update the keystore.
  */
 
 import { getConfig } from "@/shared/config";
-import { notify } from "./notify";
-import { completePendingBackupReset, prepareBackupDestination } from "./backupReset";
+import {
+  assertWorkspaceOwner,
+  completePendingBackupReset,
+  prepareBackupAccount,
+  recordBackupAccount,
+} from "./backupReset";
 import { invalidateBackupSessions, isBackupSessionCurrent, withBackupStorage } from "./backupLifecycle";
 import { onChatBackupReady } from "./chatBackupActivity";
 import { ChatSync } from "./chatSync";
 import * as api from "./storeClient";
-import { type DEK, type RootKey, type StoreKey, hasRawKey } from "./crypto";
+import { type DEK, type RootKey, hasRawKey } from "./crypto";
 import { FileSync } from "./fileSync";
-import { deleteFile } from "./opfs-core";
 import { flushPersistence, withPersistenceLock } from "./persistence";
 import * as keystore from "./keystore";
+import { notify } from "./notify";
 import { forgetBackup, loadRememberedBackup, rememberBackup } from "./rememberedBackup";
 
 interface SetupSession {
@@ -43,14 +46,6 @@ interface ReadySession {
   keystore: keystore.KeystoreState;
 }
 
-interface UploadSession {
-  status: "upload-only";
-  userId: string;
-  sync: ChatSync;
-  files: FileSync;
-  keystore: keystore.KeystoreState;
-}
-
 interface LockedSession {
   status: "locked";
   userId: string;
@@ -63,7 +58,7 @@ interface PendingSession {
   error?: unknown;
 }
 
-type Session = SetupSession | ReadySession | UploadSession | LockedSession | PendingSession;
+type Session = SetupSession | ReadySession | LockedSession | PendingSession;
 
 let session: Session = { status: "initializing" };
 let initPromise: Promise<Session> | null = null;
@@ -72,12 +67,12 @@ const listeners = new Set<(s: Session) => void>();
 function setSession(next: Session) {
   session = next;
   for (const l of listeners) l(next);
-  if (next.status === "ready" || next.status === "upload-only") {
+  if (next.status === "ready") {
     // Push anything that didn't reach the server last session (crash,
     // network blip). Cheap no-op when nothing is pending.
     const reconcile = async () => {
       try {
-        if (next.status === "ready") await next.sync.pull();
+        await next.sync.pull();
       } finally {
         await next.sync.flushPending();
       }
@@ -100,44 +95,20 @@ function isEnabled(): boolean {
   return getConfig().store === true;
 }
 
-async function engines(userId: string, ks: keystore.KeystoreState, key: StoreKey) {
-  const { accountId } = ks.keystore;
-  const sync = await ChatSync.create({ userId, accountId, dek: key, retentionDays: getConfig().chat?.retentionDays });
-  const files = await FileSync.create({ userId, accountId, dek: key });
-  files.start();
-  return { sync, files };
-}
-
 async function readySession(userId: string, dek: RootKey, ks: keystore.KeystoreState): Promise<ReadySession> {
-  return withBackupStorage(() => {
+  return withBackupStorage(async () => {
     if (!isBackupSessionCurrent()) throw new Error("Backup settings changed. Reload before syncing.");
-    return readySessionUnlocked(userId, dek, ks);
+    await rememberBackup(userId, ks, dek);
+    api.setBackupGeneration(ks.keystore.generation);
+    const { accountId } = ks.keystore;
+    await recordBackupAccount(accountId);
+    const sync = await ChatSync.create({ userId, accountId, dek, retentionDays: getConfig().chat?.retentionDays });
+    const files = await FileSync.create({ userId, accountId, dek });
+    files.start();
+    const s: ReadySession = { status: "ready", remembered: true, userId, dek, sync, files, keystore: ks };
+    startAutoSync(s);
+    return s;
   });
-}
-
-async function readySessionUnlocked(userId: string, dek: RootKey, ks: keystore.KeystoreState): Promise<ReadySession> {
-  const upgraded = await keystore.enableBackupUploads(ks, dek, userId);
-  await rememberBackup(userId, upgraded.state, upgraded.dek);
-  api.setBackupGeneration(upgraded.state.keystore.backup!.generation);
-  const wasUploading = session.status === "upload-only" && session.userId === userId;
-  const active =
-    session.status === "upload-only" && session.userId === userId
-      ? { sync: session.sync, files: session.files }
-      : await engines(userId, upgraded.state, upgraded.dek);
-  active.sync.setKey(upgraded.dek);
-  active.files.setKey(upgraded.dek);
-  const s: ReadySession = {
-    status: "ready",
-    remembered: true,
-    userId,
-    dek: upgraded.dek,
-    ...active,
-    keystore: upgraded.state,
-  };
-  startAutoSync(s);
-  // Resume files immediately when restore is unlocked, not five minutes later.
-  if (wasUploading) void s.files.restore().catch((err) => console.warn("restore: file pull failed", err));
-  return s;
 }
 
 /** Preserve committed protection if later provisioning/cache writes fail. */
@@ -146,48 +117,22 @@ async function activateRestore(userId: string, dek: DEK, state: keystore.Keystor
     setSession(await readySession(userId, dek, state));
   } catch (error) {
     const latest = await keystore.loadKeystore().catch(() => null);
-    const current = session;
-    if (current.status === "upload-only" && current.userId === userId) {
-      setSession({ ...current, keystore: latest ?? state });
-    } else {
-      setSession({ status: "locked", userId, keystore: latest ?? state });
-    }
+    setSession({ status: "locked", userId, keystore: latest ?? state });
     throw error;
   }
 }
 
-async function uploadSession(userId: string, ks: keystore.KeystoreState): Promise<UploadSession | LockedSession> {
-  return withBackupStorage(() => {
-    if (!isBackupSessionCurrent()) throw new Error("Backup settings changed. Reload before syncing.");
-    return uploadSessionUnlocked(userId, ks);
-  });
-}
-
-async function uploadSessionUnlocked(
-  userId: string,
-  ks: keystore.KeystoreState,
-): Promise<UploadSession | LockedSession> {
-  const key = await keystore.uploadKey(ks, userId);
-  if (!key || !ks.keystore.backup) return { status: "locked", userId, keystore: ks };
-  api.setBackupGeneration(ks.keystore.backup.generation);
-  const active = await engines(userId, ks, key);
-  const s: UploadSession = { status: "upload-only", userId, ...active, keystore: ks };
-  startAutoSync(s);
-  return s;
-}
-
 // Auto sync ----------------------------------------------------------------
 //
-// Uploads run without unlocking. Only unlocked sessions pull remote data; Chats pull every minute while the
-// tab is visible (cheap no-op when nothing changed) and immediately on tab
-// focus; the file tree reconciles every five minutes.
+// Chats pull every minute while the tab is visible (cheap no-op when nothing
+// changed) and immediately on tab focus; the file tree reconciles every five minutes.
 
 const CHAT_PULL_MS = 60_000;
 const FILE_SYNC_MS = 300_000;
 
 let autoSyncCleanup: (() => void) | null = null;
 
-function startAutoSync(s: ReadySession | UploadSession): void {
+function startAutoSync(s: ReadySession): void {
   autoSyncCleanup?.();
 
   let lastChatPull = Date.now();
@@ -197,7 +142,7 @@ function startAutoSync(s: ReadySession | UploadSession): void {
     if (document.visibilityState !== "visible") return;
     const now = Date.now();
 
-    if (s.status === "ready" && (force || now - lastChatPull >= CHAT_PULL_MS - 1_000)) {
+    if (force || now - lastChatPull >= CHAT_PULL_MS - 1_000) {
       lastChatPull = now;
       try {
         await s.sync.pull();
@@ -248,19 +193,19 @@ export async function initSession(): Promise<Session> {
   initPromise = (async () => {
     try {
       const me = await api.fetchMe();
-      if (!(await prepareBackupDestination(me.id, me.backupDestination))) {
+      await assertWorkspaceOwner(me.id);
+      await completePendingBackupReset(me.id);
+
+      const state = await keystore.loadKeystore();
+      if (!(await prepareBackupAccount(state?.keystore.accountId ?? null))) {
         setSession({ status: "initializing", userId: me.id });
         // Queued chat saves can be awaiting initSession itself. Resolve first
         // so they can finish saving locally before this page reloads.
         void flushPersistence()
           .then(() => window.location.reload())
-          .catch((error) => notify.error("Couldn't save before backup destination changed", error));
+          .catch((error) => notify.error("Couldn't save before backup changed", error));
         return session;
       }
-      await completePendingBackupReset(me.id);
-
-      const state = await keystore.loadKeystore();
-
       let remembered: RootKey | null = null;
       if (state) {
         try {
@@ -280,10 +225,8 @@ export async function initSession(): Promise<Session> {
         }
       }
       if (!state) {
-        const prepared = await keystore.prepareSetup();
+        const prepared = keystore.prepareSetup();
         setSession({ status: "setup", userId: me.id, dek: prepared.dek, keystore: prepared.state });
-      } else if (state.keystore.backup) {
-        setSession(await uploadSession(me.id, state));
       } else {
         setSession({ status: "locked", userId: me.id, keystore: state });
       }
@@ -307,7 +250,7 @@ export async function initSession(): Promise<Session> {
 
 /** Unlock a PIN-protected keystore. Promotes session to "ready" on success. */
 export async function unlock(pin: string): Promise<void> {
-  if (session.status !== "locked" && session.status !== "upload-only") {
+  if (session.status !== "locked") {
     throw new Error(`session is not locked (status=${session.status})`);
   }
   const { userId, keystore: state } = session;
@@ -327,7 +270,7 @@ export async function confirmPin(pin: string): Promise<void> {
   const current = session;
   if (current.status !== "ready") throw new Error("Unlock backup to change protection.");
   const dek = await keystore.unlockWithPin(current.keystore, pin);
-  session = { ...current, dek: { ...dek, backup: current.dek.backup } };
+  session = { ...current, dek };
 }
 
 /**
@@ -341,9 +284,8 @@ async function rootBytes(current: SetupSession | ReadySession): Promise<DEK> {
     throw new Error("Enter your PIN to change backup protection.");
   }
   const dek = await keystore.unlockWithPasskey(current.keystore);
-  const root: DEK = { ...dek, backup: current.dek.backup };
-  if (session === current) session = { ...current, dek: root };
-  return root;
+  if (session === current) session = { ...current, dek };
+  return dek;
 }
 
 /** Configure protection before starting any backup engine. */
@@ -361,7 +303,7 @@ export async function changePin(oldPin: string, newPin: string): Promise<void> {
   const current = session;
   const dek = await keystore.unlockWithPin(current.keystore, oldPin);
   const newState = await keystore.setPin(current.keystore, dek, newPin);
-  await updateProtection({ ...current, dek: { ...dek, backup: current.dek.backup } }, newState);
+  await updateProtection({ ...current, dek }, newState);
 }
 
 /** Keep local trust bound to the newly committed protection record. */
@@ -384,9 +326,8 @@ export async function stopDeviceSync(): Promise<void> {
   await flushPersistence();
   await withPersistenceLock("backup-reset", async () => {
     if (!isBackupSessionCurrent()) throw new Error("Backup settings changed. Reload before syncing.");
-    if (session.status !== "ready" && session.status !== "upload-only") throw new Error("Backup is already locked.");
+    if (session.status !== "ready") throw new Error("Backup is already locked.");
     await forgetBackup();
-    await deleteFile("_sync/upload-key.json");
     invalidateBackupSessions();
     autoSyncCleanup?.();
     session.files.stop();
@@ -397,11 +338,6 @@ export async function stopDeviceSync(): Promise<void> {
 /** Manual sync: pull remote changes, then push pending local edits. */
 export async function syncNow(): Promise<void> {
   await initSession();
-  if (session.status === "upload-only") {
-    await session.sync.flushPending();
-    await session.files.fullSync();
-    return;
-  }
   if (session.status === "setup") throw new Error("Set a PIN or passkey to enable backups.");
   const s = await whenReady();
   await s.sync.pull();
@@ -437,7 +373,7 @@ async function whenReady(): Promise<ReadySession> {
 /** Unlock on a user gesture so the browser can show its passkey prompt. */
 export async function unlockPasskey(): Promise<void> {
   const current = session;
-  if (current.status !== "locked" && current.status !== "upload-only") throw new Error("session is not locked");
+  if (current.status !== "locked") throw new Error("session is not locked");
   const dek = await keystore.unlockWithPasskey(current.keystore);
   await activateRestore(current.userId, dek, current.keystore);
 }

@@ -21,7 +21,6 @@ import { formatBytes } from "@/shared/lib/utils";
 const ACTIVE_BACKUP_DESCRIPTIONS = {
   error: "Changes are saved on this device. Try syncing again.",
   pending: "Changes are saved here and will back up when connected.",
-  "upload-only": "Backing up automatically. Unlock to sync other devices.",
 };
 
 const BACKUP_HEALTH_TITLES: Partial<Record<SyncHealth, string>> = {
@@ -29,7 +28,6 @@ const BACKUP_HEALTH_TITLES: Partial<Record<SyncHealth, string>> = {
   syncing: "Backing up changes",
   pending: "Waiting to back up",
   error: "Backup needs attention",
-  "upload-only": "Backup is running",
 };
 
 interface SyncSectionProps {
@@ -61,7 +59,7 @@ export function SyncSection({
   const [backupBytes, setBackupBytes] = useState<number | null>(null);
   useEffect(() => {
     let cancelled = false;
-    if (status === "ready" || status === "upload-only") {
+    if (status === "ready") {
       void getBackupSize().then(
         (bytes) => {
           if (!cancelled) setBackupBytes(bytes);
@@ -244,16 +242,14 @@ export function SyncSection({
     }
   }
 
-  const active = status === "ready" || status === "upload-only";
+  const active = status === "ready";
   // Saving the PIN moves the session through locked and ready before the next step is shown.
   const settingUp =
     (setupStep === "pin" && (status === "setup" || busy)) || (status === "ready" && setupStep === "passkey");
   const description = active
     ? health === "error" || health === "pending"
       ? ACTIVE_BACKUP_DESCRIPTIONS[health]
-      : status === "upload-only"
-        ? ACTIVE_BACKUP_DESCRIPTIONS["upload-only"]
-        : ""
+      : ""
     : status === "locked"
       ? recovering
         ? "Restore your online backup to bring your data to this browser."
@@ -386,7 +382,7 @@ export function SyncSection({
                       Sync now
                     </button>
                   )}
-                  {(status === "locked" || status === "upload-only") && mode === "none" && (
+                  {status === "locked" && mode === "none" && (
                     <button
                       type="button"
                       disabled={busy || (passkeyProtected && !supportsPasskeys())}
@@ -424,7 +420,7 @@ export function SyncSection({
           )}
           {status !== "setup" && (
             <>
-              {(status === "locked" || status === "upload-only") && pinProtected && passkeyProtected && (
+              {status === "locked" && pinProtected && passkeyProtected && (
                 <button
                   type="button"
                   disabled={busy}
@@ -493,22 +489,18 @@ export function SyncSection({
                 )}
 
                 {/* Unprotected devices get this hint from the recovery methods list. */}
-                {passkeyProtected &&
-                  (status === "ready" || status === "locked" || status === "upload-only") &&
-                  !supportsPasskeys() && (
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      Passkeys aren’t available in this browser. Try a supported browser or device.
-                    </p>
-                  )}
-                {error &&
-                  mode === "none" &&
-                  ((status !== "locked" && status !== "upload-only") || passkeyProtected) && (
-                    <p role="alert" className="text-xs text-red-600 dark:text-red-400">
-                      {error}
-                    </p>
-                  )}
+                {passkeyProtected && (status === "ready" || status === "locked") && !supportsPasskeys() && (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Passkeys aren’t available in this browser. Try a supported browser or device.
+                  </p>
+                )}
+                {error && mode === "none" && (status !== "locked" || passkeyProtected) && (
+                  <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+                    {error}
+                  </p>
+                )}
 
-                {(status === "locked" || status === "upload-only") && mode === "restore" && pinProtected && (
+                {status === "locked" && mode === "restore" && pinProtected && (
                   <PinForm
                     title={unlockLabel}
                     description={

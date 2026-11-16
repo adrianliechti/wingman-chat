@@ -11,22 +11,12 @@
  *
  * Primitives:
  *   - Argon2id (64 MiB, t=3) + HKDF-SHA256 → 256-bit KEK from PIN + salt.
- *   - Events, attachments and files: a fresh AES-256-GCM key per item,
- *     wrapped with RSA-OAEP-3072 (backupCrypto.ts). The RSA private key is
- *     sealed with the root key (DEK); the DEK is wrapped by PIN or passkey.
+ *   - Events, attachments and files: AES-256-GCM with the root key (DEK) and
+ *     a fresh random nonce per item. The DEK is wrapped by PIN or passkey.
  *   - AAD pins identity into ciphertext (accountId:chatId:seq for events,
  *     accountId:blobId for blobs; accountId comes from the keystore).
- *     Wrong AAD ⇒ decrypt fails.
- *   - Hash chain inside event plaintext (prevHash) detects reordered,
- *     dropped or misplaced frames.
- *
- * Not covered: authorship. Content is sealed to a public key the
- * server also holds, so a compromised server can create frames that decrypt
- * and chain correctly. AAD and the hash chain catch corruption and mix-ups,
- * not forgery; that would need a signing key the server never sees.
+ *     Wrong AAD ⇒ decrypt fails, so frames cannot be reordered or moved.
  */
-
-import { type BackupKeys, encryptBackup, decryptBackup } from "./backupCrypto";
 
 const SALT_BYTES = 16;
 const NONCE_BYTES = 12;
@@ -76,21 +66,10 @@ function encodeUtf8(s: string): Bytes {
 
 // DEK ---------------------------------------------------------------------
 
-export interface UploadKey {
-  kid: number;
-  backup: BackupKeys;
-  raw?: never;
-  key?: never;
-}
-
 export interface DEK {
-  backup?: BackupKeys;
   /** Raw 32-byte key material, used to derive AES-GCM CryptoKeys per call. */
   raw: Bytes;
   key?: never;
-  /** Key id (1–255) stamped into every frame envelope, so the DEK can be
-   *  rotated later without guess-decrypting old history. */
-  kid: number;
 }
 
 /**
@@ -99,38 +78,28 @@ export interface DEK {
  * re-wrap the root for new PIN or passkey protection.
  */
 export interface DeviceKey {
-  backup?: BackupKeys;
   key: CryptoKey;
   raw?: never;
-  kid: number;
 }
 
 export type RootKey = DEK | DeviceKey;
 
-export type StoreKey = RootKey | UploadKey;
-
-/** Restoring needs the backup private key, which only an unlocked root provides. */
-export function canRestore(key: StoreKey): boolean {
-  return key.backup?.privateKey !== undefined;
-}
-
-export function hasRawKey(key: StoreKey): key is DEK {
+export function hasRawKey(key: RootKey): key is DEK {
   return key.raw !== undefined;
 }
 
-export async function generateDEK(kid = 1): Promise<DEK> {
-  if (!Number.isInteger(kid) || kid < 1 || kid > 255) throw new Error(`invalid key id: ${kid}`);
-  return { raw: randomBytes(DEK_BYTES), kid };
+export function generateDEK(): DEK {
+  return { raw: randomBytes(DEK_BYTES) };
 }
 
 /** Import root key bytes as a non-extractable key suitable for device storage. */
 export async function toDeviceKey(root: RootKey): Promise<DeviceKey> {
-  if (!hasRawKey(root)) return { key: root.key, kid: root.kid };
+  if (!hasRawKey(root)) return { key: root.key };
   const key = await crypto.subtle.importKey("raw", bufFrom(root.raw), { name: "AES-GCM" }, false, [
     "encrypt",
     "decrypt",
   ]);
-  return { key, kid: root.kid };
+  return { key };
 }
 
 async function importDekForAesGcm(dek: RootKey): Promise<CryptoKey> {
@@ -222,7 +191,7 @@ export async function wrapDEKWithPin(dek: DEK, pin: string, userId: string): Pro
   };
 }
 
-export async function unwrapDEKWithPin(w: WrappedDek, pin: string, userId: string, kid = 1): Promise<DEK> {
+export async function unwrapDEKWithPin(w: WrappedDek, pin: string, userId: string): Promise<DEK> {
   const kek = await deriveKEK(pin, w.kdf, userId);
   const raw = bufFrom(
     new Uint8Array(
@@ -236,29 +205,14 @@ export async function unwrapDEKWithPin(w: WrappedDek, pin: string, userId: strin
   if (raw.length !== DEK_BYTES) {
     throw new Error(`unexpected DEK size: ${raw.length}`);
   }
-  return { raw, kid };
+  return { raw };
 }
 
 // Content encryption -----------------------------------------------------
 //
-// Events, attachments and files always use the hybrid backup envelope
-// (backupCrypto.ts), so uploads need only the public key.
-
-async function seal(key: StoreKey, plaintext: Uint8Array, aad: string): Promise<Bytes> {
-  if (!key.backup) throw new Error("Missing backup encryption key.");
-  return encryptBackup(key.backup, key.kid, plaintext, aad);
-}
-
-function open(key: StoreKey, bytes: Bytes, aad: string): Promise<Bytes> {
-  return decryptBackup(key.backup, key.kid, bytes, aad);
-}
-
-// Root sealing -----------------------------------------------------------
-//
-// Only the backup private key is sealed directly with the root key:
 //   nonce(12) || ciphertext || tag(16)
 
-export async function sealWithRoot(root: RootKey, plaintext: Uint8Array, aad: string): Promise<Bytes> {
+async function seal(root: RootKey, plaintext: Uint8Array, aad: string): Promise<Bytes> {
   const nonce = randomBytes(NONCE_BYTES);
   const ct = new Uint8Array(
     await crypto.subtle.encrypt(
@@ -273,8 +227,8 @@ export async function sealWithRoot(root: RootKey, plaintext: Uint8Array, aad: st
   return out;
 }
 
-export async function openWithRoot(root: RootKey, sealed: Uint8Array, aad: string): Promise<Bytes> {
-  if (sealed.length < NONCE_BYTES + GCM_TAG_BYTES) throw new Error("sealed key too short");
+async function open(root: RootKey, sealed: Uint8Array, aad: string): Promise<Bytes> {
+  if (sealed.length < NONCE_BYTES + GCM_TAG_BYTES) throw new Error("ciphertext too short");
   const pt = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: bufFrom(sealed.slice(0, NONCE_BYTES)), additionalData: encodeUtf8(aad) },
     await importDekForAesGcm(root),
@@ -292,7 +246,7 @@ function blobAad(userId: string, blobId: string): string {
 }
 
 export async function encryptEvent(
-  dek: StoreKey,
+  dek: RootKey,
   payload: unknown,
   userId: string,
   chatId: string,
@@ -303,7 +257,7 @@ export async function encryptEvent(
 }
 
 export async function decryptEvent<T = unknown>(
-  dek: StoreKey,
+  dek: RootKey,
   frame: string,
   userId: string,
   chatId: string,
@@ -313,11 +267,11 @@ export async function decryptEvent<T = unknown>(
   return JSON.parse(decoder.decode(pt)) as T;
 }
 
-export async function encryptBlob(dek: StoreKey, data: Uint8Array, userId: string, blobId: string): Promise<Bytes> {
+export async function encryptBlob(dek: RootKey, data: Uint8Array, userId: string, blobId: string): Promise<Bytes> {
   return seal(dek, data, blobAad(userId, blobId));
 }
 
-export async function decryptBlob(dek: StoreKey, data: Uint8Array, userId: string, blobId: string): Promise<Bytes> {
+export async function decryptBlob(dek: RootKey, data: Uint8Array, userId: string, blobId: string): Promise<Bytes> {
   return open(dek, bufFrom(data), blobAad(userId, blobId));
 }
 
@@ -333,7 +287,7 @@ function fileAad(userId: string, fileId: string): string {
 }
 
 export async function encryptFile(
-  dek: StoreKey,
+  dek: RootKey,
   header: unknown,
   bytes: Uint8Array,
   userId: string,
@@ -348,7 +302,7 @@ export async function encryptFile(
 }
 
 export async function decryptFile<T>(
-  dek: StoreKey,
+  dek: RootKey,
   data: Uint8Array,
   userId: string,
   fileId: string,
@@ -358,13 +312,4 @@ export async function decryptFile<T>(
   if (nl < 0) throw new Error("file envelope: missing header");
   const header = JSON.parse(decoder.decode(pt.slice(0, nl))) as T;
   return { header, bytes: bufFrom(pt.slice(nl + 1)) };
-}
-
-// Hash chain --------------------------------------------------------------
-
-export const ZERO_HASH = toBase64(new Uint8Array(new ArrayBuffer(32)));
-
-export async function hashFrame(frame: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", fromBase64(frame));
-  return toBase64(new Uint8Array(digest));
 }

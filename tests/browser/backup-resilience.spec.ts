@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect } from "@playwright/test";
 import { test } from "./helpers/backup-server";
 import {
@@ -32,12 +33,12 @@ test("backup and restore chats and files on a fresh device", async ({ page, cont
 
 test("missing backup routes report 404 and recover when routing is fixed", async ({ page, context, backupServer }) => {
   await connect(context, backupServer);
-  await page.route("**/api/v1/me", (route) => route.fulfill({ status: 404, body: "404 page not found" }));
+  await page.route("**/me", (route) => route.fulfill({ status: 404, body: "404 page not found" }));
   await page.goto(fixture);
   await expect(page.getByText("Backup needs attention", { exact: true })).toBeVisible();
   await expect(page.getByText(/404: 404 page not found/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Turn on backup", exact: true })).toHaveCount(0);
-  await page.unroute("**/api/v1/me");
+  await page.unroute("**/me");
   await expect(page.getByRole("button", { name: "Turn on backup", exact: true })).toBeVisible();
 });
 
@@ -123,9 +124,9 @@ for (const upload of ["chat", "file"] as const) {
         headers: { "X-Forwarded-User": user },
       });
       expect(keystore.ok()).toBe(true);
-      const { backup } = await keystore.json();
+      const { generation } = await keystore.json();
       const remote = await page.request.get(`${backupServer}/api/v1/${upload === "chat" ? "chats" : "files"}`, {
-        headers: { "X-Forwarded-User": user, "X-Backup-Generation": backup.generation },
+        headers: { "X-Forwarded-User": user, "X-Backup-Generation": generation },
       });
       expect(remote.ok()).toBe(true);
       expect(await remote.json()).toHaveLength(committed ? 1 : 0);
@@ -302,3 +303,44 @@ for (const failure of ["missing", "corrupt"] as const) {
     }
   });
 }
+
+test("switching backup destination keeps local chats and files and uploads them to the new backup", async ({
+  page,
+  context,
+  backupServer,
+}) => {
+  const user = randomUUID();
+  // The proxy identity stays the same; only the OneDrive account behind the backup API changes.
+  let destination = user;
+  await context.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
+  );
+  await context.route(/\/api\/v1\/|\/me$/, async (route) => {
+    const url = new URL(route.request().url());
+    const response = await route.fetch({
+      url: `${backupServer}${url.pathname}${url.search}`,
+      headers: {
+        ...route.request().headers(),
+        "X-Forwarded-User": url.pathname.endsWith("/me") ? user : destination,
+      },
+    });
+    await route.fulfill({ response });
+  });
+  await enableBackup(page);
+  await page.evaluate(
+    async ({ filePath }) => {
+      await window.syncSecurityE2E.saveChat("kept across destinations");
+      await window.syncSecurityE2E.save(filePath, "kept across destinations");
+    },
+    { filePath },
+  );
+  await sync(page);
+
+  destination = randomUUID();
+  await page.reload();
+  await choosePin(page);
+  await expectLocal(page, "kept across destinations");
+  await sync(page);
+  await expectLocal(page, "kept across destinations");
+  await restore(context, backupServer, destination, "kept across destinations");
+});

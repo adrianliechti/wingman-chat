@@ -19,8 +19,6 @@ function describe(health: SyncHealth, pendingCount: number): string {
       return "Sync error — click for details";
     case "syncing":
       return "Syncing…";
-    case "upload-only":
-      return "Local changes uploaded — unlock backup to sync other devices";
     case "pending":
       return `${pendingCount} change${pendingCount === 1 ? "" : "s"} waiting to sync`;
     default:

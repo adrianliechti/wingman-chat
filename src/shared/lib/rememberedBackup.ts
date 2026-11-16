@@ -4,7 +4,6 @@ import type { KeystoreState } from "./keystore";
 interface RememberedBackup {
   userId: string;
   protection: string;
-  kid: number;
   /** Non-extractable AES-GCM root key; scripts can use it but never read its bytes. */
   key: CryptoKey;
 }
@@ -47,8 +46,8 @@ async function protection(state: KeystoreState): Promise<string> {
 }
 
 export async function rememberBackup(userId: string, state: KeystoreState, dek: RootKey): Promise<void> {
-  const { key, kid } = await toDeviceKey(dek);
-  await record({ userId, protection: await protection(state), kid, key });
+  const { key } = await toDeviceKey(dek);
+  await record({ userId, protection: await protection(state), key });
 }
 
 export async function forgetBackup(): Promise<void> {
@@ -60,13 +59,12 @@ export async function loadRememberedBackup(userId: string, state: KeystoreState)
   if (!saved) return null;
   if (
     saved.userId === userId &&
-    saved.kid === state.keystore.kid &&
     saved.protection === (await protection(state)) &&
     saved.key instanceof CryptoKey &&
     !saved.key.extractable &&
     saved.key.algorithm.name === "AES-GCM"
   ) {
-    return { key: saved.key, kid: saved.kid };
+    return { key: saved.key };
   }
   await forgetBackup();
   return null;

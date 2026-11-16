@@ -9,7 +9,7 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
-// Load builds a Config from backup JSON, YAML files, and environment overrides.
+// Load builds a Config by reading YAML files and applying environment variable overrides.
 func Load() *Config {
 	cfg := &Config{
 		Title:      envOrDefault("TITLE", "Wingman AI"),
@@ -37,7 +37,6 @@ func Load() *Config {
 }
 
 func loadConfigFiles(cfg *Config) {
-	loadBackupJSON(cfg)
 	loadLinks(cfg)
 	loadYAML("tools.yaml", &cfg.Tools)
 	loadYAML("models.yaml", &cfg.Models)

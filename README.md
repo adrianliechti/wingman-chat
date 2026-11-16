@@ -446,7 +446,7 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
 
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
-- `BACKUP_PROVIDER` — `local` (default) or `onedrive`. Local uses ZIP backup controls; OneDrive enables online backup and automatically selects the sole OneDrive connection in `drives.yaml`. Configure the same setting with `backup.provider` in `config.json`, or `provider` in `backup.yaml`. Only deployments with multiple OneDrive connections need `BACKUP_DRIVE` / `drive` to select a connection by id. See [backup configuration](docs/backup.md#choose-a-provider) for authentication, concurrency, and migration details. OneDrive requires no persistent or shared volume.
+- `BACKUP_PROVIDER` — `local` (default) or `onedrive`. Local uses ZIP backup controls; OneDrive enables online backup and automatically selects the sole OneDrive connection in `drives.yaml`. Configure the same setting with `provider` in `backup.yaml`. Only deployments with multiple OneDrive connections need `BACKUP_DRIVE` / `drive` to select a connection by id. See [backup configuration](docs/backup.md#choose-a-provider) for authentication, concurrency, and migration details. OneDrive requires no persistent or shared volume.
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED` (`TELEMETRY_NAME` — the OpenTelemetry `service.name`, default `wingman-chat`)

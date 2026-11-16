@@ -21,7 +21,7 @@ import { publishStorageChanges } from "./storageChanges";
 
 import { areFileBackupsPaused, requireFileBackupReady, BackupPausedError } from "./chatBackupActivity";
 import * as api from "./storeClient";
-import { type StoreKey, canRestore, decryptFile, encryptFile } from "./crypto";
+import { type RootKey, decryptFile, encryptFile } from "./crypto";
 import {
   getRoot,
   type IndexEntry,
@@ -141,14 +141,13 @@ async function scanLocalTree(): Promise<Map<string, number>> {
   return out;
 }
 
-class RestoreRequiredError extends Error {}
 class FileTooLargeError extends Error {}
 
 export class FileSync {
   private state: FileSyncState;
   private readonly userId: string;
   private readonly accountId: string;
-  private dek: StoreKey;
+  private readonly dek: RootKey;
 
   /** Paths with local changes awaiting push. */
   private dirty = new Set<string>();
@@ -208,7 +207,7 @@ export class FileSync {
   private progress = new SyncProgressTracker(() => this.setActivity({}));
   private activityListeners = new Set<(a: FileSyncActivity) => void>();
 
-  private constructor(userId: string, accountId: string, dek: StoreKey, state: FileSyncState) {
+  private constructor(userId: string, accountId: string, dek: RootKey, state: FileSyncState) {
     this.userId = userId;
     this.accountId = accountId;
     this.dek = dek;
@@ -216,7 +215,7 @@ export class FileSync {
   }
 
   /** accountId is the keystore ID bound into ciphertext. */
-  static async create(opts: { userId: string; accountId: string; dek: StoreKey }): Promise<FileSync> {
+  static async create(opts: { userId: string; accountId: string; dek: RootKey }): Promise<FileSync> {
     const state = await readJson<FileSyncState>(STATE_FILE);
     if (state && state.userId !== opts.userId) {
       throw new Error(
@@ -224,10 +223,6 @@ export class FileSync {
       );
     }
     return new FileSync(opts.userId, opts.accountId, opts.dek, state ?? { userId: opts.userId, entries: {} });
-  }
-
-  setKey(dek: StoreKey): void {
-    this.dek = dek;
   }
 
   /** Watch sync activity (in-flight, pending count, last sync, last error). */
@@ -307,7 +302,7 @@ export class FileSync {
           if (err instanceof BackupPausedError) break;
           this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
           console.warn(`fileSync: flush failed for ${path}`, err);
-          if (!(err instanceof RestoreRequiredError) && !(err instanceof FileTooLargeError)) break;
+          if (!(err instanceof FileTooLargeError)) break;
         }
       }
       await this.saveState();
@@ -332,13 +327,8 @@ export class FileSync {
     return this.fullSyncInFlight;
   }
 
-  async restore(): Promise<void> {
-    await this.fullSyncInFlight;
-    await this.fullSync();
-  }
-
   private async reconcile(): Promise<void> {
-    if (!canRestore(this.dek) || areFileBackupsPaused()) {
+    if (areFileBackupsPaused()) {
       const preparing = this.progress.begin("backup");
       try {
         const local = await scanLocalTree();
@@ -442,7 +432,6 @@ export class FileSync {
     if (!meta) {
       // Locally deleted. Propagate unless the file was never synced.
       if (entry) {
-        if (!canRestore(this.dek)) throw new RestoreRequiredError("Unlock restore before deleting a server backup.");
         requireFileBackupReady();
         try {
           await api.deleteFile(entry.id, { ifMatch: entry.etag });
@@ -473,11 +462,6 @@ export class FileSync {
       this.state.entries[path] = { id, etag, mtime: header.mtime };
     } catch (err) {
       if (!(err instanceof api.ServerError) || err.status !== 412) throw err;
-
-      if (!canRestore(this.dek))
-        throw new RestoreRequiredError(
-          "Another device changed this file. Unlock restore to reconcile before uploading.",
-        );
 
       // CAS conflict: someone else wrote this file. Last write wins.
       requireFileBackupReady();

@@ -36,8 +36,6 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 		mux.Handle(pattern, wrapped)
 	}
 
-	handle("GET "+prefix+"/v1/me", h.handleMe)
-
 	handle("GET "+prefix+"/v1/keystore", h.handleGetKeystore)
 	handle("PUT "+prefix+"/v1/keystore", h.handlePutKeystore)
 	handle("DELETE "+prefix+"/v1/backup", h.handleResetBackup)
@@ -63,6 +61,7 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 // casFromRequest maps conditional request headers onto the provider's ifMatch
 // argument: "If-None-Match: *" → "*" (create only), "If-Match: <etag>" (quoted
 // or bare) → "<etag>" (compare-and-swap), neither → "" (unconditional).
+// Keystore writes require one of the two headers.
 func casFromRequest(r *http.Request) string {
 	if strings.TrimSpace(r.Header.Get("If-None-Match")) == "*" {
 		return "*"
@@ -71,12 +70,6 @@ func casFromRequest(r *http.Request) string {
 }
 
 // routes -----------------------------------------------------------------
-
-func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
-	user, _ := identity.FromRequest(r)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
-}
 
 func (h *Handler) handleGetKeystore(w http.ResponseWriter, r *http.Request) {
 	data, etag, err := h.store.GetKeystore(r.Context())
@@ -103,7 +96,13 @@ func (h *Handler) handlePutKeystore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	etag, err := h.store.PutKeystore(r.Context(), body, casFromRequest(r))
+	ifMatch := casFromRequest(r)
+	if ifMatch == "" {
+		http.Error(w, "If-Match or If-None-Match required", http.StatusPreconditionRequired)
+		return
+	}
+
+	etag, err := h.store.PutKeystore(r.Context(), body, ifMatch)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -120,7 +119,7 @@ func (h *Handler) handleResetBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Backup reset confirmation required", http.StatusBadRequest)
 		return
 	}
-	if err := h.store.ResetUser(r.Context(), r.Header.Get("X-Backup-Reset-ID")); err != nil {
+	if err := h.store.ResetUser(r.Context()); err != nil {
 		writeStoreError(w, err)
 		return
 	}

@@ -6,41 +6,21 @@
  * only accepts protected keystores; setup keeps an unprotected placeholder in
  * memory until protection is chosen:
  *
- *   { version: 2, kid: 1, accountId, pinProtected: true, wrappedDek, nonce, kdf }
+ *   { accountId, generation, pinProtected: true, wrappedDek, nonce, kdf }
  *
- * `kid` names the key inside every frame envelope. The server treats
- * this body as opaque. CAS via If-Match prevents concurrent stomp; the
- * server discards obsolete keystore copies when protection changes.
+ * CAS via If-Match prevents concurrent stomp. The server rejects updates that
+ * change `accountId` or `generation`.
  *
  * `accountId` is a random ID bound into every ciphertext (AAD and key
  * derivation). It lives with the keystore instead of being derived from the
  * sign-in identity, so renaming the account cannot orphan the backup.
+ * `generation` identifies this backup; requests from devices that still hold
+ * a previous backup's generation are rejected after a reset.
  */
 
 import * as api from "./storeClient";
-import { readJson, writeJson } from "./opfs-core";
-import { generateBackupKeys, importBackupPublicKey, importBackupPrivateKey } from "./backupCrypto";
 import { createPasskeyEnvelope, unlockPasskeyEnvelope, type PasskeyEnvelope } from "./passkey";
-import {
-  type DEK,
-  type RootKey,
-  type UploadKey,
-  openWithRoot,
-  sealWithRoot,
-  fromBase64,
-  generateDEK,
-  hasRawKey,
-  type KdfParams,
-  toBase64,
-  unwrapDEKWithPin,
-  wrapDEKWithPin,
-} from "./crypto";
-
-interface BackupEnvelope {
-  generation: string;
-  publicKey: string;
-  encryptedPrivateKey: string;
-}
+import { type DEK, generateDEK, type KdfParams, unwrapDEKWithPin, wrapDEKWithPin } from "./crypto";
 
 export const PIN_MIN_LENGTH = 8;
 export const PIN_MAX_LENGTH = 32;
@@ -49,19 +29,15 @@ export const PIN_MAX_LENGTH = 32;
 interface SetupKeystore {
   /** Random ID bound into every ciphertext of this backup. */
   accountId: string;
-  backup?: BackupEnvelope;
-  version: 2;
-  /** Key id stamped into frame envelopes. */
-  kid: number;
+  /** Random ID that fences devices from before a reset. */
+  generation: string;
   pinProtected: false;
   passkeyProtected?: false;
 }
 
 interface ProtectedKeystore {
   accountId: string;
-  backup?: BackupEnvelope;
-  version: 2;
-  kid: number;
+  generation: string;
   pinProtected: true;
   passkeyProtected?: false;
   wrappedDek: string;
@@ -71,9 +47,7 @@ interface ProtectedKeystore {
 
 interface PasskeyKeystore {
   accountId: string;
-  backup?: BackupEnvelope;
-  version: 2;
-  kid: number;
+  generation: string;
   pinProtected: false;
   passkeyProtected: true;
   passkey: PasskeyEnvelope;
@@ -118,11 +92,13 @@ export async function loadKeystore(): Promise<KeystoreState | null> {
 }
 
 /** Prepare a key only in memory. Nothing is uploaded until protection is chosen. */
-export async function prepareSetup(): Promise<{ state: KeystoreState; dek: DEK }> {
-  const dek = await generateDEK();
+export function prepareSetup(): { state: KeystoreState; dek: DEK } {
   return {
-    state: { keystore: { version: 2, kid: dek.kid, accountId: newAccountId(), pinProtected: false }, etag: "" },
-    dek,
+    state: {
+      keystore: { accountId: newAccountId(), generation: crypto.randomUUID(), pinProtected: false },
+      etag: "",
+    },
+    dek: generateDEK(),
   };
 }
 
@@ -142,7 +118,7 @@ export async function unlockWithPin(state: KeystoreState, pin: string): Promise<
     );
   }
   try {
-    return await unwrapDEKWithPin(state.keystore, pin, state.keystore.accountId, state.keystore.kid);
+    return await unwrapDEKWithPin(state.keystore, pin, state.keystore.accountId);
   } catch (err) {
     if (err instanceof Error && err.name === "OperationError") {
       throw new Error("Incorrect PIN. Please try again.", { cause: err });
@@ -159,16 +135,9 @@ export async function setPin(state: KeystoreState, dek: DEK, pin: string): Promi
   if (pin.length < PIN_MIN_LENGTH || pin.length > PIN_MAX_LENGTH) {
     throw new Error(`PIN must be between ${PIN_MIN_LENGTH} and ${PIN_MAX_LENGTH} characters.`);
   }
-  const { accountId } = state.keystore;
+  const { accountId, generation } = state.keystore;
   const wrapped = await wrapDEKWithPin(dek, pin, accountId);
-  const pinState: ProtectedKeystore = {
-    version: 2,
-    kid: dek.kid,
-    accountId,
-    pinProtected: true,
-    backup: state.keystore.backup,
-    ...wrapped,
-  };
+  const pinState: ProtectedKeystore = { accountId, generation, pinProtected: true, ...wrapped };
   const ks: ProtectedKeystore | DualProtectedKeystore = isPasskeyProtected(state.keystore)
     ? { ...pinState, passkeyProtected: true, passkey: state.keystore.passkey }
     : pinState;
@@ -177,17 +146,9 @@ export async function setPin(state: KeystoreState, dek: DEK, pin: string): Promi
 
 /** Add or replace a passkey after verification, preserving any PIN protection. */
 export async function setPasskey(state: KeystoreState, dek: DEK): Promise<KeystoreState> {
-  const { accountId } = state.keystore;
+  const { accountId, generation } = state.keystore;
   const passkey = await createPasskeyEnvelope(dek, accountId);
-  const passkeyState: PasskeyKeystore = {
-    version: 2,
-    kid: dek.kid,
-    accountId,
-    pinProtected: false,
-    passkeyProtected: true,
-    backup: state.keystore.backup,
-    passkey,
-  };
+  const passkeyState: PasskeyKeystore = { accountId, generation, pinProtected: false, passkeyProtected: true, passkey };
   const ks: PasskeyKeystore | DualProtectedKeystore = isPinProtected(state.keystore)
     ? {
         ...passkeyState,
@@ -202,68 +163,5 @@ export async function setPasskey(state: KeystoreState, dek: DEK): Promise<Keysto
 
 export async function unlockWithPasskey(state: KeystoreState): Promise<DEK> {
   if (!isPasskeyProtected(state.keystore)) throw new Error("Sync is not passkey-protected.");
-  return unlockPasskeyEnvelope(state.keystore.passkey, state.keystore.accountId, state.keystore.kid);
-}
-
-function privateKeyAad(accountId: string, kid: number): string {
-  return `backup-private:${accountId}:${kid}`;
-}
-
-/** Provision the backup key pair once while unlocked; its private key is sealed with the root key. */
-export async function enableBackupUploads<K extends RootKey>(
-  state: KeystoreState,
-  dek: K,
-  userId: string,
-): Promise<{ state: KeystoreState; dek: K }> {
-  if (!isProtected(state.keystore)) throw new Error("Backups require a PIN or passkey.");
-  // Seal only with the root key, never recursively with the backup public key.
-  const root = (hasRawKey(dek) ? { raw: dek.raw, kid: dek.kid } : { key: dek.key, kid: dek.kid }) as K;
-  const { accountId } = state.keystore;
-  let current = state;
-  if (!current.keystore.backup) {
-    const pair = await generateBackupKeys();
-    const privateBytes = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey));
-    const encryptedPrivateKey = toBase64(await sealWithRoot(root, privateBytes, privateKeyAad(accountId, dek.kid)));
-    privateBytes.fill(0);
-    const backup = {
-      generation: crypto.randomUUID(),
-      publicKey: toBase64(new Uint8Array(await crypto.subtle.exportKey("spki", pair.publicKey))),
-      encryptedPrivateKey,
-    };
-    const ks = { ...current.keystore, backup };
-    const etag = await api.putKeystore(JSON.stringify(ks), { ifMatch: current.etag });
-    current = { keystore: ks, etag };
-  }
-  const envelope = current.keystore.backup!;
-  const publicKey = await importBackupPublicKey(fromBase64(envelope.publicKey));
-  const privateBytes = await openWithRoot(
-    root,
-    fromBase64(envelope.encryptedPrivateKey),
-    privateKeyAad(accountId, dek.kid),
-  );
-  const privateKey = await importBackupPrivateKey(privateBytes);
-  privateBytes.fill(0);
-  // Detect a mismatched public/private pair before permitting uploads.
-  const probe = crypto.getRandomValues(new Uint8Array(32));
-  const wrapped = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, publicKey, probe);
-  const unwrapped = new Uint8Array(await crypto.subtle.decrypt({ name: "RSA-OAEP" }, privateKey, wrapped));
-  if (!unwrapped.every((byte, index) => byte === probe[index])) throw new Error("Backup key pair does not match.");
-  await writeJson("_sync/upload-key.json", { userId, kid: dek.kid, publicKey: envelope.publicKey });
-  return { state: current, dek: { ...root, backup: { publicKey, privateKey } } };
-}
-
-export async function uploadKey(state: KeystoreState, userId: string): Promise<UploadKey | null> {
-  const trusted = await readJson<{ userId: string; kid: number; publicKey: string }>("_sync/upload-key.json");
-  if (
-    !isProtected(state.keystore) ||
-    !state.keystore.backup ||
-    trusted?.userId !== userId ||
-    trusted.kid !== state.keystore.kid ||
-    trusted.publicKey !== state.keystore.backup.publicKey
-  )
-    return null;
-  return {
-    kid: state.keystore.kid,
-    backup: { publicKey: await importBackupPublicKey(fromBase64(state.keystore.backup.publicKey)) },
-  };
+  return unlockPasskeyEnvelope(state.keystore.passkey, state.keystore.accountId);
 }

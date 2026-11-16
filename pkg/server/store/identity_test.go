@@ -23,5 +23,5 @@ func TestStorageSurvivesEmailRename(t *testing.T) {
 func TestMissingForwardedUserIsUnauthorized(t *testing.T) {
 	server := newTestServer(t)
 	header := map[string]string{"X-Forwarded-Email": "user@example.com"}
-	wantStatus(t, do(t, server, "", "GET", "/v1/me", "", header), http.StatusUnauthorized)
+	wantStatus(t, do(t, server, "", "GET", "/v1/keystore", "", header), http.StatusUnauthorized)
 }

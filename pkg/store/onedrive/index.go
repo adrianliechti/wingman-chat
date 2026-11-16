@@ -36,7 +36,6 @@ type chat struct {
 }
 type index struct {
 	Generation string            `json:"generation,omitempty"`
-	ResetIDs   map[string]bool   `json:"resetIds,omitempty"`
 	Version    int               `json:"version"`
 	Keystore   []byte            `json:"keystore,omitempty"`
 	Chats      map[string]chat   `json:"chats"`
@@ -55,7 +54,6 @@ func emptyIndex() *index {
 func cloneIndex(state *index) *index {
 	copy := *state
 	copy.Keystore = slices.Clone(state.Keystore)
-	copy.ResetIDs = maps.Clone(state.ResetIDs)
 	copy.Chats = maps.Clone(state.Chats)
 	for id, ch := range copy.Chats {
 		ch.Segments = slices.Clone(ch.Segments)
@@ -148,9 +146,6 @@ func (p *Provider) readIndex(ctx context.Context) (*index, driveItem, error) {
 }
 
 func (p *Provider) commit(ctx context.Context, state *index, control driveItem) error {
-	if err := p.verifyConditionalWrites(ctx); err != nil {
-		return err
-	}
 	data, err := json.Marshal(state)
 	if err != nil {
 		return err

@@ -14,7 +14,7 @@ export async function connect(context: BrowserContext, server: string, user: str
   await context.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
   );
-  await context.route("**/api/v1/**", async (route) => {
+  await context.route(/\/api\/v1\/|\/me$/, async (route) => {
     if (network.offline) return route.abort("internetdisconnected");
     if (network.unavailable) return route.fulfill({ status: 503, body: "Backup server temporarily unavailable" });
     if (await network.interrupt?.(route)) return;

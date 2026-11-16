@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FileSync, type FileSyncActivity } from "./fileSync";
 import { decryptFile, encryptFile, generateDEK } from "./crypto";
-import { generateBackupKeys } from "./backupCrypto";
 import { deleteFile, readBlob, readJson, readText, writeBlob, writeText } from "./opfs-core";
 import * as api from "./storeClient";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
@@ -67,7 +66,7 @@ it("reports a listed but missing file as an incomplete restore and retries witho
   sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   sync.subscribeActivity((value) => (activity = value));
 
-  await expect(sync.restore()).rejects.toThrow("could not be restored");
+  await expect(sync.fullSync()).rejects.toThrow("could not be restored");
   expect(activity.lastError).toContain("could not be restored");
   expect(activity.syncing).toBe(false);
   expect(await readText(paths[0])).toBe(paths[0]);
@@ -76,7 +75,7 @@ it("reports a listed but missing file as an incomplete restore and retries witho
   expect(api.putFile).not.toHaveBeenCalled();
 
   vi.mocked(api.getFile).mockImplementation(async (id) => remote.get(id) ?? null);
-  await sync.restore();
+  await sync.fullSync();
   expect(await readText(paths[1])).toBe(paths[1]);
   expect(activity.lastError).toBeNull();
   expect(activity.progress).toEqual([]);
@@ -86,13 +85,12 @@ it.each([
   { path: "agents/empty.txt", bytes: new Uint8Array() },
   { path: "agents/日本語 🦉.bin", bytes: new Uint8Array([0, 255, 128, 13, 10, 0, 42]) },
 ])("backs up and restores $path byte-for-byte on a fresh device", async ({ path, bytes }) => {
-  const pair = await generateBackupKeys();
-  const key = { ...(await generateDEK()), backup: { publicKey: pair.publicKey, privateKey: pair.privateKey } };
+  const key = generateDEK();
   await writeBlob(path, new Blob([bytes]));
   sync = await FileSync.create({
     userId: "alice",
     accountId: "alice",
-    dek: { kid: key.kid, backup: { publicKey: pair.publicKey } },
+    dek: key,
   });
   await sync.fullSync();
   const id = await idFor(path);
@@ -103,7 +101,7 @@ it.each([
 
   memory.reset();
   sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
-  await sync.restore();
+  await sync.fullSync();
   expect(new Uint8Array(await (await readBlob(path))!.arrayBuffer())).toEqual(bytes);
   expect(api.putFile).toHaveBeenCalledTimes(1);
 });
@@ -120,13 +118,13 @@ it("retries a restore after local storage fills without marking the file as rest
     if (writing === path) throw new DOMException("Disk full", "QuotaExceededError");
   };
   sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
-  await expect(sync.restore()).rejects.toThrow("could not be restored");
+  await expect(sync.fullSync()).rejects.toThrow("could not be restored");
   expect(await readBlob(path)).toBeUndefined();
   expect(await readJson("_sync/files.json")).toMatchObject({ entries: {} });
   expect(api.putFile).not.toHaveBeenCalled();
 
   memory.beforeWrite = undefined;
-  await sync.restore();
+  await sync.fullSync();
   expect(await readText(path)).toBe("complete");
   expect(await readJson("_sync/files.json")).toMatchObject({ entries: { [path]: { etag: "remote" } } });
 });
@@ -191,7 +189,7 @@ it.each([0, 1, 3])("resumes a multi-file backup after %s confirmed uploads and a
   expect(api.putFile).toHaveBeenCalledTimes(paths.length + 1);
   memory.reset();
   sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
-  await sync.restore();
+  await sync.fullSync();
   for (const path of paths) expect(await readText(path)).toBe(`contents of ${path}`);
 });
 
@@ -222,7 +220,7 @@ it.each(["upload", "restore"])(
     expect(remote.size).toBe(1);
     memory.reset();
     sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
-    await sync.restore();
+    await sync.fullSync();
     expect(await readText(path)).toBe("durable contents");
   },
 );
@@ -255,7 +253,7 @@ it.each([false, true])(
     expect(await readJson("_sync/files.json")).toMatchObject({ entries: {} });
     memory.reset();
     sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
-    await sync.restore();
+    await sync.fullSync();
     expect(await readText(path)).toBeUndefined();
     expect(api.putFile).toHaveBeenCalledOnce();
   },

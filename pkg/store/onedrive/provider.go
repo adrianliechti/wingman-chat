@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"sync"
 
 	"github.com/adrianliechti/wingman-chat/pkg/drive/graph"
 	"github.com/adrianliechti/wingman-chat/pkg/store"
@@ -25,15 +24,13 @@ var resourceID = regexp.MustCompile(`^[A-Za-z0-9_-]{8,128}$`)
 const indexName = "index.json"
 
 type Provider struct {
-	client        *http.Client
-	base          string
-	tempDir       string
-	conditionalMu sync.Mutex
-	conditional   map[string]bool
+	client  *http.Client
+	base    string
+	tempDir string
 }
 
 func New() *Provider {
-	return &Provider{client: http.DefaultClient, base: graph.GraphURL, conditional: make(map[string]bool)}
+	return &Provider{client: http.DefaultClient, base: graph.GraphURL}
 }
 
 type sessionKey struct{}
@@ -101,7 +98,7 @@ func (p *Provider) PutKeystore(ctx context.Context, data []byte, ifMatch string)
 		return "", err
 	}
 	current := state.Keystore
-	if !matches(ifMatch, digest(current), len(current) > 0) || !store.PreservesBackupKey(current, data) || !store.PreservesAccountID(current, data) {
+	if ifMatch == "" || !matches(ifMatch, digest(current), len(current) > 0) || !store.PreservesIdentity(current, data) {
 		return "", store.ErrKeystoreConflict
 	}
 

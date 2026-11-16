@@ -18,15 +18,7 @@ flowchart LR
 
 The default provider is `local`, which uses ZIP download and restore controls.
 These controls also remain available when online backup is enabled. Omitting the
-provider or using `"backup": {}` selects local backups.
-
-```json
-{
-  "backup": {
-    "provider": "local"
-  }
-}
-```
+provider selects local backups.
 
 For online backups in Kubernetes, add one environment variable to the Wingman
 container, using your existing OneDrive connection in `/app/drives.yaml`:
@@ -39,53 +31,34 @@ env:
 
 The backend automatically selects the sole OneDrive connection. Only deployments
 with multiple OneDrive connections need `BACKUP_DRIVE` set to the chosen
-connection's `id` in `drives.yaml` (or `drive` in the file-based backup configuration).
-
-Alternatively, set the `backup` section in `config.json`:
-
-```json
-{
-  "backup": {
-    "provider": "onedrive"
-  }
-}
-```
-
-The providers are `local` (ZIP files) and
-`onedrive` (encrypted OneDrive storage). The backend reads the first existing file in this order: `config.json`
-in its working directory, `public/config.json` for local development, then
-`dist/config.json` for built assets. Only the `backup` section is read by the
-backend; other browser settings keep their existing behavior. In Docker, mount
-`config.json` at `/app/config.json` (the image build resets the bundled browser
-configuration). Restart the backend after changing it.
+connection's `id` in `drives.yaml` (or `drive` in `backup.yaml`).
 
 Alternatively, configure `backup.yaml` using the existing OneDrive connection:
 
 ```yaml
 provider: onedrive
+drive: personal # optional
 ```
 
-The backend exposes this as `backup: { provider: "onedrive" }`
-in `/config.json`; `onedrive` enables online backup controls, while
-`local` keeps the ZIP backup controls. Unknown providers or missing
-or ambiguous connections fail startup. When both are present, `backup.yaml`
-overrides JSON. Environment overrides `BACKUP_PROVIDER` and `BACKUP_DRIVE` take
-precedence over both. Restart the backend after changing configuration.
+The providers are `local` (ZIP files) and `onedrive` (encrypted OneDrive
+storage). The backend exposes the choice as `backup: { provider: "onedrive" }` in
+`/config.json`; `onedrive` enables online backup controls, while `local` keeps
+the ZIP backup controls. Unknown providers or missing or ambiguous connections
+fail startup. `BACKUP_PROVIDER` and `BACKUP_DRIVE` take precedence over
+`backup.yaml`. Restart the backend after changing configuration.
 
-The JSON file must also be available to the chat backend; a frontend-only dev server cannot change a separately deployed
-backend’s provider. Switching providers selects a separate backup;
-it does not migrate or delete the old destination. Configure protection at the new
-destination before local data can upload there. The browser detects a changed
-OneDrive destination using the backend’s account endpoint, preserves local content,
-clears the previous destination’s sync tracking, and reloads open tabs. Finish any
-pending remote reset before switching providers; it will not be replayed against
-the new destination.
+Switching providers or OneDrive connections selects a separate backup; it does
+not migrate or delete the old one. Each browser records which backup its local
+sync tracking belongs to (the keystore's account ID). When it finds a different
+or missing backup, it clears that tracking and reloads open tabs, keeping local
+chats and files; they upload again once protection is configured at the new
+destination.
 
 ### Stable account identity
 
 The chat backend identifies the backup user by the proxy's `X-Forwarded-User`
-header. `/api/v1/me` returns its truncated SHA-256 hash, which the browser uses
-to tell apart accounts' local sync state. Requests without `X-Forwarded-User`
+header. `/me` returns its truncated SHA-256 hash, which the browser uses
+to tell apart accounts' local sync state. Backup API requests without `X-Forwarded-User`
 fail with 401. Which backup is used is decided by the Microsoft account behind
 the Graph token, not by this header.
 
@@ -143,9 +116,7 @@ fragments. Throttled requests retry with bounded backoff; interrupted operations
 retry through the existing sync loop. Sessions are not persisted across requests.
 
 OneDrive uses conditional index writes with Microsoft Graph ETags to coordinate
-requests across replicas. Before its first commit for an account folder, each
-backend verifies that isolated probe writes reject both duplicate creation and
-stale ETags; it refuses index writes if either check fails. Unrelated resource
+requests across replicas. Unrelated resource
 changes merge and retry; concurrent
 changes to the same resource return a conflict. A changed keystore or reset
 generation rejects uploads that started before that change. Each configured backup
@@ -160,8 +131,9 @@ Reset also works when the index contents are corrupt or unsupported. It atomical
 with a fresh generation to fence stale writers. It then deletes a snapshot of
 existing encrypted objects, including objects left by earlier failed commits.
 An upload already in progress can leave an unpublished object after reset; it
-cannot publish into the new backup. Each reset has an ID, so retrying an
-unacknowledged reset does not remove a newer backup. Object cleanup is best-effort;
+cannot publish into the new backup. A browser whose reset response was lost
+retries the reset on its next load; if another device configured a new backup in
+between, that retry removes it too. Object cleanup is best-effort;
 a later reset can reclaim objects left behind. Concurrent deletion or reset can interrupt a download; restore reports the
 failure and must be retried rather than accepting a partial backup. OneDrive's recycle
 bin and version-history policies still apply: a reset or PIN change cannot revoke
@@ -176,12 +148,12 @@ restore controls, rather than manually reverting individual OneDrive objects.
 | An AI response is running         | Continue local saves. Pause that chat's uploads and this page's workspace file uploads. Already-sent uploads can finish. |
 | Request finishes, stops, or fails | Flush local saves, then resume uploads. Large chats may need several frames.                                             |
 | Change a workspace file           | Normally upload after a 2-second debounce.                                                                               |
-| Open the app                      | Reconcile local files and retry pending chat uploads. Unlocked sessions also pull remote chats.                          |
+| Open the app                      | Pull remote chats, retry pending chat uploads, and reconcile files.                                                      |
 | Keep the tab visible              | Pull chats and retry pending chat uploads every minute; reconcile files about every five minutes.                        |
 | Return to the tab                 | Pull chats and retry pending chat uploads immediately; reconcile files if due.                                           |
 | Select **Sync now**               | Pull chats, upload pending chats, and reconcile files. Request pauses still apply.                                       |
 
-Failed uploads remain pending for retry. Incoming sync requires unlocked backup access.
+Failed uploads remain pending for retry. All sync requires unlocked (or remembered) backup access.
 Open tabs share the local mirror: each chat syncs under a cross-tab lock and
 starts from the baseline last written by any tab, so events are never applied twice.
 Store requests time out after a minute (ten for file and attachment transfers).
@@ -201,16 +173,14 @@ paths. The backend can also see account identity, sizes, and update timing.
 ## How is it encrypted?
 
 Encryption happens **in the browser before upload**; decryption happens there
-after download. Each new event frame, attachment, or file gets a fresh random
-AES-256-GCM key and nonce. RSA-OAEP-SHA256 (3072-bit) wraps that content key.
-Authenticated context binds the payload to its account, resource, and key ID.
-This protects confidentiality, not authorship: the public key is known to the
-backend, so a compromised backend could create payloads that decrypt correctly.
+after download. Each event frame, attachment, or file is encrypted with
+AES-256-GCM under a random root key and a fresh nonce. Authenticated context
+binds the payload to its account, resource, and (for chat frames) sequence
+number, so the backend cannot reorder or move frames without decryption failing.
 Restored workspace files must still match the resource ID derived from their path.
 
-The server holds the RSA private key encrypted under a random root key. Your PIN
-or passkey (WebAuthn PRF + HKDF-SHA256) protects that root key. Either configured
-method can unlock it. Changing protection preserves existing data and keys.
+Your PIN or passkey (WebAuthn PRF + HKDF-SHA256) protects the root key. Either
+configured method can unlock it. Changing protection preserves existing data and keys.
 
 New PINs must have at least 8 characters. They are stretched with Argon2id
 (64 MiB, 3 passes) and HKDF-SHA256. A leaked keystore permits offline PIN
@@ -222,8 +192,8 @@ running in the page can use it while the app is open, but cannot read or copy it
 bytes. Access to the browser profile still grants local data and remembered backup
 access. Because the saved key cannot be read back, adding or replacing a recovery
 method on a remembered device first asks for an existing method again: a passkey
-prompt, or the PIN before adding a passkey. A cached public key supports
-upload-only operation; restoring or reconciling conflicts requires unlocking.
+prompt, or the PIN before adding a passkey. Browsers that are not remembered
+neither upload nor download until you unlock them.
 
 ## What is included?
 

@@ -46,7 +46,7 @@ async function connect(context: BrowserContext, backupServer: string, user: stri
   await context.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
   );
-  await context.route("**/api/v1/**", async (route) => {
+  await context.route(/\/api\/v1\/|\/me$/, async (route) => {
     const request = route.request();
     const response = await route.fetch({
       url: `${backupServer}${new URL(request.url()).pathname}${new URL(request.url()).search}`,

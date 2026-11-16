@@ -40,7 +40,6 @@ func do(t *testing.T, srv *httptest.Server, user, method, path, body string, hea
 		req.Header.Set("X-Forwarded-User", user)
 	}
 	if method == "DELETE" && path == "/v1/backup" {
-		req.Header.Set("X-Backup-Reset-ID", "test-reset-1234")
 	}
 	req.Header.Set("X-Backup-Generation", "test-generation")
 	for k, v := range headers {
@@ -94,12 +93,11 @@ const testAccountID = "0123456789abcdef0123456789abcdef"
 
 func protectedTestKey(note string) string {
 	key := map[string]any{
-		"version": 2, "kid": 1, "accountId": testAccountID, "pinProtected": true,
+		"accountId": testAccountID, "generation": "test-generation", "pinProtected": true,
 		"wrappedDek": base64.StdEncoding.EncodeToString(make([]byte, 48)),
 		"nonce":      base64.StdEncoding.EncodeToString(make([]byte, 12)),
 		"kdf":        map[string]any{"name": "argon2id", "salt": base64.StdEncoding.EncodeToString(make([]byte, 16)), "m": 65536, "t": 3, "p": 1},
 		"note":       note,
-		"backup":     map[string]string{"generation": "test-generation", "publicKey": "public", "encryptedPrivateKey": "encrypted"},
 	}
 	data, _ := json.Marshal(key)
 	return string(data)
@@ -117,7 +115,6 @@ func TestRequireUser(t *testing.T) {
 	srv := newTestServer(t)
 
 	for _, route := range []struct{ method, path string }{
-		{"GET", "/v1/me"},
 		{"GET", "/v1/keystore"},
 		{"PUT", "/v1/keystore"},
 		{"DELETE", "/v1/backup"},
@@ -140,37 +137,6 @@ func TestRequireUser(t *testing.T) {
 			res := do(t, srv, "", route.method, route.path, "", nil)
 			wantStatus(t, res, http.StatusUnauthorized)
 		})
-	}
-}
-
-func TestMe(t *testing.T) {
-	srv := newTestServer(t)
-
-	res := do(t, srv, "alice", "GET", "/v1/me", "", nil)
-	wantStatus(t, res, http.StatusOK)
-
-	var u struct {
-		ID    string `json:"id"`
-		Key   string `json:"key"`
-		Email string `json:"email"`
-	}
-	if err := json.NewDecoder(res.Body).Decode(&u); err != nil {
-		t.Fatal(err)
-	}
-	if len(u.ID) != 32 {
-		t.Fatalf("id should be 16 hashed bytes hex-encoded, got %q", u.ID)
-	}
-	if u.Key != "" {
-		t.Fatal("/me leaked the private storage key")
-	}
-
-	res2 := do(t, srv, "alice", "GET", "/v1/me", "", nil)
-	var u2 struct {
-		ID string `json:"id"`
-	}
-	json.NewDecoder(res2.Body).Decode(&u2)
-	if u.ID != u2.ID {
-		t.Fatal("identity must be stable across requests")
 	}
 }
 
@@ -203,6 +169,10 @@ func TestKeystoreLifecycle(t *testing.T) {
 	if etag == "" {
 		t.Fatal("PUT must return an ETag")
 	}
+
+	// unconditional replace → precondition required
+	res = do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("two"), nil)
+	wantStatus(t, res, http.StatusPreconditionRequired)
 
 	// create-only again → conflict
 	res = do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("two"), map[string]string{"If-None-Match": "*"})
@@ -487,7 +457,7 @@ func TestFrameTooLarge(t *testing.T) {
 
 func TestBackupsRequireProtection(t *testing.T) {
 	srv := newTestServer(t)
-	for _, body := range []string{`{"version":2,"kid":1,"pinProtected":false,"dek":"raw"}`, `{"pinProtected":true}`, `{"passkeyProtected":true}`, `{}`, `invalid`} {
+	for _, body := range []string{`{"pinProtected":false}`, `{"pinProtected":true}`, `{"passkeyProtected":true}`, `{}`, `invalid`} {
 		wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", body, nil), http.StatusBadRequest)
 	}
 	for _, request := range []struct{ method, path string }{
@@ -501,7 +471,7 @@ func TestBackupsRequireProtection(t *testing.T) {
 	res := do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("protected"), map[string]string{"If-None-Match": "*"})
 	wantStatus(t, res, http.StatusNoContent)
 	// An older client cannot turn a protected account back into plaintext mode.
-	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", `{"version":2,"kid":1,"pinProtected":false,"dek":"raw"}`, map[string]string{"If-Match": res.Header.Get("ETag")}), http.StatusBadRequest)
+	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", `{"pinProtected":false}`, map[string]string{"If-Match": res.Header.Get("ETag")}), http.StatusBadRequest)
 	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files", "", nil), http.StatusOK)
 }
 
