@@ -47,7 +47,9 @@ func backupProvider(cfg *config.Config) (store.Provider, func(http.Handler) http
 		middleware := func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// /me establishes the crypto account identity without accessing OneDrive.
-				if strings.HasSuffix(r.URL.Path, "/v1/me") {
+				// Match the registered pattern: r.URL.Path is decoded, so an encoded
+				// id such as "x%2Fv1%2Fme" would otherwise skip the token check.
+				if strings.HasSuffix(r.Pattern, "/v1/me") {
 					w.Header().Set("X-Backup-Destination", destination)
 					w.Header().Set("Cache-Control", "no-store")
 					next.ServeHTTP(w, r)

@@ -152,3 +152,103 @@ func TestLocalBackupDefaultAndExplicitProviders(t *testing.T) {
 		})
 	}
 }
+
+func inTempDir(t *testing.T) {
+	t.Helper()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Setenv("BACKUP_PROVIDER", "")
+	t.Setenv("BACKUP_DRIVE", "")
+	t.Setenv("STORE_ENABLED", "")
+}
+
+func TestBackupEnvironmentOverrides(t *testing.T) {
+	inTempDir(t)
+	t.Setenv("BACKUP_DRIVE", "personal")
+	if cfg := Load(); cfg.Backup != nil {
+		t.Fatalf("BACKUP_DRIVE alone enabled backup: %+v", cfg.Backup)
+	}
+	if err := os.WriteFile("config.json", []byte(`{"backup":{"provider":"local","drive":"work"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BACKUP_DRIVE", "")
+	t.Setenv("BACKUP_PROVIDER", "onedrive")
+	if cfg := Load(); cfg.Backup.Provider != "onedrive" || cfg.Backup.Drive != "work" {
+		t.Fatalf("BACKUP_PROVIDER dropped the configured drive: %+v", cfg.Backup)
+	}
+}
+
+func TestBackupJSONEmptyValues(t *testing.T) {
+	for _, test := range []struct {
+		body         string
+		wantProvider string
+	}{
+		{body: `{}`},
+		{body: `{"backup":null}`},
+		{body: `{"backup":{}}`, wantProvider: "local"},
+		{body: `{"backup":{"provider":"onedrive","unknown":true}}`, wantProvider: "onedrive"},
+	} {
+		t.Run(test.body, func(t *testing.T) {
+			inTempDir(t)
+			if err := os.WriteFile("config.json", []byte(test.body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg := Load()
+			if test.wantProvider == "" {
+				if cfg.Backup != nil {
+					t.Fatalf("backup enabled: %+v", cfg.Backup)
+				}
+				return
+			}
+			if cfg.Backup == nil || cfg.Backup.Provider != test.wantProvider {
+				t.Fatalf("provider: %+v", cfg.Backup)
+			}
+		})
+	}
+}
+
+func TestUnusableBackupJSONFailsStartup(t *testing.T) {
+	for name, setup := range map[string]func() error{
+		"syntax error": func() error { return os.WriteFile("config.json", []byte(`{"backup":`), 0600) },
+		"unreadable":   func() error { return os.Mkdir("config.json", 0700) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			inTempDir(t)
+			if err := setup(); err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if recover() == nil {
+					t.Fatal("unusable config.json was silently ignored")
+				}
+			}()
+			Load()
+		})
+	}
+}
+
+func TestLaterBackupJSONIsNotRead(t *testing.T) {
+	inTempDir(t)
+	if err := os.Mkdir("public", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("public/config.json", []byte(`not json`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("config.json", []byte(`{"backup":{"provider":"local"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := Load(); cfg.Backup == nil || cfg.Backup.Provider != "local" {
+		t.Fatalf("root config.json not used: %+v", cfg.Backup)
+	}
+}
