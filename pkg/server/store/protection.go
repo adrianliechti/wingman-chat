@@ -66,7 +66,7 @@ func sizedBase64(value string, size int) bool {
 // backup generation, which fences devices from before a reset.
 func (h *Handler) requireProtection(next userHandler) userHandler {
 	return func(w http.ResponseWriter, r *http.Request, user identity.User) {
-		key, _, err := h.store.GetKeystore(r.Context(), user.Key)
+		key, _, err := h.store.GetKeystore(r.Context(), user.ID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			writeStoreError(w, err)
 			return

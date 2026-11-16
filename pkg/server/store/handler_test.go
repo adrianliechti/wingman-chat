@@ -181,21 +181,12 @@ func TestIdentityNormalization(t *testing.T) {
 	res = do(t, srv, "alice", "GET", "/v1/keystore", "", nil)
 	wantStatus(t, res, http.StatusOK)
 
-	// A whitespace-only user header falls back to the email for storage,
-	// never to the raw whitespace string.
+	// A whitespace-only user header is not an identity, even with an email.
 	res = do(t, srv, "   ", "PUT", "/v1/keystore", protectedTestKey("two"), map[string]string{
 		"If-None-Match":     "*",
 		"X-Forwarded-Email": "bob@example.com",
 	})
-	wantStatus(t, res, http.StatusNoContent)
-	res = do(t, srv, "bob@example.com", "GET", "/v1/keystore", "", nil)
-	wantStatus(t, res, http.StatusOK)
-	if body := readBody(t, res); body != protectedTestKey("two") {
-		t.Fatalf("email-fallback keystore mismatch: %s", body)
-	}
-	// A different email with the same whitespace user must NOT see it.
-	res = do(t, srv, "   ", "GET", "/v1/keystore", "", map[string]string{"X-Forwarded-Email": "carol@example.com"})
-	wantStatus(t, res, http.StatusNotFound)
+	wantStatus(t, res, http.StatusUnauthorized)
 }
 
 func TestKeystoreLifecycle(t *testing.T) {
@@ -522,6 +513,6 @@ func newTestStore(t *testing.T) *onedrive.Provider {
 func testStoreMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, _ := identity.FromRequest(r)
-		next.ServeHTTP(w, r.WithContext(onedrive.WithToken(r.Context(), user.Key)))
+		next.ServeHTTP(w, r.WithContext(onedrive.WithToken(r.Context(), user.ID)))
 	})
 }

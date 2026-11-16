@@ -12,7 +12,7 @@ import (
 func (h *Handler) handleHeadBlob(w http.ResponseWriter, r *http.Request, user identity.User) {
 	blobID := r.PathValue("id")
 
-	exists, err := h.store.BlobExists(r.Context(), user.Key, blobID)
+	exists, err := h.store.BlobExists(r.Context(), user.ID, blobID)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -25,7 +25,7 @@ func (h *Handler) handleHeadBlob(w http.ResponseWriter, r *http.Request, user id
 }
 
 func (h *Handler) handleListFiles(w http.ResponseWriter, r *http.Request, user identity.User) {
-	files, err := h.store.ListFiles(r.Context(), user.Key)
+	files, err := h.store.ListFiles(r.Context(), user.ID)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -41,7 +41,7 @@ func (h *Handler) handleListFiles(w http.ResponseWriter, r *http.Request, user i
 // from the client's perspective and retain unconditional upload/delete semantics.
 func (h *Handler) handleGetObject(kind store.ObjectKind) userHandler {
 	return func(w http.ResponseWriter, r *http.Request, user identity.User) {
-		reader, etag, err := h.store.GetObject(r.Context(), user.Key, kind, r.PathValue("id"))
+		reader, etag, err := h.store.GetObject(r.Context(), user.ID, kind, r.PathValue("id"))
 		if err != nil {
 			writeStoreError(w, err)
 			return
@@ -65,7 +65,7 @@ func (h *Handler) handlePutObject(kind store.ObjectKind) userHandler {
 			ifMatch = casFromRequest(r)
 		}
 		body := http.MaxBytesReader(w, r.Body, store.MaxObjectBytes)
-		etag, err := h.store.PutObject(r.Context(), user.Key, kind, r.PathValue("id"), body, ifMatch)
+		etag, err := h.store.PutObject(r.Context(), user.ID, kind, r.PathValue("id"), body, ifMatch)
 		if err != nil {
 			writeStoreError(w, err)
 			return
@@ -83,7 +83,7 @@ func (h *Handler) handleDeleteObject(kind store.ObjectKind) userHandler {
 		if kind == store.FileObject {
 			ifMatch = casFromRequest(r)
 		}
-		if err := h.store.DeleteObject(r.Context(), user.Key, kind, r.PathValue("id"), ifMatch); err != nil {
+		if err := h.store.DeleteObject(r.Context(), user.ID, kind, r.PathValue("id"), ifMatch); err != nil {
 			writeStoreError(w, err)
 			return
 		}

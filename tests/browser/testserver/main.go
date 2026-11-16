@@ -16,7 +16,7 @@ func main() {
 	handler := server.New(cfg, "/api", config.PlatformURL(), "", os.DirFS("dist"), "skills")
 	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if user, ok := identity.FromRequest(r); ok {
-			r.Header.Set("Authorization", "Bearer "+user.Key)
+			r.Header.Set("Authorization", "Bearer "+user.ID)
 		}
 		handler.ServeHTTP(w, r)
 	})

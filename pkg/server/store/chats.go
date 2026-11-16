@@ -13,7 +13,7 @@ import (
 )
 
 func (h *Handler) handleListChats(w http.ResponseWriter, r *http.Request, user identity.User) {
-	chats, err := h.store.ListChats(r.Context(), user.Key)
+	chats, err := h.store.ListChats(r.Context(), user.ID)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -38,7 +38,7 @@ func (h *Handler) handleReadEvents(w http.ResponseWriter, r *http.Request, user 
 		fromSeq = n
 	}
 
-	reader, err := h.store.ReadEvents(r.Context(), user.Key, chatID, fromSeq)
+	reader, err := h.store.ReadEvents(r.Context(), user.ID, chatID, fromSeq)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -118,7 +118,7 @@ func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 
-	res, err := h.store.AppendEvents(r.Context(), user.Key, chatID, expectedSeq, ids, frames)
+	res, err := h.store.AppendEvents(r.Context(), user.ID, chatID, expectedSeq, ids, frames)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -141,7 +141,7 @@ func (h *Handler) handleCompactChat(w http.ResponseWriter, r *http.Request, user
 		return
 	}
 
-	if err := h.store.CompactChat(r.Context(), user.Key, chatID, beforeSeq); err != nil {
+	if err := h.store.CompactChat(r.Context(), user.ID, chatID, beforeSeq); err != nil {
 		writeStoreError(w, err)
 		return
 	}
@@ -156,7 +156,7 @@ func (h *Handler) handleDeleteChat(w http.ResponseWriter, r *http.Request, user 
 		return
 	}
 
-	if err := h.store.DeleteChat(r.Context(), user.Key, chatID, expectedSeq); err != nil {
+	if err := h.store.DeleteChat(r.Context(), user.ID, chatID, expectedSeq); err != nil {
 		if errors.Is(err, store.ErrSeqConflict) {
 			http.Error(w, err.Error(), http.StatusPreconditionFailed)
 			return

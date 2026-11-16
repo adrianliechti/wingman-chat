@@ -83,14 +83,15 @@ the new destination.
 
 ### Stable account identity
 
-For Microsoft Entra authentication, the chat backend reads `tid` and `oid` from
-`X-Forwarded-Access-Token` and uses the lowercase `<tid>:<oid>` pair as the storage
-identity. `/api/v1/me` returns its truncated SHA-256 hash for encryption context
-and browser sync state. Email is display information and can change without
-changing that identity. A new tenant or a recreated account selects a different
-backup.
+The chat backend identifies the backup user by the proxy's `X-Forwarded-User`
+header. `/api/v1/me` returns its truncated SHA-256 hash, which is used for
+encryption context and browser sync state. Requests without `X-Forwarded-User`
+fail with 401. Email is not part of the identity and can change freely.
 
-The authenticated OAuth2 Proxy must forward the access token:
+Configure the proxy so `X-Forwarded-User` is a stable subject rather than an
+email address (OAuth2 Proxy forwards the OIDC `sub` claim by default). Changing
+the claim, identity provider, or app registration that produces it selects a
+different backup.
 
 ```yaml
 environment:
@@ -98,17 +99,10 @@ environment:
   OAUTH2_PROXY_PASS_USER_HEADERS: "true"
 ```
 
-The backend decodes these claims; it does not independently verify JWT signatures.
-The proxy must validate the session, strip/overwrite client-supplied authentication
+The backend trusts these headers and does not authenticate requests itself. The
+proxy must validate the session, strip/overwrite client-supplied `X-Forwarded-*`
 headers, and be the only route to the backend. A client `Authorization` header is
-not used to select the user. Malformed forwarded tokens or present but invalid
-Entra claims fail with 401 instead of falling back to an email namespace. When no
-forwarded token exists, or a valid token has no Entra identity fields, existing
-trusted user/email headers remain available for development and other providers.
-
-An email change leaves the stable Entra identity and its keys unchanged.
-Header-based and Entra identities are separate namespaces; existing ciphertext
-is not re-encrypted when a deployment switches between them.
+not used to select the user.
 
 ### OneDrive authentication and storage
 

@@ -55,7 +55,6 @@ export async function resetBackup(resetId: string): Promise<void> {
 
 interface ServerUser {
   id: string;
-  email?: string;
   backupDestination: string;
 }
 

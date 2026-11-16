@@ -61,8 +61,8 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 	handle("DELETE "+prefix+"/v1/files/{id}", h.requireProtection(h.handleDeleteObject(store.FileObject)))
 }
 
-// userHandler keeps the public crypto identity and private storage key together.
-// Attach resolves it once, after the provider middleware, for every route.
+// userHandler receives the forwarded identity. Attach resolves it once, after
+// the provider middleware, for every route.
 type userHandler func(http.ResponseWriter, *http.Request, identity.User)
 
 // casFromRequest maps conditional request headers onto the provider's ifMatch
@@ -83,7 +83,7 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request, user identity
 }
 
 func (h *Handler) handleGetKeystore(w http.ResponseWriter, r *http.Request, user identity.User) {
-	data, etag, err := h.store.GetKeystore(r.Context(), user.Key)
+	data, etag, err := h.store.GetKeystore(r.Context(), user.ID)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -107,7 +107,7 @@ func (h *Handler) handlePutKeystore(w http.ResponseWriter, r *http.Request, user
 		return
 	}
 
-	etag, err := h.store.PutKeystore(r.Context(), user.Key, body, casFromRequest(r))
+	etag, err := h.store.PutKeystore(r.Context(), user.ID, body, casFromRequest(r))
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -124,7 +124,7 @@ func (h *Handler) handleResetBackup(w http.ResponseWriter, r *http.Request, user
 		http.Error(w, "Backup reset confirmation required", http.StatusBadRequest)
 		return
 	}
-	if err := h.store.ResetUser(r.Context(), user.Key, r.Header.Get("X-Backup-Reset-ID")); err != nil {
+	if err := h.store.ResetUser(r.Context(), user.ID, r.Header.Get("X-Backup-Reset-ID")); err != nil {
 		writeStoreError(w, err)
 		return
 	}
@@ -132,7 +132,7 @@ func (h *Handler) handleResetBackup(w http.ResponseWriter, r *http.Request, user
 }
 
 func (h *Handler) handleBackupUsage(w http.ResponseWriter, r *http.Request, user identity.User) {
-	size, err := h.store.BackupSize(r.Context(), user.Key)
+	size, err := h.store.BackupSize(r.Context(), user.ID)
 	if err != nil {
 		writeStoreError(w, err)
 		return
