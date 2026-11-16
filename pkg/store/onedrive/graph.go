@@ -156,15 +156,12 @@ type driveItem struct {
 
 // The delegated /me drive isolates Microsoft accounts. Keep a readable folder
 // name without changing the account identity used in encrypted AAD.
-func (p *Provider) folder(ctx context.Context, userID string) (string, error) {
+func (p *Provider) folder(ctx context.Context) (string, error) {
 	session, err := sessionFrom(ctx)
 	if err != nil {
 		return "", err
 	}
 	if session.folder != "" {
-		if session.user != userID {
-			return "", errors.New("OneDrive backup: account mismatch")
-		}
 		return session.folder, nil
 	}
 	var root driveItem
@@ -192,22 +189,22 @@ func (p *Provider) folder(ctx context.Context, userID string) (string, error) {
 	if folder.ID == "" || folder.Folder == nil {
 		return "", errors.New("OneDrive backup: invalid account folder")
 	}
-	session.folder, session.user = folder.ID, userID
+	session.folder = folder.ID
 	return folder.ID, nil
 }
 
-func (p *Provider) objectURL(ctx context.Context, userID, name string) (string, error) {
+func (p *Provider) objectURL(ctx context.Context, name string) (string, error) {
 	if !objectName.MatchString(name) {
 		return "", errors.New("OneDrive backup: invalid object name")
 	}
-	folder, err := p.folder(ctx, userID)
+	folder, err := p.folder(ctx)
 	if err != nil {
 		return "", err
 	}
 	return p.base + "/me/drive/items/" + url.PathEscape(folder) + ":/" + url.PathEscape(name), nil
 }
-func (p *Provider) open(ctx context.Context, userID, name string) (io.ReadCloser, error) {
-	endpoint, err := p.objectURL(ctx, userID, name)
+func (p *Provider) open(ctx context.Context, name string) (io.ReadCloser, error) {
+	endpoint, err := p.objectURL(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -220,8 +217,8 @@ func (p *Provider) open(ctx context.Context, userID, name string) (io.ReadCloser
 	}
 	return res.Body, nil
 }
-func (p *Provider) remove(ctx context.Context, userID, name string) error {
-	endpoint, err := p.objectURL(ctx, userID, name)
+func (p *Provider) remove(ctx context.Context, name string) error {
+	endpoint, err := p.objectURL(ctx, name)
 	if err != nil {
 		return err
 	}
@@ -234,7 +231,7 @@ func (p *Provider) remove(ctx context.Context, userID, name string) error {
 
 // Spooling encrypted input bounds memory and makes each upload fragment replayable.
 // The temporary file is removed before the API request returns.
-func (p *Provider) upload(ctx context.Context, userID, name string, r io.Reader) (string, int64, error) {
+func (p *Provider) upload(ctx context.Context, name string, r io.Reader) (string, int64, error) {
 	f, err := os.CreateTemp(p.tempDir, "wingman-onedrive-*")
 	if err != nil {
 		return "", 0, err
@@ -246,7 +243,7 @@ func (p *Provider) upload(ctx context.Context, userID, name string, r io.Reader)
 	if err != nil {
 		return "", 0, err
 	}
-	endpoint, err := p.objectURL(ctx, userID, name)
+	endpoint, err := p.objectURL(ctx, name)
 	if err != nil {
 		return "", 0, err
 	}

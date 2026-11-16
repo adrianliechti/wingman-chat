@@ -13,11 +13,11 @@ import (
 
 type interruptedObjectStore struct{ store.Provider }
 
-func (interruptedObjectStore) GetKeystore(context.Context, string) ([]byte, string, error) {
+func (interruptedObjectStore) GetKeystore(context.Context) ([]byte, string, error) {
 	return []byte(protectedTestKey("")), "key", nil
 }
 
-func (interruptedObjectStore) GetObject(context.Context, string, store.ObjectKind, string) (io.ReadCloser, string, error) {
+func (interruptedObjectStore) GetObject(context.Context, store.ObjectKind, string) (io.ReadCloser, string, error) {
 	// Send enough ciphertext to flush HTTP headers before the upstream fails.
 	reader := io.MultiReader(strings.NewReader(strings.Repeat("x", 64<<10)), interruptedReader{})
 	return io.NopCloser(reader), "object-etag", nil

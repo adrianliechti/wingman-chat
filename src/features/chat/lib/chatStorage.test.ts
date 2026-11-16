@@ -436,7 +436,7 @@ it("keeps an online-saved chat visible and editable after switching to local bac
   vi.mocked(api.appendEvents).mockImplementation(async (_id, seq, events) => ({ newSeq: seq + events.length }));
   vi.mocked(api.headBlob).mockResolvedValue(true);
   const dek = await generateDEK();
-  const sync = await ChatSync.create({ userId: "user", dek });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
   const value = chat();
   value.messages = [userMessage("saved online")];
   await sync.saveChat(value);
@@ -454,7 +454,7 @@ it("keeps an online-saved chat visible and editable after switching to local bac
   await storeChat(edited);
   expect(await loadChat(value.id)).toMatchObject(edited);
   expect(api.appendEvents).not.toHaveBeenCalled();
-  const resumed = await ChatSync.create({ userId: "user", dek });
+  const resumed = await ChatSync.create({ userId: "user", accountId: "user", dek });
   await resumed.flushPending();
   expect(api.appendEvents).toHaveBeenCalled();
 });
@@ -513,7 +513,7 @@ it.each([false, true])(
     const dek = await generateDEK();
     const original = chat();
     await storeChat(original);
-    const sync = await ChatSync.create({ userId: "user", dek });
+    const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
     await sync.flushPending();
     const updated = { ...original, title: "recover this update", messages: [userMessage("new message")] };
     memory.beforeWrite = async (path) => {
@@ -521,7 +521,7 @@ it.each([false, true])(
     };
     await expect(storeChat(updated)).rejects.toThrow("native write failed");
     memory.beforeWrite = undefined;
-    const recovered = restart ? await ChatSync.create({ userId: "user", dek }) : sync;
+    const recovered = restart ? await ChatSync.create({ userId: "user", accountId: "user", dek }) : sync;
     await recovered.flushPending();
     expect(await opfs.readJson("chats/chat/target.json")).toBeUndefined();
     expect(await loadChat(original.id, false)).toMatchObject(updated);

@@ -117,7 +117,7 @@ func TestOneDriveMiddlewareRequiresTokenAndScopesRoutes(t *testing.T) {
 		next := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx, cancel := context.WithCancel(r.Context())
 			cancel()
-			if _, err := selected.ListChats(ctx, "alice"); err == nil || !strings.Contains(err.Error(), "context canceled") {
+			if _, err := selected.ListChats(ctx); err == nil || !strings.Contains(err.Error(), "context canceled") {
 				t.Fatalf("token did not reach provider: %v", err)
 			}
 			w.WriteHeader(204)
@@ -321,7 +321,7 @@ func TestOneDriveTokenHeaderPrecedence(t *testing.T) {
 			// Call the middleware directly: the identity layer rejects forwarded
 			// tokens that are not JWTs before the store would be reached.
 			next := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				selected.ListChats(r.Context(), "alice")
+				selected.ListChats(r.Context())
 			}))
 			request(next, "GET", "/api/v1/keystore", test.headers...)
 			if len(fake.graphTokens) == 0 || fake.graphTokens[0] != test.want {

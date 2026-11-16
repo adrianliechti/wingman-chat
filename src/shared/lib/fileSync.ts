@@ -147,6 +147,7 @@ class FileTooLargeError extends Error {}
 export class FileSync {
   private state: FileSyncState;
   private readonly userId: string;
+  private readonly accountId: string;
   private dek: StoreKey;
 
   /** Paths with local changes awaiting push. */
@@ -207,20 +208,22 @@ export class FileSync {
   private progress = new SyncProgressTracker(() => this.setActivity({}));
   private activityListeners = new Set<(a: FileSyncActivity) => void>();
 
-  private constructor(userId: string, dek: StoreKey, state: FileSyncState) {
+  private constructor(userId: string, accountId: string, dek: StoreKey, state: FileSyncState) {
     this.userId = userId;
+    this.accountId = accountId;
     this.dek = dek;
     this.state = state;
   }
 
-  static async create(opts: { userId: string; dek: StoreKey }): Promise<FileSync> {
+  /** accountId is the keystore ID bound into ciphertext. */
+  static async create(opts: { userId: string; accountId: string; dek: StoreKey }): Promise<FileSync> {
     const state = await readJson<FileSyncState>(STATE_FILE);
     if (state && state.userId !== opts.userId) {
       throw new Error(
         "This browser contains another account's local workspace. Sign back in to export it before clearing local data.",
       );
     }
-    return new FileSync(opts.userId, opts.dek, state ?? { userId: opts.userId, entries: {} });
+    return new FileSync(opts.userId, opts.accountId, opts.dek, state ?? { userId: opts.userId, entries: {} });
   }
 
   setKey(dek: StoreKey): void {
@@ -462,7 +465,7 @@ export class FileSync {
     const id = entry?.id ?? (await fileIdFor(path));
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const header: FileHeader = { path, mtime: meta.lastModified ?? Date.now() };
-    const cipher = await encryptFile(this.dek, header, bytes, this.userId, id);
+    const cipher = await encryptFile(this.dek, header, bytes, this.accountId, id);
 
     try {
       requireFileBackupReady();
@@ -486,7 +489,7 @@ export class FileSync {
         this.state.entries[path] = { id, etag, mtime: header.mtime };
         return;
       }
-      const decrypted = await decryptFile<FileHeader>(this.dek, remote.data, this.userId, id);
+      const decrypted = await decryptFile<FileHeader>(this.dek, remote.data, this.accountId, id);
 
       // Collection indexes merge instead of LWW — parallel devices adding
       // entries must not clobber each other's additions.
@@ -495,7 +498,7 @@ export class FileSync {
         const remoteEntries = parseIndex(decrypted.bytes);
         if (localEntries && remoteEntries) {
           const merged = new TextEncoder().encode(JSON.stringify(mergeIndexEntries(localEntries, remoteEntries)));
-          const mergedCipher = await encryptFile(this.dek, { path, mtime: Date.now() }, merged, this.userId, id);
+          const mergedCipher = await encryptFile(this.dek, { path, mtime: Date.now() }, merged, this.accountId, id);
           try {
             requireFileBackupReady();
             const etag = await api.putFile(id, mergedCipher, { ifMatch: remote.etag });
@@ -524,7 +527,7 @@ export class FileSync {
 
     try {
       if (!remote) throw new Error(`File ${id} is listed in the backup but its contents are missing.`);
-      const { header, bytes } = await decryptFile<FileHeader>(this.dek, remote.data, this.userId, id);
+      const { header, bytes } = await decryptFile<FileHeader>(this.dek, remote.data, this.accountId, id);
 
       // An existing local collection index always merges — adopting the
       // remote copy wholesale would drop entries this device added.

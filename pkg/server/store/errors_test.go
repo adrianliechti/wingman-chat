@@ -81,14 +81,14 @@ func TestCASFromRequest(t *testing.T) {
 // drainingStore consumes upload bodies like a real provider spooling to disk.
 type drainingStore struct{ store.Provider }
 
-func (drainingStore) GetKeystore(context.Context, string) ([]byte, string, error) {
+func (drainingStore) GetKeystore(context.Context) ([]byte, string, error) {
 	return []byte(protectedTestKey("")), "key", nil
 }
-func (drainingStore) PutObject(_ context.Context, _ string, _ store.ObjectKind, _ string, r io.Reader, _ string) (string, error) {
+func (drainingStore) PutObject(_ context.Context, _ store.ObjectKind, _ string, r io.Reader, _ string) (string, error) {
 	_, err := io.Copy(io.Discard, r)
 	return "etag", err
 }
-func (drainingStore) AppendEvents(context.Context, string, string, int64, []string, [][]byte) (store.AppendResult, error) {
+func (drainingStore) AppendEvents(context.Context, string, int64, []string, [][]byte) (store.AppendResult, error) {
 	return store.AppendResult{NewSeq: 1}, nil
 }
 

@@ -84,14 +84,20 @@ the new destination.
 ### Stable account identity
 
 The chat backend identifies the backup user by the proxy's `X-Forwarded-User`
-header. `/api/v1/me` returns its truncated SHA-256 hash, which is used for
-encryption context and browser sync state. Requests without `X-Forwarded-User`
-fail with 401. Email is not part of the identity and can change freely.
+header. `/api/v1/me` returns its truncated SHA-256 hash, which the browser uses
+to tell apart accounts' local sync state. Requests without `X-Forwarded-User`
+fail with 401. Which backup is used is decided by the Microsoft account behind
+the Graph token, not by this header.
 
-Configure the proxy so `X-Forwarded-User` is a stable subject rather than an
-email address (OAuth2 Proxy forwards the OIDC `sub` claim by default). Changing
-the claim, identity provider, or app registration that produces it selects a
-different backup.
+Ciphertext is bound to a random `accountId` stored in the keystore, not to the
+sign-in identity, so a changed header value does not make an existing backup
+unreadable. The server rejects keystores without a valid `accountId` and
+updates that change it.
+
+Still prefer a stable subject over an email address for `X-Forwarded-User`
+(OAuth2 Proxy forwards the OIDC `sub` claim by default): a browser treats a new
+value as a different account and asks to export and clear its local workspace
+before syncing again.
 
 ```yaml
 environment:

@@ -27,8 +27,8 @@ type eventLine struct {
 	Frame string `json:"frame"`
 }
 
-func (p *Provider) ListChats(ctx context.Context, userID string) ([]store.ChatMeta, error) {
-	state, err := p.load(ctx, userID)
+func (p *Provider) ListChats(ctx context.Context) ([]store.ChatMeta, error) {
+	state, err := p.load(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +39,7 @@ func (p *Provider) ListChats(ctx context.Context, userID string) ([]store.ChatMe
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out, nil
 }
-func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expectedSeq int64, eventIDs []string, frames [][]byte) (store.AppendResult, error) {
+func (p *Provider) AppendEvents(ctx context.Context, chatID string, expectedSeq int64, eventIDs []string, frames [][]byte) (store.AppendResult, error) {
 	if err := validateID(chatID); err != nil {
 		return store.AppendResult{}, err
 	}
@@ -51,7 +51,7 @@ func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expe
 			return store.AppendResult{}, store.ErrFrameTooLarge
 		}
 	}
-	state, err := p.load(ctx, userID)
+	state, err := p.load(ctx)
 	if err != nil {
 		return store.AppendResult{}, err
 	}
@@ -87,7 +87,7 @@ func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expe
 		ch.Recent = slices.Clone(ch.Recent[len(ch.Recent)-maxRecent:])
 	}
 	part := segment{object: object{Name: newObject(), Updated: time.Now().UTC()}, First: first, Last: ch.Head}
-	part.ETag, part.Size, err = p.upload(ctx, userID, part.Name, &buffer)
+	part.ETag, part.Size, err = p.upload(ctx, part.Name, &buffer)
 	if err != nil {
 		return result, err
 	}
@@ -95,8 +95,8 @@ func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expe
 	ch.Updated = part.Updated
 	ch.Deleted = false
 	state.Chats[chatID] = ch
-	if err := p.save(ctx, userID, state); err != nil {
-		p.discard(ctx, userID, err, part.Name)
+	if err := p.save(ctx, state); err != nil {
+		p.discard(ctx, err, part.Name)
 		return result, err
 	}
 	result.NewSeq = ch.Head
@@ -108,7 +108,6 @@ func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expe
 type eventReader struct {
 	provider *Provider
 	ctx      context.Context
-	userID   string
 	parts    []segment
 	from     int64
 	source   io.ReadCloser
@@ -120,7 +119,7 @@ func (r *eventReader) next() error {
 	if len(r.parts) == 0 {
 		return io.EOF
 	}
-	source, err := r.provider.open(r.ctx, r.userID, r.parts[0].Name)
+	source, err := r.provider.open(r.ctx, r.parts[0].Name)
 	if errors.Is(err, store.ErrNotFound) {
 		// A concurrent compaction or delete removed a segment the snapshot listed.
 		return store.ErrBackupConflict
@@ -175,11 +174,11 @@ func (r *eventReader) Close() error {
 	}
 	return nil
 }
-func (p *Provider) ReadEvents(ctx context.Context, userID, chatID string, fromSeq int64) (io.ReadCloser, error) {
+func (p *Provider) ReadEvents(ctx context.Context, chatID string, fromSeq int64) (io.ReadCloser, error) {
 	if err := validateID(chatID); err != nil {
 		return nil, err
 	}
-	state, err := p.load(ctx, userID)
+	state, err := p.load(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +186,7 @@ func (p *Provider) ReadEvents(ctx context.Context, userID, chatID string, fromSe
 	if !ok || ch.Deleted {
 		return nil, store.ErrNotFound
 	}
-	reader := &eventReader{provider: p, ctx: ctx, userID: userID, from: fromSeq}
+	reader := &eventReader{provider: p, ctx: ctx, from: fromSeq}
 	for _, part := range ch.Segments {
 		if part.Last > fromSeq {
 			reader.parts = append(reader.parts, part)
@@ -197,7 +196,7 @@ func (p *Provider) ReadEvents(ctx context.Context, userID, chatID string, fromSe
 		name := reader.parts[0].Name
 		if err := reader.next(); err != nil {
 			if errors.Is(err, store.ErrBackupConflict) {
-				err = p.missingData(ctx, userID, func(current *index) bool {
+				err = p.missingData(ctx, func(current *index) bool {
 					return slices.ContainsFunc(current.Chats[chatID].Segments, func(part segment) bool { return part.Name == name })
 				})
 			}
@@ -206,11 +205,11 @@ func (p *Provider) ReadEvents(ctx context.Context, userID, chatID string, fromSe
 	}
 	return reader, nil
 }
-func (p *Provider) DeleteChat(ctx context.Context, userID, chatID string, expectedSeq int64) error {
+func (p *Provider) DeleteChat(ctx context.Context, chatID string, expectedSeq int64) error {
 	if err := validateID(chatID); err != nil {
 		return err
 	}
-	state, err := p.load(ctx, userID)
+	state, err := p.load(ctx)
 	if err != nil {
 		return err
 	}
@@ -224,19 +223,19 @@ func (p *Provider) DeleteChat(ctx context.Context, userID, chatID string, expect
 	// Keep an advanced cursor after deletion. A pending local edit can recreate
 	// this ID with an init snapshot, while stale devices cannot reuse its head.
 	state.Chats[chatID] = chat{Head: ch.Head + 1, Deleted: true, Updated: time.Now().UTC()}
-	if err := p.save(ctx, userID, state); err != nil {
+	if err := p.save(ctx, state); err != nil {
 		return err
 	}
 	for _, part := range ch.Segments {
-		_ = p.remove(ctx, userID, part.Name)
+		_ = p.remove(ctx, part.Name)
 	}
 	return nil
 }
-func (p *Provider) CompactChat(ctx context.Context, userID, chatID string, beforeSeq int64) error {
+func (p *Provider) CompactChat(ctx context.Context, chatID string, beforeSeq int64) error {
 	if err := validateID(chatID); err != nil {
 		return err
 	}
-	state, err := p.load(ctx, userID)
+	state, err := p.load(ctx)
 	if err != nil {
 		return err
 	}
@@ -256,9 +255,9 @@ func (p *Provider) CompactChat(ctx context.Context, userID, chatID string, befor
 		case part.First >= beforeSeq:
 			retained = append(retained, part)
 		default:
-			reader := &eventReader{provider: p, ctx: ctx, userID: userID, parts: []segment{part}, from: beforeSeq - 1}
+			reader := &eventReader{provider: p, ctx: ctx, parts: []segment{part}, from: beforeSeq - 1}
 			replacement := segment{object: object{Name: newObject(), Updated: time.Now().UTC()}, First: beforeSeq, Last: part.Last}
-			replacement.ETag, replacement.Size, err = p.upload(ctx, userID, replacement.Name, reader)
+			replacement.ETag, replacement.Size, err = p.upload(ctx, replacement.Name, reader)
 			reader.Close()
 			if err != nil {
 				return err
@@ -273,12 +272,12 @@ func (p *Provider) CompactChat(ctx context.Context, userID, chatID string, befor
 	}
 	ch.Segments = retained
 	state.Chats[chatID] = ch
-	if err := p.save(ctx, userID, state); err != nil {
-		p.discard(ctx, userID, err, uploaded...)
+	if err := p.save(ctx, state); err != nil {
+		p.discard(ctx, err, uploaded...)
 		return err
 	}
 	for _, name := range removed {
-		_ = p.remove(ctx, userID, name)
+		_ = p.remove(ctx, name)
 	}
 	return nil
 }

@@ -48,72 +48,74 @@ const (
 )
 
 // Provider is a pluggable backend for the per-user chat store.
+// The account is resolved from the request context (e.g. a delegated token),
+// so the caller cannot address another user's data.
 //
 // The server never decrypts key, frame, or blob contents. Providers must
 // fence stale writes after reset or keystore changes and
 // preserve an existing keystore backup envelope when root-key protection changes.
 type Provider interface {
 	// BackupSize returns approximate stored bytes, including encrypted data and metadata.
-	BackupSize(ctx context.Context, userID string) (int64, error)
+	BackupSize(ctx context.Context) (int64, error)
 
 	// ResetUser removes backup data and keys, fencing concurrent stale writes.
-	ResetUser(ctx context.Context, userID, resetID string) error
+	ResetUser(ctx context.Context, resetID string) error
 
 	// GetKeystore returns the raw keystore bytes and an opaque etag.
 	// Returns ErrNotFound if no keystore exists yet for the user.
-	GetKeystore(ctx context.Context, userID string) (data []byte, etag string, err error)
+	GetKeystore(ctx context.Context) (data []byte, etag string, err error)
 
 	// PutKeystore replaces the keystore atomically.
 	//   ifMatch == ""     → unconditional replace
 	//   ifMatch == "*"    → create only (fail with ErrKeystoreConflict if exists)
 	//   ifMatch == "<x>"  → CAS, must match current etag
-	PutKeystore(ctx context.Context, userID string, data []byte, ifMatch string) (etag string, err error)
+	PutKeystore(ctx context.Context, data []byte, ifMatch string) (etag string, err error)
 
 	// ListChats returns metadata for every chat owned by the user.
-	ListChats(ctx context.Context, userID string) ([]ChatMeta, error)
+	ListChats(ctx context.Context) ([]ChatMeta, error)
 
 	// AppendEvents appends one or more frames to a chat's append-only log.
 	// expectedSeq must match the current head; otherwise ErrSeqConflict.
 	// Each frame is paired with an eventID; previously-seen eventIDs are
 	// silently skipped and returned in Deduped.
-	AppendEvents(ctx context.Context, userID, chatID string, expectedSeq int64, eventIDs []string, frames [][]byte) (AppendResult, error)
+	AppendEvents(ctx context.Context, chatID string, expectedSeq int64, eventIDs []string, frames [][]byte) (AppendResult, error)
 
 	// ReadEvents streams JSONL frames whose seq > fromSeq. The reader yields
 	// the JSONL envelope format:
 	//   {"seq":<int>,"id":"<uuid>","frame":"<base64>"}\n
-	ReadEvents(ctx context.Context, userID, chatID string, fromSeq int64) (io.ReadCloser, error)
+	ReadEvents(ctx context.Context, chatID string, fromSeq int64) (io.ReadCloser, error)
 
 	// DeleteChat removes event history only if expectedSeq matches the current
 	// head. Retain a tombstone with an advanced head so recreation cannot reuse
 	// sequence numbers. Repeating a delete of an existing tombstone succeeds.
-	DeleteChat(ctx context.Context, userID, chatID string, expectedSeq int64) error
+	DeleteChat(ctx context.Context, chatID string, expectedSeq int64) error
 
 	// CompactChat drops every log entry whose seq < beforeSeq. The head
 	// seq is preserved (we shrink from the front, not the back). It is
 	// the caller's responsibility to ensure the surviving frame at
 	// beforeSeq is self-contained (init-led) so fresh readers can
 	// replay correctly.
-	CompactChat(ctx context.Context, userID, chatID string, beforeSeq int64) error
+	CompactChat(ctx context.Context, chatID string, beforeSeq int64) error
 
 	// GetObject streams encrypted content and returns its current ETag.
 	// ErrBackupConflict means a concurrent writer replaced the object; retry.
-	GetObject(ctx context.Context, userID string, kind ObjectKind, id string) (io.ReadCloser, string, error)
+	GetObject(ctx context.Context, kind ObjectKind, id string) (io.ReadCloser, string, error)
 
 	// PutObject atomically replaces encrypted content. ifMatch is empty for an
 	// unconditional write, "*" for create-only, or an ETag for compare-and-swap.
 	// A failed precondition returns ErrObjectConflict.
-	PutObject(ctx context.Context, userID string, kind ObjectKind, id string, r io.Reader, ifMatch string) (string, error)
+	PutObject(ctx context.Context, kind ObjectKind, id string, r io.Reader, ifMatch string) (string, error)
 
 	// DeleteObject removes encrypted content. Missing objects return nil.
 	// ifMatch is empty or "*" for an unconditional delete, or an ETag that must
 	// match the current object; a mismatch returns ErrObjectConflict.
-	DeleteObject(ctx context.Context, userID string, kind ObjectKind, id string, ifMatch string) error
+	DeleteObject(ctx context.Context, kind ObjectKind, id string, ifMatch string) error
 
 	// BlobExists checks attachment availability without downloading its content.
-	BlobExists(ctx context.Context, userID, blobID string) (bool, error)
+	BlobExists(ctx context.Context, blobID string) (bool, error)
 
 	// ListFiles returns metadata for every synced workspace file.
-	ListFiles(ctx context.Context, userID string) ([]FileMeta, error)
+	ListFiles(ctx context.Context) ([]FileMeta, error)
 }
 
 var (
@@ -138,6 +140,18 @@ const MaxObjectBytes = 256<<20 + 1<<20
 
 // MaxAppendBytes caps one append request body (all JSONL event lines).
 const MaxAppendBytes = 64 << 20 // 64 MiB
+
+// PreservesAccountID prevents a keystore update from orphaning existing
+// ciphertext, which is bound to the keystore's account ID.
+func PreservesAccountID(current, next []byte) bool {
+	if len(current) == 0 {
+		return true
+	}
+	var previous, replacement struct {
+		AccountID string `json:"accountId"`
+	}
+	return json.Unmarshal(current, &previous) == nil && json.Unmarshal(next, &replacement) == nil && previous.AccountID == replacement.AccountID
+}
 
 // PreservesBackupKey prevents a protection update from orphaning existing
 // ciphertext by dropping or replacing its asymmetric backup key envelope.

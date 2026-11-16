@@ -223,6 +223,8 @@ async function stashPendingDeletionUnlocked(chatId: string, userId?: string): Pr
 
 interface ChatSyncOptions {
   userId: string;
+  /** Keystore ID bound into ciphertext. */
+  accountId: string;
   dek: StoreKey;
   retentionDays?: number;
 }
@@ -246,6 +248,7 @@ export class ChatSync {
   private flushing = false;
   private flushAgain = false;
   private readonly userId: string;
+  private readonly accountId: string;
   private readonly retentionDays?: number;
   private dek: StoreKey;
 
@@ -256,8 +259,9 @@ export class ChatSync {
   private activityListeners = new Set<(a: SyncActivity) => void>();
   private remoteChangeListeners = new Set<(chats: Chat[]) => void>();
 
-  constructor(userId: string, dek: StoreKey, initialState?: SyncState, retentionDays?: number) {
+  constructor(userId: string, accountId: string, dek: StoreKey, initialState?: SyncState, retentionDays?: number) {
     this.userId = userId;
+    this.accountId = accountId;
     this.retentionDays = retentionDays;
     this.dek = dek;
     this.state = initialState ?? { userId, heads: {}, lastFrameHash: {} };
@@ -270,7 +274,7 @@ export class ChatSync {
         "This browser contains another account's local chats. Sign back in to export them before clearing local data.",
       );
     }
-    const sync = new ChatSync(opts.userId, opts.dek, state, opts.retentionDays);
+    const sync = new ChatSync(opts.userId, opts.accountId, opts.dek, state, opts.retentionDays);
     await sync.hydrateFromOpfs();
     await sync.refreshDeletions();
     sync.setActivity({});
@@ -690,7 +694,7 @@ export class ChatSync {
       const blob = await getChatBlob(chatId, blobId);
       if (!blob) throw new Error(`Attachment ${blobId} is missing locally and has not been backed up.`);
       const plain = new Uint8Array(await blob.arrayBuffer());
-      const cipher = await encryptBlob(this.dek, plain, this.userId, blobId);
+      const cipher = await encryptBlob(this.dek, plain, this.accountId, blobId);
       requireChatBackupReady(chatId);
       await api.putBlob(blobId, cipher);
     }
@@ -764,7 +768,7 @@ export class ChatSync {
       for (const chunk of chunks) {
         seq += 1;
         const payload = { id: crypto.randomUUID(), ts: new Date().toISOString(), prevHash, body: chunk };
-        const frame = await encryptEvent(this.dek, payload, this.userId, chatId, seq);
+        const frame = await encryptEvent(this.dek, payload, this.accountId, chatId, seq);
         prevHash = await hashFrame(frame);
         frames.push({ id: payload.id, frame, hash: prevHash, entries: chunk });
       }
@@ -940,7 +944,7 @@ export class ChatSync {
         type RemotePayload = { id: string; ts: string; prevHash: string; body: LogEntry[] };
         let payload: RemotePayload;
         try {
-          payload = await decryptEvent<RemotePayload>(this.dek, e.frame, this.userId, chatId, e.seq);
+          payload = await decryptEvent<RemotePayload>(this.dek, e.frame, this.accountId, chatId, e.seq);
         } catch (err) {
           throw new Error(`Could not decrypt backup ${chatId}@${e.seq}.`, { cause: err });
         }
@@ -1007,7 +1011,7 @@ export class ChatSync {
       if (await getChatBlob(chatId, blobId)) continue;
       const cipher = await api.getBlob(blobId);
       if (!cipher) throw new Error(`Attachment ${blobId} is missing from backup ${chatId}.`);
-      const plain = await decryptBlob(this.dek, cipher, this.userId, blobId);
+      const plain = await decryptBlob(this.dek, cipher, this.accountId, blobId);
       await writeBlob(`chats/${chatId}/blobs/${blobId}.bin`, new Blob([new Uint8Array(plain)]));
     }
   }

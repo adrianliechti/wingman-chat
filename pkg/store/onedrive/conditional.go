@@ -16,20 +16,19 @@ import (
 // Fail closed if a Graph backend does not enforce conditional content writes.
 // The probe has a unique name and never touches the backup index or ciphertext.
 // Successful checks are cached per account folder for this provider's lifetime.
-func (p *Provider) verifyConditionalWrites(ctx context.Context, userID string) error {
-	folder, err := p.folder(ctx, userID)
+func (p *Provider) verifyConditionalWrites(ctx context.Context) error {
+	folder, err := p.folder(ctx)
 	if err != nil {
 		return err
 	}
-	cacheKey := userID + "\x00" + folder
 	p.conditionalMu.Lock()
-	verified := p.conditional[cacheKey]
+	verified := p.conditional[folder]
 	p.conditionalMu.Unlock()
 	if verified {
 		return nil
 	}
 	name := "probe-" + strings.TrimPrefix(newObject(), "data-") + ".json"
-	endpoint, err := p.objectURL(ctx, userID, name)
+	endpoint, err := p.objectURL(ctx, name)
 	if err != nil {
 		return err
 	}
@@ -37,7 +36,7 @@ func (p *Provider) verifyConditionalWrites(ctx context.Context, userID string) e
 	if err != nil {
 		return err
 	}
-	defer func() { _ = p.remove(ctx, userID, name) }()
+	defer func() { _ = p.remove(ctx, name) }()
 	var item driveItem
 	decodeErr := json.NewDecoder(res.Body).Decode(&item)
 	res.Body.Close()
@@ -91,7 +90,7 @@ func (p *Provider) verifyConditionalWrites(ctx context.Context, userID string) e
 	if !statusIs(err, http.StatusPreconditionFailed) {
 		return err
 	}
-	reader, err := p.open(ctx, userID, name)
+	reader, err := p.open(ctx, name)
 	if errors.Is(err, store.ErrNotFound) {
 		return store.ErrBackupConflict
 	}
@@ -111,7 +110,7 @@ func (p *Provider) verifyConditionalWrites(ctx context.Context, userID string) e
 	if len(p.conditional) >= 4096 {
 		clear(p.conditional)
 	}
-	p.conditional[cacheKey] = true
+	p.conditional[folder] = true
 	p.conditionalMu.Unlock()
 	return nil
 }

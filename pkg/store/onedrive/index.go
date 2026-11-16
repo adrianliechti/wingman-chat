@@ -66,19 +66,19 @@ func cloneIndex(state *index) *index {
 	return &copy
 }
 
-func (p *Provider) load(ctx context.Context, userID string) (*index, error) {
+func (p *Provider) load(ctx context.Context) (*index, error) {
 	s, err := sessionFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
 	// Check account ownership even when the request has a cached snapshot.
-	if _, err := p.folder(ctx, userID); err != nil {
+	if _, err := p.folder(ctx); err != nil {
 		return nil, err
 	}
 	if s.index != nil {
 		return s.index, nil
 	}
-	state, control, err := p.readIndex(ctx, userID)
+	state, control, err := p.readIndex(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -88,8 +88,8 @@ func (p *Provider) load(ctx context.Context, userID string) (*index, error) {
 
 // readIndexControl reads only the commit identity. Reset must also work when
 // index contents are corrupt, too large, or written by an unsupported version.
-func (p *Provider) readIndexControl(ctx context.Context, userID string) (driveItem, error) {
-	endpoint, err := p.objectURL(ctx, userID, indexName)
+func (p *Provider) readIndexControl(ctx context.Context) (driveItem, error) {
+	endpoint, err := p.objectURL(ctx, indexName)
 	if err != nil {
 		return driveItem{}, err
 	}
@@ -110,16 +110,16 @@ func (p *Provider) readIndexControl(ctx context.Context, userID string) (driveIt
 // Read metadata before and after downloading the index. Content downloads can
 // redirect to a separate host, so their HTTP ETag need not be the Graph item
 // ETag. Accept the snapshot only when the item's identity and ETag are stable.
-func (p *Provider) readIndex(ctx context.Context, userID string) (*index, driveItem, error) {
+func (p *Provider) readIndex(ctx context.Context) (*index, driveItem, error) {
 	for attempt := 0; attempt < indexAttempts; attempt++ {
-		before, err := p.readIndexControl(ctx, userID)
+		before, err := p.readIndexControl(ctx)
 		if err != nil {
 			return nil, driveItem{}, err
 		}
 		if before.ID == "" {
 			return emptyIndex(), driveItem{}, nil
 		}
-		reader, err := p.open(ctx, userID, indexName)
+		reader, err := p.open(ctx, indexName)
 		if errors.Is(err, store.ErrNotFound) {
 			continue
 		}
@@ -131,7 +131,7 @@ func (p *Provider) readIndex(ctx context.Context, userID string) (*index, driveI
 		if err != nil {
 			return nil, driveItem{}, err
 		}
-		after, err := p.readIndexControl(ctx, userID)
+		after, err := p.readIndexControl(ctx)
 		if err != nil {
 			return nil, driveItem{}, err
 		}
@@ -147,8 +147,8 @@ func (p *Provider) readIndex(ctx context.Context, userID string) (*index, driveI
 	return nil, driveItem{}, store.ErrBackupConflict
 }
 
-func (p *Provider) commit(ctx context.Context, userID string, state *index, control driveItem) error {
-	if err := p.verifyConditionalWrites(ctx, userID); err != nil {
+func (p *Provider) commit(ctx context.Context, state *index, control driveItem) error {
+	if err := p.verifyConditionalWrites(ctx); err != nil {
 		return err
 	}
 	data, err := json.Marshal(state)
@@ -158,7 +158,7 @@ func (p *Provider) commit(ctx context.Context, userID string, state *index, cont
 	if len(data) > 64<<20 {
 		return errors.New("OneDrive backup: backup index exceeds 64 MiB")
 	}
-	endpoint, err := p.objectURL(ctx, userID, indexName)
+	endpoint, err := p.objectURL(ctx, indexName)
 	if err != nil {
 		return err
 	}
@@ -194,7 +194,7 @@ func (p *Provider) commit(ctx context.Context, userID string, state *index, cont
 	return nil
 }
 
-func (p *Provider) save(ctx context.Context, userID string, desired *index) error {
+func (p *Provider) save(ctx context.Context, desired *index) error {
 	s, err := sessionFrom(ctx)
 	if err != nil {
 		return err
@@ -227,7 +227,7 @@ func (p *Provider) save(ctx context.Context, userID string, desired *index) erro
 		if !mergeEntries(baseline.Blobs, desired.Blobs, current.Blobs, merged.Blobs) {
 			return store.ErrBackupConflict
 		}
-		err = p.commit(ctx, userID, merged, control)
+		err = p.commit(ctx, merged, control)
 		if err == nil {
 			// Keep the object returned by load current for callers performing multiple
 			// operations in a request, while retaining an independent baseline.
@@ -238,7 +238,7 @@ func (p *Provider) save(ctx context.Context, userID string, desired *index) erro
 		if !errors.Is(err, store.ErrBackupConflict) {
 			return err
 		}
-		current, control, err = p.readIndex(ctx, userID)
+		current, control, err = p.readIndex(ctx)
 		if err != nil {
 			return err
 		}

@@ -40,7 +40,11 @@ it("reports oversized files as pending without blocking other uploads", async ()
     return requested === path && result ? { ...result, size: 256 * 1024 * 1024 + 1 } : result;
   });
   try {
-    const sync = await FileSync.create({ userId: "alice", dek: { kid: 1, backup: { publicKey: pair.publicKey } } });
+    const sync = await FileSync.create({
+      userId: "alice",
+      accountId: "alice",
+      dek: { kid: 1, backup: { publicKey: pair.publicKey } },
+    });
     await sync.fullSync();
     let activity!: FileSyncActivity;
     sync.subscribeActivity((value) => {
@@ -57,7 +61,11 @@ it("reports oversized files as pending without blocking other uploads", async ()
 it("automatically uploads a local workspace without downloading or decrypting remote files", async () => {
   const pair = await generateBackupKeys();
   memory.put("agents/test/AGENTS.md", "local agent");
-  const sync = await FileSync.create({ userId: "alice", dek: { kid: 1, backup: { publicKey: pair.publicKey } } });
+  const sync = await FileSync.create({
+    userId: "alice",
+    accountId: "alice",
+    dek: { kid: 1, backup: { publicKey: pair.publicKey } },
+  });
   await sync.fullSync();
   expect(api.putFile).toHaveBeenCalledOnce();
   expect(api.listFiles).not.toHaveBeenCalled();
@@ -74,7 +82,11 @@ it("reports the initial file backup total and advances only confirmed uploads", 
   memory.put("agents/first/AGENTS.md", "first");
   memory.put("agents/second/AGENTS.md", "second");
   vi.mocked(api.putFile).mockResolvedValueOnce("first").mockRejectedValueOnce(new Error("upload interrupted"));
-  const sync = await FileSync.create({ userId: "alice", dek: { kid: 1, backup: { publicKey: pair.publicKey } } });
+  const sync = await FileSync.create({
+    userId: "alice",
+    accountId: "alice",
+    dek: { kid: 1, backup: { publicKey: pair.publicKey } },
+  });
   const activity: FileSyncActivity[] = [];
   sync.subscribeActivity((value) => activity.push(value));
   await sync.fullSync();
@@ -95,7 +107,11 @@ it("retains upload conflicts without fetching or overwriting the remote version"
   const pair = await generateBackupKeys();
   memory.put("agents/test/AGENTS.md", "my edit");
   vi.mocked(api.putFile).mockRejectedValue(new api.ServerError(412, "conflict"));
-  const sync = await FileSync.create({ userId: "alice", dek: { kid: 1, backup: { publicKey: pair.publicKey } } });
+  const sync = await FileSync.create({
+    userId: "alice",
+    accountId: "alice",
+    dek: { kid: 1, backup: { publicKey: pair.publicKey } },
+  });
   await sync.fullSync();
   expect(api.putFile).toHaveBeenCalledOnce();
   expect(api.getFile).not.toHaveBeenCalled();
@@ -108,7 +124,11 @@ it("retains upload conflicts without fetching or overwriting the remote version"
   // An empty fresh browser must not interpret remote files as local deletions.
   memory.reset();
   await writeJson("_sync/files.json", { userId: "alice", entries: {} });
-  const fresh = await FileSync.create({ userId: "alice", dek: { kid: 1, backup: { publicKey: pair.publicKey } } });
+  const fresh = await FileSync.create({
+    userId: "alice",
+    accountId: "alice",
+    dek: { kid: 1, backup: { publicKey: pair.publicKey } },
+  });
   await fresh.fullSync();
   expect(api.deleteFile).not.toHaveBeenCalled();
 });
@@ -119,7 +139,11 @@ it("defers server deletions until restore is unlocked", async () => {
     userId: "alice",
     entries: { "agents/deleted.md": { id: "id", etag: "old", mtime: 1000 } },
   });
-  const sync = await FileSync.create({ userId: "alice", dek: { kid: 1, backup: { publicKey: pair.publicKey } } });
+  const sync = await FileSync.create({
+    userId: "alice",
+    accountId: "alice",
+    dek: { kid: 1, backup: { publicKey: pair.publicKey } },
+  });
   await sync.fullSync();
   expect(api.deleteFile).not.toHaveBeenCalled();
   memory.put("agents/new/AGENTS.md", "new work must keep uploading");
@@ -136,15 +160,19 @@ it("preserves the previous account workspace when another account signs in", asy
   await writeJson("_sync/files.json", { userId: "alice", entries: {} });
   await writeJson("_sync/upload-key.json", { userId: "bob", publicKey: "pinned" });
   const key = { kid: 1, backup: { publicKey: pair.publicKey } };
-  await expect(ChatSync.create({ userId: "bob", dek: key })).rejects.toThrow(/another account/);
-  await expect(FileSync.create({ userId: "bob", dek: key })).rejects.toThrow(/another account/);
+  await expect(ChatSync.create({ userId: "bob", accountId: "bob", dek: key })).rejects.toThrow(/another account/);
+  await expect(FileSync.create({ userId: "bob", accountId: "bob", dek: key })).rejects.toThrow(/another account/);
   expect(memory.files.has("agents/private/AGENTS.md")).toBe(true);
   expect(api.putFile).not.toHaveBeenCalled();
 });
 
 it("keeps generated workspace files local until the LLM request finishes", async () => {
   const pair = await generateBackupKeys();
-  const sync = await FileSync.create({ userId: "alice", dek: { kid: 1, backup: { publicKey: pair.publicKey } } });
+  const sync = await FileSync.create({
+    userId: "alice",
+    accountId: "alice",
+    dek: { kid: 1, backup: { publicKey: pair.publicKey } },
+  });
   const release = beginChatBackupPause("chat");
   try {
     memory.put("agents/generated/AGENTS.md", "partial generated content");
@@ -167,7 +195,11 @@ it("defers an upload if streaming starts while file encryption is pending", asyn
     return encrypt(...args);
   });
   const pair = await generateBackupKeys();
-  const sync = await FileSync.create({ userId: "alice", dek: { kid: 1, backup: { publicKey: pair.publicKey } } });
+  const sync = await FileSync.create({
+    userId: "alice",
+    accountId: "alice",
+    dek: { kid: 1, backup: { publicKey: pair.publicKey } },
+  });
   memory.put("agents/paused/AGENTS.md", "pending write");
   try {
     await sync.fullSync();

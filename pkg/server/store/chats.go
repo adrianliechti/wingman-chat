@@ -8,12 +8,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/adrianliechti/wingman-chat/pkg/server/identity"
 	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
 
-func (h *Handler) handleListChats(w http.ResponseWriter, r *http.Request, user identity.User) {
-	chats, err := h.store.ListChats(r.Context(), user.ID)
+func (h *Handler) handleListChats(w http.ResponseWriter, r *http.Request) {
+	chats, err := h.store.ListChats(r.Context())
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -25,7 +24,7 @@ func (h *Handler) handleListChats(w http.ResponseWriter, r *http.Request, user i
 	json.NewEncoder(w).Encode(chats)
 }
 
-func (h *Handler) handleReadEvents(w http.ResponseWriter, r *http.Request, user identity.User) {
+func (h *Handler) handleReadEvents(w http.ResponseWriter, r *http.Request) {
 	chatID := r.PathValue("id")
 
 	var fromSeq int64
@@ -38,7 +37,7 @@ func (h *Handler) handleReadEvents(w http.ResponseWriter, r *http.Request, user 
 		fromSeq = n
 	}
 
-	reader, err := h.store.ReadEvents(r.Context(), user.ID, chatID, fromSeq)
+	reader, err := h.store.ReadEvents(r.Context(), chatID, fromSeq)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -58,7 +57,7 @@ type appendRequest struct {
 	Frame string `json:"frame"`
 }
 
-func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request, user identity.User) {
+func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request) {
 	chatID := r.PathValue("id")
 
 	expectedSeqHeader := r.Header.Get("X-Expected-Seq")
@@ -118,7 +117,7 @@ func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 
-	res, err := h.store.AppendEvents(r.Context(), user.ID, chatID, expectedSeq, ids, frames)
+	res, err := h.store.AppendEvents(r.Context(), chatID, expectedSeq, ids, frames)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -128,7 +127,7 @@ func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request, use
 	json.NewEncoder(w).Encode(res)
 }
 
-func (h *Handler) handleCompactChat(w http.ResponseWriter, r *http.Request, user identity.User) {
+func (h *Handler) handleCompactChat(w http.ResponseWriter, r *http.Request) {
 	chatID := r.PathValue("id")
 	v := r.URL.Query().Get("beforeSeq")
 	if v == "" {
@@ -141,14 +140,14 @@ func (h *Handler) handleCompactChat(w http.ResponseWriter, r *http.Request, user
 		return
 	}
 
-	if err := h.store.CompactChat(r.Context(), user.ID, chatID, beforeSeq); err != nil {
+	if err := h.store.CompactChat(r.Context(), chatID, beforeSeq); err != nil {
 		writeStoreError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handler) handleDeleteChat(w http.ResponseWriter, r *http.Request, user identity.User) {
+func (h *Handler) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 	chatID := r.PathValue("id")
 	expectedSeq, err := strconv.ParseInt(r.Header.Get("X-Expected-Seq"), 10, 64)
 	if err != nil || expectedSeq < 0 {
@@ -156,7 +155,7 @@ func (h *Handler) handleDeleteChat(w http.ResponseWriter, r *http.Request, user 
 		return
 	}
 
-	if err := h.store.DeleteChat(r.Context(), user.ID, chatID, expectedSeq); err != nil {
+	if err := h.store.DeleteChat(r.Context(), chatID, expectedSeq); err != nil {
 		if errors.Is(err, store.ErrSeqConflict) {
 			http.Error(w, err.Error(), http.StatusPreconditionFailed)
 			return

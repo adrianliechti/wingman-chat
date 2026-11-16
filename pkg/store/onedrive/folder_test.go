@@ -7,7 +7,7 @@ import (
 
 func TestBackupFolderName(t *testing.T) {
 	p, graph := newTestProvider(t)
-	if _, err := p.folder(WithToken(context.Background(), "graph-token"), "alice"); err != nil {
+	if _, err := p.folder(WithToken(context.Background(), "graph-token")); err != nil {
 		t.Fatal(err)
 	}
 	if len(graph.Folders) != 1 || graph.Folders["backup"] == nil {

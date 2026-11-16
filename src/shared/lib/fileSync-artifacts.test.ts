@@ -62,10 +62,10 @@ it("restores an attachment's pinned revision even when its live artifact has cha
     createdAt: "2026-01-01T00:00:00Z",
   });
   await writeArtifact("chat", "/doc.txt", "edited artifact", "text/plain");
-  sync = await FileSync.create({ userId: "alice", dek: key });
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   await sync.fullSync();
   memory.reset();
-  sync = await FileSync.create({ userId: "alice", dek: key });
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   await sync.fullSync();
   expect(await readArtifact("chat", "/doc.txt")).toMatchObject({ content: "edited artifact" });
   expect(await loadArtifactRevision("chat", "/doc.txt", revision)).toMatchObject({ content: "original attachment" });
@@ -86,7 +86,7 @@ it("does not restore an unknown remote file after its directory is deleted durin
         release = resolve;
       }),
   );
-  sync = await FileSync.create({ userId: "alice", dek: key });
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   sync.start();
   await vi.waitFor(() => expect(release).toBeDefined());
   await deleteDirectory("agents/one");
@@ -112,7 +112,7 @@ it.each(["update", "deletion"])("preserves a local edit made while a remote %s i
     etag: "remote",
     data: await encryptFile(key, { path, mtime: 2000 }, new TextEncoder().encode("remote"), "alice", id),
   });
-  sync = await FileSync.create({ userId: "alice", dek: key });
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   sync.start();
   await vi.waitFor(() => expect(release).toBeDefined());
   await writeText(path, "local edit");
@@ -155,7 +155,7 @@ it("backs up current artifacts, immutable revisions, and workspace data without 
     "_sync/upload-key.json",
   ];
   for (const path of [...paths, ...excluded]) memory.put(path, `bytes:${path}`);
-  sync = await FileSync.create({ userId: "alice", dek: key });
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   await sync.fullSync();
   const uploaded = await Promise.all(
     vi.mocked(api.putFile).mock.calls.map(async ([id, cipher]) => {
@@ -184,7 +184,7 @@ it("restores artifacts, immutable revisions, and saved app data while refusing c
   );
   vi.mocked(api.listFiles).mockResolvedValue(remote);
   vi.mocked(api.getFile).mockImplementation(async (id) => remote.find((file) => file.id === id) ?? null);
-  sync = await FileSync.create({ userId: "alice", dek: key });
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   const activity: FileSyncActivity[] = [];
   sync.subscribeActivity((value) => activity.push(value));
   await sync.fullSync();
@@ -199,7 +199,7 @@ it("restores artifacts, immutable revisions, and saved app data while refusing c
 
 it("tracks artifact edits and file/folder/chat deletions through OPFS mutations", async () => {
   const key = await generateDEK();
-  sync = await FileSync.create({ userId: "alice", dek: key });
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   sync.start();
   await sync.fullSync();
   const file = "chats/one/artifacts/report.txt";
@@ -234,7 +234,11 @@ it("uploads binary artifacts with a public upload key and applies remote deletio
   const path = "chats/one/artifacts/nested/data.bin";
   const bytes = new Uint8Array([0, 255, 128, 1]);
   memory.put(path, new Blob([bytes]));
-  sync = await FileSync.create({ userId: "alice", dek: { kid: 1, backup: { publicKey: pair.publicKey } } });
+  sync = await FileSync.create({
+    userId: "alice",
+    accountId: "alice",
+    dek: { kid: 1, backup: { publicKey: pair.publicKey } },
+  });
   await sync.fullSync();
   expect(api.listFiles).not.toHaveBeenCalled();
   const [id, cipher] = vi.mocked(api.putFile).mock.calls[0];
@@ -249,7 +253,7 @@ it("uploads binary artifacts with a public upload key and applies remote deletio
 it("keeps nested directory version markers out of the file upload queue", async () => {
   const key = await generateDEK();
   memory.put("agents/one/AGENTS.md", "agent");
-  sync = await FileSync.create({ userId: "alice", dek: key });
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   sync.start();
   await sync.fullSync();
   await deleteDirectory("agents/one");
@@ -269,7 +273,7 @@ it("reports a corrupt remote file as an incomplete restore and retries it", asyn
   const id = await idFor(path);
   vi.mocked(api.listFiles).mockResolvedValue([{ id, etag: "remote", updated: "2026-01-01", size: 3 }]);
   vi.mocked(api.getFile).mockResolvedValue({ etag: "remote", data: new Uint8Array([1, 2, 3]) });
-  sync = await FileSync.create({ userId: "alice", dek: key });
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   await expect(sync.fullSync()).rejects.toThrow("1 backup file could not be restored");
   let lastError: string | null = null;
   sync.subscribeActivity((activity) => {
@@ -297,7 +301,7 @@ it("reports an incomplete restore when a remote file's id does not belong to its
   );
   vi.mocked(api.listFiles).mockResolvedValue([{ id: "id", etag: "remote", updated: "2026-01-01", size: data.length }]);
   vi.mocked(api.getFile).mockResolvedValue({ etag: "remote", data });
-  sync = await FileSync.create({ userId: "alice", dek: key });
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   await expect(sync.fullSync()).rejects.toThrow("1 backup file could not be restored");
   let activity!: FileSyncActivity;
   sync.subscribeActivity((value) => {
@@ -311,7 +315,7 @@ it("keeps a newer remote edit when a stale local deletion conflicts", async () =
   const key = await generateDEK();
   const path = "agents/one/AGENTS.md";
   const id = await idFor(path);
-  sync = await FileSync.create({ userId: "alice", dek: key });
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   sync.start();
   await sync.fullSync();
   await writeText(path, "local");
@@ -334,7 +338,7 @@ it("preserves skill index entries whose IDs differ from their folder names", asy
   const index = JSON.stringify([{ id: "skill-uuid", title: "my-skill", updated: "2026-01-01" }]);
   memory.put("skills/index.json", index);
   memory.put("skills/my-skill/SKILL.md", "skill content");
-  sync = await FileSync.create({ userId: "alice", dek: key });
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   await sync.fullSync();
   expect(await readText("skills/index.json")).toBe(index);
 });

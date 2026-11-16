@@ -11,8 +11,9 @@
  * Primitives:
  *   - Argon2id (64 MiB, t=3) + HKDF-SHA256 → 256-bit KEK from PIN + salt.
  *   - AES-256-GCM with random 12-byte nonce for both DEK-wrap and event/blob.
- *   - AAD pins identity into ciphertext (userId:chatId:seq for events,
- *     userId:blobId for blobs). Wrong AAD ⇒ decrypt fails.
+ *   - AAD pins identity into ciphertext (accountId:chatId:seq for events,
+ *     accountId:blobId for blobs; accountId comes from the keystore).
+ *     Wrong AAD ⇒ decrypt fails.
  *   - Hash chain inside event plaintext (prevHash) detects reordered,
  *     dropped or misplaced frames.
  *

@@ -90,9 +90,11 @@ func event(id, frame string) string {
 	return fmt.Sprintf(`{"id":%q,"frame":%q}`, id, frame)
 }
 
+const testAccountID = "0123456789abcdef0123456789abcdef"
+
 func protectedTestKey(note string) string {
 	key := map[string]any{
-		"version": 2, "kid": 1, "pinProtected": true,
+		"version": 2, "kid": 1, "accountId": testAccountID, "pinProtected": true,
 		"wrappedDek": base64.StdEncoding.EncodeToString(make([]byte, 48)),
 		"nonce":      base64.StdEncoding.EncodeToString(make([]byte, 12)),
 		"kdf":        map[string]any{"name": "argon2id", "salt": base64.StdEncoding.EncodeToString(make([]byte, 16)), "m": 65536, "t": 3, "p": 1},

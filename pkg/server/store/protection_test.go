@@ -15,7 +15,7 @@ import (
 func TestProtectedKeystoreValidation(t *testing.T) {
 	encode := func(size int) string { return base64.StdEncoding.EncodeToString(make([]byte, size)) }
 	passkey := map[string]any{
-		"version": 2, "kid": 1, "pinProtected": false, "passkeyProtected": true,
+		"version": 2, "kid": 1, "accountId": testAccountID, "pinProtected": false, "passkeyProtected": true,
 		"passkey": map[string]any{"credentialId": encode(32), "rpId": "localhost", "salt": encode(32), "nonce": encode(12), "wrappedDek": encode(48)},
 	}
 	data, _ := json.Marshal(passkey)
@@ -45,6 +45,10 @@ func TestProtectedKeystoreValidation(t *testing.T) {
 		strings.Replace(string(dualData), `"t":3`, `"t":1`, 1),
 		strings.Replace(string(dualData), `"rpId":"localhost"`, `"rpId":""`, 1),
 		`{"dek":null,` + string(dualData)[1:],
+		strings.Replace(string(data), `"accountId":"`+testAccountID+`",`, ``, 1),
+		strings.Replace(string(data), testAccountID, ``, 1),
+		strings.Replace(string(data), testAccountID, `Not-Hex`, 1),
+		strings.Replace(string(data), testAccountID, `0123456789abcdef`, 1),
 	} {
 		if protectedKeystore([]byte(body)) {
 			t.Fatalf("accepted invalid protection: %s", body)
@@ -55,7 +59,7 @@ func TestProtectedKeystoreValidation(t *testing.T) {
 func TestUnprotectedKeystoreBlocksBackup(t *testing.T) {
 	provider := newTestStore(t)
 	unprotected := `{"version":2,"kid":1,"pinProtected":false,"dek":"plain-key"}`
-	if _, err := provider.PutKeystore(onedrive.WithToken(context.Background(), "alice"), "alice", []byte(unprotected), "*"); err != nil {
+	if _, err := provider.PutKeystore(onedrive.WithToken(context.Background(), "alice"), []byte(unprotected), "*"); err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
@@ -74,7 +78,7 @@ func TestArgon2idKeystoreValidation(t *testing.T) {
 	encode := func(size int) string { return base64.StdEncoding.EncodeToString(make([]byte, size)) }
 	key := func(kdf map[string]any) []byte {
 		data, _ := json.Marshal(map[string]any{
-			"version": 2, "kid": 1, "pinProtected": true,
+			"version": 2, "kid": 1, "accountId": testAccountID, "pinProtected": true,
 			"wrappedDek": encode(48), "nonce": encode(12), "kdf": kdf,
 		})
 		return data

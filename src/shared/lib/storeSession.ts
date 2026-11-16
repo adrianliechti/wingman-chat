@@ -100,9 +100,10 @@ function isEnabled(): boolean {
   return getConfig().store === true;
 }
 
-async function engines(userId: string, key: StoreKey) {
-  const sync = await ChatSync.create({ userId, dek: key, retentionDays: getConfig().chat?.retentionDays });
-  const files = await FileSync.create({ userId, dek: key });
+async function engines(userId: string, ks: keystore.KeystoreState, key: StoreKey) {
+  const { accountId } = ks.keystore;
+  const sync = await ChatSync.create({ userId, accountId, dek: key, retentionDays: getConfig().chat?.retentionDays });
+  const files = await FileSync.create({ userId, accountId, dek: key });
   files.start();
   return { sync, files };
 }
@@ -122,7 +123,7 @@ async function readySessionUnlocked(userId: string, dek: RootKey, ks: keystore.K
   const active =
     session.status === "upload-only" && session.userId === userId
       ? { sync: session.sync, files: session.files }
-      : await engines(userId, upgraded.dek);
+      : await engines(userId, upgraded.state, upgraded.dek);
   active.sync.setKey(upgraded.dek);
   active.files.setKey(upgraded.dek);
   const s: ReadySession = {
@@ -169,7 +170,7 @@ async function uploadSessionUnlocked(
   const key = await keystore.uploadKey(ks, userId);
   if (!key || !ks.keystore.backup) return { status: "locked", userId, keystore: ks };
   api.setBackupGeneration(ks.keystore.backup.generation);
-  const active = await engines(userId, key);
+  const active = await engines(userId, ks, key);
   const s: UploadSession = { status: "upload-only", userId, ...active, keystore: ks };
   startAutoSync(s);
   return s;
@@ -310,7 +311,7 @@ export async function unlock(pin: string): Promise<void> {
     throw new Error(`session is not locked (status=${session.status})`);
   }
   const { userId, keystore: state } = session;
-  const dek = await keystore.unlockWithPin(state, pin, userId);
+  const dek = await keystore.unlockWithPin(state, pin);
   await activateRestore(userId, dek, state);
 }
 
@@ -325,7 +326,7 @@ export function needsPinToChangeProtection(): boolean {
 export async function confirmPin(pin: string): Promise<void> {
   const current = session;
   if (current.status !== "ready") throw new Error("Unlock backup to change protection.");
-  const dek = await keystore.unlockWithPin(current.keystore, pin, current.userId);
+  const dek = await keystore.unlockWithPin(current.keystore, pin);
   session = { ...current, dek: { ...dek, backup: current.dek.backup } };
 }
 
@@ -339,7 +340,7 @@ async function rootBytes(current: SetupSession | ReadySession): Promise<DEK> {
   if (!keystore.isPasskeyProtected(current.keystore.keystore)) {
     throw new Error("Enter your PIN to change backup protection.");
   }
-  const dek = await keystore.unlockWithPasskey(current.keystore, current.userId);
+  const dek = await keystore.unlockWithPasskey(current.keystore);
   const root: DEK = { ...dek, backup: current.dek.backup };
   if (session === current) session = { ...current, dek: root };
   return root;
@@ -350,7 +351,7 @@ export async function setPin(pin: string): Promise<void> {
   const current = session;
   if (current.status !== "ready" && current.status !== "setup") throw new Error("Unlock backup to change protection.");
   const dek = await rootBytes(current);
-  const newState = await keystore.setPin(current.keystore, dek, pin, current.userId);
+  const newState = await keystore.setPin(current.keystore, dek, pin);
   await updateProtection({ ...current, dek }, newState);
 }
 
@@ -358,8 +359,8 @@ export async function setPin(pin: string): Promise<void> {
 export async function changePin(oldPin: string, newPin: string): Promise<void> {
   if (session.status !== "ready") throw new Error("session not ready");
   const current = session;
-  const dek = await keystore.unlockWithPin(current.keystore, oldPin, current.userId);
-  const newState = await keystore.setPin(current.keystore, dek, newPin, current.userId);
+  const dek = await keystore.unlockWithPin(current.keystore, oldPin);
+  const newState = await keystore.setPin(current.keystore, dek, newPin);
   await updateProtection({ ...current, dek: { ...dek, backup: current.dek.backup } }, newState);
 }
 
@@ -437,7 +438,7 @@ async function whenReady(): Promise<ReadySession> {
 export async function unlockPasskey(): Promise<void> {
   const current = session;
   if (current.status !== "locked" && current.status !== "upload-only") throw new Error("session is not locked");
-  const dek = await keystore.unlockWithPasskey(current.keystore, current.userId);
+  const dek = await keystore.unlockWithPasskey(current.keystore);
   await activateRestore(current.userId, dek, current.keystore);
 }
 
@@ -445,6 +446,6 @@ export async function setPasskey(): Promise<void> {
   const current = session;
   if (current.status !== "ready" && current.status !== "setup") throw new Error("Unlock backup to change protection.");
   const dek = await rootBytes(current);
-  const newState = await keystore.setPasskey(current.keystore, dek, current.userId);
+  const newState = await keystore.setPasskey(current.keystore, dek);
   await updateProtection({ ...current, dek }, newState);
 }

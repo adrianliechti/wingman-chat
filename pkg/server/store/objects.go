@@ -5,14 +5,13 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/adrianliechti/wingman-chat/pkg/server/identity"
 	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
 
-func (h *Handler) handleHeadBlob(w http.ResponseWriter, r *http.Request, user identity.User) {
+func (h *Handler) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 	blobID := r.PathValue("id")
 
-	exists, err := h.store.BlobExists(r.Context(), user.ID, blobID)
+	exists, err := h.store.BlobExists(r.Context(), blobID)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -24,8 +23,8 @@ func (h *Handler) handleHeadBlob(w http.ResponseWriter, r *http.Request, user id
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *Handler) handleListFiles(w http.ResponseWriter, r *http.Request, user identity.User) {
-	files, err := h.store.ListFiles(r.Context(), user.ID)
+func (h *Handler) handleListFiles(w http.ResponseWriter, r *http.Request) {
+	files, err := h.store.ListFiles(r.Context())
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -39,9 +38,9 @@ func (h *Handler) handleListFiles(w http.ResponseWriter, r *http.Request, user i
 
 // Files use ETags for conflict resolution; content-addressed blobs are immutable
 // from the client's perspective and retain unconditional upload/delete semantics.
-func (h *Handler) handleGetObject(kind store.ObjectKind) userHandler {
-	return func(w http.ResponseWriter, r *http.Request, user identity.User) {
-		reader, etag, err := h.store.GetObject(r.Context(), user.ID, kind, r.PathValue("id"))
+func (h *Handler) handleGetObject(kind store.ObjectKind) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		reader, etag, err := h.store.GetObject(r.Context(), kind, r.PathValue("id"))
 		if err != nil {
 			writeStoreError(w, err)
 			return
@@ -58,14 +57,14 @@ func (h *Handler) handleGetObject(kind store.ObjectKind) userHandler {
 	}
 }
 
-func (h *Handler) handlePutObject(kind store.ObjectKind) userHandler {
-	return func(w http.ResponseWriter, r *http.Request, user identity.User) {
+func (h *Handler) handlePutObject(kind store.ObjectKind) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		ifMatch := ""
 		if kind == store.FileObject {
 			ifMatch = casFromRequest(r)
 		}
 		body := http.MaxBytesReader(w, r.Body, store.MaxObjectBytes)
-		etag, err := h.store.PutObject(r.Context(), user.ID, kind, r.PathValue("id"), body, ifMatch)
+		etag, err := h.store.PutObject(r.Context(), kind, r.PathValue("id"), body, ifMatch)
 		if err != nil {
 			writeStoreError(w, err)
 			return
@@ -77,13 +76,13 @@ func (h *Handler) handlePutObject(kind store.ObjectKind) userHandler {
 	}
 }
 
-func (h *Handler) handleDeleteObject(kind store.ObjectKind) userHandler {
-	return func(w http.ResponseWriter, r *http.Request, user identity.User) {
+func (h *Handler) handleDeleteObject(kind store.ObjectKind) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		ifMatch := ""
 		if kind == store.FileObject {
 			ifMatch = casFromRequest(r)
 		}
-		if err := h.store.DeleteObject(r.Context(), user.ID, kind, r.PathValue("id"), ifMatch); err != nil {
+		if err := h.store.DeleteObject(r.Context(), kind, r.PathValue("id"), ifMatch); err != nil {
 			writeStoreError(w, err)
 			return
 		}

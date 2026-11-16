@@ -22,14 +22,13 @@ func New(store store.Provider, middleware func(http.Handler) http.Handler) *Hand
 
 func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 	prefix = strings.TrimRight(prefix, "/")
-	handle := func(pattern string, handler userHandler) {
+	handle := func(pattern string, handler http.HandlerFunc) {
 		var wrapped http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			user, ok := identity.FromRequest(r)
-			if !ok {
+			if _, ok := identity.FromRequest(r); !ok {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			handler(w, r, user)
+			handler(w, r)
 		})
 		if h.middleware != nil {
 			wrapped = h.middleware(wrapped)
@@ -61,10 +60,6 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 	handle("DELETE "+prefix+"/v1/files/{id}", h.requireProtection(h.handleDeleteObject(store.FileObject)))
 }
 
-// userHandler receives the forwarded identity. Attach resolves it once, after
-// the provider middleware, for every route.
-type userHandler func(http.ResponseWriter, *http.Request, identity.User)
-
 // casFromRequest maps conditional request headers onto the provider's ifMatch
 // argument: "If-None-Match: *" → "*" (create only), "If-Match: <etag>" (quoted
 // or bare) → "<etag>" (compare-and-swap), neither → "" (unconditional).
@@ -77,13 +72,14 @@ func casFromRequest(r *http.Request) string {
 
 // routes -----------------------------------------------------------------
 
-func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request, user identity.User) {
+func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
+	user, _ := identity.FromRequest(r)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
 }
 
-func (h *Handler) handleGetKeystore(w http.ResponseWriter, r *http.Request, user identity.User) {
-	data, etag, err := h.store.GetKeystore(r.Context(), user.ID)
+func (h *Handler) handleGetKeystore(w http.ResponseWriter, r *http.Request) {
+	data, etag, err := h.store.GetKeystore(r.Context())
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -94,7 +90,7 @@ func (h *Handler) handleGetKeystore(w http.ResponseWriter, r *http.Request, user
 	w.Write(data)
 }
 
-func (h *Handler) handlePutKeystore(w http.ResponseWriter, r *http.Request, user identity.User) {
+func (h *Handler) handlePutKeystore(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -107,7 +103,7 @@ func (h *Handler) handlePutKeystore(w http.ResponseWriter, r *http.Request, user
 		return
 	}
 
-	etag, err := h.store.PutKeystore(r.Context(), user.ID, body, casFromRequest(r))
+	etag, err := h.store.PutKeystore(r.Context(), body, casFromRequest(r))
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -117,22 +113,22 @@ func (h *Handler) handlePutKeystore(w http.ResponseWriter, r *http.Request, user
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handler) handleResetBackup(w http.ResponseWriter, r *http.Request, user identity.User) {
+func (h *Handler) handleResetBackup(w http.ResponseWriter, r *http.Request) {
 	// A non-simple header prevents cross-origin form submissions. Reset needs
 	// the signed-in account, not the lost PIN/passkey used for decryption.
 	if r.Header.Get("X-Confirm-Backup-Reset") != "true" {
 		http.Error(w, "Backup reset confirmation required", http.StatusBadRequest)
 		return
 	}
-	if err := h.store.ResetUser(r.Context(), user.ID, r.Header.Get("X-Backup-Reset-ID")); err != nil {
+	if err := h.store.ResetUser(r.Context(), r.Header.Get("X-Backup-Reset-ID")); err != nil {
 		writeStoreError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handler) handleBackupUsage(w http.ResponseWriter, r *http.Request, user identity.User) {
-	size, err := h.store.BackupSize(r.Context(), user.ID)
+func (h *Handler) handleBackupUsage(w http.ResponseWriter, r *http.Request) {
+	size, err := h.store.BackupSize(r.Context())
 	if err != nil {
 		writeStoreError(w, err)
 		return

@@ -61,7 +61,7 @@ it.each(["file", "directory"])(
     const opfsA = await import("./opfs-core");
     const { generateDEK } = await import("./crypto");
     const key = await generateDEK();
-    const a = await FileSyncA.create({ userId: "alice", dek: key });
+    const a = await FileSyncA.create({ userId: "alice", accountId: "alice", dek: key });
     engines.push(a);
     a.start();
     await a.fullSync();
@@ -69,7 +69,7 @@ it.each(["file", "directory"])(
     vi.resetModules();
     const { FileSync: FileSyncB } = await import("./fileSync");
     const opfsB = await import("./opfs-core");
-    const b = await FileSyncB.create({ userId: "alice", dek: key });
+    const b = await FileSyncB.create({ userId: "alice", accountId: "alice", dek: key });
     engines.push(b);
     b.start();
     await b.fullSync();

@@ -28,13 +28,13 @@ func TestReplicasMergeConcurrentIndexCommits(t *testing.T) {
 	for _, existing := range []bool{false, true} {
 		t.Run(map[bool]string{false: "first-commit", true: "existing-index"}[existing], func(t *testing.T) {
 			if existing {
-				if _, err := p.PutObject(testSession(), "alice", store.BlobObject, "blob-base", strings.NewReader("base"), ""); err != nil {
+				if _, err := p.PutObject(testSession(), store.BlobObject, "blob-base", strings.NewReader("base"), ""); err != nil {
 					t.Fatal(err)
 				}
 			}
 			a, b := testSession(), testSession()
 			for _, ctx := range []context.Context{a, b} {
-				if _, err := p.load(ctx, "alice"); err != nil {
+				if _, err := p.load(ctx); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -43,12 +43,12 @@ func TestReplicasMergeConcurrentIndexCommits(t *testing.T) {
 			wg.Add(2)
 			go func() {
 				defer wg.Done()
-				_, err := p.PutObject(a, "alice", store.FileObject, "file-one1", strings.NewReader("one"), "")
+				_, err := p.PutObject(a, store.FileObject, "file-one1", strings.NewReader("one"), "")
 				failures <- err
 			}()
 			go func() {
 				defer wg.Done()
-				_, err := replica.PutObject(b, "alice", store.FileObject, "file-two2", strings.NewReader("two"), "")
+				_, err := replica.PutObject(b, store.FileObject, "file-two2", strings.NewReader("two"), "")
 				failures <- err
 			}()
 			wg.Wait()
@@ -58,12 +58,12 @@ func TestReplicasMergeConcurrentIndexCommits(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			files, err := p.ListFiles(testSession(), "alice")
+			files, err := p.ListFiles(testSession())
 			if err != nil || len(files) != 2 {
 				t.Fatalf("lost concurrent file: %+v %v", files, err)
 			}
 			for id, want := range map[string]string{"file-one1": "one", "file-two2": "two"} {
-				r, _, err := replica.GetObject(testSession(), "alice", store.FileObject, id)
+				r, _, err := replica.GetObject(testSession(), store.FileObject, id)
 				if got := readAll(t, r, err); string(got) != want {
 					t.Fatalf("%s: %q", id, got)
 				}
@@ -81,15 +81,15 @@ func TestConcurrentResourceEditsConflict(t *testing.T) {
 	t.Run("file", func(t *testing.T) {
 		p, _ := newTestProvider(t)
 		a, b := testSession(), testSession()
-		p.load(a, "alice")
-		p.load(b, "alice")
-		if _, err := p.PutObject(a, "alice", store.FileObject, "file-1234", strings.NewReader("winner"), "*"); err != nil {
+		p.load(a)
+		p.load(b)
+		if _, err := p.PutObject(a, store.FileObject, "file-1234", strings.NewReader("winner"), "*"); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := p.PutObject(b, "alice", store.FileObject, "file-1234", strings.NewReader("loser"), "*"); !errors.Is(err, store.ErrObjectConflict) {
+		if _, err := p.PutObject(b, store.FileObject, "file-1234", strings.NewReader("loser"), "*"); !errors.Is(err, store.ErrObjectConflict) {
 			t.Fatalf("lost file CAS: %v", err)
 		}
-		r, _, err := p.GetObject(testSession(), "alice", store.FileObject, "file-1234")
+		r, _, err := p.GetObject(testSession(), store.FileObject, "file-1234")
 		if got := readAll(t, r, err); string(got) != "winner" {
 			t.Fatalf("winner overwritten: %q", got)
 		}
@@ -97,15 +97,15 @@ func TestConcurrentResourceEditsConflict(t *testing.T) {
 	t.Run("chat", func(t *testing.T) {
 		p, _ := newTestProvider(t)
 		a, b := testSession(), testSession()
-		p.load(a, "alice")
-		p.load(b, "alice")
-		if _, err := p.AppendEvents(a, "alice", "chat-1234", 0, []string{"first"}, [][]byte{[]byte("one")}); err != nil {
+		p.load(a)
+		p.load(b)
+		if _, err := p.AppendEvents(a, "chat-1234", 0, []string{"first"}, [][]byte{[]byte("one")}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := p.AppendEvents(b, "alice", "chat-1234", 0, []string{"second"}, [][]byte{[]byte("two")}); !errors.Is(err, store.ErrSeqConflict) {
+		if _, err := p.AppendEvents(b, "chat-1234", 0, []string{"second"}, [][]byte{[]byte("two")}); !errors.Is(err, store.ErrSeqConflict) {
 			t.Fatalf("lost chat CAS: %v", err)
 		}
-		r, err := p.ReadEvents(testSession(), "alice", "chat-1234", 0)
+		r, err := p.ReadEvents(testSession(), "chat-1234", 0)
 		if got := readAll(t, r, err); !bytes.Contains(got, []byte("first")) || bytes.Contains(got, []byte("second")) {
 			t.Fatalf("invalid history: %s", got)
 		}
@@ -113,12 +113,12 @@ func TestConcurrentResourceEditsConflict(t *testing.T) {
 	t.Run("keystore", func(t *testing.T) {
 		p, _ := newTestProvider(t)
 		a, b := testSession(), testSession()
-		p.load(a, "alice")
-		p.load(b, "alice")
-		if _, err := p.PutKeystore(a, "alice", []byte(`{"version":2}`), "*"); err != nil {
+		p.load(a)
+		p.load(b)
+		if _, err := p.PutKeystore(a, []byte(`{"version":2}`), "*"); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := p.PutKeystore(b, "alice", []byte(`{"version":2,"kid":2}`), "*"); !errors.Is(err, store.ErrKeystoreConflict) {
+		if _, err := p.PutKeystore(b, []byte(`{"version":2,"kid":2}`), "*"); !errors.Is(err, store.ErrKeystoreConflict) {
 			t.Fatalf("lost keystore CAS: %v", err)
 		}
 	})
@@ -141,21 +141,21 @@ func TestResetFencesInFlightUpload(t *testing.T) {
 		t.Run(map[bool]string{false: "empty-backup", true: "existing-backup"}[populated], func(t *testing.T) {
 			p, _ := newTestProvider(t)
 			if populated {
-				if _, err := p.PutKeystore(testSession(), "alice", []byte(`{"version":2}`), "*"); err != nil {
+				if _, err := p.PutKeystore(testSession(), []byte(`{"version":2}`), "*"); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := p.PutObject(testSession(), "alice", store.FileObject, "old-file1", strings.NewReader("old"), "*"); err != nil {
+				if _, err := p.PutObject(testSession(), store.FileObject, "old-file1", strings.NewReader("old"), "*"); err != nil {
 					t.Fatal(err)
 				}
 			}
 			input := &pausedReader{source: strings.NewReader("stale ciphertext"), started: make(chan struct{}), resume: make(chan struct{})}
 			finished := make(chan error, 1)
 			go func() {
-				_, err := p.PutObject(testSession(), "alice", store.FileObject, "stale-file", input, "")
+				_, err := p.PutObject(testSession(), store.FileObject, "stale-file", input, "")
 				finished <- err
 			}()
 			<-input.started
-			resetErr := p.ResetUser(testSession(), "alice", newObject())
+			resetErr := p.ResetUser(testSession(), newObject())
 			if resetErr != nil {
 				close(input.resume)
 				<-finished
@@ -163,8 +163,8 @@ func TestResetFencesInFlightUpload(t *testing.T) {
 			}
 			// Configure a fresh backup before the old upload completes. Its generation
 			// must still fence the upload even when the old backup had no keystore.
-			_, keyErr := p.PutKeystore(testSession(), "alice", []byte(`{"version":2,"kid":2}`), "*")
-			_, fileErr := p.PutObject(testSession(), "alice", store.FileObject, "new-file1", strings.NewReader("new"), "*")
+			_, keyErr := p.PutKeystore(testSession(), []byte(`{"version":2,"kid":2}`), "*")
+			_, fileErr := p.PutObject(testSession(), store.FileObject, "new-file1", strings.NewReader("new"), "*")
 			close(input.resume)
 			if err := <-finished; !errors.Is(err, store.ErrBackupConflict) {
 				t.Fatalf("stale upload crossed reset: %v", err)
@@ -172,7 +172,7 @@ func TestResetFencesInFlightUpload(t *testing.T) {
 			if keyErr != nil || fileErr != nil {
 				t.Fatalf("new backup: %v %v", keyErr, fileErr)
 			}
-			files, err := p.ListFiles(testSession(), "alice")
+			files, err := p.ListFiles(testSession())
 			if err != nil || len(files) != 1 || files[0].ID != "new-file1" {
 				t.Fatalf("reset resurrected data: %+v %v", files, err)
 			}
@@ -182,17 +182,17 @@ func TestResetFencesInFlightUpload(t *testing.T) {
 
 func TestProtectionChangeFencesStaleUpload(t *testing.T) {
 	p, _ := newTestProvider(t)
-	if _, err := p.PutKeystore(testSession(), "alice", []byte(`{"version":2,"kid":1}`), "*"); err != nil {
+	if _, err := p.PutKeystore(testSession(), []byte(`{"version":2,"kid":1}`), "*"); err != nil {
 		t.Fatal(err)
 	}
 	stale := testSession()
-	if _, _, err := p.GetKeystore(stale, "alice"); err != nil {
+	if _, _, err := p.GetKeystore(stale); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.PutKeystore(testSession(), "alice", []byte(`{"version":2,"kid":2}`), ""); err != nil {
+	if _, err := p.PutKeystore(testSession(), []byte(`{"version":2,"kid":2}`), ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.PutObject(stale, "alice", store.FileObject, "file-1234", strings.NewReader("stale"), ""); !errors.Is(err, store.ErrBackupConflict) {
+	if _, err := p.PutObject(stale, store.FileObject, "file-1234", strings.NewReader("stale"), ""); !errors.Is(err, store.ErrBackupConflict) {
 		t.Fatalf("stale protection accepted: %v", err)
 	}
 }
@@ -203,7 +203,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 
 func TestIndexReadRetriesChangedETag(t *testing.T) {
 	p, graph := newTestProvider(t)
-	if _, err := p.PutObject(testSession(), "alice", store.FileObject, "file-old1", strings.NewReader("old"), "*"); err != nil {
+	if _, err := p.PutObject(testSession(), store.FileObject, "file-old1", strings.NewReader("old"), "*"); err != nil {
 		t.Fatal(err)
 	}
 	writer := New()
@@ -213,14 +213,14 @@ func TestIndexReadRetriesChangedETag(t *testing.T) {
 		res, err := graph.RoundTrip(r)
 		if err == nil && !changed && r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/index.json:/content") {
 			changed = true
-			if _, err := writer.PutObject(testSession(), "alice", store.FileObject, "file-new1", strings.NewReader("new"), "*"); err != nil {
+			if _, err := writer.PutObject(testSession(), store.FileObject, "file-new1", strings.NewReader("new"), "*"); err != nil {
 				res.Body.Close()
 				return nil, err
 			}
 		}
 		return res, err
 	})}
-	files, err := p.ListFiles(testSession(), "alice")
+	files, err := p.ListFiles(testSession())
 	if err != nil || !changed || len(files) != 2 {
 		t.Fatalf("accepted mismatched content and ETag: %+v %v", files, err)
 	}
@@ -230,7 +230,7 @@ func TestUncertainCommitKeepsPublishedObjects(t *testing.T) {
 	for _, status := range []int{0, http.StatusServiceUnavailable, http.StatusGatewayTimeout} {
 		t.Run(fmt.Sprintf("status-%d", status), func(t *testing.T) {
 			p, graph := newTestProvider(t)
-			if _, err := p.PutObject(testSession(), "alice", store.FileObject, "file-1234", strings.NewReader("old"), "*"); err != nil {
+			if _, err := p.PutObject(testSession(), store.FileObject, "file-1234", strings.NewReader("old"), "*"); err != nil {
 				t.Fatal(err)
 			}
 			failed := false
@@ -246,10 +246,10 @@ func TestUncertainCommitKeepsPublishedObjects(t *testing.T) {
 				}
 				return res, err
 			})}
-			if _, err := p.PutObject(testSession(), "alice", store.FileObject, "file-1234", strings.NewReader("committed"), ""); err == nil {
+			if _, err := p.PutObject(testSession(), store.FileObject, "file-1234", strings.NewReader("committed"), ""); err == nil {
 				t.Fatal("uncertain commit reported success")
 			}
-			r, _, err := p.GetObject(testSession(), "alice", store.FileObject, "file-1234")
+			r, _, err := p.GetObject(testSession(), store.FileObject, "file-1234")
 			if got := readAll(t, r, err); string(got) != "committed" {
 				t.Fatalf("committed data removed on uncertainty: %q", got)
 			}
@@ -259,22 +259,22 @@ func TestUncertainCommitKeepsPublishedObjects(t *testing.T) {
 
 func TestKeystoreUpdateMergesConcurrentContent(t *testing.T) {
 	p, _ := newTestProvider(t)
-	if _, err := p.PutKeystore(testSession(), "alice", []byte(`{"version":2,"kid":1}`), "*"); err != nil {
+	if _, err := p.PutKeystore(testSession(), []byte(`{"version":2,"kid":1}`), "*"); err != nil {
 		t.Fatal(err)
 	}
 	ctx := testSession()
-	key, etag, err := p.GetKeystore(ctx, "alice")
+	key, etag, err := p.GetKeystore(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.PutObject(testSession(), "alice", store.FileObject, "file-1234", strings.NewReader("new"), "*"); err != nil {
+	if _, err := p.PutObject(testSession(), store.FileObject, "file-1234", strings.NewReader("new"), "*"); err != nil {
 		t.Fatal(err)
 	}
 	key = append(key[:len(key)-1], []byte(`,"pinProtected":true}`)...)
-	if _, err := p.PutKeystore(ctx, "alice", key, etag); err != nil {
+	if _, err := p.PutKeystore(ctx, key, etag); err != nil {
 		t.Fatal(err)
 	}
-	files, err := p.ListFiles(testSession(), "alice")
+	files, err := p.ListFiles(testSession())
 	if err != nil || len(files) != 1 {
 		t.Fatalf("key update lost concurrent file: %+v %v", files, err)
 	}
@@ -282,11 +282,11 @@ func TestKeystoreUpdateMergesConcurrentContent(t *testing.T) {
 
 func TestResetCleansOrphansAndPreservesNewBackup(t *testing.T) {
 	p, graph := newTestProvider(t)
-	if _, err := p.PutObject(testSession(), "alice", store.FileObject, "old-file1", strings.NewReader("old"), "*"); err != nil {
+	if _, err := p.PutObject(testSession(), store.FileObject, "old-file1", strings.NewReader("old"), "*"); err != nil {
 		t.Fatal(err)
 	}
 	graph.FailIndex = true
-	if _, err := p.PutObject(testSession(), "alice", store.FileObject, "orphan-11", strings.NewReader("orphan"), "*"); err == nil {
+	if _, err := p.PutObject(testSession(), store.FileObject, "orphan-11", strings.NewReader("orphan"), "*"); err == nil {
 		t.Fatal("failed commit succeeded")
 	}
 	graph.FailIndex = false
@@ -296,16 +296,16 @@ func TestResetCleansOrphansAndPreservesNewBackup(t *testing.T) {
 	p.client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if !created && r.Method == "DELETE" {
 			created = true
-			if _, err := writer.PutObject(testSession(), "alice", store.FileObject, "new-file1", strings.NewReader("new"), "*"); err != nil {
+			if _, err := writer.PutObject(testSession(), store.FileObject, "new-file1", strings.NewReader("new"), "*"); err != nil {
 				return nil, err
 			}
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession(), "alice", newObject()); err != nil {
+	if err := p.ResetUser(testSession(), newObject()); err != nil {
 		t.Fatal(err)
 	}
-	files, err := p.ListFiles(testSession(), "alice")
+	files, err := p.ListFiles(testSession())
 	if err != nil || !created || len(files) != 1 || files[0].ID != "new-file1" {
 		t.Fatalf("reset deleted fresh backup: %+v %v", files, err)
 	}
@@ -327,7 +327,7 @@ func TestResetRejectsUntrustedListingContinuation(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession(), "alice", newObject()); err == nil {
+	if err := p.ResetUser(testSession(), newObject()); err == nil {
 		t.Fatal("untrusted continuation accepted")
 	}
 }
@@ -350,7 +350,7 @@ func TestConditionalWriteProbeFailsClosed(t *testing.T) {
 				}
 				return graph.RoundTrip(r)
 			})}
-			if _, err := p.PutKeystore(testSession(), "alice", []byte(`{"version":2}`), "*"); err == nil {
+			if _, err := p.PutKeystore(testSession(), []byte(`{"version":2}`), "*"); err == nil {
 				t.Fatal("unsupported concurrency silently accepted")
 			}
 			for _, objects := range graph.Folders {
@@ -365,11 +365,11 @@ func TestConditionalWriteProbeFailsClosed(t *testing.T) {
 func TestResetFollowsListingPages(t *testing.T) {
 	p, graph := newTestProvider(t)
 	for _, id := range []string{"file-one1", "file-two2"} {
-		if _, err := p.PutObject(testSession(), "alice", store.FileObject, id, strings.NewReader(id), "*"); err != nil {
+		if _, err := p.PutObject(testSession(), store.FileObject, id, strings.NewReader(id), "*"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	state, err := p.load(testSession(), "alice")
+	state, err := p.load(testSession())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +387,7 @@ func TestResetFollowsListingPages(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession(), "alice", newObject()); err != nil {
+	if err := p.ResetUser(testSession(), newObject()); err != nil {
 		t.Fatal(err)
 	}
 	if pages != 2 {

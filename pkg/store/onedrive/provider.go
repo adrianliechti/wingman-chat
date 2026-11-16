@@ -38,10 +38,10 @@ func New() *Provider {
 
 type sessionKey struct{}
 type session struct {
-	token, user, folder string
-	index               *index
-	snapshot            *index
-	control             driveItem
+	token, folder string
+	index         *index
+	snapshot      *index
+	control       driveItem
 }
 
 // WithToken creates request-local state. Tokens are never stored on disk or in
@@ -71,8 +71,8 @@ func validateID(id string) error {
 	return nil
 }
 
-func (p *Provider) BackupSize(ctx context.Context, userID string) (int64, error) {
-	folder, err := p.folder(ctx, userID)
+func (p *Provider) BackupSize(ctx context.Context) (int64, error) {
+	folder, err := p.folder(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -85,8 +85,8 @@ func (p *Provider) BackupSize(ctx context.Context, userID string) (int64, error)
 	}
 	return item.Size, nil
 }
-func (p *Provider) GetKeystore(ctx context.Context, userID string) ([]byte, string, error) {
-	state, err := p.load(ctx, userID)
+func (p *Provider) GetKeystore(ctx context.Context) ([]byte, string, error) {
+	state, err := p.load(ctx)
 	if err != nil {
 		return nil, "", err
 	}
@@ -95,18 +95,18 @@ func (p *Provider) GetKeystore(ctx context.Context, userID string) ([]byte, stri
 	}
 	return state.Keystore, digest(state.Keystore), nil
 }
-func (p *Provider) PutKeystore(ctx context.Context, userID string, data []byte, ifMatch string) (string, error) {
-	state, err := p.load(ctx, userID)
+func (p *Provider) PutKeystore(ctx context.Context, data []byte, ifMatch string) (string, error) {
+	state, err := p.load(ctx)
 	if err != nil {
 		return "", err
 	}
 	current := state.Keystore
-	if !matches(ifMatch, digest(current), len(current) > 0) || !store.PreservesBackupKey(current, data) {
+	if !matches(ifMatch, digest(current), len(current) > 0) || !store.PreservesBackupKey(current, data) || !store.PreservesAccountID(current, data) {
 		return "", store.ErrKeystoreConflict
 	}
 
 	state.Keystore = append([]byte(nil), data...)
-	if err := p.save(ctx, userID, state); err != nil {
+	if err := p.save(ctx, state); err != nil {
 		return "", err
 	}
 	return digest(state.Keystore), nil
@@ -126,8 +126,8 @@ func matches(ifMatch, etag string, exists bool) bool {
 // references but storage no longer has. If a concurrent writer replaced or
 // deleted the entry meanwhile, the snapshot is stale and the client should
 // retry; otherwise the object is genuinely lost.
-func (p *Provider) missingData(ctx context.Context, userID string, stillReferenced func(*index) bool) error {
-	current, _, err := p.readIndex(ctx, userID)
+func (p *Provider) missingData(ctx context.Context, stillReferenced func(*index) bool) error {
+	current, _, err := p.readIndex(ctx)
 	if err != nil {
 		return err
 	}
@@ -145,11 +145,11 @@ func definiteConflict(err error) bool {
 }
 
 // discard best-effort removes unpublished objects after a definite conflict.
-func (p *Provider) discard(ctx context.Context, userID string, err error, names ...string) {
+func (p *Provider) discard(ctx context.Context, err error, names ...string) {
 	if !definiteConflict(err) {
 		return
 	}
 	for _, name := range names {
-		_ = p.remove(ctx, userID, name)
+		_ = p.remove(ctx, name)
 	}
 }

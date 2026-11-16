@@ -11,19 +11,19 @@ import (
 
 type conflictingStore struct{ store.Provider }
 
-func (conflictingStore) GetKeystore(context.Context, string) ([]byte, string, error) {
+func (conflictingStore) GetKeystore(context.Context) ([]byte, string, error) {
 	return []byte(protectedTestKey("")), "key", nil
 }
-func (conflictingStore) DeleteChat(context.Context, string, string, int64) error {
+func (conflictingStore) DeleteChat(context.Context, string, int64) error {
 	return store.ErrSeqConflict
 }
-func (conflictingStore) CompactChat(context.Context, string, string, int64) error {
+func (conflictingStore) CompactChat(context.Context, string, int64) error {
 	return store.ErrSeqConflict
 }
-func (conflictingStore) DeleteObject(context.Context, string, store.ObjectKind, string, string) error {
+func (conflictingStore) DeleteObject(context.Context, store.ObjectKind, string, string) error {
 	return store.ErrObjectConflict
 }
-func (conflictingStore) ResetUser(context.Context, string, string) error {
+func (conflictingStore) ResetUser(context.Context, string) error {
 	return store.ErrBackupConflict
 }
 

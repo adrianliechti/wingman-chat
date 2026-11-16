@@ -56,7 +56,7 @@ beforeEach(() => {
 it.each(["restore", "backup"] as const)(
   "keeps a failed %s visible until that direction succeeds, even if the other direction succeeds",
   async (direction) => {
-    const sync = await ChatSync.create({ userId: "alice", dek: await generateDEK() });
+    const sync = await ChatSync.create({ userId: "alice", accountId: "alice", dek: await generateDEK() });
     let activity!: SyncActivity;
     sync.subscribeActivity((value) => (activity = value));
     const message = `${direction} interrupted`;
@@ -82,7 +82,7 @@ for (const updating of [false, true]) {
     `recovers ${updating ? "an update" : "an initial upload"} after %s and restart without duplicating messages`,
     async (failure) => {
       const dek = await generateDEK();
-      const sync = await ChatSync.create({ userId: "alice", dek });
+      const sync = await ChatSync.create({ userId: "alice", accountId: "alice", dek });
       const original = chat();
       if (updating) {
         await stashPendingTarget(original);
@@ -125,7 +125,7 @@ for (const updating of [false, true]) {
       expect(frames.length).toBe(previousHead + (failure === "before commit" ? 0 : 1));
       memory.beforeWrite = undefined;
 
-      const restarted = await ChatSync.create({ userId: "alice", dek });
+      const restarted = await ChatSync.create({ userId: "alice", accountId: "alice", dek });
       await restarted.flushPending();
       await restarted.flushPending(); // A further retry must be a no-op.
       expect(frames).toHaveLength(previousHead + 1);
@@ -135,7 +135,7 @@ for (const updating of [false, true]) {
 
       // Verify the encrypted remote log independently of the recovered local mirror.
       memory.reset();
-      const restored = await ChatSync.create({ userId: "alice", dek });
+      const restored = await ChatSync.create({ userId: "alice", accountId: "alice", dek });
       await restored.pull();
       expect(await readLocalChat("chat", false)).toMatchObject(value);
       expect((await readLocalChat("chat", false))?.messages).toHaveLength(value.messages.length);
@@ -154,20 +154,20 @@ it.each([false, true])(
       if (committed) await put(...args);
       throw new Error("attachment upload interrupted");
     });
-    const sync = await ChatSync.create({ userId: "alice", dek });
+    const sync = await ChatSync.create({ userId: "alice", accountId: "alice", dek });
     await sync.flushPending();
     expect(api.appendEvents).not.toHaveBeenCalled();
     expect(blobs.size).toBe(committed ? 1 : 0);
     expect(await readJson("chats/chat/target.json")).toBeDefined();
 
-    const restarted = await ChatSync.create({ userId: "alice", dek });
+    const restarted = await ChatSync.create({ userId: "alice", accountId: "alice", dek });
     await restarted.flushPending();
     expect(blobs.size).toBe(1);
     expect(api.putBlob).toHaveBeenCalledTimes(committed ? 1 : 2);
     expect(frames).toHaveLength(1);
     expect(await readJson("chats/chat/target.json")).toBeUndefined();
     memory.reset();
-    await (await ChatSync.create({ userId: "alice", dek })).pull();
+    await (await ChatSync.create({ userId: "alice", accountId: "alice", dek })).pull();
     expect(await readText(`chats/chat/blobs/${[...blobs.keys()][0]}.bin`)).toBe("abc");
     expect((await readLocalChat("chat", false))?.messages).toHaveLength(1);
   },
