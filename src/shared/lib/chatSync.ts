@@ -19,10 +19,12 @@ import { SyncProgressTracker, type SyncProgress } from "./syncProgress";
 import { isChatBackupPaused, requireChatBackupReady, BackupPausedError } from "./chatBackupActivity";
 import { isBackupSessionCurrent, withBackupStorage, WORKSPACE_OWNER_KEY } from "./backupLifecycle";
 import { withPersistenceLock } from "./persistence";
-import { chatRetentionCutoff } from "./chatRetention";
-import { chatHistoryPath as historyPath, encodeHistory, readChatHistory } from "./chatHistoryStorage";
-import { completeChatIndexRepair } from "./chatIndex";
 import {
+  chatHistoryPath as historyPath,
+  chatRetentionCutoff,
+  completeChatIndexRepair,
+  encodeHistory,
+  readChatHistory,
   targetPath,
   localChatPath,
   withChatTarget,
@@ -80,7 +82,7 @@ const COMPACT_THRESHOLD = 50;
 interface PendingDeletion {
   id: string;
   token: string;
-  expectedSeq?: number;
+  expectedSeq: number;
 }
 const deleteDir = (userId: string) => `_sync/deletes/u-${encodeURIComponent(userId)}`;
 const deletePath = (userId: string, id: string) => `${deleteDir(userId)}/${encodeURIComponent(id)}.json`;
@@ -100,7 +102,11 @@ async function pendingDeletions(userId: string): Promise<PendingDeletion[]> {
     files.filter((file) => file.endsWith(".json")).map((file) => readJson<PendingDeletion>(`${dir}/${file}`)),
   );
   return entries.filter(
-    (entry): entry is PendingDeletion => !!entry && typeof entry.id === "string" && typeof entry.token === "string",
+    (entry): entry is PendingDeletion =>
+      !!entry &&
+      typeof entry.id === "string" &&
+      typeof entry.token === "string" &&
+      typeof entry.expectedSeq === "number",
   );
 }
 
@@ -215,7 +221,7 @@ async function stashPendingDeletionUnlocked(chatId: string, userId?: string): Pr
 
 // ChatSync ---------------------------------------------------------------
 
-export interface ChatSyncOptions {
+interface ChatSyncOptions {
   userId: string;
   dek: StoreKey;
   retentionDays?: number;
@@ -650,9 +656,7 @@ export class ChatSync {
     try {
       if (!canRestore(this.dek)) throw new Error("Unlock restore before deleting a server backup.");
       requireChatBackupReady(del.id);
-      // Journals from older clients have no safe version. A zero precondition
-      // preserves any existing backup rather than guessing its current head.
-      await api.deleteChat(del.id, del.expectedSeq ?? 0);
+      await api.deleteChat(del.id, del.expectedSeq);
       // Content-addressed blobs can be shared by other chats or devices.
       // Keep them until account reset; deleting without a reference index loses data.
       return true;

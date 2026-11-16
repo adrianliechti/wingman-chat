@@ -32,25 +32,25 @@ func TestStableIdentityStorageSurvivesEmailRename(t *testing.T) {
 	header["X-Forwarded-Access-Token"] = forwardedToken(tid, "33333333-3333-3333-3333-333333333333", "after@example.com")
 	wantStatus(t, do(t, server, "after@example.com", "GET", "/v1/keystore", "", header), http.StatusNotFound)
 }
-func TestIdentityChangeKeepsLegacyBackupSeparate(t *testing.T) {
+func TestHeaderAndTokenIdentitiesStaySeparate(t *testing.T) {
 	server := newTestServer(t)
-	legacyEmail := "user@example.com"
-	wantStatus(t, do(t, server, legacyEmail, "PUT", "/v1/keystore", protectedTestKey("legacy"), nil), http.StatusNoContent)
-	header := map[string]string{"X-Forwarded-Access-Token": forwardedToken("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", legacyEmail)}
-	wantStatus(t, do(t, server, legacyEmail, "GET", "/v1/keystore", "", header), http.StatusNotFound)
-	response := do(t, server, legacyEmail, "GET", "/v1/me", "", header)
+	email := "user@example.com"
+	wantStatus(t, do(t, server, email, "PUT", "/v1/keystore", protectedTestKey("header"), nil), http.StatusNoContent)
+	header := map[string]string{"X-Forwarded-Access-Token": forwardedToken("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", email)}
+	wantStatus(t, do(t, server, email, "GET", "/v1/keystore", "", header), http.StatusNotFound)
+	response := do(t, server, email, "GET", "/v1/me", "", header)
 	wantStatus(t, response, http.StatusOK)
 	var user identity.User
 	if err := json.NewDecoder(response.Body).Decode(&user); err != nil {
 		t.Fatal(err)
 	}
-	if user.PreviousID == "" || user.PreviousID == user.ID || user.Email != legacyEmail {
-		t.Fatalf("missing local migration hint: %+v", user)
+	if user.Email != email {
+		t.Fatalf("identity: %+v", user)
 	}
-	legacy := do(t, server, legacyEmail, "GET", "/v1/keystore", "", nil)
-	wantStatus(t, legacy, http.StatusOK)
-	if !strings.Contains(readBody(t, legacy), "legacy") {
-		t.Fatal("legacy backup was modified")
+	original := do(t, server, email, "GET", "/v1/keystore", "", nil)
+	wantStatus(t, original, http.StatusOK)
+	if !strings.Contains(readBody(t, original), "header") {
+		t.Fatal("header-identity backup was modified")
 	}
 }
 func TestMalformedForwardedTokenIsUnauthorized(t *testing.T) {

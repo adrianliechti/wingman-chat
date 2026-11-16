@@ -16,10 +16,9 @@ import (
 // User is a forwarded identity. Key is the private storage key; the JSON form
 // is the public identity served by /me.
 type User struct {
-	Key        string `json:"-"`
-	ID         string `json:"id"`
-	Email      string `json:"email,omitempty"`
-	PreviousID string `json:"previousId,omitempty"`
+	Key   string `json:"-"`
+	ID    string `json:"id"`
+	Email string `json:"email,omitempty"`
 }
 
 type claims struct {
@@ -76,13 +75,12 @@ func hash(key string) string {
 }
 
 func FromRequest(r *http.Request) (User, bool) {
-	legacy := strings.TrimSpace(r.Header.Get("X-Forwarded-User"))
+	user := strings.TrimSpace(r.Header.Get("X-Forwarded-User"))
 	email := strings.TrimSpace(r.Header.Get("X-Forwarded-Email"))
-	if legacy == "" {
-		legacy = email
+	if user == "" {
+		user = email
 	}
-	key := legacy
-	previous := ""
+	key := user
 	if r.Header.Get("X-Forwarded-Access-Token") != "" {
 		claims, ok := forwardedClaims(r)
 		if !ok {
@@ -95,9 +93,6 @@ func FromRequest(r *http.Request) (User, bool) {
 				return User{}, false
 			}
 			key = strings.ToLower(*claims.TenantID.value) + ":" + strings.ToLower(*claims.ObjectID.value)
-			if legacy != "" && legacy != key {
-				previous = hash(legacy)
-			}
 		}
 		if email == "" {
 			email = strings.TrimSpace(claims.Email)
@@ -109,8 +104,8 @@ func FromRequest(r *http.Request) (User, bool) {
 	if key == "" {
 		return User{}, false
 	}
-	if email == "" && strings.Contains(legacy, "@") {
-		email = legacy
+	if email == "" && strings.Contains(user, "@") {
+		email = user
 	}
-	return User{Key: key, ID: hash(key), Email: email, PreviousID: previous}, true
+	return User{Key: key, ID: hash(key), Email: email}, true
 }

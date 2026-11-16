@@ -95,7 +95,7 @@ func protectedTestKey(note string) string {
 		"version": 2, "kid": 1, "pinProtected": true,
 		"wrappedDek": base64.StdEncoding.EncodeToString(make([]byte, 48)),
 		"nonce":      base64.StdEncoding.EncodeToString(make([]byte, 12)),
-		"kdf":        map[string]any{"name": "pbkdf2-sha256", "salt": base64.StdEncoding.EncodeToString(make([]byte, 16)), "iter": 600000},
+		"kdf":        map[string]any{"name": "argon2id", "salt": base64.StdEncoding.EncodeToString(make([]byte, 16)), "m": 65536, "t": 3, "p": 1},
 		"note":       note,
 		"backup":     map[string]string{"generation": "test-generation", "publicKey": "public", "encryptedPrivateKey": "encrypted"},
 	}

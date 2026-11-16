@@ -1,10 +1,18 @@
 import type { Chat } from "@/shared/types/chat";
 import { withPersistenceLock } from "./persistence";
 import { normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
-import { readChatHistory } from "./chatHistoryStorage";
-import { storeChatIndexEntry, withChatIndexUpdate } from "./chatIndex";
+import { decodeLines, encodeLines, replayLog, type LogEntry } from "./chatLog";
 import { rehydrateChatBlobs, restoreChatManifest, type StoredChat } from "./opfs-chat";
-import { listDirectories, readJson, writeJson } from "./opfs-core";
+import {
+  deleteFile,
+  listDirectories,
+  listFiles,
+  readBlob,
+  readJson,
+  upsertIndexEntry,
+  writeJson,
+  type IndexEntry,
+} from "./opfs-core";
 
 // Per-chat paths in OPFS
 export const targetPath = (chatId: string) => `chats/${chatId}/target.json`;
@@ -54,4 +62,94 @@ export function writeLocalChatSnapshotUnlocked(stored: StoredChat, pending: bool
       await storeChatIndexEntry(stored);
     }
   });
+}
+
+// Retention ----------------------------------------------------------------
+
+/** Use calendar days consistently for local expiration and incoming backups. */
+export function chatRetentionCutoff(days: number | undefined): Date | null {
+  if (!days || days <= 0) return null;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  return cutoff;
+}
+
+// Index repair -------------------------------------------------------------
+
+const repairDirectory = "_sync/chat-index";
+const repairPath = (id: string) => `${repairDirectory}/${encodeURIComponent(id)}.json`;
+
+/** Only interrupted commits need a transcript read to repair their metadata. */
+export async function pendingChatIndexRepairs(): Promise<Set<string>> {
+  return new Set(
+    (await listFiles(repairDirectory))
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => decodeURIComponent(name.slice(0, -5))),
+  );
+}
+
+export function completeChatIndexRepair(id: string): Promise<void> {
+  return deleteFile(repairPath(id));
+}
+
+/** The caller holds the chat target lock through snapshot and index commits. */
+export async function withChatIndexUpdate(id: string, operation: () => Promise<void>): Promise<void> {
+  await writeJson(repairPath(id), { id });
+  await operation();
+  await completeChatIndexRepair(id);
+}
+
+/** Shared by local saves, recovery, and incoming backup changes. */
+export function storeChatIndexEntry(chat: StoredChat): Promise<void> {
+  const entry: IndexEntry = {
+    id: chat.id,
+    projectId: chat.projectId,
+    title: chat.title,
+    customTitle: chat.customTitle,
+    customIndex: chat.customIndex,
+    created: chat.created ?? undefined,
+    updated: chat.updated ?? chat.created ?? new Date(0).toISOString(),
+  };
+  return upsertIndexEntry("chats", entry);
+}
+
+// Backup history -----------------------------------------------------------
+
+interface ChatCheckpoint {
+  head: number;
+  hash: string;
+  count: number;
+}
+
+type HistoryEntry = LogEntry | ({ type: "checkpoint" } & ChatCheckpoint);
+
+export const chatHistoryPath = (id: string) => `chats/${id}/history.jsonl`;
+
+/** The entries and their checkpoint close in the same atomic OPFS write. */
+export function encodeHistory(entries: LogEntry[], checkpoint: ChatCheckpoint): string {
+  return encodeLines(entries) + JSON.stringify({ type: "checkpoint", ...checkpoint }) + "\n";
+}
+
+export async function readChatHistory(id: string, known?: { head: number; hash: string; chat: StoredChat }) {
+  const file = await readBlob(chatHistoryPath(id));
+  if (!file?.size) return undefined;
+  // Check only the trailing checkpoint before deciding whether to replay a
+  // potentially large log. Older logs replay in full until their next commit.
+  const start = Math.max(0, file.size - 1024);
+  const tail = (await file.slice(start).text()).trimEnd();
+  const boundary = tail.lastIndexOf("\n");
+  let checkpoint: ChatCheckpoint | undefined;
+  if (start === 0 || boundary >= 0) {
+    const last = JSON.parse(tail.slice(boundary + 1)) as HistoryEntry;
+    if (last.type === "checkpoint") checkpoint = { head: last.head, hash: last.hash, count: last.count };
+  }
+  if (known && checkpoint?.head === known.head && checkpoint.hash === known.hash)
+    return { chat: known.chat, checkpoint };
+
+  const entries: LogEntry[] = [];
+  for (const entry of decodeLines(await file.text()) as HistoryEntry[]) {
+    if (entry.type !== "checkpoint") entries.push(entry);
+  }
+  // Older histories use the separately stored checkpoint until their next write.
+  return { chat: replayLog(id, entries).chat, checkpoint };
 }

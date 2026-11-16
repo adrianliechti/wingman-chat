@@ -106,20 +106,9 @@ Entra claims fail with 401 instead of falling back to an email namespace. When n
 forwarded token exists, or a valid token has no Entra identity fields, existing
 trusted user/email headers remain available for development and other providers.
 
-On the first upgrade from an email-based identity, keep the proxy’s existing user
-header mapping. `/api/v1/me` includes a `previousId` hint derived from that trusted
-header. Browsers with matching old ownership markers preserve local chats and
-files, discard the old sync baselines and remembered keys, then reload before
-starting engines for the stable identity. Choose PIN/passkey protection again to
-upload that local copy into the new namespace. A subsequent email change leaves
-the stable identity and its keys unchanged.
-
-Existing ciphertext is not automatically re-encrypted for a changed identity.
-Before upgrading an email-based OneDrive deployment, export the old backup while
-it can still be unlocked. After upgrading, reset the online backup, restore that
-export locally, and configure protection again. The OneDrive folder belongs to
-the delegated Microsoft account; changing the app’s encryption identity alone
-does not select a new folder. Finish pending remote resets before upgrading.
+An email change leaves the stable Entra identity and its keys unchanged.
+Header-based and Entra identities are separate namespaces; existing ciphertext
+is not re-encrypted when a deployment switches between them.
 
 ### OneDrive authentication and storage
 
@@ -221,20 +210,11 @@ Restored workspace files must still match the resource ID derived from their pat
 
 The server holds the RSA private key encrypted under a random root key. Your PIN
 or passkey (WebAuthn PRF + HKDF-SHA256) protects that root key. Either configured
-method can unlock it. Changing protection preserves existing data and keys; older
-symmetric backups remain readable.
+method can unlock it. Changing protection preserves existing data and keys.
 
 New PINs must have at least 8 characters. They are stretched with Argon2id
 (64 MiB, 3 passes) and HKDF-SHA256. A leaked keystore permits offline PIN
-attempts; Argon2id raises the cost of each guess. Older PBKDF2-SHA256 PINs are
-re-wrapped after a successful unlock. Existing short PINs continue to work.
-
-Backups created by an earlier experimental version with a PIN pepper require
-migration: unlock with a passkey or the previous version and restore/export the data,
-then reset and configure a new backup. A configured passkey can also continue
-to unlock the existing backup, but its old peppered PIN will no longer work.
-Without the old server secret, a passkey, an unlocked device, or an export,
-a peppered PIN backup cannot be recovered.
+attempts; Argon2id raises the cost of each guess.
 
 Setup and unlock automatically remember this device. The root key is saved in
 local IndexedDB as a non-extractable Web Crypto key, excluded from exports. Scripts

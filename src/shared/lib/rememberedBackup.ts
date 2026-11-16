@@ -1,4 +1,4 @@
-import { type DeviceKey, type RootKey, fromBase64, toBase64, toDeviceKey } from "./crypto";
+import { type DeviceKey, type RootKey, toBase64, toDeviceKey } from "./crypto";
 import type { KeystoreState } from "./keystore";
 
 interface RememberedBackup {
@@ -6,9 +6,7 @@ interface RememberedBackup {
   protection: string;
   kid: number;
   /** Non-extractable AES-GCM root key; scripts can use it but never read its bytes. */
-  key?: CryptoKey;
-  /** Legacy raw root key, migrated to `key` on the next load. */
-  root?: string;
+  key: CryptoKey;
 }
 
 // Separate from OPFS so exported/restored ZIP files never transfer device trust.
@@ -60,24 +58,15 @@ export async function forgetBackup(): Promise<void> {
 export async function loadRememberedBackup(userId: string, state: KeystoreState): Promise<DeviceKey | null> {
   const saved = await record();
   if (!saved) return null;
-  if (saved.userId === userId && saved.kid === state.keystore.kid && saved.protection === (await protection(state))) {
-    try {
-      if (saved.key instanceof CryptoKey && !saved.key.extractable && saved.key.algorithm.name === "AES-GCM") {
-        return { key: saved.key, kid: saved.kid };
-      }
-      if (typeof saved.root === "string") {
-        const raw = fromBase64(saved.root);
-        if (raw.length === 32) {
-          const device = await toDeviceKey({ raw, kid: saved.kid });
-          raw.fill(0);
-          // Replace the readable legacy copy so it no longer persists on disk.
-          await record({ userId, protection: saved.protection, kid: saved.kid, key: device.key });
-          return device;
-        }
-      }
-    } catch {
-      /* Invalid local data requires an explicit unlock. */
-    }
+  if (
+    saved.userId === userId &&
+    saved.kid === state.keystore.kid &&
+    saved.protection === (await protection(state)) &&
+    saved.key instanceof CryptoKey &&
+    !saved.key.extractable &&
+    saved.key.algorithm.name === "AES-GCM"
+  ) {
+    return { key: saved.key, kid: saved.kid };
   }
   await forgetBackup();
   return null;

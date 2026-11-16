@@ -93,7 +93,7 @@ export function chunkEntries(entries: LogEntry[]): LogEntry[][] {
 
 // Replay -----------------------------------------------------------------
 
-export interface ReplayResult {
+interface ReplayResult {
   /** null when the chat has been tombstoned. */
   chat: StoredChat | null;
 }

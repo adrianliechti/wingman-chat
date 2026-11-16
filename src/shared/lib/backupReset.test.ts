@@ -25,7 +25,7 @@ beforeEach(() => {
 });
 
 it("retries failed local cleanup without deleting a new online backup", async () => {
-  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete" }));
+  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete", resetId: "reset-1234" }));
   vi.mocked(resetLocalBackupState).mockRejectedValueOnce(new Error("disk unavailable"));
   await expect(completePendingBackupReset("alice")).rejects.toThrow("disk unavailable");
   expect(JSON.parse(localStorage.getItem(BACKUP_RESET_KEY)!)).toEqual({ userId: "alice", phase: "local" });
@@ -37,14 +37,14 @@ it("retries failed local cleanup without deleting a new online backup", async ()
 });
 
 it("does not reset a different signed-in account", async () => {
-  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete" }));
+  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete", resetId: "reset-1234" }));
   await expect(completePendingBackupReset("bob")).rejects.toThrow("Sign in to the account");
   expect(resetBackup).not.toHaveBeenCalled();
   expect(resetLocalBackupState).not.toHaveBeenCalled();
 });
 
 it("preserves the pending reset when server deletion fails", async () => {
-  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete" }));
+  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete", resetId: "reset-1234" }));
   vi.mocked(resetBackup).mockRejectedValueOnce(new Error("offline"));
   await expect(completePendingBackupReset("alice")).rejects.toThrow("offline");
   expect(JSON.parse(localStorage.getItem(BACKUP_RESET_KEY)!).phase).toBe("delete");
@@ -52,12 +52,11 @@ it("preserves the pending reset when server deletion fails", async () => {
 });
 
 it("reuses the same reset ID after an uncertain server response", async () => {
-  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete" }));
+  localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId: "alice", phase: "delete", resetId: "reset-1234" }));
   vi.mocked(resetBackup).mockRejectedValueOnce(new Error("connection lost"));
   await expect(completePendingBackupReset("alice")).rejects.toThrow("connection lost");
-  const resetId = JSON.parse(localStorage.getItem(BACKUP_RESET_KEY)!).resetId;
-  expect(resetId).toBeTruthy();
+  expect(JSON.parse(localStorage.getItem(BACKUP_RESET_KEY)!).resetId).toBe("reset-1234");
   await completePendingBackupReset("alice");
-  expect(resetBackup).toHaveBeenNthCalledWith(1, resetId);
-  expect(resetBackup).toHaveBeenNthCalledWith(2, resetId);
+  expect(resetBackup).toHaveBeenNthCalledWith(1, "reset-1234");
+  expect(resetBackup).toHaveBeenNthCalledWith(2, "reset-1234");
 });

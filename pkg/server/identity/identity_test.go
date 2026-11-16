@@ -22,7 +22,7 @@ func TestStableEntraIdentitySurvivesEmailChange(t *testing.T) {
 		request.Header.Set("X-Forwarded-User", email)
 		request.Header.Set("X-Forwarded-Access-Token", jwt(map[string]any{"tid": tenant, "oid": objectID, "email": email}))
 		user, ok := FromRequest(request)
-		if !ok || user.Key != tenant+":"+objectID || user.ID != hash(tenant+":"+objectID) || user.Email != email || user.PreviousID != hash(email) {
+		if !ok || user.Key != tenant+":"+objectID || user.ID != hash(tenant+":"+objectID) || user.Email != email {
 			t.Fatalf("identity: %+v %v", user, ok)
 		}
 		if i == 0 {
@@ -73,7 +73,7 @@ func TestHeaderIdentityRemainsAvailableWithoutEntraClaims(t *testing.T) {
 		}
 		request.Header.Set("Authorization", "Bearer "+jwt(map[string]any{"tid": tenant, "oid": objectID}))
 		user, ok := FromRequest(request)
-		if !ok || user.Key != "alice" || user.ID != hash("alice") || user.PreviousID != "" {
+		if !ok || user.Key != "alice" || user.ID != hash("alice") {
 			t.Fatalf("header identity: %+v %v", user, ok)
 		}
 	}

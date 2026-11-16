@@ -8,10 +8,12 @@ const mocks = vi.hoisted(() => ({
   reload: vi.fn(),
 }));
 vi.mock("@/shared/config", () => ({ getConfig: () => ({ store: true }) }));
-vi.mock("./backupDestination", () => ({ prepareBackupDestination: vi.fn().mockResolvedValue(false) }));
-vi.mock("./backupReset", () => ({ completePendingBackupReset: vi.fn() }));
+vi.mock("./backupReset", () => ({
+  completePendingBackupReset: vi.fn(),
+  prepareBackupDestination: vi.fn().mockResolvedValue(false),
+}));
 vi.mock("./storeClient", () => ({
-  fetchMe: vi.fn().mockResolvedValue({ id: "alice", backupDestination: "onedrive-app", previousId: "email-user" }),
+  fetchMe: vi.fn().mockResolvedValue({ id: "alice", backupDestination: "onedrive-app" }),
 }));
 vi.mock("./chatSync", () => ({
   ChatSync: vi.fn(),
@@ -47,8 +49,8 @@ it("persists a queued local save before initializing and reloading for a changed
     await queue.flush();
     await vi.waitFor(() => expect(mocks.reload).toHaveBeenCalledOnce());
     expect(mocks.stash).toHaveBeenCalledWith(chat);
-    const { prepareBackupDestination } = await import("./backupDestination");
-    expect(prepareBackupDestination).toHaveBeenCalledWith("alice", "onedrive-app", "email-user");
+    const { prepareBackupDestination } = await import("./backupReset");
+    expect(prepareBackupDestination).toHaveBeenCalledWith("alice", "onedrive-app");
     expect(mocks.stash.mock.invocationCallOrder[0]).toBeLessThan(mocks.reload.mock.invocationCallOrder[0]);
   } finally {
     unregister();

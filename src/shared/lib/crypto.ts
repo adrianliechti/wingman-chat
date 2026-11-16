@@ -9,8 +9,7 @@
  *     if the wrapped DEK leaks, so Argon2id only raises the cost per guess.
  *
  * Primitives:
- *   - Argon2id (64 MiB, t=3) + HKDF-SHA256 → 256-bit KEK from PIN + salt. Legacy PBKDF2-SHA256
- *     (600 000 iterations) wraps stay readable and upgrade on unlock.
+ *   - Argon2id (64 MiB, t=3) + HKDF-SHA256 → 256-bit KEK from PIN + salt.
  *   - AES-256-GCM with random 12-byte nonce for both DEK-wrap and event/blob.
  *   - AAD pins identity into ciphertext (userId:chatId:seq for events,
  *     userId:blobId for blobs). Wrong AAD ⇒ decrypt fails.
@@ -139,53 +138,22 @@ async function importDekForAesGcm(dek: RootKey): Promise<CryptoKey> {
 
 // KEK from PIN -----------------------------------------------------------
 
-interface Pbkdf2Params {
-  name: "pbkdf2-sha256";
-  salt: string; // base64
-  iter: number;
-}
-
-interface Argon2idParams {
+export interface KdfParams {
   name: "argon2id";
   salt: string; // base64
   /** Memory cost in KiB. */
   m: number;
   t: number;
   p: number;
-  /** Legacy marker: these wraps must be migrated using the previous release. */
-  pepper?: boolean;
 }
-
-export type KdfParams = Pbkdf2Params | Argon2idParams;
 
 const ARGON2_COST = { m: 64 * 1024, t: 3, p: 1 } as const;
 // Bound server-supplied parameters so a hostile keystore cannot exhaust the browser.
 const ARGON2_MAX_MEMORY_KIB = 256 * 1024;
 const ARGON2_MAX_ITERATIONS = 16;
 const ARGON2_MAX_PARALLELISM = 8;
-/** True when a wrap should be refreshed with current KDF settings. */
-export function kdfNeedsUpgrade(kdf: KdfParams): boolean {
-  if (kdf.name !== "argon2id") return true;
-  if (kdf.m < ARGON2_COST.m || kdf.t < ARGON2_COST.t) return true;
-  return false;
-}
 
 async function deriveKEK(pin: string, kdf: KdfParams, userId: string): Promise<CryptoKey> {
-  if (kdf.name === "pbkdf2-sha256") {
-    const baseKey = await crypto.subtle.importKey("raw", encodeUtf8(pin), "PBKDF2", false, ["deriveKey"]);
-    return crypto.subtle.deriveKey(
-      {
-        name: "PBKDF2",
-        hash: "SHA-256",
-        salt: fromBase64(kdf.salt),
-        iterations: kdf.iter,
-      },
-      baseKey,
-      { name: "AES-GCM", length: 256 },
-      false,
-      ["encrypt", "decrypt"],
-    );
-  }
   if (kdf.name !== "argon2id") {
     throw new Error(`unsupported kdf: ${String((kdf as { name?: unknown }).name)}`);
   }
@@ -202,8 +170,6 @@ async function deriveKEK(pin: string, kdf: KdfParams, userId: string): Promise<C
   ) {
     throw new Error("unsupported PIN key parameters");
   }
-  if (kdf.pepper)
-    throw new Error("This PIN uses retired backup protection. Use a passkey or migrate it with the previous version.");
 
   const { deriveArgon2id } = await import("./argon2");
   const stretched = await deriveArgon2id(encodeUtf8(pin), fromBase64(kdf.salt), kdf);
@@ -223,14 +189,14 @@ async function deriveKEK(pin: string, kdf: KdfParams, userId: string): Promise<C
   );
 }
 
-export interface WrappedDek {
+interface WrappedDek {
   kdf: KdfParams;
   nonce: string; // base64
   wrappedDek: string; // base64
 }
 
 export async function wrapDEKWithPin(dek: DEK, pin: string, userId: string): Promise<WrappedDek> {
-  const kdf: Argon2idParams = {
+  const kdf: KdfParams = {
     name: "argon2id",
     salt: toBase64(randomBytes(SALT_BYTES)),
     ...ARGON2_COST,

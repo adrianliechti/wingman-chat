@@ -41,8 +41,8 @@ func TestProtectedKeystoreValidation(t *testing.T) {
 		strings.Replace(string(data), `"rpId":"localhost"`, `"rpId":""`, 1),
 		`{"dek":null,` + string(data)[1:],
 		`{"dek":"plaintext",` + string(data)[1:],
-		strings.Replace(protectedTestKey("weak"), `"iter":600000`, `"iter":1`, 1),
-		strings.Replace(string(dualData), `"iter":600000`, `"iter":1`, 1),
+		strings.Replace(protectedTestKey("weak"), `"t":3`, `"t":1`, 1),
+		strings.Replace(string(dualData), `"t":3`, `"t":1`, 1),
 		strings.Replace(string(dualData), `"rpId":"localhost"`, `"rpId":""`, 1),
 		`{"dek":null,` + string(dualData)[1:],
 	} {
@@ -52,34 +52,48 @@ func TestProtectedKeystoreValidation(t *testing.T) {
 	}
 }
 
-func TestLegacyUnprotectedStoreRequiresUpgrade(t *testing.T) {
+func TestUnprotectedKeystoreBlocksBackup(t *testing.T) {
 	provider := newTestStore(t)
-	legacy := `{"version":2,"kid":1,"pinProtected":false,"dek":"legacy-key"}`
-	etag, err := provider.PutKeystore(onedrive.WithToken(context.Background(), "alice"), "alice", []byte(legacy), "*")
-	if err != nil {
+	unprotected := `{"version":2,"kid":1,"pinProtected":false,"dek":"plain-key"}`
+	if _, err := provider.PutKeystore(onedrive.WithToken(context.Background(), "alice"), "alice", []byte(unprotected), "*"); err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
 	New(provider, testStoreMiddleware).Attach(mux, "")
-	request := func(method, path, body string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(method, path, strings.NewReader(body))
-		req.Header.Set("X-Forwarded-User", "alice")
-		req.Header.Set("X-Backup-Generation", "test-generation")
-		req.Header.Set("If-Match", `"`+etag+`"`)
-		res := httptest.NewRecorder()
-		mux.ServeHTTP(res, req)
-		return res
+	req := httptest.NewRequest("GET", "/v1/files", nil)
+	req.Header.Set("X-Forwarded-User", "alice")
+	req.Header.Set("X-Backup-Generation", "test-generation")
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("unprotected backup operation allowed: %d", res.Code)
 	}
-	if response := request("GET", "/v1/keystore", ""); response.Code != 200 || response.Body.String() != legacy {
-		t.Fatal("legacy upgrade key unavailable")
+}
+
+func TestArgon2idKeystoreValidation(t *testing.T) {
+	encode := func(size int) string { return base64.StdEncoding.EncodeToString(make([]byte, size)) }
+	key := func(kdf map[string]any) []byte {
+		data, _ := json.Marshal(map[string]any{
+			"version": 2, "kid": 1, "pinProtected": true,
+			"wrappedDek": encode(48), "nonce": encode(12), "kdf": kdf,
+		})
+		return data
 	}
-	if response := request("GET", "/v1/files", ""); response.Code != 403 {
-		t.Fatal("legacy backup operation allowed")
+	valid := map[string]any{"name": "argon2id", "salt": encode(16), "m": 65536, "t": 3, "p": 1}
+	if !protectedKeystore(key(valid)) {
+		t.Fatal("valid Argon2id keystore rejected")
 	}
-	if response := request("PUT", "/v1/keystore", protectedTestKey("upgrade")); response.Code != 204 {
-		t.Fatalf("upgrade failed: %s", response.Body.String())
+	for field, value := range map[string]any{"m": 1024, "t": 1, "p": 0, "salt": encode(8), "name": "scrypt"} {
+		invalid := map[string]any{}
+		for k, v := range valid {
+			invalid[k] = v
+		}
+		invalid[field] = value
+		if protectedKeystore(key(invalid)) {
+			t.Fatalf("accepted invalid Argon2id %s=%v", field, value)
+		}
 	}
-	if response := request("GET", "/v1/files", ""); response.Code != 200 {
-		t.Fatalf("protected operation failed: %s", response.Body.String())
+	if protectedKeystore(key(map[string]any{"name": "pbkdf2-sha256", "salt": encode(16), "iter": 600000})) {
+		t.Fatal("accepted PBKDF2")
 	}
 }

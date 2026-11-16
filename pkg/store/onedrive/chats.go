@@ -17,7 +17,7 @@ import (
 
 // maxRecent bounds the per-chat event-id dedup window stored in the index.
 // It only needs to cover one retried append batch: the request cap
-// (maxAppendBytes in the HTTP layer) over the client's ~4 MiB frames allows
+// (store.MaxAppendBytes) over the client's ~4 MiB frames allows
 // a few dozen frames per batch.
 const maxRecent = 128
 
@@ -83,7 +83,9 @@ func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expe
 	if buffer.Len() == 0 {
 		return result, nil
 	}
-	ch.Recent = trimRecent(ch.Recent)
+	if len(ch.Recent) > maxRecent {
+		ch.Recent = slices.Clone(ch.Recent[len(ch.Recent)-maxRecent:])
+	}
 	part := segment{object: object{Name: newObject(), Updated: time.Now().UTC()}, First: first, Last: ch.Head}
 	part.ETag, part.Size, err = p.upload(ctx, userID, part.Name, &buffer)
 	if err != nil {
@@ -99,13 +101,6 @@ func (p *Provider) AppendEvents(ctx context.Context, userID, chatID string, expe
 	}
 	result.NewSeq = ch.Head
 	return result, nil
-}
-
-func trimRecent(recent []string) []string {
-	if len(recent) > maxRecent {
-		return append([]string(nil), recent[len(recent)-maxRecent:]...)
-	}
-	return recent
 }
 
 // eventReader opens one immutable segment at a time, bounds memory to one frame,
@@ -277,8 +272,6 @@ func (p *Provider) CompactChat(ctx context.Context, userID, chatID string, befor
 		return nil
 	}
 	ch.Segments = retained
-	// Also shrinks dedup lists written by older versions (up to 1000 hashes).
-	ch.Recent = trimRecent(ch.Recent)
 	state.Chats[chatID] = ch
 	if err := p.save(ctx, userID, state); err != nil {
 		p.discard(ctx, userID, err, uploaded...)

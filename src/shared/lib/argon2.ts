@@ -1,6 +1,6 @@
 import { argon2id } from "hash-wasm";
 
-export interface Argon2Cost {
+interface Argon2Cost {
   /** Memory in KiB. */
   m: number;
   t: number;

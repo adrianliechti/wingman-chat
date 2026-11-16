@@ -291,7 +291,7 @@ func TestBackupHTTPAPI(t *testing.T) {
 	encode := func(size int) string { return base64.StdEncoding.EncodeToString(make([]byte, size)) }
 	key, _ := json.Marshal(map[string]any{
 		"version": 2, "kid": 1, "pinProtected": true, "wrappedDek": encode(48), "nonce": encode(12),
-		"kdf":    map[string]any{"name": "pbkdf2-sha256", "salt": encode(16), "iter": 600000},
+		"kdf":    map[string]any{"name": "argon2id", "salt": encode(16), "m": 65536, "t": 3, "p": 1},
 		"backup": map[string]any{"generation": "test-generation", "publicKey": "public", "encryptedPrivateKey": "private"},
 	})
 	call("PUT", "keystore", string(key), 204)

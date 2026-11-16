@@ -23,7 +23,7 @@ export function needsAttention(health: SyncHealth): boolean {
   return health === "error" || health === "locked" || health === "setup" || health === "upload-only";
 }
 
-export interface SyncStatus {
+interface SyncStatus {
   progress: (SyncProgress & { unit: "chats" | "files" })[];
   session: SessionStatus;
   health: SyncHealth;

@@ -53,35 +53,34 @@ export async function resetBackup(resetId: string): Promise<void> {
   await ensureOk(res);
 }
 
-export interface ServerUser {
+interface ServerUser {
   id: string;
   email?: string;
-  backupDestination?: string;
-  previousId?: string;
+  backupDestination: string;
 }
 
-export interface ServerChatMeta {
+interface ServerChatMeta {
   id: string;
   headSeq: number;
   updated: string; // RFC 3339
   deleted?: boolean;
 }
 
-export interface KeystoreResponse {
+interface KeystoreResponse {
   data: string; // raw JSON body
   etag: string;
 }
 
-export interface AppendRequest {
+interface AppendRequest {
   id: string;
   frame: string;
 }
 
-export interface AppendResponse {
+interface AppendResponse {
   newSeq: number;
 }
 
-export interface ConditionalOptions {
+interface ConditionalOptions {
   ifMatch?: string;
   ifNoneMatch?: "*";
 }
@@ -105,7 +104,7 @@ async function fetchOrThrow(input: string, init?: RequestInit): Promise<Response
 export async function fetchMe(): Promise<ServerUser> {
   const res = await fetchOrThrow(`${PREFIX}/me`);
   const user: ServerUser = await res.json();
-  return { ...user, backupDestination: res.headers.get("X-Backup-Destination") ?? "server" };
+  return { ...user, backupDestination: res.headers.get("X-Backup-Destination") ?? "" };
 }
 
 export async function getKeystore(): Promise<KeystoreResponse | null> {
@@ -115,7 +114,7 @@ export async function getKeystore(): Promise<KeystoreResponse | null> {
   return { data: await res.text(), etag };
 }
 
-export type PutKeystoreOptions = ConditionalOptions;
+type PutKeystoreOptions = ConditionalOptions;
 
 /** Returns the new ETag, or throws ServerError(412) on CAS mismatch. */
 export async function putKeystore(json: string, opts: PutKeystoreOptions = {}): Promise<string> {
@@ -220,7 +219,7 @@ export async function getFile(fileId: string): Promise<{ data: Uint8Array; etag:
   return { data: new Uint8Array(await res.arrayBuffer()), etag };
 }
 
-export type PutFileOptions = ConditionalOptions;
+type PutFileOptions = ConditionalOptions;
 
 /** Returns the new ETag, or throws ServerError(412) on CAS mismatch. */
 export async function putFile(fileId: string, data: Uint8Array, opts: PutFileOptions = {}): Promise<string> {

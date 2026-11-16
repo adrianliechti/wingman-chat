@@ -24,11 +24,9 @@ func protectedKeystore(data []byte) bool {
 		KDF              struct {
 			Name   string `json:"name"`
 			Salt   string `json:"salt"`
-			Iter   int    `json:"iter"`
 			Memory int    `json:"m"`
 			Time   int    `json:"t"`
 			Lanes  int    `json:"p"`
-			Pepper bool   `json:"pepper"`
 		} `json:"kdf"`
 		Passkey struct {
 			CredentialID string `json:"credentialId"`
@@ -45,17 +43,8 @@ func protectedKeystore(data []byte) bool {
 		if !sizedBase64(key.Wrapped, 48) || !sizedBase64(key.Nonce, 12) || !sizedBase64(key.KDF.Salt, 16) {
 			return false
 		}
-		switch key.KDF.Name {
-		case "pbkdf2-sha256":
-			if key.KDF.Iter < 600000 || key.KDF.Iter > 10000000 || key.KDF.Pepper {
-				return false
-			}
-		case "argon2id":
-			// Mirrors the browser's accepted range: at least OWASP's minimum, at most 256 MiB.
-			if key.KDF.Memory < 19*1024 || key.KDF.Memory > 256*1024 || key.KDF.Time < 2 || key.KDF.Time > 16 || key.KDF.Lanes < 1 || key.KDF.Lanes > 8 {
-				return false
-			}
-		default:
+		// Mirrors the browser's accepted range: at least OWASP's minimum, at most 256 MiB.
+		if key.KDF.Name != "argon2id" || key.KDF.Memory < 19*1024 || key.KDF.Memory > 256*1024 || key.KDF.Time < 2 || key.KDF.Time > 16 || key.KDF.Lanes < 1 || key.KDF.Lanes > 8 {
 			return false
 		}
 	}
@@ -73,8 +62,8 @@ func sizedBase64(value string, size int) bool {
 	return err == nil && len(data) == size
 }
 
-// Legacy plaintext keystores remain readable for a protected upgrade, but may
-// not be used for backup operations, including by an already-open old frontend.
+// Backup operations require a protected keystore and the caller's current
+// backup generation, which fences devices from before a reset.
 func (h *Handler) requireProtection(next userHandler) userHandler {
 	return func(w http.ResponseWriter, r *http.Request, user identity.User) {
 		key, _, err := h.store.GetKeystore(r.Context(), user.Key)

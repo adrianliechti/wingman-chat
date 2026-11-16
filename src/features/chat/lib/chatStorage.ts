@@ -1,8 +1,13 @@
 import { stashPendingDeletion } from "@/shared/lib/chatSync";
-import { readLocalChat, withChatTarget, writeLocalChatSnapshot } from "@/shared/lib/localChats";
-import { completeChatIndexRepair, pendingChatIndexRepairs } from "@/shared/lib/chatIndex";
+import {
+  chatRetentionCutoff,
+  completeChatIndexRepair,
+  pendingChatIndexRepairs,
+  readLocalChat,
+  withChatTarget,
+  writeLocalChatSnapshot,
+} from "@/shared/lib/localChats";
 import { getConfig } from "@/shared/config";
-import { chatRetentionCutoff } from "@/shared/lib/chatRetention";
 import {
   collectLegacyChatBlobIds,
   isLegacyStoredChat,

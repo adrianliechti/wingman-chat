@@ -3,7 +3,7 @@
  *
  * Lifecycle:
  *   1. App boots → init() resolves the keystore.
- *      - No keystore or legacy plaintext key → setup; choose PIN/passkey before uploading.
+ *      - No keystore → setup; choose PIN/passkey before uploading.
  *      - Remembered device + matching protected keystore → automatic unlocked sync.
  *      - Protected keystore + trusted public cache → upload-only, no decryption key.
  *      - No trusted public cache → unlock once to provision uploads.
@@ -12,9 +12,8 @@
  */
 
 import { getConfig } from "@/shared/config";
-import { prepareBackupDestination } from "./backupDestination";
 import { notify } from "./notify";
-import { completePendingBackupReset } from "./backupReset";
+import { completePendingBackupReset, prepareBackupDestination } from "./backupReset";
 import { invalidateBackupSessions, isBackupSessionCurrent, withBackupStorage } from "./backupLifecycle";
 import { onChatBackupReady } from "./chatBackupActivity";
 import { ChatSync } from "./chatSync";
@@ -118,7 +117,7 @@ async function readySession(userId: string, dek: RootKey, ks: keystore.KeystoreS
 async function readySessionUnlocked(userId: string, dek: RootKey, ks: keystore.KeystoreState): Promise<ReadySession> {
   const upgraded = await keystore.enableBackupUploads(ks, dek, userId);
   await rememberBackup(userId, upgraded.state, upgraded.dek);
-  api.setBackupGeneration(upgraded.state.keystore.backup!.generation!);
+  api.setBackupGeneration(upgraded.state.keystore.backup!.generation);
   const wasUploading = session.status === "upload-only" && session.userId === userId;
   const active =
     session.status === "upload-only" && session.userId === userId
@@ -168,7 +167,7 @@ async function uploadSessionUnlocked(
   ks: keystore.KeystoreState,
 ): Promise<UploadSession | LockedSession> {
   const key = await keystore.uploadKey(ks, userId);
-  if (!key || !ks.keystore.backup?.generation) return { status: "locked", userId, keystore: ks };
+  if (!key || !ks.keystore.backup) return { status: "locked", userId, keystore: ks };
   api.setBackupGeneration(ks.keystore.backup.generation);
   const active = await engines(userId, key);
   const s: UploadSession = { status: "upload-only", userId, ...active, keystore: ks };
@@ -248,7 +247,7 @@ export async function initSession(): Promise<Session> {
   initPromise = (async () => {
     try {
       const me = await api.fetchMe();
-      if (!(await prepareBackupDestination(me.id, me.backupDestination ?? "server", me.previousId))) {
+      if (!(await prepareBackupDestination(me.id, me.backupDestination))) {
         setSession({ status: "initializing", userId: me.id });
         // Queued chat saves can be awaiting initSession itself. Resolve first
         // so they can finish saving locally before this page reloads.
@@ -262,7 +261,7 @@ export async function initSession(): Promise<Session> {
       const state = await keystore.loadKeystore();
 
       let remembered: RootKey | null = null;
-      if (state && keystore.isProtected(state.keystore)) {
+      if (state) {
         try {
           remembered = await loadRememberedBackup(me.id, state);
         } catch (error) {
@@ -282,9 +281,6 @@ export async function initSession(): Promise<Session> {
       if (!state) {
         const prepared = await keystore.prepareSetup();
         setSession({ status: "setup", userId: me.id, dek: prepared.dek, keystore: prepared.state });
-      } else if (!keystore.isProtected(state.keystore)) {
-        const dek = await keystore.unlockWithPin(state, "", me.id);
-        setSession({ status: "setup", userId: me.id, dek, keystore: state });
       } else if (state.keystore.backup) {
         setSession(await uploadSession(me.id, state));
       } else {
@@ -315,11 +311,7 @@ export async function unlock(pin: string): Promise<void> {
   }
   const { userId, keystore: state } = session;
   const dek = await keystore.unlockWithPin(state, pin, userId);
-  const upgraded = await keystore.upgradePinProtection(state, dek, pin, userId).catch((error: unknown) => {
-    console.warn("Couldn't upgrade PIN protection", error);
-    return state;
-  });
-  await activateRestore(userId, dek, upgraded);
+  await activateRestore(userId, dek, state);
 }
 
 /** True when a remembered device must confirm the PIN before adding a passkey. */
@@ -334,15 +326,7 @@ export async function confirmPin(pin: string): Promise<void> {
   const current = session;
   if (current.status !== "ready") throw new Error("Unlock backup to change protection.");
   const dek = await keystore.unlockWithPin(current.keystore, pin, current.userId);
-  const upgraded = await keystore
-    .upgradePinProtection(current.keystore, dek, pin, current.userId)
-    .catch((error: unknown) => {
-      console.warn("Couldn't upgrade PIN protection", error);
-      return current.keystore;
-    });
-  const root: DEK = { ...dek, backup: current.dek.backup };
-  if (upgraded !== current.keystore) await updateProtection({ ...current, dek: root }, upgraded);
-  else session = { ...current, dek: root };
+  session = { ...current, dek: { ...dek, backup: current.dek.backup } };
 }
 
 /**

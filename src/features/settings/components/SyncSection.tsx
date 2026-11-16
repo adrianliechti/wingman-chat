@@ -10,7 +10,7 @@ import { type SyncHealth, useSyncStatus } from "../hooks/useSyncStatus";
 import { describeSyncProgress } from "@/shared/lib/syncProgress";
 import { BackupSetup, type BackupSetupStep } from "./BackupSetup";
 import { BackupRecoveryMethods } from "./BackupRecoveryMethods";
-import { BackupStatusIcon } from "./BackupStatusIcon";
+import { BackupStatusIcon } from "./SyncIndicator";
 import { PinForm } from "./PinForm";
 import { readLocalMirror } from "@/shared/lib/localChats";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";

@@ -16,7 +16,7 @@ import * as opfs from "./opfs-core";
 import * as api from "./storeClient";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
 import { diffChat, encodeLines } from "./chatLog";
-import { encodeHistory, readChatHistory } from "./chatHistoryStorage";
+import { encodeHistory, readChatHistory } from "./localChats";
 import type { Chat } from "@/shared/types/chat";
 import { exportFolderAsZip } from "./opfs-zip";
 

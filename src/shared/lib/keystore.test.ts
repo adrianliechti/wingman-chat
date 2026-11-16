@@ -40,7 +40,7 @@ describe("keystore protection methods", () => {
     const dek = await generateDEK(5);
     const initial: keystore.KeystoreState = {
       etag: "initial-etag",
-      keystore: { version: 2, kid: 5, pinProtected: false, dek: toBase64(dek.raw) },
+      keystore: { version: 2, kid: 5, pinProtected: false },
     };
     const passkey = await keystore.setPasskey(initial, dek, "alice");
     expect(keystore.isProtected(passkey.keystore)).toBe(true);
@@ -83,7 +83,7 @@ describe("keystore protection methods", () => {
     const dek = await generateDEK();
     const initial: keystore.KeystoreState = {
       etag: "initial",
-      keystore: { version: 2, kid: 1, pinProtected: false, dek: toBase64(dek.raw) },
+      keystore: { version: 2, kid: 1, pinProtected: false },
     };
     create.mockRejectedValueOnce(new DOMException("Cancelled", "NotAllowedError"));
     await expect(keystore.setPasskey(initial, dek, "alice")).rejects.toThrow();
@@ -96,7 +96,7 @@ describe("keystore protection methods", () => {
     const dek = await generateDEK();
     const initial: keystore.KeystoreState = {
       etag: "initial",
-      keystore: { version: 2, kid: 1, pinProtected: false, dek: toBase64(dek.raw) },
+      keystore: { version: 2, kid: 1, pinProtected: false },
     };
     await keystore.setPasskey(initial, dek, "alice");
     vi.mocked(api.putKeystore).mockClear();
@@ -114,7 +114,7 @@ describe("automatic upload key provisioning", () => {
     const dek = await generateDEK(3);
     const initial: keystore.KeystoreState = {
       etag: "initial",
-      keystore: { version: 2, kid: 3, pinProtected: false, dek: toBase64(dek.raw) },
+      keystore: { version: 2, kid: 3, pinProtected: false },
     };
     const pin = await keystore.setPin(initial, dek, "12345678", "alice");
     const upgraded = await keystore.enableBackupUploads(pin, dek, "alice");
@@ -166,24 +166,5 @@ describe("required backup protection", () => {
       await expect(keystore.setPin(prepared.state, prepared.dek, pin, "alice")).rejects.toThrow(/PIN/);
     }
     expect(api.putKeystore).not.toHaveBeenCalled();
-  });
-});
-
-describe("PIN KDF upgrades", () => {
-  it("re-wraps older PIN protection after unlock without enforcing the new length", async () => {
-    const prepared = await keystore.prepareSetup();
-    const unpeppered = await keystore.setPin(prepared.state, prepared.dek, "12345678", "alice");
-    vi.mocked(api.putKeystore).mockClear();
-    expect(await keystore.upgradePinProtection(unpeppered, prepared.dek, "12345678", "alice")).toBe(unpeppered);
-    expect(api.putKeystore).not.toHaveBeenCalled();
-
-    const legacy: keystore.KeystoreState = {
-      ...unpeppered,
-      keystore: { ...unpeppered.keystore, kdf: { name: "pbkdf2-sha256", salt: "", iter: 600_000 } },
-    } as keystore.KeystoreState;
-    const upgraded = await keystore.upgradePinProtection(legacy, prepared.dek, "1234", "alice");
-    expect(upgraded.keystore).toMatchObject({ kdf: { name: "argon2id" } });
-    expect(api.putKeystore).toHaveBeenCalledWith(JSON.stringify(upgraded.keystore), { ifMatch: "next-etag" });
-    expect(await keystore.unlockWithPin(upgraded, "1234", "alice")).toEqual(prepared.dek);
   });
 });

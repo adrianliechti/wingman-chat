@@ -2,11 +2,11 @@
  * Keystore management.
  *
  * The keystore is a small JSON blob stored on the server that holds the
- * user's DEK wrapped with a PIN, passkey, or both independently. Plain keys are supported only
- * in memory during setup and when upgrading old unprotected server records:
+ * user's DEK wrapped with a PIN, passkey, or both independently. The server
+ * only accepts protected keystores; setup keeps an unprotected placeholder in
+ * memory until protection is chosen:
  *
- *   { version: 2, kid: 1, pinProtected: false, dek: "<base64 raw key>" }
- *   { version: 2, kid: 1, pinProtected: true,  wrappedDek, nonce, kdf }
+ *   { version: 2, kid: 1, pinProtected: true, wrappedDek, nonce, kdf }
  *
  * `kid` names the key inside every frame envelope. The server treats
  * this body as opaque. CAS via If-Match prevents concurrent stomp; the
@@ -27,14 +27,13 @@ import {
   generateDEK,
   hasRawKey,
   type KdfParams,
-  kdfNeedsUpgrade,
   toBase64,
   unwrapDEKWithPin,
   wrapDEKWithPin,
 } from "./crypto";
 
 interface BackupEnvelope {
-  generation?: string;
+  generation: string;
   publicKey: string;
   encryptedPrivateKey: string;
 }
@@ -42,14 +41,14 @@ interface BackupEnvelope {
 export const PIN_MIN_LENGTH = 8;
 export const PIN_MAX_LENGTH = 32;
 
-interface PlainKeystore {
+/** In-memory setup placeholder; never uploaded. */
+interface SetupKeystore {
   backup?: BackupEnvelope;
   version: 2;
   /** Key id stamped into frame envelopes. */
   kid: number;
   pinProtected: false;
   passkeyProtected?: false;
-  dek: string; // base64 32 bytes
 }
 
 interface ProtectedKeystore {
@@ -63,7 +62,7 @@ interface ProtectedKeystore {
   kdf: KdfParams;
 }
 
-export interface PasskeyKeystore {
+interface PasskeyKeystore {
   backup?: BackupEnvelope;
   version: 2;
   kid: number;
@@ -72,12 +71,12 @@ export interface PasskeyKeystore {
   passkey: PasskeyEnvelope;
 }
 
-export interface DualProtectedKeystore extends Omit<ProtectedKeystore, "passkeyProtected"> {
+interface DualProtectedKeystore extends Omit<ProtectedKeystore, "passkeyProtected"> {
   passkeyProtected: true;
   passkey: PasskeyEnvelope;
 }
 
-export type Keystore = PlainKeystore | ProtectedKeystore | PasskeyKeystore | DualProtectedKeystore;
+export type Keystore = SetupKeystore | ProtectedKeystore | PasskeyKeystore | DualProtectedKeystore;
 
 export function isPasskeyProtected(k: Keystore): k is PasskeyKeystore | DualProtectedKeystore {
   return k.passkeyProtected === true;
@@ -96,16 +95,6 @@ function isPinProtected(k: Keystore): k is ProtectedKeystore | DualProtectedKeys
   return k.pinProtected === true;
 }
 
-function dekFromPlain(k: PlainKeystore): DEK {
-  const raw = fromBase64(k.dek);
-  if (raw.length !== 32) throw new Error("invalid DEK length");
-  return { raw, kid: k.kid };
-}
-
-function plainFromDek(dek: DEK): PlainKeystore {
-  return { version: 2, kid: dek.kid, pinProtected: false, dek: toBase64(dek.raw) };
-}
-
 /**
  * Load the keystore from the server. Returns null if none exists yet.
  */
@@ -119,7 +108,7 @@ export async function loadKeystore(): Promise<KeystoreState | null> {
 /** Prepare a key only in memory. Nothing is uploaded until protection is chosen. */
 export async function prepareSetup(): Promise<{ state: KeystoreState; dek: DEK }> {
   const dek = await generateDEK();
-  return { state: { keystore: plainFromDek(dek), etag: "" }, dek };
+  return { state: { keystore: { version: 2, kid: dek.kid, pinProtected: false }, etag: "" }, dek };
 }
 
 async function saveProtected(state: KeystoreState, ks: Keystore): Promise<KeystoreState> {
@@ -133,8 +122,9 @@ async function saveProtected(state: KeystoreState, ks: Keystore): Promise<Keysto
  */
 export async function unlockWithPin(state: KeystoreState, pin: string, userId: string): Promise<DEK> {
   if (!isPinProtected(state.keystore)) {
-    if (isPasskeyProtected(state.keystore)) throw new Error("Use your passkey to unlock sync.");
-    return dekFromPlain(state.keystore);
+    throw new Error(
+      isPasskeyProtected(state.keystore) ? "Use your passkey to unlock sync." : "Sync is not PIN-protected.",
+    );
   }
   try {
     return await unwrapDEKWithPin(state.keystore, pin, userId, state.keystore.kid);
@@ -154,26 +144,6 @@ export async function setPin(state: KeystoreState, dek: DEK, pin: string, userId
   if (pin.length < PIN_MIN_LENGTH || pin.length > PIN_MAX_LENGTH) {
     throw new Error(`PIN must be between ${PIN_MIN_LENGTH} and ${PIN_MAX_LENGTH} characters.`);
   }
-  return savePin(state, dek, pin, userId);
-}
-
-/**
- * Re-wrap an existing PIN with the current KDF after a
- * successful unlock. Older PINs keep working even below today's minimum length.
- * Returns the unchanged state when no upgrade is needed or possible.
- */
-export async function upgradePinProtection(
-  state: KeystoreState,
-  dek: DEK,
-  pin: string,
-  userId: string,
-): Promise<KeystoreState> {
-  if (!isPinProtected(state.keystore)) return state;
-  if (!kdfNeedsUpgrade(state.keystore.kdf)) return state;
-  return savePin(state, dek, pin, userId);
-}
-
-async function savePin(state: KeystoreState, dek: DEK, pin: string, userId: string): Promise<KeystoreState> {
   const wrapped = await wrapDEKWithPin(dek, pin, userId);
   const pinState: ProtectedKeystore = {
     version: 2,
@@ -216,7 +186,7 @@ export async function unlockWithPasskey(state: KeystoreState, userId: string): P
   return unlockPasskeyEnvelope(state.keystore.passkey, userId, state.keystore.kid);
 }
 
-/** Upgrade once while unlocked, preserving old symmetric history and its protected key. */
+/** Provision the backup key pair once while unlocked; its private key is sealed with the root key. */
 export async function enableBackupUploads<K extends RootKey>(
   state: KeystoreState,
   dek: K,
@@ -237,12 +207,6 @@ export async function enableBackupUploads<K extends RootKey>(
       encryptedPrivateKey,
     };
     const ks = { ...current.keystore, backup };
-    const etag = await api.putKeystore(JSON.stringify(ks), { ifMatch: current.etag });
-    current = { keystore: ks, etag };
-  }
-  // Older experimental backups can acquire a generation without changing keys.
-  if (!current.keystore.backup!.generation) {
-    const ks = { ...current.keystore, backup: { ...current.keystore.backup!, generation: crypto.randomUUID() } };
     const etag = await api.putKeystore(JSON.stringify(ks), { ifMatch: current.etag });
     current = { keystore: ks, etag };
   }
