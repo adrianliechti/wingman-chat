@@ -90,3 +90,14 @@ for (const mode of ["characters", "words"] as const) {
     });
   });
 }
+
+describe("markdownUrlTransform", () => {
+  it("keeps inline data images but blocks data links and non-image data", () => {
+    const svg = "data:image/svg+xml;base64,PHN2Zy8+";
+    expect(markdownUrlTransform(svg, "image", "")).toBe(svg);
+    expect(markdownUrlTransform("data:image/png;base64,AAAA", "image", "")).toBe("data:image/png;base64,AAAA");
+    expect(markdownUrlTransform(svg, "link", "")).toBe("");
+    expect(markdownUrlTransform("data:text/html;base64,PHNjcmlwdD4=", "image", "")).toBe("");
+    expect(renderHtml(parseMarkdown(`![icon](${svg})`, options), options)).toContain(`src="${svg}"`);
+  });
+});

@@ -369,10 +369,12 @@ export const autolinkExtension: MarkdownExtension = {
 // ── Links to the workspace ─────────────────────────────────────────────────
 
 /** Artifact links keep their scheme so the link component can open the file in the panel. */
-export const markdownUrlTransform: UrlTransform = (url) => {
+export const markdownUrlTransform: UrlTransform = (url, kind) => {
   // Match the parser's control/whitespace filtering after decoding entities.
   // eslint-disable-next-line no-control-regex
   const value = decodeHTMLStrict(url).replace(/[\u0000-\u001F\u007F\s]+/g, "");
+  // Inline images (e.g. embedded SVG icons) are safe in <img>, where scripts never run.
+  if (kind === "image" && /^data:image\/(?:png|gif|jpeg|webp|avif|svg\+xml)[;,]/i.test(value)) return value;
   return /^(?!https?:|mailto:|tel:|sandbox:|artifact:)[a-z][a-z\d+.-]*:/i.test(value) ? "" : value;
 };
 

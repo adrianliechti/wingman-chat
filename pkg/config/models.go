@@ -173,6 +173,7 @@ type Chat struct {
 type ChatAnnouncement struct {
 	Text   string                  `json:"text,omitempty" yaml:"text,omitempty"`
 	Title  string                  `json:"title,omitempty" yaml:"title,omitempty"`
+	Images map[string]string       `json:"images,omitempty" yaml:"images,omitempty"`
 	Action *ChatAnnouncementAction `json:"action,omitempty" yaml:"action,omitempty"`
 }
 

@@ -1065,6 +1065,8 @@ type MarkdownProps = {
   uiStateKey?: string;
   /** Task checkboxes take clicks, for an editor that toggles them in the source. */
   interactiveTasks?: boolean;
+  /** Image URLs by name, so `![alt](name)` can reference images supplied outside the text. */
+  images?: Record<string, string>;
 };
 
 const NonMemoizedMarkdown = ({
@@ -1077,10 +1079,15 @@ const NonMemoizedMarkdown = ({
   onSendMessage,
   uiStateKey,
   interactiveTasks = false,
+  images,
 }: MarkdownProps) => {
   const actionsEnabled = useContext(RendererActionsContext) && !isStreaming;
   const emojiMode = useContext(EmojiContext)?.emojiMode ?? "monochrome";
-  const resolveAsset = useAssetUrlResolver(fs, basePath);
+  const resolveFileAsset = useAssetUrlResolver(fs, basePath);
+  const resolveAsset = useCallback(
+    (url: string) => (images && Object.hasOwn(images, url) ? images[url] : resolveFileAsset(url)),
+    [images, resolveFileAsset],
+  );
   const renderOptions = useMemo(
     () => ({ isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage, uiStateKey, interactiveTasks }),
     [isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage, uiStateKey, interactiveTasks],
@@ -1125,7 +1132,8 @@ export const Markdown = memo(
     prev.onOpenArtifact === next.onOpenArtifact &&
     prev.onSendMessage === next.onSendMessage &&
     prev.uiStateKey === next.uiStateKey &&
-    prev.interactiveTasks === next.interactiveTasks,
+    prev.interactiveTasks === next.interactiveTasks &&
+    prev.images === next.images,
 );
 
 const extractFilename = (code: string): string | undefined => {
