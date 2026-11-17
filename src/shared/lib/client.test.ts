@@ -129,6 +129,8 @@ describe("chat output allowances", () => {
     ["gpt-6.1-terra", "high"],
     ["gpt-6.1-terra", "xhigh"],
     ["gpt-6.1-terra", "max"],
+    ["gpt-6.2-astra", "max"],
+    ["gpt-6.2-sol", "low"],
     ["claude-haiku-5-5", "none"],
     ["claude-haiku-5-5", "low"],
     ["claude-haiku-5-5", "medium"],
