@@ -11,6 +11,7 @@ vi.mock("./storeClient", async (original) => ({
   listFiles: vi.fn(),
   getFile: vi.fn(),
   putFile: vi.fn(),
+  putFiles: vi.fn(),
   deleteFile: vi.fn(),
 }));
 
@@ -42,6 +43,8 @@ beforeEach(() => {
     remote.set(id, { data, etag });
     return etag;
   });
+  // These scenarios cover per-file uploads; fileSync-batch.test.ts covers batches.
+  vi.mocked(api.putFiles).mockRejectedValue(new api.ServerError(404, "not found"));
   vi.mocked(api.deleteFile).mockImplementation(async (id, options) => {
     const current = remote.get(id);
     if (current && options?.ifMatch !== current.etag) throw new api.ServerError(412, "file conflict");
@@ -191,6 +194,64 @@ it.each([0, 1, 3])("resumes a multi-file backup after %s confirmed uploads and a
   sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   await sync.fullSync();
   for (const path of paths) expect(await readText(path)).toBe(`contents of ${path}`);
+});
+
+it("keeps uploads confirmed before an interrupted backup without restoring them again", async () => {
+  const key = await generateStoreKey();
+  const paths = Array.from({ length: 4 }, (_, index) => `agents/file-${index}.md`);
+  for (const path of paths) await writeText(path, `contents of ${path}`);
+  const put = vi.mocked(api.putFile).getMockImplementation()!;
+  let closed = false;
+  vi.mocked(api.putFile).mockImplementation(async (...args) => {
+    if (remote.size === 2) {
+      closed = true;
+      throw new Error("page closed");
+    }
+    return put(...args);
+  });
+  // The page unloads before the batch's final tracking write.
+  memory.beforeWrite = async (path) => {
+    if (closed && path === "_sync/files.json") throw new Error("page closed");
+  };
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+  await expect(sync.fullSync()).rejects.toThrow("page closed");
+  expect(remote.size).toBe(2);
+
+  memory.beforeWrite = undefined;
+  vi.mocked(api.putFile).mockImplementation(put);
+  vi.mocked(api.putFile).mockClear();
+  sync.stop();
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+  sync.subscribeActivity((value) => (activity = value));
+  await sync.fullSync();
+  expect(api.getFile).not.toHaveBeenCalled();
+  expect(api.putFile).toHaveBeenCalledTimes(2);
+  expect(activity.pendingCount).toBe(0);
+});
+
+it("adopts a file this device uploaded before losing its tracking without rewriting it", async () => {
+  const key = await generateStoreKey();
+  const path = "agents/uploaded.md";
+  await writeText(path, "uploaded contents");
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+  await sync.fullSync();
+  const mtime = (await readJson<{ entries: Record<string, { mtime: number }> }>("_sync/files.json"))!.entries[path]
+    .mtime;
+  await writeText("_sync/files.json", JSON.stringify({ userId: "alice", entries: {} }));
+  vi.mocked(api.putFile).mockClear();
+  const writes: string[] = [];
+  memory.beforeWrite = async (writing) => {
+    writes.push(writing);
+  };
+
+  sync.stop();
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+  sync.subscribeActivity((value) => (activity = value));
+  await sync.fullSync();
+  expect(writes).not.toContain(path);
+  expect(api.putFile).not.toHaveBeenCalled();
+  expect(activity.pendingCount).toBe(0);
+  expect(await readJson("_sync/files.json")).toMatchObject({ entries: { [path]: { mtime } } });
 });
 
 it.each(["upload", "restore"])(

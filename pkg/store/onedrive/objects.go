@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/adrianliechti/wingman-chat/pkg/store"
@@ -107,6 +108,136 @@ func (p *Provider) PutObject(ctx context.Context, kind store.ObjectKind, id stri
 	}
 	return obj.ETag, nil
 }
+
+// batchUploads bounds concurrent Graph uploads within one PutFiles request.
+const batchUploads = 4
+
+func (p *Provider) PutFiles(ctx context.Context, writes []store.FileWrite) ([]string, error) {
+	if len(writes) == 0 {
+		return []string{}, nil
+	}
+	seen := make(map[string]bool, len(writes))
+	for _, write := range writes {
+		if err := validateID(write.ID); err != nil {
+			return nil, err
+		}
+		if seen[write.ID] {
+			return nil, store.ErrInvalidID
+		}
+		seen[write.ID] = true
+	}
+	state, err := p.load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	previous := make([]object, len(writes))
+	exists := make([]bool, len(writes))
+	for i, write := range writes {
+		previous[i], exists[i] = state.Files[write.ID]
+		if !matches(write.IfMatch, previous[i].ETag, exists[i]) {
+			return nil, store.ErrObjectConflict
+		}
+	}
+
+	spooled := make([]*spooledObject, 0, len(writes))
+	defer func() {
+		for _, s := range spooled {
+			s.close()
+		}
+	}()
+	for _, write := range writes {
+		s, err := p.spool(write.Body)
+		if err != nil {
+			return nil, err
+		}
+		spooled = append(spooled, s)
+	}
+
+	now := time.Now().UTC()
+	uploaded := make([]object, len(writes))
+	names := make([]string, len(writes))
+	for i, s := range spooled {
+		uploaded[i] = object{Name: newObject(), ETag: s.etag, Size: s.size, Updated: now}
+		names[i] = uploaded[i].Name
+	}
+	if err := p.parallel(ctx, len(writes), func(ctx context.Context, i int) error {
+		return p.send(ctx, names[i], spooled[i])
+	}); err != nil {
+		// Nothing was published, so every uploaded object is unreachable.
+		p.removeAll(ctx, names)
+		return nil, err
+	}
+
+	for i, write := range writes {
+		state.Files[write.ID] = uploaded[i]
+	}
+	if err := p.save(ctx, state); err != nil {
+		p.discard(ctx, err, names...)
+		return nil, err
+	}
+	var replaced []string
+	for i := range writes {
+		if exists[i] {
+			replaced = append(replaced, previous[i].Name)
+		}
+	}
+	p.removeAll(ctx, replaced)
+
+	etags := make([]string, len(writes))
+	for i := range uploaded {
+		etags[i] = uploaded[i].ETag
+	}
+	return etags, nil
+}
+
+// parallel runs fn for 0..n-1 with bounded concurrency, stopping on the first error.
+func (p *Provider) parallel(ctx context.Context, n int, fn func(context.Context, int) error) error {
+	// Resolve the app folder once; concurrent calls then only read the cached value.
+	if _, err := p.folder(ctx); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	slots := make(chan struct{}, batchUploads)
+	var wg sync.WaitGroup
+	var once sync.Once
+	var first error
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			if ctx.Err() != nil {
+				return
+			}
+			if err := fn(ctx, i); err != nil {
+				once.Do(func() {
+					first = err
+					cancel()
+				})
+			}
+		}(i)
+	}
+	wg.Wait()
+	if first == nil {
+		first = ctx.Err()
+	}
+	return first
+}
+
+// removeAll best-effort deletes objects; failures leave unreferenced data for a later reset.
+func (p *Provider) removeAll(ctx context.Context, names []string) {
+	if len(names) == 0 {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	_ = p.parallel(ctx, len(names), func(ctx context.Context, i int) error {
+		_ = p.remove(ctx, names[i])
+		return nil
+	})
+}
+
 func (p *Provider) DeleteObject(ctx context.Context, kind store.ObjectKind, id string, ifMatch string) error {
 	if err := validateID(id); err != nil {
 		return err

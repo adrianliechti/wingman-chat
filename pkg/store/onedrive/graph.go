@@ -232,25 +232,55 @@ func (p *Provider) remove(ctx context.Context, name string) error {
 // Spooling encrypted input bounds memory and makes each upload fragment replayable.
 // The temporary file is removed before the API request returns.
 func (p *Provider) upload(ctx context.Context, name string, r io.Reader) (string, int64, error) {
-	f, err := os.CreateTemp(p.tempDir, "wingman-onedrive-*")
+	spooled, err := p.spool(r)
 	if err != nil {
 		return "", 0, err
 	}
-	defer os.Remove(f.Name())
-	defer f.Close()
+	defer spooled.close()
+	if err := p.send(ctx, name, spooled); err != nil {
+		return "", 0, err
+	}
+	return spooled.etag, spooled.size, nil
+}
+
+type spooledObject struct {
+	file *os.File
+	etag string
+	size int64
+}
+
+func (s *spooledObject) close() {
+	s.file.Close()
+	os.Remove(s.file.Name())
+}
+
+// spool copies r to a temporary file, returning its content-hash ETag.
+// Callers must close the result.
+func (p *Provider) spool(r io.Reader) (*spooledObject, error) {
+	f, err := os.CreateTemp(p.tempDir, "wingman-onedrive-*")
+	if err != nil {
+		return nil, err
+	}
 	hasher := sha256.New()
 	size, err := io.Copy(f, io.TeeReader(r, hasher))
 	if err != nil {
-		return "", 0, err
+		f.Close()
+		os.Remove(f.Name())
+		return nil, err
 	}
+	return &spooledObject{file: f, etag: fmt.Sprintf("%x", hasher.Sum(nil)), size: size}, nil
+}
+
+func (p *Provider) send(ctx context.Context, name string, spooled *spooledObject) error {
+	f, size := spooled.file, spooled.size
 	endpoint, err := p.objectURL(ctx, name)
 	if err != nil {
-		return "", 0, err
+		return err
 	}
 	if size <= uploadChunk {
 		res, err := p.request(ctx, "PUT", endpoint+":/content", f, http.Header{"Content-Type": {"application/octet-stream"}}, true)
 		if err != nil {
-			return "", 0, err
+			return err
 		}
 		res.Body.Close()
 	} else {
@@ -258,10 +288,10 @@ func (p *Provider) upload(ctx context.Context, name string, r io.Reader) (string
 			URL string `json:"uploadUrl"`
 		}
 		if err := p.jsonRequest(ctx, "POST", endpoint+":/createUploadSession", map[string]any{"item": map[string]string{"@microsoft.graph.conflictBehavior": "replace"}}, &session); err != nil {
-			return "", 0, err
+			return err
 		}
 		if !validUploadURL(session.URL) {
-			return "", 0, errors.New("OneDrive backup: invalid upload session URL")
+			return errors.New("OneDrive backup: invalid upload session URL")
 		}
 		complete := false
 		defer func() {
@@ -277,23 +307,23 @@ func (p *Provider) upload(ctx context.Context, name string, r io.Reader) (string
 		for offset := int64(0); offset < size; {
 			length := min(int64(len(buffer)), size-offset)
 			if _, err := f.ReadAt(buffer[:length], offset); err != nil {
-				return "", 0, err
+				return err
 			}
 			headers := http.Header{"Content-Type": {"application/octet-stream"}, "Content-Range": {fmt.Sprintf("bytes %d-%d/%d", offset, offset+length-1, size)}}
 			res, err := p.request(ctx, "PUT", session.URL, bytes.NewReader(buffer[:length]), headers, false)
 			if err != nil {
-				return "", 0, err
+				return err
 			}
 			status := res.StatusCode
 			res.Body.Close()
 			if (offset+length < size && status != 202) || (offset+length == size && status != 200 && status != 201) {
-				return "", 0, errors.New("OneDrive backup: unexpected upload response")
+				return errors.New("OneDrive backup: unexpected upload response")
 			}
 			offset += length
 		}
 		complete = true
 	}
-	return fmt.Sprintf("%x", hasher.Sum(nil)), size, nil
+	return nil
 }
 
 func validUploadURL(raw string) bool {

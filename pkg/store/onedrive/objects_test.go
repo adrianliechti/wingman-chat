@@ -65,3 +65,49 @@ func TestInvalidObjectKindIsRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestPutFilesPublishesBatchInOneIndexCommit(t *testing.T) {
+	p, graph := newTestProvider(t)
+	if _, err := p.PutObject(testSession(), store.FileObject, "existing-1234", strings.NewReader("old"), "*"); err != nil {
+		t.Fatal(err)
+	}
+	before := graph.NextRevision
+	files, err := p.ListFiles(testSession())
+	if err != nil || len(files) != 1 {
+		t.Fatalf("setup: %v %v", files, err)
+	}
+	writes := []store.FileWrite{
+		{ID: "existing-1234", Body: strings.NewReader("new"), IfMatch: files[0].ETag},
+		{ID: "created-12345", Body: strings.NewReader("created"), IfMatch: "*"},
+	}
+	etags, err := p.PutFiles(testSession(), writes)
+	if err != nil || len(etags) != 2 {
+		t.Fatalf("batch: %v %v", etags, err)
+	}
+	// Two object uploads plus a single index commit.
+	if writes := graph.NextRevision - before; writes != 3 {
+		t.Fatalf("batch made %d Graph writes, want 3", writes)
+	}
+	reader, etag, err := p.GetObject(testSession(), store.FileObject, "existing-1234")
+	if got := string(readAll(t, reader, err)); got != "new" || etag != etags[0] {
+		t.Fatalf("replaced file: %q %q", got, etag)
+	}
+	// The replaced object is reclaimed; index plus two live objects remain.
+	if objects := len(graph.Folders["backup"]); objects != 3 {
+		t.Fatalf("%d stored objects, want 3", objects)
+	}
+
+	_, err = p.PutFiles(testSession(), []store.FileWrite{
+		{ID: "another-12345", Body: strings.NewReader("x"), IfMatch: "*"},
+		{ID: "created-12345", Body: strings.NewReader("y"), IfMatch: "*"},
+	})
+	if !errors.Is(err, store.ErrObjectConflict) {
+		t.Fatalf("conflicting batch: %v", err)
+	}
+	if _, _, err := p.GetObject(testSession(), store.FileObject, "another-12345"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("conflicting batch published a file: %v", err)
+	}
+	if objects := len(graph.Folders["backup"]); objects != 3 {
+		t.Fatalf("conflicting batch left %d objects", objects)
+	}
+}

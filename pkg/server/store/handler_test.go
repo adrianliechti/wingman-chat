@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -487,4 +488,56 @@ func testStoreMiddleware(next http.Handler) http.Handler {
 		user, _ := identity.FromRequest(r)
 		next.ServeHTTP(w, r.WithContext(onedrive.WithToken(r.Context(), user.ID)))
 	})
+}
+
+func batchBody(t *testing.T, manifest string, parts ...[2]string) (string, string) {
+	t.Helper()
+	var body strings.Builder
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("manifest", manifest); err != nil {
+		t.Fatal(err)
+	}
+	for _, part := range parts {
+		w, err := writer.CreateFormFile(part[0], part[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.WriteString(w, part[1])
+	}
+	writer.Close()
+	return body.String(), writer.FormDataContentType()
+}
+
+func TestFileBatchUpload(t *testing.T) {
+	srv := protectedTestServer(t)
+	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
+
+	body, contentType := batchBody(t, `[{"id":"`+a+`","ifNoneMatch":"*"},{"id":"`+b+`","ifNoneMatch":"*"}]`, [2]string{a, "cipher-a"}, [2]string{b, "cipher-b"})
+	res := do(t, srv, "alice", "POST", "/v1/files", body, map[string]string{"Content-Type": contentType})
+	wantStatus(t, res, http.StatusOK)
+	var result struct {
+		Files []struct{ ID, ETag string } `json:"files"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Files) != 2 || result.Files[0].ID != a || result.Files[1].ID != b || result.Files[0].ETag == "" {
+		t.Fatalf("unexpected batch result: %+v", result)
+	}
+	res = do(t, srv, "alice", "GET", "/v1/files/"+b, "", nil)
+	wantStatus(t, res, http.StatusOK)
+	if got := readBody(t, res); got != "cipher-b" {
+		t.Fatalf("batched file body %q", got)
+	}
+
+	// One failed precondition publishes nothing.
+	c := strings.Repeat("c", 64)
+	body, contentType = batchBody(t, `[{"id":"`+c+`","ifNoneMatch":"*"},{"id":"`+a+`","ifMatch":"stale"}]`, [2]string{c, "cipher-c"}, [2]string{a, "cipher-a2"})
+	wantStatus(t, do(t, srv, "alice", "POST", "/v1/files", body, map[string]string{"Content-Type": contentType}), http.StatusPreconditionFailed)
+	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files/"+c, "", nil), http.StatusNotFound)
+
+	// Parts must follow the manifest.
+	body, contentType = batchBody(t, `[{"id":"`+c+`"}]`, [2]string{a, "cipher"})
+	wantStatus(t, do(t, srv, "alice", "POST", "/v1/files", body, map[string]string{"Content-Type": contentType}), http.StatusBadRequest)
+	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files/"+c, "", nil), http.StatusNotFound)
 }

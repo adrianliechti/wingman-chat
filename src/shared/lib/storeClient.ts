@@ -235,6 +235,30 @@ export async function putFile(fileId: string, data: Uint8Array, opts: PutFileOpt
   return unquote(res.headers.get("ETag") ?? "");
 }
 
+export interface FileUpload extends ConditionalOptions {
+  id: string;
+  data: Uint8Array;
+}
+
+/**
+ * Upload several files with one backup index commit. All-or-nothing: throws
+ * ServerError(412) if any precondition fails. Returns ETags in input order.
+ */
+export async function putFiles(files: FileUpload[]): Promise<string[]> {
+  const form = new FormData();
+  form.append("manifest", JSON.stringify(files.map(({ id, ifMatch, ifNoneMatch }) => ({ id, ifMatch, ifNoneMatch }))));
+  for (const file of files) form.append(file.id, new Blob([new Uint8Array(file.data)]), file.id);
+  const res = await storeFetch(`${PREFIX}/files`, { method: "POST", body: form });
+  if (res.status === 412) throw new ServerError(412, "file conflict");
+  await ensureOk(res);
+  const body = (await res.json()) as { files?: { id: string; etag: string }[] };
+  const results = body.files ?? [];
+  if (results.length !== files.length || results.some((result, i) => result.id !== files[i].id || !result.etag)) {
+    throw new Error("Invalid batch upload response");
+  }
+  return results.map((result) => result.etag);
+}
+
 /** Throws ServerError(412) when `ifMatch` no longer names the current version. */
 export async function deleteFile(fileId: string, opts: Pick<ConditionalOptions, "ifMatch"> = {}): Promise<void> {
   const res = await storeFetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`, {

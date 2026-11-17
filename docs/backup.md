@@ -104,11 +104,15 @@ protected recovery keys are encrypted in the browser before upload. OneDrive see
 opaque objects and a metadata index containing sizes, resource IDs and timing.
 
 Chat appends upload immutable event segments; changed workspace files and blobs
-upload separately. An index publishes committed versions only after their objects
+upload separately. When several workspace files are pending, files up to 4 MiB
+upload together in batches of up to 50 files or 16 MiB; the backend uploads a
+batch's objects in parallel and publishes them with one index commit. A batch
+is all-or-nothing: if any file's precondition fails, nothing is published and
+the browser retries those files one at a time. An index publishes committed versions only after their objects
 are uploaded. Failed writes remain pending in the browser. File and blob uploads use temporary
 encrypted files on the chat backend, removed when the request finishes, to bound
 memory. Chat appends encode one incoming batch in memory before uploading it. The backend
-rejects file and blob bodies over 257 MiB and append bodies over 64 MiB with 413;
+rejects file and blob bodies over 257 MiB and append and batch bodies over 64 MiB with 413;
 the browser splits large chat uploads into several appends below that cap. Automatic
 chat compaction only publishes snapshots that fit in one append request; larger
 chats retain their complete event history. Files larger than 10 MiB use upload sessions with sequential 10 MiB
@@ -246,10 +250,11 @@ For implementation and deployment details, see [Persistence contracts](persisten
 ## Provider interface
 
 `store.Provider` remains the extension point for future backup destinations.
-OneDrive is the only online implementation. The interface has 14 methods covering keystore CAS,
-chat events and compaction, encrypted objects, file listing, attachment existence,
+OneDrive is the only online implementation. The interface has 15 methods covering keystore CAS,
+chat events and compaction, encrypted objects, batched file uploads, file listing, attachment existence,
 usage, and reset. Files and blobs share `GetObject`, `PutObject`, and `DeleteObject`,
-with `ObjectKind` keeping their namespaces separate. Conditional object writes
+with `ObjectKind` keeping their namespaces separate. `PutFiles` publishes several
+files atomically with one index commit. Conditional object writes
 return `ErrObjectConflict` when their ETag precondition fails.
 Each method serves an existing API operation; providers own concurrency control
 and must fence requests that began before a reset or keystore change. Local ZIP export stays in the browser.

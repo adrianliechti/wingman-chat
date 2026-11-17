@@ -2,8 +2,13 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
@@ -88,4 +93,105 @@ func (h *Handler) handleDeleteObject(kind store.ObjectKind) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+var errMalformedBatch = errors.New("malformed file batch")
+
+type batchEntry struct {
+	ID          string `json:"id"`
+	IfMatch     string `json:"ifMatch,omitempty"`
+	IfNoneMatch string `json:"ifNoneMatch,omitempty"`
+}
+
+// handlePutFiles accepts multipart/form-data: a JSON "manifest" part listing
+// files and their preconditions, followed by one part per file in manifest
+// order, each named by its file ID. Parts stream into the provider unbuffered.
+func (h *Handler) handlePutFiles(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, store.MaxBatchBytes)
+	reader, err := r.MultipartReader()
+	if err != nil {
+		http.Error(w, "multipart body required", http.StatusBadRequest)
+		return
+	}
+	part, err := reader.NextPart()
+	if err != nil || part.FormName() != "manifest" {
+		http.Error(w, "manifest part required", http.StatusBadRequest)
+		return
+	}
+	var manifest []batchEntry
+	if err := json.NewDecoder(io.LimitReader(part, 1<<20)).Decode(&manifest); err != nil {
+		http.Error(w, "invalid manifest", http.StatusBadRequest)
+		return
+	}
+	if len(manifest) == 0 || len(manifest) > store.MaxBatchFiles {
+		http.Error(w, "batch must contain 1 to "+strconv.Itoa(store.MaxBatchFiles)+" files", http.StatusBadRequest)
+		return
+	}
+
+	parts := &batchParts{reader: reader}
+	writes := make([]store.FileWrite, len(manifest))
+	for i, entry := range manifest {
+		ifMatch := strings.Trim(strings.TrimSpace(entry.IfMatch), `"`)
+		if strings.TrimSpace(entry.IfNoneMatch) == "*" {
+			ifMatch = "*"
+		}
+		writes[i] = store.FileWrite{ID: entry.ID, IfMatch: ifMatch, Body: &batchPart{parts: parts, index: i, id: entry.ID}}
+	}
+
+	etags, err := h.store.PutFiles(r.Context(), writes)
+	if errors.Is(err, errMalformedBatch) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	type result struct {
+		ID   string `json:"id"`
+		ETag string `json:"etag"`
+	}
+	results := make([]result, len(writes))
+	for i, write := range writes {
+		results[i] = result{ID: write.ID, ETag: etags[i]}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(struct {
+		Files []result `json:"files"`
+	}{Files: results})
+}
+
+type batchParts struct {
+	reader *multipart.Reader
+	next   int
+}
+
+// batchPart opens its multipart section on first read and requires the
+// provider to consume parts in manifest order.
+type batchPart struct {
+	parts *batchParts
+	index int
+	id    string
+	part  *multipart.Part
+}
+
+func (b *batchPart) Read(p []byte) (int, error) {
+	if b.part == nil {
+		if b.parts.next != b.index {
+			return 0, errMalformedBatch
+		}
+		part, err := b.parts.reader.NextPart()
+		if err == io.EOF {
+			return 0, fmt.Errorf("%w: missing part for %s", errMalformedBatch, b.id)
+		}
+		if err != nil {
+			return 0, err
+		}
+		if part.FormName() != b.id {
+			return 0, fmt.Errorf("%w: expected part %s", errMalformedBatch, b.id)
+		}
+		b.part = part
+		b.parts.next++
+	}
+	return b.part.Read(p)
 }

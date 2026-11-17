@@ -41,6 +41,10 @@ const FLUSH_DEBOUNCE_MS = 2_000;
  *  file in memory, so the cap guards the tab, not the server). Sized to
  *  fit large office documents and notebook media. */
 const MAX_FILE_BYTES = 256 * 1024 * 1024;
+/** Small files upload together, publishing one backup index update per batch. */
+const BATCH_MAX_FILES = 50;
+const BATCH_MAX_BYTES = 16 * 1024 * 1024;
+const BATCH_MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 export interface FileSyncActivity {
   progress: SyncProgress[];
@@ -61,6 +65,16 @@ interface FileEntry {
   etag: string;
   mtime: number;
 }
+
+interface PreparedUpload {
+  path: string;
+  id: string;
+  entry: FileEntry | undefined;
+  header: FileHeader;
+  cipher: Uint8Array;
+}
+
+type SyncProgressTask = ReturnType<SyncProgressTracker["begin"]>;
 
 interface FileSyncState {
   userId: string;
@@ -194,6 +208,8 @@ export class FileSync {
     return result;
   }
   private unsubMutations: (() => void) | null = null;
+  /** Cleared when the server lacks batch uploads. */
+  private batchUploads = true;
   /** Remote applies that failed during the current fullSync. */
   private applyFailures = 0;
 
@@ -286,20 +302,39 @@ export class FileSync {
     if (areFileBackupsPaused()) return;
     const paths = Array.from(this.dirty);
     const progress = this.progress.begin("backup", paths.length);
+    let batch: PreparedUpload[] = [];
+    let batchBytes = 0;
+    let stopped = false;
     try {
       for (const path of paths) {
-        if (areFileBackupsPaused()) break;
-        this.dirty.delete(path);
-        try {
-          await this.resolvePath(path);
-          progress.advance();
-        } catch (err) {
-          this.dirty.add(path);
-          if (err instanceof BackupPausedError) break;
-          this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
-          console.warn(`fileSync: flush failed for ${path}`, err);
-          if (!(err instanceof FileTooLargeError)) break;
+        if (areFileBackupsPaused()) {
+          stopped = true;
+          break;
         }
+        this.dirty.delete(path);
+        const prepared = this.batchUploads && paths.length > 1 ? await this.prepareBatchUpload(path) : undefined;
+        if (!prepared) {
+          if (!(await this.syncPath(path, progress))) {
+            stopped = true;
+            break;
+          }
+          continue;
+        }
+        batch.push(prepared);
+        batchBytes += prepared.cipher.byteLength;
+        if (batch.length < BATCH_MAX_FILES && batchBytes < BATCH_MAX_BYTES) continue;
+        const pending = batch;
+        batch = [];
+        batchBytes = 0;
+        if (!(await this.uploadBatch(pending, progress))) {
+          stopped = true;
+          break;
+        }
+      }
+      if (stopped || areFileBackupsPaused()) {
+        for (const item of batch) this.dirty.add(item.path);
+      } else if (batch.length) {
+        await this.uploadBatch(batch, progress);
       }
       await this.saveState();
       if (this.dirty.size === 0) {
@@ -310,6 +345,87 @@ export class FileSync {
     } finally {
       progress.finish();
     }
+  }
+
+  /** Upload one path on its own; returns false when the flush should stop. */
+  private async syncPath(path: string, progress: SyncProgressTask): Promise<boolean> {
+    try {
+      await this.resolvePath(path);
+      // Checkpoint each confirmed upload so a reload doesn't re-download it.
+      await this.saveState();
+      progress.advance();
+      return true;
+    } catch (err) {
+      this.dirty.add(path);
+      if (err instanceof BackupPausedError) return false;
+      this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
+      console.warn(`fileSync: flush failed for ${path}`, err);
+      return err instanceof FileTooLargeError;
+    }
+  }
+
+  /** Encrypt a small file for a batch; anything else (deletions, large files) syncs individually. */
+  private async prepareBatchUpload(path: string): Promise<PreparedUpload | undefined> {
+    try {
+      const meta = await readFileMetadata(path);
+      if (!meta || meta.size > BATCH_MAX_FILE_BYTES) return undefined;
+      const blob = await readBlob(path);
+      if (!blob || blob.size > BATCH_MAX_FILE_BYTES) return undefined;
+      const entry = this.state.entries[path];
+      const id = entry?.id ?? (await fileIdFor(path));
+      const header: FileHeader = { path, mtime: meta.lastModified ?? Date.now() };
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const cipher = await encryptFile(this.dek, header, bytes, this.accountId, id);
+      return { path, id, entry, header, cipher };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Publish several uploads with one index commit; returns false when the flush should stop. */
+  private async uploadBatch(items: PreparedUpload[], progress: SyncProgressTask): Promise<boolean> {
+    if (items.length === 1) return this.syncPath(items[0].path, progress);
+    let etags: string[];
+    try {
+      requireFileBackupReady();
+      etags = await api.putFiles(
+        items.map(({ id, cipher, entry }) => ({
+          id,
+          data: cipher,
+          ...(entry ? { ifMatch: entry.etag } : { ifNoneMatch: "*" as const }),
+        })),
+      );
+    } catch (err) {
+      if (err instanceof BackupPausedError) {
+        for (const item of items) this.dirty.add(item.path);
+        return false;
+      }
+      if (err instanceof api.ServerError && (err.status === 404 || err.status === 405)) {
+        // The server predates batch uploads.
+        this.batchUploads = false;
+      } else {
+        console.warn("fileSync: batch upload failed; retrying files individually", err);
+      }
+      // Individual uploads resolve conflicts and report errors per file.
+      for (const [index, item] of items.entries()) {
+        if (await this.syncPath(item.path, progress)) continue;
+        for (const rest of items.slice(index + 1)) this.dirty.add(rest.path);
+        return false;
+      }
+      return true;
+    }
+    for (const [index, item] of items.entries()) {
+      this.state.entries[item.path] = { id: item.id, etag: etags[index], mtime: item.header.mtime };
+    }
+    try {
+      await this.saveState();
+    } catch (err) {
+      this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
+      console.warn("fileSync: couldn't save backup progress", err);
+      return false;
+    }
+    for (let i = 0; i < items.length; i++) progress.advance();
+    return true;
   }
 
   /** Full reconcile: local tree vs state vs server listing. */
@@ -372,7 +488,10 @@ export class FileSync {
         } else {
           await this.applyRemote(meta.id, local, versions);
         }
-        if (this.applyFailures === failuresBefore) progress.advance();
+        if (this.applyFailures === failuresBefore) {
+          await this.saveState();
+          progress.advance();
+        }
       }
 
       // Remote deletions: known file vanished from the server listing.
@@ -540,6 +659,23 @@ export class FileSync {
         const local = await readFileMetadata(header.path);
         if (local?.lastModified !== undefined && local.lastModified > header.mtime) {
           this.dirty.add(header.path);
+          return;
+        }
+        // This device uploaded the file but lost its tracking (e.g. a reload
+        // mid-backup): adopt the remote entry instead of rewriting identical bytes.
+        if (
+          local?.lastModified === header.mtime &&
+          local.size === bytes.length &&
+          isSafePath(header.path) &&
+          !isExcluded(header.path) &&
+          id === (await fileIdFor(header.path))
+        ) {
+          this.state.entries[header.path] = { id, etag: remote.etag, mtime: header.mtime };
+          if (this.versionForPath(header.path) === this.versionForPath(header.path, versions)) {
+            this.dirty.delete(header.path);
+          } else {
+            this.dirty.add(header.path);
+          }
           return;
         }
       }

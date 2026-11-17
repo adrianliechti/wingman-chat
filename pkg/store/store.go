@@ -47,6 +47,13 @@ const (
 	BlobObject
 )
 
+// FileWrite is one encrypted workspace file in a PutFiles batch.
+type FileWrite struct {
+	ID      string
+	Body    io.Reader
+	IfMatch string
+}
+
 // Provider is a pluggable backend for the per-user chat store.
 // The account is resolved from the request context (e.g. a delegated token),
 // so the caller cannot address another user's data.
@@ -105,6 +112,12 @@ type Provider interface {
 	// A failed precondition returns ErrObjectConflict.
 	PutObject(ctx context.Context, kind ObjectKind, id string, r io.Reader, ifMatch string) (string, error)
 
+	// PutFiles atomically replaces several workspace files with a single index
+	// commit. Bodies are read sequentially in slice order. Each IfMatch follows
+	// PutObject; if any precondition fails nothing is published and
+	// ErrObjectConflict is returned. ETags are returned in input order.
+	PutFiles(ctx context.Context, writes []FileWrite) ([]string, error)
+
 	// DeleteObject removes encrypted content. Missing objects return nil.
 	// ifMatch is empty or "*" for an unconditional delete, or an ETag that must
 	// match the current object; a mismatch returns ErrObjectConflict.
@@ -139,6 +152,12 @@ const MaxObjectBytes = 256<<20 + 1<<20
 
 // MaxAppendBytes caps one append request body (all JSONL event lines).
 const MaxAppendBytes = 64 << 20 // 64 MiB
+
+// MaxBatchBytes caps one PutFiles request body; MaxBatchFiles caps its entries.
+const (
+	MaxBatchBytes = 64 << 20 // 64 MiB
+	MaxBatchFiles = 100
+)
 
 // PreservesIdentity prevents a keystore update from orphaning existing
 // ciphertext, which is bound to the keystore's account ID, or from un-fencing
