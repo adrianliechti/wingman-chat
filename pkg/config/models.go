@@ -167,7 +167,20 @@ type Chat struct {
 	Categories     []Category      `json:"categories,omitempty" yaml:"categories,omitempty"`
 	Risks          []Risk          `json:"risks,omitempty" yaml:"risks,omitempty"`
 
-	Presets []Preset `json:"presets,omitempty" yaml:"presets,omitempty"`
+	Presets      []Preset          `json:"presets,omitempty" yaml:"presets,omitempty"`
+	Announcement *ChatAnnouncement `json:"announcement,omitempty" yaml:"announcement,omitempty"`
+}
+
+// ChatAnnouncement configures the dismissible announcement shown when opening chat.
+type ChatAnnouncement struct {
+	Text   string                  `json:"text,omitempty" yaml:"text,omitempty"`
+	Title  string                  `json:"title,omitempty" yaml:"title,omitempty"`
+	Action *ChatAnnouncementAction `json:"action,omitempty" yaml:"action,omitempty"`
+}
+
+type ChatAnnouncementAction struct {
+	Label string `json:"label,omitempty" yaml:"label,omitempty"`
+	URL   string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
 // Preset is one step of the chat model slider, ordered from fastest to most capable.

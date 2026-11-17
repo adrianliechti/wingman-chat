@@ -328,6 +328,54 @@ risks:
 	}
 }
 
+func TestChatAnnouncementReachesBrowserConfig(t *testing.T) {
+	filename := t.TempDir() + "/chat.yaml"
+	if err := os.WriteFile(filename, []byte(`
+announcement:
+  title: Help shape Wingman
+  action:
+    label: Take the survey
+    url: https://example.com/survey
+  text: |
+    Help shape **Wingman**. [Give feedback](https://example.com/survey)
+
+    Try attaching a file.
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var cfg Config
+	loadYAMLPtr(filename, &cfg.Chat)
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var browser struct {
+		Chat struct {
+			Announcement struct {
+				Text   string `json:"text"`
+				Title  string `json:"title"`
+				Action struct {
+					Label string `json:"label"`
+					URL   string `json:"url"`
+				} `json:"action"`
+			} `json:"announcement"`
+		} `json:"chat"`
+	}
+	if err := json.Unmarshal(data, &browser); err != nil {
+		t.Fatal(err)
+	}
+	want := "Help shape **Wingman**. [Give feedback](https://example.com/survey)\n\nTry attaching a file.\n"
+	if browser.Chat.Announcement.Text != want {
+		t.Fatalf("chat.yaml lost the announcement: %s", data)
+	}
+	if browser.Chat.Announcement.Title != "Help shape Wingman" {
+		t.Fatalf("chat.yaml lost the announcement title: %s", data)
+	}
+	if browser.Chat.Announcement.Action.Label != "Take the survey" || browser.Chat.Announcement.Action.URL != "https://example.com/survey" {
+		t.Fatalf("chat.yaml lost the announcement action: %s", data)
+	}
+}
+
 func TestTelemetryNameReachesBrowserConfig(t *testing.T) {
 	for _, test := range []struct {
 		name, enabled, service string

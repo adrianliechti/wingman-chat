@@ -164,6 +164,18 @@ export interface ModelPresetConfig {
   label?: string;
 }
 
+export interface ChatAnnouncementConfig {
+  /** Markdown body. Omit or leave blank to hide the announcement. */
+  text?: string;
+  /** Dialog heading; defaults to "A quick note". */
+  title?: string;
+  /** Optional action button; opens an absolute HTTP(S) URL in a new tab. */
+  action?: {
+    label: string;
+    url: string;
+  };
+}
+
 interface ChatConfig {
   instructions?: string;
   retentionDays?: number;
@@ -181,6 +193,8 @@ interface ChatConfig {
   risks?: RiskConfig[];
   /** Replaces the model list with a slider when at least two presets are available. */
   presets?: ModelPresetConfig[];
+  /** Markdown announcement shown in a dismissible dialog when opening chat. */
+  announcement?: ChatAnnouncementConfig;
 }
 
 export interface DriveConfig {
