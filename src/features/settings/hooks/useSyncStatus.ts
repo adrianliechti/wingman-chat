@@ -10,9 +10,10 @@ type SessionStatus = "disabled" | "initializing" | "setup" | "locked" | "ready" 
 /** One word the UI can trust: is everything on the server or not. */
 export type SyncHealth = "setup" | "disabled" | "connecting" | "locked" | "error" | "syncing" | "pending" | "synced";
 
-/** States that need the user to act before backups run normally. */
+/** States where an already-configured backup needs the user to act. A
+ *  never-configured backup ("setup") is shown neutrally as "off" instead. */
 export function needsAttention(health: SyncHealth): boolean {
-  return health === "error" || health === "locked" || health === "setup";
+  return health === "error" || health === "locked";
 }
 
 interface SyncStatus {

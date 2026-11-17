@@ -1,4 +1,4 @@
-import { CloudAlert, CloudCheck, CloudSync, CloudUpload } from "lucide-react";
+import { CloudAlert, CloudCheck, CloudOff, CloudSync, CloudUpload } from "lucide-react";
 import { needsAttention, type SyncHealth, useSyncStatus } from "../hooks/useSyncStatus";
 import { describeSyncProgress } from "@/shared/lib/syncProgress";
 
@@ -12,7 +12,7 @@ function describe(health: SyncHealth, pendingCount: number): string {
     case "connecting":
       return "Connecting to sync server…";
     case "setup":
-      return "Backups disabled — set a PIN or passkey";
+      return "Backup is off — click to turn on";
     case "locked":
       return "Backup locked — unlock in Backup";
     case "error":
@@ -58,6 +58,10 @@ export function SyncIndicator({ onClick }: SyncIndicatorProps) {
 export function BackupStatusIcon({ health, size = 20 }: { health: SyncHealth; size?: number }) {
   const attention = needsAttention(health);
   const syncing = health === "syncing" || health === "connecting";
+  if (health === "setup") {
+    return <CloudOff size={size} aria-hidden="true" className="shrink-0 text-neutral-500 dark:text-neutral-400" />;
+  }
+
   const Icon = attention ? CloudAlert : syncing ? CloudSync : health === "pending" ? CloudUpload : CloudCheck;
 
   return (
