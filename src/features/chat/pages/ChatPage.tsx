@@ -18,6 +18,7 @@ import { AgentButton } from "@/features/chat/components/AgentButton";
 import { ChatConsentBackdrop, ChatConsentBanner } from "@/features/chat/components/ChatConsentOverlay";
 import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
+import { ChatAnnouncement } from "@/features/chat/components/ChatAnnouncement";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
 import { ChatToolGroup } from "@/features/chat/components/ChatToolGroup";
 import { groupRenderUnits, isToolOnlyMessage } from "@/features/chat/components/chatMessageUtils";
@@ -607,6 +608,7 @@ export function ChatPage() {
         </div>
       </footer>
 
+      <ChatAnnouncement />
       <ChatConsentBanner />
 
       {/* Right-side panels. Each shell is always mounted and slides with `translate`

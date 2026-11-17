@@ -154,6 +154,16 @@ it.each(["categories", "risks"])("preserves explicit IDs for chat.%s", async (ki
   expect(config.chat?.[kind as "categories" | "risks"]).toEqual(items);
 });
 
+it("preserves the structured announcement with Markdown text, title, and action", async () => {
+  const announcement = {
+    text: "**Welcome**. [Get help](https://example.com/help)",
+    title: "Welcome to Wingman",
+    action: { label: "Take the survey", url: "https://example.com/survey" },
+  };
+  const chat = (await loadWith({ chat: { announcement } })).chat;
+  expect(chat?.announcement).toEqual(announcement);
+});
+
 it.each(["categories", "risks"])("rejects missing, blank, padded, or duplicate IDs in chat.%s", async (kind) => {
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
   try {
