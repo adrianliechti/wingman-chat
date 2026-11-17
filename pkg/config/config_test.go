@@ -333,6 +333,9 @@ func TestChatAnnouncementReachesBrowserConfig(t *testing.T) {
 	if err := os.WriteFile(filename, []byte(`
 announcement:
   title: Help shape Wingman
+  images:
+    clock: |
+      <svg xmlns="http://www.w3.org/2000/svg"/>
   action:
     label: Take the survey
     url: https://example.com/survey
@@ -352,8 +355,9 @@ announcement:
 	var browser struct {
 		Chat struct {
 			Announcement struct {
-				Text   string `json:"text"`
-				Title  string `json:"title"`
+				Text   string            `json:"text"`
+				Title  string            `json:"title"`
+				Images map[string]string `json:"images"`
 				Action struct {
 					Label string `json:"label"`
 					URL   string `json:"url"`
@@ -367,6 +371,9 @@ announcement:
 	want := "Help shape **Wingman**. [Give feedback](https://example.com/survey)\n\nTry attaching a file.\n"
 	if browser.Chat.Announcement.Text != want {
 		t.Fatalf("chat.yaml lost the announcement: %s", data)
+	}
+	if browser.Chat.Announcement.Images["clock"] != "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n" {
+		t.Fatalf("chat.yaml lost the announcement images: %s", data)
 	}
 	if browser.Chat.Announcement.Title != "Help shape Wingman" {
 		t.Fatalf("chat.yaml lost the announcement title: %s", data)

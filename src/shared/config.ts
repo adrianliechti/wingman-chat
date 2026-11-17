@@ -169,6 +169,11 @@ export interface ChatAnnouncementConfig {
   text?: string;
   /** Dialog heading; defaults to "A quick note". */
   title?: string;
+  /**
+   * Images referenced by name from the text, e.g. `![Time](clock)`. Values are
+   * inline SVG markup, `data:image/...` URIs, or HTTP(S)/relative URLs.
+   */
+  images?: Record<string, string>;
   /** Optional action button; opens an absolute HTTP(S) URL in a new tab. */
   action?: {
     label: string;

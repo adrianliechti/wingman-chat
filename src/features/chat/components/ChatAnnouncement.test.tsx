@@ -290,3 +290,23 @@ it("uses the shared renderer's protection against unsafe HTML and link URLs", as
   expect(document.body.querySelector("script")).toBeNull();
   expect(document.body.querySelector('a[href^="javascript:"]')).toBeNull();
 });
+
+it("resolves named images from the images map", async () => {
+  announcement = {
+    text: "- ![Time](clock) Quick\n\n![Hero](hero)\n\n![Bad](bad)",
+    images: {
+      clock: ' <svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg> ',
+      hero: "https://example.com/hero.png",
+      bad: "javascript:alert(1)",
+    },
+  };
+  await render();
+  const sources = Object.fromEntries(
+    [...document.body.querySelectorAll("img")].map((img) => [img.alt, img.getAttribute("src")]),
+  );
+  expect(sources.Time).toBe(
+    `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>')}`,
+  );
+  expect(sources.Hero).toBe("https://example.com/hero.png");
+  expect(sources.Bad).toBe("bad");
+});

@@ -4,6 +4,7 @@ import { ArrowUpRight, EyeOff, X } from "lucide-react";
 import { useState } from "react";
 import { getConfig, type ChatAnnouncementConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
+import { markdownUrlTransform } from "@/shared/lib/markdownExtensions";
 import { Markdown } from "@/shared/ui/Markdown";
 
 const DISMISSED_ANNOUNCEMENT_KEY = "app_dismissed_chat_announcement";
@@ -22,6 +23,18 @@ function announcementAction(action: ChatAnnouncementConfig["action"]) {
   return undefined;
 }
 
+function announcementImages(images: ChatAnnouncementConfig["images"]) {
+  if (!images) return undefined;
+  const entries = Object.entries(images).flatMap(([name, value]) => {
+    const source = typeof value === "string" ? value.trim() : "";
+    // Raw SVG markup is safe as an <img> source, where scripts never run.
+    if (source.startsWith("<")) return [[name, `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`]];
+    const url = source && markdownUrlTransform(source, "image", "");
+    return url ? [[name, url]] : [];
+  });
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
 function readDismissedAnnouncement() {
   if (dismissedUntilReload !== null) return dismissedUntilReload;
   try {
@@ -36,6 +49,7 @@ export function ChatAnnouncement() {
   const markdown = announcement?.text?.trim();
   const title = announcement?.title?.trim() || "A quick note";
   const action = announcementAction(announcement?.action);
+  const [images] = useState(() => announcementImages(announcement?.images));
   const announcementContent = JSON.stringify([title, markdown, ...(action ? [action.label, action.url] : [])]);
   const [dismissedAnnouncement, setDismissedAnnouncement] = useState(readDismissedAnnouncement);
   if (!markdown || dismissedAnnouncement === announcementContent) return null;
@@ -102,7 +116,9 @@ export function ChatAnnouncement() {
                   ],
                 )}
               >
-                <Markdown compact>{markdown}</Markdown>
+                <Markdown compact images={images}>
+                  {markdown}
+                </Markdown>
               </div>
             </div>
           </div>
