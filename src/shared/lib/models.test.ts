@@ -273,6 +273,21 @@ describe("reasoning effort levels", () => {
     },
   );
 
+  it.each(["gpt-6.2-astra", "gpt-6.2-sol", "openai/gpt-6.2-astra", "openai.gpt-6-2-sol", "gpt-6.2-sol-2026-11-17"])(
+    "configures the GPT-6.2 reasoning and output limits for %s",
+    (id) => {
+      const [model] = configureModels([{ id, name: id }], []);
+      expect(model).toMatchObject({
+        type: "completer",
+        supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+        defaultEffort: "medium",
+        maxOutputTokens: 128_000,
+      });
+      expect(minimalEffort(model)).toBe("low");
+      expect(compactThreshold(id)).toBe(272_000);
+    },
+  );
+
   it.each(["gemini-4-hydrogen", "google/gemini-4-hydrogen", "gemini-4-hydrogen-2026-11-13"])(
     "configures Hydrogen's fourth thinking level and shared-window output limit: %s",
     (id) => {
@@ -321,7 +336,8 @@ describe("reasoning effort levels", () => {
       "gpt-6.1-sol-pro",
       "gpt-6.1-terra-pro",
       "gpt-6.1-luna",
-      "gpt-6.2-sol",
+      "gpt-6.2-astra-pro",
+      "gpt-6.2-sol-pro",
       "gpt-6.2-terra",
       "claude-opus-8",
       "qwen3-embedding-8b",

@@ -197,9 +197,9 @@
         "label": "Claude Sonnet 5.5"
       },
       {
-        "model": "gpt-6.1-sol",
+        "model": "gpt-6.2-sol",
         "effort": "medium",
-        "label": "GPT-6.1 Sol"
+        "label": "GPT-6.2 Sol"
       },
       {
         "model": "gemini-4-argon",
@@ -217,9 +217,9 @@
         "label": "Gemini 4 Carbon"
       },
       {
-        "model": "gpt-6-astra",
+        "model": "gpt-6.2-astra",
         "effort": "medium",
-        "label": "GPT-6 Astra"
+        "label": "GPT-6.2 Astra"
       }
     ]
   },

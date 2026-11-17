@@ -94,6 +94,14 @@ Reviewed September 23, 2026. Profiles are fallbacks, not an API guarantee, and d
 not extrapolate new major versions. Custom or hosted models can specify their
 own supported efforts instead of inheriting a vendor profile.
 
+- [GPT-6.2 Astra](https://developers.openai.com/api/docs/models/gpt-6.2-astra) and
+  [GPT-6.2 Sol](https://developers.openai.com/api/docs/models/gpt-6.2-sol)
+  support low, medium, high, xhigh, and max. Wingman uses medium as its baseline
+  and sends tool calls through the Responses API. Both models have a
+  1,050,000-token context window and a 128,000-token output limit. Wingman
+  compacts at 272,000 tokens, the long-input pricing boundary. The bundled
+  medium-effort presets appear when the gateway lists the corresponding IDs.
+  [OpenAI migration guide](https://developers.openai.com/api/docs/guides/latest-model)
 - [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra): low,
   medium, high, xhigh, max; no none/minimal.
 - [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol): low,
@@ -245,6 +253,8 @@ October 8, 2026; GPT-6.1 Terra added October 26, 2026; Gemini 4 Hydrogen added N
 
 | Model                                                                                                                            | Capacity | Default chat budget |
 | -------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
+| [GPT-6.2 Astra](https://developers.openai.com/api/docs/models/gpt-6.2-astra)                                                     | 128,000  | 64,000              |
+| [GPT-6.2 Sol](https://developers.openai.com/api/docs/models/gpt-6.2-sol)                                                         | 128,000  | 64,000              |
 | [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)                                                         | 128,000  | 64,000              |
 | [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)                                                         | 128,000  | 64,000              |
 | [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra)                                                     | 128,000  | 64,000              |
