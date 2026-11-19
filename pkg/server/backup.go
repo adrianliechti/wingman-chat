@@ -39,7 +39,7 @@ func backupProvider(cfg *config.Config) (store.Provider, func(http.Handler) http
 		if secret := cfg.Backup.DirectUploadKey; secret != "" {
 			key, err := base64.StdEncoding.DecodeString(secret)
 			if err != nil || len(key) < 32 {
-				return nil, nil, fmt.Errorf("BACKUP_DIRECT_UPLOAD_KEY must be base64 encoding at least 32 bytes")
+				return nil, nil, fmt.Errorf("backup direct upload key (direct_upload_key or BACKUP_DIRECT_UPLOAD_KEY) must be base64 encoding at least 32 bytes")
 			}
 			p.EnableDirectUploads(key)
 		}

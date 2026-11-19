@@ -67,6 +67,7 @@ func loadBackup(cfg *Config) {
 
 	if cfg.Backup != nil {
 		expandAuth(cfg.Backup.Auth)
+		cfg.Backup.DirectUploadKey = os.ExpandEnv(cfg.Backup.DirectUploadKey)
 	}
 }
 
@@ -199,8 +200,10 @@ func applyEnvOverrides(cfg *Config) {
 		if cfg.Backup.Provider == "" {
 			cfg.Backup.Provider = "local"
 		}
-		if cfg.Backup.Provider == "onedrive" {
-			cfg.Backup.DirectUploadKey = os.Getenv("BACKUP_DIRECT_UPLOAD_KEY")
+		if cfg.Backup.Provider != "onedrive" {
+			cfg.Backup.DirectUploadKey = ""
+		} else if key := os.Getenv("BACKUP_DIRECT_UPLOAD_KEY"); key != "" {
+			cfg.Backup.DirectUploadKey = key
 		}
 		cfg.Backup.DirectUpload = cfg.Backup.DirectUploadKey != ""
 	}

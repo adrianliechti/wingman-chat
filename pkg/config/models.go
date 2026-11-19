@@ -229,8 +229,9 @@ type Backup struct {
 	// Uploads caps concurrent upload requests per backend pod. Each can spool
 	// up to 257 MiB to temporary disk. Zero keeps the default.
 	Uploads int `json:"-" yaml:"uploads,omitempty"`
-	// DirectUploadKey is the base64 signing secret from BACKUP_DIRECT_UPLOAD_KEY.
-	DirectUploadKey string `json:"-" yaml:"-"`
+	// DirectUploadKey is the base64 signing secret for direct uploads, from
+	// backup.yaml or BACKUP_DIRECT_UPLOAD_KEY (which takes precedence).
+	DirectUploadKey string `json:"-" yaml:"direct_upload_key,omitempty"`
 }
 
 type Translator struct {

@@ -458,3 +458,36 @@ func TestBackupProviderConfiguration(t *testing.T) {
 		t.Fatalf("environment override: %+v", cfg)
 	}
 }
+
+func TestBackupDirectUploadKeyFromFile(t *testing.T) {
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err := os.WriteFile("backup.yaml", []byte("provider: onedrive\ndirect_upload_key: ${BACKUP_TEST_DIRECT_KEY}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BACKUP_PROVIDER", "")
+	t.Setenv("BACKUP_UPLOADS", "")
+	t.Setenv("BACKUP_TEST_DIRECT_KEY", "file-key")
+	t.Setenv("BACKUP_DIRECT_UPLOAD_KEY", "")
+	if cfg := Load(); cfg.Backup.DirectUploadKey != "file-key" || !cfg.Backup.DirectUpload {
+		t.Fatalf("file key: %+v", cfg.Backup)
+	}
+	t.Setenv("BACKUP_DIRECT_UPLOAD_KEY", "env-key")
+	if cfg := Load(); cfg.Backup.DirectUploadKey != "env-key" {
+		t.Fatalf("environment key should take precedence: %+v", cfg.Backup)
+	}
+	t.Setenv("BACKUP_PROVIDER", "local")
+	if cfg := Load(); cfg.Backup.DirectUploadKey != "" || cfg.Backup.DirectUpload {
+		t.Fatalf("local provider kept direct uploads: %+v", cfg.Backup)
+	}
+}

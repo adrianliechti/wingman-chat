@@ -36,6 +36,7 @@ in `backup.yaml`:
 ```yaml
 provider: onedrive
 uploads: 4 # optional: concurrent uploads per backend pod
+direct_upload_key: ${DIRECT_UPLOAD_KEY} # optional: enables direct uploads
 auth: # optional: On-Behalf-Of exchange
   issuer: https://login.microsoftonline.com/${AZURE_TENANT_ID}/v2.0
   client_id: ${AZURE_CLIENT_ID}
@@ -45,14 +46,14 @@ auth: # optional: On-Behalf-Of exchange
 
 Backup configuration is independent of `drives.yaml`: file-browser connections
 and backup can use different app registrations and scopes. The `auth` fields
-support `$VAR` and `${VAR}` references, and an empty scope defaults to
+and `direct_upload_key` support `$VAR` and `${VAR}` references, and an empty scope defaults to
 `https://graph.microsoft.com/.default`.
 
 The providers are `local` (ZIP files) and `onedrive` (encrypted OneDrive
 storage). The backend exposes the choice as `backup: { provider: "onedrive" }` in
 `/config.json`; `onedrive` enables online backup controls, while `local` keeps
 the ZIP backup controls. Unknown providers or invalid `auth` settings
-fail startup. `BACKUP_PROVIDER` and `BACKUP_UPLOADS` take
+fail startup. `BACKUP_PROVIDER`, `BACKUP_UPLOADS` and `BACKUP_DIRECT_UPLOAD_KEY` take
 precedence over `backup.yaml`. Restart the backend after changing configuration.
 
 Switching providers or Microsoft accounts selects a separate backup; it does
@@ -139,9 +140,10 @@ not persisted across requests.
 
 ### Direct uploads for large objects
 
-To pilot direct uploads, configure `BACKUP_DIRECT_UPLOAD_KEY` on every replica
-with the same base64-encoded secret of at least 32 random bytes. Omit the
-variable to disable the feature. Test from the deployed Wingman origin with
+To pilot direct uploads, configure `direct_upload_key` in `backup.yaml` or the
+`BACKUP_DIRECT_UPLOAD_KEY` environment variable (which takes precedence) on every
+replica with the same base64-encoded secret of at least 32 random bytes, e.g.
+from `openssl rand -base64 32`. Omit both to disable the feature. Test from the deployed Wingman origin with
 the Microsoft account types in use. The OneDrive upload host must allow the
 browser's cross-origin requests with `Content-Range`.
 
