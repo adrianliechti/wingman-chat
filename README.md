@@ -278,9 +278,8 @@ PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
 
 For local development, run `task serve` and `task ui` in separate terminals, then
 open the URL printed by Vite using `localhost`. The Go server listens on port
-8080 and uses the configured backup provider (`local` unless set; OneDrive also
-needs a matching connection in `drives.yaml`, and `task ui` must send a Microsoft
-token via `WINGMAN_TOKEN`). It forwards model/platform requests to
+8080 and uses the configured backup provider (`local` unless set; for OneDrive,
+`task ui` must send a Microsoft token via `WINGMAN_TOKEN`). It forwards model/platform requests to
 `WINGMAN_URL`, falling back to `OPENAI_BASE_URL`, then `http://localhost:4242`.
 Set `WINGMAN_URL` (and `WINGMAN_TOKEN` if required) when using another platform.
 `task ui` connects the frontend to the Go server at `http://localhost:8080`.
@@ -324,11 +323,11 @@ docker run -it --rm -p 8000:8000 \
 
 See [How backup works](docs/backup.md) for sync timing, storage, encryption, and recovery.
 
-To enable encrypted OneDrive backups, set `BACKUP_PROVIDER=onedrive` and mount
-your OneDrive connection configuration at `/app/drives.yaml`. The backend
-automatically selects the sole OneDrive connection. See
+To enable encrypted OneDrive backups, set `BACKUP_PROVIDER=onedrive`. Optionally
+mount a `backup.yaml` at `/app/backup.yaml` to configure an On-Behalf-Of token
+exchange. See
 [OneDrive authentication and storage](docs/backup.md#onedrive-authentication-and-storage)
-for connection setup. Backup storage requires no persistent server volume.
+for setup. Backup storage requires no persistent server volume.
 
 ## Configuration
 
@@ -446,7 +445,7 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
 
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
-- `BACKUP_PROVIDER` — `local` (default) or `onedrive`. Local uses ZIP backup controls; OneDrive enables online backup and automatically selects the sole OneDrive connection in `drives.yaml`. Configure the same setting with `provider` in `backup.yaml`. Only deployments with multiple OneDrive connections need `BACKUP_DRIVE` / `drive` to select a connection by id. See [backup configuration](docs/backup.md#choose-a-provider) for authentication, concurrency, and migration details. OneDrive requires no persistent or shared volume.
+- `BACKUP_PROVIDER` — `local` (default) or `onedrive`. Local uses ZIP backup controls; OneDrive enables online backup. Configure the same setting with `provider` in `backup.yaml`, which also accepts an optional `auth` block (same fields as in `drives.yaml`) for an On-Behalf-Of exchange. Backup does not use `drives.yaml`. See [backup configuration](docs/backup.md#choose-a-provider) for authentication, concurrency, and migration details. OneDrive requires no persistent or shared volume.
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED` (`TELEMETRY_NAME` — the OpenTelemetry `service.name`, default `wingman-chat`)

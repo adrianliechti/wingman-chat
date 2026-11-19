@@ -419,17 +419,21 @@ func TestBackupProviderConfiguration(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if err := os.WriteFile("backup.yaml", []byte("provider: onedrive\ndrive: personal\nuploads: 3\npath: /data/locks\n"), 0600); err != nil {
+	t.Setenv("BACKUP_TEST_CLIENT_SECRET", "backup-secret")
+	if err := os.WriteFile("backup.yaml", []byte("provider: onedrive\nuploads: 3\npath: /data/locks\nauth:\n  issuer: https://login.test/tenant\n  client_id: app\n  client_secret: ${BACKUP_TEST_CLIENT_SECRET}\n  scope: Files.ReadWrite.AppFolder\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("BACKUP_PROVIDER", "")
-	t.Setenv("BACKUP_DRIVE", "")
 	t.Setenv("BACKUP_DIRECT_UPLOAD_KEY", "private-direct-upload-key")
 	t.Setenv("BACKUP_UPLOADS", "")
 	t.Setenv("STORE_ENABLED", "")
 	cfg := Load()
-	if cfg.Backup == nil || cfg.Backup.Provider != "onedrive" || cfg.Backup.Drive != "personal" || cfg.Backup.Uploads != 3 {
+	if cfg.Backup == nil || cfg.Backup.Provider != "onedrive" || cfg.Backup.Uploads != 3 {
 		t.Fatalf("config: %+v", cfg)
+	}
+	wantAuth := &DriveAuth{Issuer: "https://login.test/tenant", ClientID: "app", ClientSecret: "backup-secret", Scope: "Files.ReadWrite.AppFolder"}
+	if !reflect.DeepEqual(cfg.Backup.Auth, wantAuth) {
+		t.Fatalf("auth = %+v, want %+v", cfg.Backup.Auth, wantAuth)
 	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -441,10 +445,10 @@ func TestBackupProviderConfiguration(t *testing.T) {
 	if err := json.Unmarshal(data, &browser); err != nil {
 		t.Fatal(err)
 	}
-	if browser.Backup == nil || browser.Backup.Provider != cfg.Backup.Provider || browser.Backup.Drive != cfg.Backup.Drive || !browser.Backup.DirectUpload {
+	if browser.Backup == nil || browser.Backup.Provider != cfg.Backup.Provider || !browser.Backup.DirectUpload {
 		t.Fatalf("browser: %s", data)
 	}
-	if strings.Contains(string(data), "/data/locks") || strings.Contains(string(data), "private-direct-upload-key") || strings.Contains(string(data), "uploads") {
+	if strings.Contains(string(data), "/data/locks") || strings.Contains(string(data), "private-direct-upload-key") || strings.Contains(string(data), "uploads") || strings.Contains(string(data), "backup-secret") || strings.Contains(string(data), "login.test") {
 		t.Fatal("private backup configuration exposed")
 	}
 	t.Setenv("BACKUP_PROVIDER", "local")

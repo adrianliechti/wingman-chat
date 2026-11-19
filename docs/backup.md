@@ -21,7 +21,7 @@ These controls also remain available when online backup is enabled. Omitting the
 provider selects local backups.
 
 For online backups in Kubernetes, add one environment variable to the Wingman
-container, using your existing OneDrive connection in `/app/drives.yaml`:
+container:
 
 ```yaml
 env:
@@ -29,26 +29,33 @@ env:
     value: "onedrive"
 ```
 
-The backend automatically selects the sole OneDrive connection. Only deployments
-with multiple OneDrive connections need `BACKUP_DRIVE` set to the chosen
-connection's `id` in `drives.yaml` (or `drive` in `backup.yaml`).
-
-Alternatively, configure `backup.yaml` using the existing OneDrive connection:
+Without further configuration, backup uses the forwarded Microsoft Graph token
+directly. To exchange the incoming token on behalf of the user, configure `auth`
+in `backup.yaml`:
 
 ```yaml
 provider: onedrive
-drive: personal # optional
 uploads: 4 # optional: concurrent uploads per backend pod
+auth: # optional: On-Behalf-Of exchange
+  issuer: https://login.microsoftonline.com/${AZURE_TENANT_ID}/v2.0
+  client_id: ${AZURE_CLIENT_ID}
+  client_secret: ${AZURE_CLIENT_SECRET}
+  scope: Files.ReadWrite.AppFolder
 ```
+
+Backup configuration is independent of `drives.yaml`: file-browser connections
+and backup can use different app registrations and scopes. The `auth` fields
+support `$VAR` and `${VAR}` references, and an empty scope defaults to
+`https://graph.microsoft.com/.default`.
 
 The providers are `local` (ZIP files) and `onedrive` (encrypted OneDrive
 storage). The backend exposes the choice as `backup: { provider: "onedrive" }` in
 `/config.json`; `onedrive` enables online backup controls, while `local` keeps
-the ZIP backup controls. Unknown providers or missing or ambiguous connections
-fail startup. `BACKUP_PROVIDER`, `BACKUP_DRIVE`, and `BACKUP_UPLOADS` take
+the ZIP backup controls. Unknown providers or invalid `auth` settings
+fail startup. `BACKUP_PROVIDER` and `BACKUP_UPLOADS` take
 precedence over `backup.yaml`. Restart the backend after changing configuration.
 
-Switching providers or OneDrive connections selects a separate backup; it does
+Switching providers or Microsoft accounts selects a separate backup; it does
 not migrate or delete the old one. Each browser records which backup its local
 sync tracking belongs to (the keystore's account ID). When it finds a different
 or missing backup, it clears that tracking and reloads open tabs, keeping local
@@ -86,8 +93,8 @@ headers, and be the only route to the backend. The forwarded Microsoft token, no
 
 ### OneDrive authentication and storage
 
-The OneDrive provider uses the same forwarded access token and optional
-on-behalf-of exchange as the selected reader connection. The reverse proxy must
+The OneDrive provider uses the forwarded access token, optionally exchanged
+on-behalf-of the user with the `auth` settings in `backup.yaml`. The reverse proxy must
 supply `Authorization: Bearer …` or `X-Forwarded-Access-Token` on backup API requests,
 alongside the existing trusted account identity headers. The resulting token must
 be for Microsoft Graph and have delegated write access: `Files.ReadWrite.All`

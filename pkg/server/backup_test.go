@@ -22,7 +22,7 @@ import (
 	storeonedrive "github.com/adrianliechti/wingman-chat/pkg/store/onedrive"
 )
 
-func TestDefaultBackupConfigurationNeedsNoDriveConnection(t *testing.T) {
+func TestDefaultBackupConfigurationNeedsNoBackupConfig(t *testing.T) {
 	data, err := os.ReadFile("../../public/config.json")
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +33,7 @@ func TestDefaultBackupConfigurationNeedsNoDriveConnection(t *testing.T) {
 	}
 	provider, middleware, err := backupProvider(&cfg)
 	if err != nil {
-		t.Fatalf("default configuration cannot start without drives.yaml: %v", err)
+		t.Fatalf("default configuration cannot start without backup.yaml: %v", err)
 	}
 	if provider != nil || middleware != nil {
 		t.Fatal("default configuration enabled online backup")
@@ -53,7 +53,6 @@ func TestDirectUploadKeyValidation(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cfg := &config.Config{
-				Drives: []config.Drive{{ID: "personal", Type: "onedrive"}},
 				Backup: &config.Backup{Provider: "onedrive", DirectUploadKey: test.key},
 			}
 			selected, _, err := backupProvider(cfg)
@@ -70,7 +69,7 @@ func TestDirectUploadKeyValidation(t *testing.T) {
 func TestBackupProviderSelection(t *testing.T) {
 	for _, provider := range []string{"", "local", "server", "onedrive", "typo"} {
 		t.Run(provider, func(t *testing.T) {
-			cfg := &config.Config{Drives: []config.Drive{{ID: "personal", Type: "onedrive"}}}
+			cfg := &config.Config{}
 			if provider != "" {
 				cfg.Backup = &config.Backup{Provider: provider}
 			}
@@ -98,27 +97,23 @@ func TestBackupProviderSelection(t *testing.T) {
 		})
 	}
 }
-func TestBackupDriveValidation(t *testing.T) {
-	cfg := &config.Config{Backup: &config.Backup{Provider: "onedrive"}}
-	if _, err := backupDrive(cfg); err == nil {
-		t.Fatal("missing connection accepted")
+
+func TestOneDriveIgnoresDriveConnections(t *testing.T) {
+	fake := useFakeMicrosoft(t)
+	auth := config.DriveAuth{Issuer: "https://login.test/tenant", ClientID: "app", ClientSecret: "secret"}
+	cfg := &config.Config{
+		Backup: &config.Backup{Provider: "onedrive"},
+		Drives: []config.Drive{{ID: "first", Type: "onedrive", Auth: &auth}, {ID: "second", Type: "onedrive", Auth: &auth}},
 	}
-	cfg.Drives = []config.Drive{{ID: "first", Type: "onedrive"}, {ID: "second", Type: "onedrive"}}
-	if _, err := backupDrive(cfg); err == nil {
-		t.Fatal("ambiguous connection accepted")
-	}
-	cfg.Backup.Drive = "second"
-	selected, err := backupDrive(cfg)
-	if err != nil || selected.ID != "second" {
-		t.Fatalf("explicit selection: %v %v", selected, err)
-	}
-	cfg.Backup.Drive = "missing"
-	if _, err := backupDrive(cfg); err == nil {
-		t.Fatal("unknown connection accepted")
+	mux := serveBackup(t, cfg)
+	request(mux, "GET", "/api/v1/keystore", "Authorization", "Bearer user-token")
+	if len(fake.assertions) != 0 {
+		t.Fatalf("backup used drives.yaml auth: %q", fake.assertions)
 	}
 }
+
 func TestOneDriveMiddlewareRequiresTokenAndScopesRoutes(t *testing.T) {
-	cfg := &config.Config{Backup: &config.Backup{Provider: "onedrive"}, Drives: []config.Drive{{ID: "personal", Type: "onedrive"}}}
+	cfg := &config.Config{Backup: &config.Backup{Provider: "onedrive"}}
 	selected, middleware, err := backupProvider(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -207,8 +202,7 @@ func useFakeMicrosoft(t *testing.T) *fakeMicrosoft {
 
 func oboConfig(auth config.DriveAuth) *config.Config {
 	return &config.Config{
-		Backup: &config.Backup{Provider: "onedrive"},
-		Drives: []config.Drive{{ID: "personal", Type: "onedrive", Auth: &auth}},
+		Backup: &config.Backup{Provider: "onedrive", Auth: &auth},
 	}
 }
 
@@ -306,7 +300,7 @@ func TestOneDriveTokenHeaderPrecedence(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fake := useFakeMicrosoft(t)
-			selected, middleware, err := backupProvider(&config.Config{Backup: &config.Backup{Provider: "onedrive"}, Drives: []config.Drive{{ID: "personal", Type: "onedrive"}}})
+			selected, middleware, err := backupProvider(&config.Config{Backup: &config.Backup{Provider: "onedrive"}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -333,7 +327,7 @@ func TestEveryOneDriveRouteRequiresToken(t *testing.T) {
 		t.Fatalf("route table not found: %d routes", len(routes))
 	}
 	fake := useFakeMicrosoft(t)
-	mux := serveBackup(t, &config.Config{Backup: &config.Backup{Provider: "onedrive"}, Drives: []config.Drive{{ID: "personal", Type: "onedrive"}}})
+	mux := serveBackup(t, &config.Config{Backup: &config.Backup{Provider: "onedrive"}})
 	for _, route := range routes {
 		method, path := route[1], "/api"+strings.ReplaceAll(route[2], "{id}", "chat-0001")
 		if w := request(mux, method, path); w.Code != http.StatusUnauthorized {
@@ -345,23 +339,8 @@ func TestEveryOneDriveRouteRequiresToken(t *testing.T) {
 	}
 }
 
-func TestBackupDriveIgnoresOtherDriveTypes(t *testing.T) {
-	cfg := &config.Config{
-		Backup: &config.Backup{Provider: "onedrive"},
-		Drives: []config.Drive{{ID: "team", Type: "sharepoint"}, {ID: "files", Type: "local"}, {ID: "personal", Type: "onedrive"}},
-	}
-	selected, err := backupDrive(cfg)
-	if err != nil || selected.ID != "personal" {
-		t.Fatalf("sole OneDrive connection not selected: %v %v", selected, err)
-	}
-	cfg.Backup.Drive = "team"
-	if _, err := backupDrive(cfg); err == nil {
-		t.Fatal("SharePoint connection accepted as backup drive")
-	}
-}
-
 func TestProviderNamesAreCaseSensitive(t *testing.T) {
-	cfg := &config.Config{Backup: &config.Backup{Provider: "OneDrive"}, Drives: []config.Drive{{ID: "personal", Type: "onedrive"}}}
+	cfg := &config.Config{Backup: &config.Backup{Provider: "OneDrive"}}
 	if _, _, err := backupProvider(cfg); err == nil {
 		t.Fatal("misspelled provider accepted")
 	}

@@ -257,7 +257,7 @@ interface ConfigSchema {
   translator?: TranslatorConfig;
 
   chat?: ChatConfig;
-  backup?: { provider?: "local" | "onedrive"; drive?: string; directUpload?: boolean };
+  backup?: { provider?: "local" | "onedrive"; directUpload?: boolean };
   telemetry?: TelemetryConfig;
 }
 

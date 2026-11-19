@@ -220,11 +220,12 @@ type Risk struct {
 }
 
 // Backup selects local ZIP backups (the default) or OneDrive.
-// Drive references an existing OneDrive connection in drives.yaml.
+// Auth configures an optional On-Behalf-Of exchange for OneDrive; without it
+// the forwarded Microsoft Graph token is used directly.
 type Backup struct {
-	Provider     string `json:"provider" yaml:"provider"`
-	Drive        string `json:"drive,omitempty" yaml:"drive,omitempty"`
-	DirectUpload bool   `json:"directUpload,omitempty" yaml:"-"`
+	Provider     string     `json:"provider" yaml:"provider"`
+	Auth         *DriveAuth `json:"-" yaml:"auth,omitempty"`
+	DirectUpload bool       `json:"directUpload,omitempty" yaml:"-"`
 	// Uploads caps concurrent upload requests per backend pod. Each can spool
 	// up to 257 MiB to temporary disk. Zero keeps the default.
 	Uploads int `json:"-" yaml:"uploads,omitempty"`

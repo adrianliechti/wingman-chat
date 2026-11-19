@@ -23,16 +23,13 @@ func backupProvider(cfg *config.Config) (store.Provider, func(http.Handler) http
 	case "local":
 		return nil, nil, nil
 	case "onedrive":
-		connection, err := backupDrive(cfg)
-		if err != nil {
-			return nil, nil, err
-		}
 		var exchanger *obo.Exchanger
-		if auth := connection.Auth; auth != nil {
+		if auth := cfg.Backup.Auth; auth != nil {
 			scope := auth.Scope
 			if scope == "" {
 				scope = "https://graph.microsoft.com/.default"
 			}
+			var err error
 			exchanger, err = obo.New(auth.Issuer, auth.ClientID, auth.ClientSecret, scope)
 			if err != nil {
 				return nil, nil, err
@@ -74,26 +71,4 @@ func backupProvider(cfg *config.Config) (store.Provider, func(http.Handler) http
 	default:
 		return nil, nil, fmt.Errorf("unsupported backup provider %q (expected local or onedrive)", provider)
 	}
-}
-
-func backupDrive(cfg *config.Config) (*config.Drive, error) {
-	id := ""
-	if cfg.Backup != nil {
-		id = cfg.Backup.Drive
-	}
-	var selected *config.Drive
-	for i := range cfg.Drives {
-		candidate := &cfg.Drives[i]
-		if candidate.Type != "onedrive" || (id != "" && candidate.ID != id) {
-			continue
-		}
-		if selected != nil {
-			return nil, fmt.Errorf("backup.drive is required when multiple OneDrive connections exist")
-		}
-		selected = candidate
-	}
-	if selected == nil {
-		return nil, fmt.Errorf("OneDrive backup requires a matching onedrive connection in drives.yaml")
-	}
-	return selected, nil
 }
