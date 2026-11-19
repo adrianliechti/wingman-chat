@@ -159,6 +159,7 @@ describe("model output budgets", () => {
     ["gemini-4-argon", 64_000],
     ["gemini-4-carbon", 64_000],
     ["gemini-4-hydrogen", 64_000],
+    ["gemini-4-neon", 64_000],
     ["gemini-3.8-flash", 64_000],
     ["gemini-2.5-flash-lite", 64_000],
     ["gpt-4.1-mini", 32_768],
@@ -288,20 +289,25 @@ describe("reasoning effort levels", () => {
     },
   );
 
-  it.each(["gemini-4-hydrogen", "google/gemini-4-hydrogen", "gemini-4-hydrogen-2026-11-13"])(
-    "configures Hydrogen's fourth thinking level and shared-window output limit: %s",
-    (id) => {
-      const [model] = configureModels([{ id, name: "Gemini 4 Hydrogen" }], []);
-      expect(model).toMatchObject({
-        supportedEfforts: ["low", "medium", "high", "xhigh"],
-        defaultEffort: "high",
-        maxOutputTokens: 65_536,
-      });
-      expect(minimalEffort(model)).toBe("low");
-      expect(outputTokenAllowance(model.maxOutputTokens, 128_000)).toBe(65_536);
-      expect(compactThreshold(id)).toBe(200_000);
-    },
-  );
+  it.each([
+    "gemini-4-hydrogen",
+    "google/gemini-4-hydrogen",
+    "gemini-4-hydrogen-2026-11-13",
+    "gemini-4-neon",
+    "google/gemini-4-neon",
+    "models/gemini-4-neon",
+    "gemini-4-neon-2026-11-18",
+  ])("configures Hydrogen's and Neon's fourth thinking level and shared-window output limit: %s", (id) => {
+    const [model] = configureModels([{ id, name: id }], []);
+    expect(model).toMatchObject({
+      supportedEfforts: ["low", "medium", "high", "xhigh"],
+      defaultEffort: "high",
+      maxOutputTokens: 65_536,
+    });
+    expect(minimalEffort(model)).toBe("low");
+    expect(outputTokenAllowance(model.maxOutputTokens, 128_000)).toBe(65_536);
+    expect(compactThreshold(id)).toBe(200_000);
+  });
 
   it.each(["gemini-4-carbon", "google/gemini-4-carbon", "gemini-4-argon"])(
     "configures the Gemini 4 reasoning models: %s",
@@ -326,6 +332,8 @@ describe("reasoning effort levels", () => {
     for (const id of [
       "gemini-4-hydrogen-pro",
       "gemini-4-hydrogen-image",
+      "gemini-4-neon-pro",
+      "gemini-4-neon-image",
       "gemini-embedding-2",
       "gemini-3.1-flash-image",
       "gemini-3.1-flash-live-preview",

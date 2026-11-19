@@ -202,6 +202,11 @@
         "label": "GPT-6.2 Sol"
       },
       {
+        "model": "gemini-4-neon",
+        "effort": "high",
+        "label": "Gemini 4 Neon"
+      },
+      {
         "model": "gemini-4-argon",
         "effort": "medium",
         "label": "Gemini 4 Argon"
