@@ -231,7 +231,10 @@ func (p *Provider) removeAll(ctx context.Context, names []string) {
 	if len(names) == 0 {
 		return
 	}
-	ctx = context.WithoutCancel(ctx)
+	// Cleanup can outlive the client, but must release the upload slot if
+	// Graph stops responding.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
 	_ = p.parallel(ctx, len(names), func(ctx context.Context, i int) error {
 		_ = p.remove(ctx, names[i])
 		return nil

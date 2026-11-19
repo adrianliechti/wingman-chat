@@ -52,10 +52,7 @@ func (h *Handler) handleReadEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type appendRequest struct {
-	ID    string `json:"id"`
-	Frame string `json:"frame"`
-}
+type invalidAppendBody struct{ error }
 
 func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request) {
 	chatID := r.PathValue("id")
@@ -74,52 +71,54 @@ func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request) {
 	scanner := bufio.NewScanner(http.MaxBytesReader(w, r.Body, store.MaxAppendBytes))
 	scanner.Buffer(make([]byte, 64*1024), store.MaxFrameBytes+4*1024)
 
-	var ids []string
-	var frames [][]byte
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		var req appendRequest
-		if err := json.Unmarshal(line, &req); err != nil {
-			// The scanner yields the truncated tail before reporting a read error.
-			var tooLarge *http.MaxBytesError
-			if errors.As(scanner.Err(), &tooLarge) {
-				writeStoreError(w, scanner.Err())
+	events := func(yield func(store.EventFrame, error) bool) {
+		hasEvents := false
+		for scanner.Scan() {
+			// Scan may yield a truncated last line alongside a body read error.
+			if scanner.Err() != nil {
+				break
+			}
+			line := scanner.Bytes()
+			if len(line) == 0 {
+				continue
+			}
+			var event store.EventFrame
+			if err := json.Unmarshal(line, &event); err != nil {
+				yield(store.EventFrame{}, invalidAppendBody{errors.New("invalid request line")})
 				return
 			}
-			http.Error(w, "invalid request line", http.StatusBadRequest)
-			return
+			if event.ID == "" || event.Frame == "" {
+				yield(store.EventFrame{}, invalidAppendBody{errors.New("id and frame required")})
+				return
+			}
+			hasEvents = true
+			if !yield(event, nil) {
+				return
+			}
 		}
-		if req.ID == "" || req.Frame == "" {
-			http.Error(w, "id and frame required", http.StatusBadRequest)
-			return
+		if err := scanner.Err(); err != nil {
+			var tooLarge *http.MaxBytesError
+			switch {
+			case errors.Is(err, bufio.ErrTooLong):
+				yield(store.EventFrame{}, store.ErrFrameTooLarge)
+			case errors.As(err, &tooLarge):
+				yield(store.EventFrame{}, err)
+			default:
+				yield(store.EventFrame{}, invalidAppendBody{err})
+			}
+		} else if !hasEvents {
+			yield(store.EventFrame{}, invalidAppendBody{errors.New("no events")})
 		}
-		ids = append(ids, req.ID)
-		frames = append(frames, []byte(req.Frame))
-	}
-	if err := scanner.Err(); err != nil {
-		var tooLarge *http.MaxBytesError
-		switch {
-		case errors.Is(err, bufio.ErrTooLong):
-			writeStoreError(w, store.ErrFrameTooLarge)
-		case errors.As(err, &tooLarge):
-			writeStoreError(w, err)
-		default:
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
-		return
-	}
-	if len(ids) == 0 {
-		http.Error(w, "no events", http.StatusBadRequest)
-		return
 	}
 
-	res, err := h.store.AppendEvents(r.Context(), chatID, expectedSeq, ids, frames)
+	res, err := h.store.AppendEventStream(r.Context(), chatID, expectedSeq, events)
 	if err != nil {
-		writeStoreError(w, err)
+		var badBody invalidAppendBody
+		if errors.As(err, &badBody) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		} else {
+			writeStoreError(w, err)
+		}
 		return
 	}
 

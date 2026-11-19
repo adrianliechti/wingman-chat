@@ -3,6 +3,8 @@ package onedrivetest
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,9 +12,11 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Graph struct {
+	DriveID                  string
 	UploadURL                string
 	FailReadName             string
 	Mu                       sync.Mutex
@@ -24,6 +28,8 @@ type Graph struct {
 	UploadFolder, UploadName string
 	Fragments                int
 	ChunkFailures            int
+	// Modified backdates listed objects by "folder!name"; others report now.
+	Modified map[string]time.Time
 }
 
 func (g *Graph) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -32,6 +38,13 @@ func (g *Graph) RoundTrip(r *http.Request) (*http.Response, error) {
 	status := 200
 	var output []byte
 	reply := func(value any) { output, _ = json.Marshal(value) }
+	driveID := g.DriveID
+	if driveID == "" {
+		driveID = "test-drive"
+	}
+	folderItem := func(name string) {
+		reply(map[string]any{"id": name, "folder": map[string]any{}, "parentReference": map[string]string{"driveId": driveID}})
+	}
 	path := strings.TrimPrefix(r.URL.Path, "/v1.0/me/drive/")
 	// Resolve fake driveItem IDs used for conditional content replacement.
 	if id, ok := strings.CutPrefix(path, "items/"); ok && strings.HasSuffix(id, "/content") && strings.Contains(id, "!") {
@@ -85,14 +98,14 @@ func (g *Graph) RoundTrip(r *http.Request) (*http.Response, error) {
 		} else {
 			g.Folders[input.Name] = map[string][]byte{}
 			status = 201
-			reply(map[string]any{"id": input.Name, "folder": map[string]any{}})
+			folderItem(input.Name)
 		}
 	} else if strings.HasPrefix(path, "items/root:/") {
 		name := strings.TrimPrefix(path, "items/root:/")
 		if _, ok := g.Folders[name]; !ok {
 			status = 404
 		} else {
-			reply(map[string]any{"id": name, "folder": map[string]any{}})
+			folderItem(name)
 		}
 	} else if strings.HasPrefix(path, "items/") {
 		rest := strings.TrimPrefix(path, "items/")
@@ -105,9 +118,13 @@ func (g *Graph) RoundTrip(r *http.Request) (*http.Response, error) {
 		if !exists {
 			status = 404
 		} else if listing {
-			items := []map[string]string{}
+			items := []map[string]any{}
 			for name := range files {
-				items = append(items, map[string]string{"name": name})
+				modified, ok := g.Modified[folder+"!"+name]
+				if !ok {
+					modified = time.Now()
+				}
+				items = append(items, map[string]any{"name": name, "lastModifiedDateTime": modified})
 			}
 			reply(map[string]any{"value": items})
 		} else if !hasObject {
@@ -129,12 +146,18 @@ func (g *Graph) RoundTrip(r *http.Request) (*http.Response, error) {
 			if uploadURL == "" {
 				uploadURL = "https://upload.1drv.com/session?secret=hidden"
 			}
-			reply(map[string]string{"uploadUrl": uploadURL})
+			reply(map[string]any{"uploadUrl": uploadURL, "expirationDateTime": time.Now().Add(time.Hour)})
 		} else {
 			name := strings.TrimSuffix(tail, ":/content")
 			key := folder + "!" + name
 			etag := func() string { return fmt.Sprintf(`"%d"`, g.Revisions[key]) }
-			item := func() { reply(map[string]any{"id": key, "eTag": etag(), "size": len(files[name])}) }
+			item := func() {
+				meta := map[string]any{"id": key, "eTag": etag(), "size": len(files[name])}
+				if strings.Contains(r.URL.Query().Get("$select"), "file") {
+					meta["file"] = map[string]any{"hashes": map[string]string{"quickXorHash": QuickXor(files[name])}}
+				}
+				reply(meta)
+			}
 			switch r.Method {
 			case "GET":
 				if name == g.FailReadName {
@@ -177,6 +200,22 @@ func (g *Graph) RoundTrip(r *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: status, Body: io.NopCloser(bytes.NewReader(output)), Header: make(http.Header)}, nil
 }
 
+// QuickXor computes the OneDrive file checksum returned by the fake Graph API.
+func QuickXor(data []byte) string {
+	var checksum [20]byte
+	for i, b := range data {
+		shift := (i % 160) * 11 % 160
+		checksum[shift/8] ^= b << (shift % 8)
+		checksum[(shift/8+1)%20] ^= b >> (8 - shift%8)
+	}
+	var length [8]byte
+	binary.LittleEndian.PutUint64(length[:], uint64(len(data)))
+	for i, b := range length {
+		checksum[12+i] ^= b
+	}
+	return base64.StdEncoding.EncodeToString(checksum[:])
+}
+
 // Accounts isolates Graph drives by bearer token, as Microsoft Graph does.
 type Accounts struct {
 	mu     sync.Mutex
@@ -195,7 +234,7 @@ func (a *Accounts) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	g := a.drives[token]
 	if g == nil {
-		g = &Graph{Folders: map[string]map[string][]byte{}, UploadURL: "https://upload.1drv.com/session?account=" + url.QueryEscape(token)}
+		g = &Graph{DriveID: token, Folders: map[string]map[string][]byte{}, UploadURL: "https://upload.1drv.com/session?account=" + url.QueryEscape(token)}
 		a.drives[token] = g
 	}
 	a.mu.Unlock()

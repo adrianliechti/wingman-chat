@@ -5,6 +5,7 @@ import { readLocalChat } from "./localChats";
 import { mediaFromDataUrl, userMessage } from "./messages";
 import { readJson, readText } from "./opfs-core";
 import * as api from "./storeClient";
+import { BackupBusyError } from "./backupBusy";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
 import { generateStoreKey } from "./test-support/storeKey";
 
@@ -76,6 +77,22 @@ it.each(["restore", "backup"] as const)(
     expect(activity.lastError).toBeNull();
   },
 );
+
+it("keeps a chat pending without an error while the backend is busy, then retries", async () => {
+  const sync = await ChatSync.create({ userId: "alice", accountId: "alice", dek: await generateStoreKey() });
+  let activity!: SyncActivity;
+  sync.subscribeActivity((value) => (activity = value));
+  await stashPendingTarget(chat());
+  vi.mocked(api.appendEvents).mockRejectedValueOnce(new BackupBusyError("Backup uploads are busy.", 20));
+
+  await sync.flushPending();
+  expect(activity.lastError ?? null).toBeNull();
+  expect(frames).toHaveLength(0);
+  expect(await readJson("chats/chat/target.json")).toBeDefined();
+
+  await vi.waitFor(() => expect(frames).toHaveLength(1));
+  await vi.waitFor(() => expect(activity).toMatchObject({ lastError: null, syncing: false }));
+});
 
 for (const updating of [false, true]) {
   it.each(["before commit", "lost acknowledgement", "history write", "state write", "snapshot write", "index write"])(

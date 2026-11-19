@@ -148,10 +148,18 @@ func (p *Provider) jsonRequest(ctx context.Context, method, endpoint string, inp
 }
 
 type driveItem struct {
-	ETag   string           `json:"eTag"`
-	ID     string           `json:"id"`
-	Size   int64            `json:"size"`
-	Folder *json.RawMessage `json:"folder"`
+	ETag            string           `json:"eTag"`
+	ID              string           `json:"id"`
+	Size            int64            `json:"size"`
+	Folder          *json.RawMessage `json:"folder"`
+	ParentReference struct {
+		DriveID string `json:"driveId"`
+	} `json:"parentReference"`
+	File struct {
+		Hashes struct {
+			QuickXor string `json:"quickXorHash"`
+		} `json:"hashes"`
+	} `json:"file"`
 }
 
 // The delegated /me drive isolates Microsoft accounts, so one fixed folder
@@ -190,6 +198,7 @@ func (p *Provider) folder(ctx context.Context) (string, error) {
 		return "", errors.New("OneDrive backup: invalid account folder")
 	}
 	session.folder = folder.ID
+	session.drive = folder.ParentReference.DriveID
 	return folder.ID, nil
 }
 
@@ -257,18 +266,30 @@ func (s *spooledObject) close() {
 // spool copies r to a temporary file, returning its content-hash ETag.
 // Callers must close the result.
 func (p *Provider) spool(r io.Reader) (*spooledObject, error) {
+	return p.writeSpool(func(w io.Writer) error {
+		_, err := io.Copy(w, r)
+		return err
+	})
+}
+
+func (p *Provider) writeSpool(write func(io.Writer) error) (*spooledObject, error) {
 	f, err := os.CreateTemp(p.tempDir, "wingman-onedrive-*")
 	if err != nil {
 		return nil, err
 	}
+	spooled := &spooledObject{file: f}
 	hasher := sha256.New()
-	size, err := io.Copy(f, io.TeeReader(r, hasher))
-	if err != nil {
-		f.Close()
-		os.Remove(f.Name())
+	if err := write(io.MultiWriter(f, hasher)); err != nil {
+		spooled.close()
 		return nil, err
 	}
-	return &spooledObject{file: f, etag: fmt.Sprintf("%x", hasher.Sum(nil)), size: size}, nil
+	size, err := f.Seek(0, io.SeekCurrent)
+	if err != nil {
+		spooled.close()
+		return nil, err
+	}
+	spooled.etag, spooled.size = fmt.Sprintf("%x", hasher.Sum(nil)), size
+	return spooled, nil
 }
 
 func (p *Provider) send(ctx context.Context, name string, spooled *spooledObject) error {
@@ -284,14 +305,9 @@ func (p *Provider) send(ctx context.Context, name string, spooled *spooledObject
 		}
 		res.Body.Close()
 	} else {
-		var session struct {
-			URL string `json:"uploadUrl"`
-		}
-		if err := p.jsonRequest(ctx, "POST", endpoint+":/createUploadSession", map[string]any{"item": map[string]string{"@microsoft.graph.conflictBehavior": "replace"}}, &session); err != nil {
+		session, err := p.createUploadSession(ctx, endpoint, "replace")
+		if err != nil {
 			return err
-		}
-		if !validUploadURL(session.URL) {
-			return errors.New("OneDrive backup: invalid upload session URL")
 		}
 		complete := false
 		defer func() {
@@ -303,14 +319,11 @@ func (p *Provider) send(ctx context.Context, name string, spooled *spooledObject
 				}
 			}
 		}()
-		buffer := make([]byte, uploadChunk)
 		for offset := int64(0); offset < size; {
-			length := min(int64(len(buffer)), size-offset)
-			if _, err := f.ReadAt(buffer[:length], offset); err != nil {
-				return err
-			}
+			length := min(uploadChunk, size-offset)
+			fragment := io.NewSectionReader(f, offset, length)
 			headers := http.Header{"Content-Type": {"application/octet-stream"}, "Content-Range": {fmt.Sprintf("bytes %d-%d/%d", offset, offset+length-1, size)}}
-			res, err := p.request(ctx, "PUT", session.URL, bytes.NewReader(buffer[:length]), headers, false)
+			res, err := p.request(ctx, "PUT", session.URL, fragment, headers, false)
 			if err != nil {
 				return err
 			}
@@ -324,6 +337,23 @@ func (p *Provider) send(ctx context.Context, name string, spooled *spooledObject
 		complete = true
 	}
 	return nil
+}
+
+type graphUploadSession struct {
+	URL       string    `json:"uploadUrl"`
+	ExpiresAt time.Time `json:"expirationDateTime"`
+}
+
+func (p *Provider) createUploadSession(ctx context.Context, endpoint, conflictBehavior string) (graphUploadSession, error) {
+	var session graphUploadSession
+	body := map[string]any{"item": map[string]string{"@microsoft.graph.conflictBehavior": conflictBehavior}}
+	if err := p.jsonRequest(ctx, "POST", endpoint+":/createUploadSession", body, &session); err != nil {
+		return session, err
+	}
+	if !validUploadURL(session.URL) {
+		return graphUploadSession{}, errors.New("OneDrive backup: invalid upload session URL")
+	}
+	return session, nil
 }
 
 func validUploadURL(raw string) bool {

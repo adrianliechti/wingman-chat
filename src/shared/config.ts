@@ -257,7 +257,7 @@ interface ConfigSchema {
   translator?: TranslatorConfig;
 
   chat?: ChatConfig;
-  backup?: { provider?: "local" | "onedrive"; drive?: string };
+  backup?: { provider?: "local" | "onedrive"; drive?: string; directUpload?: boolean };
   telemetry?: TelemetryConfig;
 }
 
@@ -311,6 +311,7 @@ interface Config {
   chat: ChatConfig | null;
 
   store: boolean;
+  directBackupUpload: boolean;
   telemetry: Required<TelemetryConfig> | null;
 
   backgrounds: BackgroundPackConfig;
@@ -411,6 +412,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       chat: cfg.chat ?? null,
 
       store: cfg.backup?.provider === "onedrive",
+      directBackupUpload: cfg.backup?.provider === "onedrive" && cfg.backup.directUpload === true,
       telemetry: cfg.telemetry != null ? { name: cfg.telemetry.name?.trim() || DEFAULT_TELEMETRY_NAME } : null,
 
       backgrounds: cfg.backgrounds ?? {},

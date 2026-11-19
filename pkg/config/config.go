@@ -180,9 +180,16 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if cfg.Backup != nil {
 		envOverride("BACKUP_DRIVE", &cfg.Backup.Drive)
+		if v := envPositiveInt("BACKUP_UPLOADS", nil); v != nil {
+			cfg.Backup.Uploads = *v
+		}
 		if cfg.Backup.Provider == "" {
 			cfg.Backup.Provider = "local"
 		}
+		if cfg.Backup.Provider == "onedrive" {
+			cfg.Backup.DirectUploadKey = os.Getenv("BACKUP_DIRECT_UPLOAD_KEY")
+		}
+		cfg.Backup.DirectUpload = cfg.Backup.DirectUploadKey != ""
 	}
 
 	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)

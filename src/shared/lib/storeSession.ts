@@ -100,6 +100,7 @@ async function readySession(userId: string, dek: RootKey, ks: keystore.KeystoreS
     if (!isBackupSessionCurrent()) throw new Error("Backup settings changed. Reload before syncing.");
     await rememberBackup(userId, ks, dek);
     api.setBackupGeneration(ks.keystore.generation);
+    api.setDirectUploads(getConfig().directBackupUpload);
     const { accountId } = ks.keystore;
     await recordBackupAccount(accountId);
     const sync = await ChatSync.create({ userId, accountId, dek, retentionDays: getConfig().chat?.retentionDays });

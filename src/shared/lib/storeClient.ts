@@ -7,6 +7,14 @@
  */
 
 import { isBackupSessionCurrent } from "./backupLifecycle";
+import { BackupBusyError } from "./backupBusy";
+import {
+  DIRECT_UPLOAD_CHUNK,
+  directUploadHashes,
+  transferDirectUpload,
+  uploadRetryDelay,
+  type DirectUploadSession,
+} from "./directUpload";
 
 const PREFIX = "/api/v1";
 
@@ -29,12 +37,46 @@ async function storeFetch(input: string, init?: RequestInit): Promise<Response> 
   // A hung request would otherwise hold the sync engines' locks indefinitely.
   const transfer = init?.body !== undefined || /\/(blobs|files)\//.test(input);
   const signal = init?.signal ?? AbortSignal.timeout(transfer ? TRANSFER_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
-  return fetch(input, { ...init, headers, signal });
+  // Request bodies are strings, Blobs, or FormData, so they can be resent.
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(input, { ...init, headers, signal });
+    if (!isBusy(res) || attempt >= BUSY_RETRIES) return res;
+    await res.body?.cancel().catch(() => {});
+    await abortableDelay(busyDelay(res, attempt), signal);
+  }
+}
+
+/** The backend's upload queue is full; it asks the client to come back. */
+const BUSY_RETRIES = 2;
+const MAX_BUSY_DELAY_MS = 15_000;
+
+function isBusy(res: Response): boolean {
+  return res.status === 503 && res.headers.has("Retry-After");
+}
+
+function busyDelay(res: Response, attempt: number): number {
+  return Math.min(uploadRetryDelay(res, attempt), MAX_BUSY_DELAY_MS);
+}
+
+function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 async function ensureOk(res: Response, allowNotFound = false): Promise<Response> {
   if (res.ok || (allowNotFound && res.status === 404)) return res;
   const body = await res.text().catch(() => "");
+  if (isBusy(res)) throw new BackupBusyError(body || res.statusText, busyDelay(res, 0));
   throw new ServerError(res.status, body || res.statusText);
 }
 
@@ -194,8 +236,10 @@ export async function getBlob(blobId: string): Promise<Uint8Array | null> {
 }
 
 export async function putBlob(blobId: string, data: Uint8Array | Blob): Promise<void> {
-  const body: BodyInit = data instanceof Blob ? data : new Blob([new Uint8Array(data)]);
-  await fetchOrThrow(`${PREFIX}/blobs/${encodeURIComponent(blobId)}`, {
+  const body = data instanceof Blob ? data : new Blob([new Uint8Array(data)]);
+  const path = `${PREFIX}/blobs/${encodeURIComponent(blobId)}`;
+  if (await tryDirectUpload(path, body, {})) return;
+  await fetchOrThrow(path, {
     method: "PUT",
     headers: { "Content-Type": "application/octet-stream" },
     body,
@@ -225,14 +269,74 @@ type PutFileOptions = ConditionalOptions;
 
 /** Returns the new ETag, or throws ServerError(412) on CAS mismatch. */
 export async function putFile(fileId: string, data: Uint8Array, opts: PutFileOptions = {}): Promise<string> {
-  const res = await storeFetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`, {
+  const path = `${PREFIX}/files/${encodeURIComponent(fileId)}`;
+  const body = new Blob([new Uint8Array(data)]);
+  const direct = await tryDirectUpload(path, body, opts);
+  if (direct) return unquote(direct.headers.get("ETag") ?? "");
+  const res = await storeFetch(path, {
     method: "PUT",
     headers: conditionalHeaders(opts, { "Content-Type": "application/octet-stream" }),
-    body: new Blob([new Uint8Array(data)]),
+    body,
   });
   if (res.status === 412) throw new ServerError(412, "file conflict");
   await ensureOk(res);
   return unquote(res.headers.get("ETag") ?? "");
+}
+
+// Set per backup session; a capability failure disables it until the next one.
+let directUploadEnabled = false;
+
+export function setDirectUploads(enabled: boolean): void {
+  directUploadEnabled = enabled;
+}
+
+async function tryDirectUpload(path: string, body: Blob, opts: ConditionalOptions): Promise<Response | undefined> {
+  if (!directUploadEnabled || body.size <= DIRECT_UPLOAD_CHUNK) return;
+  const started = await storeFetch(`${path}/upload-session`, {
+    method: "POST",
+    headers: conditionalHeaders(opts, { "Content-Type": "application/json" }),
+    body: JSON.stringify({ size: body.size }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (started.status === 404 || started.status === 405 || started.status === 501) {
+    directUploadEnabled = false;
+    return;
+  }
+  await ensureOk(started);
+  const session = (await started.json()) as DirectUploadSession;
+  const expires = Date.parse(session.expiresAt);
+  if (!session.ticket || !Number.isFinite(expires)) throw new Error("Invalid OneDrive upload session");
+  const deadline = Math.min(expires, Date.now() + TRANSFER_TIMEOUT_MS);
+  // Hash while the transfer runs, so hashing doesn't eat into the deadline.
+  const hashes = directUploadHashes(body);
+  hashes.catch(() => {});
+  const transfer = await transferDirectUpload(session, body, deadline);
+  if (transfer === "fallback") {
+    directUploadEnabled = false;
+    return;
+  }
+  const payload = JSON.stringify({ ticket: session.ticket, ...(await hashes) });
+  const retryable = [425, 429, 500, 502, 503, 504];
+  for (let attempt = 0; ; attempt++) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error("OneDrive upload session expired before confirmation");
+    const result = await storeFetch(`${path}/upload-complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      signal: AbortSignal.timeout(Math.min(remaining, REQUEST_TIMEOUT_MS)),
+    }).catch(() => undefined);
+    if (result && !retryable.includes(result.status)) return ensureOk(result);
+    const delay = result?.status === 425 ? 1000 * 2 ** attempt : uploadRetryDelay(result, attempt);
+    if (attempt === 4 || Date.now() + delay >= deadline) {
+      if (transfer === "unconfirmed" && (!result || result.status === 425)) {
+        throw new Error("OneDrive did not confirm the final upload fragment");
+      }
+      if (result) return ensureOk(result);
+      throw new Error("Could not confirm the OneDrive upload");
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, delay));
+  }
 }
 
 export interface FileUpload extends ConditionalOptions {

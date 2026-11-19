@@ -419,14 +419,16 @@ func TestBackupProviderConfiguration(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if err := os.WriteFile("backup.yaml", []byte("provider: onedrive\ndrive: personal\npath: /data/locks\n"), 0600); err != nil {
+	if err := os.WriteFile("backup.yaml", []byte("provider: onedrive\ndrive: personal\nuploads: 3\npath: /data/locks\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("BACKUP_PROVIDER", "")
 	t.Setenv("BACKUP_DRIVE", "")
+	t.Setenv("BACKUP_DIRECT_UPLOAD_KEY", "private-direct-upload-key")
+	t.Setenv("BACKUP_UPLOADS", "")
 	t.Setenv("STORE_ENABLED", "")
 	cfg := Load()
-	if cfg.Backup == nil || cfg.Backup.Provider != "onedrive" || cfg.Backup.Drive != "personal" {
+	if cfg.Backup == nil || cfg.Backup.Provider != "onedrive" || cfg.Backup.Drive != "personal" || cfg.Backup.Uploads != 3 {
 		t.Fatalf("config: %+v", cfg)
 	}
 	data, err := json.Marshal(cfg)
@@ -439,15 +441,16 @@ func TestBackupProviderConfiguration(t *testing.T) {
 	if err := json.Unmarshal(data, &browser); err != nil {
 		t.Fatal(err)
 	}
-	if browser.Backup == nil || browser.Backup.Provider != cfg.Backup.Provider || browser.Backup.Drive != cfg.Backup.Drive {
+	if browser.Backup == nil || browser.Backup.Provider != cfg.Backup.Provider || browser.Backup.Drive != cfg.Backup.Drive || !browser.Backup.DirectUpload {
 		t.Fatalf("browser: %s", data)
 	}
-	if strings.Contains(string(data), "/data/locks") {
-		t.Fatal("private lock path exposed")
+	if strings.Contains(string(data), "/data/locks") || strings.Contains(string(data), "private-direct-upload-key") || strings.Contains(string(data), "uploads") {
+		t.Fatal("private backup configuration exposed")
 	}
 	t.Setenv("BACKUP_PROVIDER", "local")
+	t.Setenv("BACKUP_UPLOADS", "8")
 	cfg = Load()
-	if cfg.Backup.Provider != "local" {
+	if cfg.Backup.Provider != "local" || cfg.Backup.DirectUpload || cfg.Backup.Uploads != 8 {
 		t.Fatalf("environment override: %+v", cfg)
 	}
 }

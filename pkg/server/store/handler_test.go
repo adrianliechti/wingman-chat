@@ -1,15 +1,18 @@
 package store
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/adrianliechti/wingman-chat/pkg/server/identity"
 	"github.com/adrianliechti/wingman-chat/pkg/store"
@@ -242,6 +245,190 @@ func TestAppendDedup(t *testing.T) {
 	}
 	if len(out.Deduped) != 1 || out.Deduped[0] != "e1" {
 		t.Fatalf("deduped = %v, want [e1]", out.Deduped)
+	}
+}
+
+func TestMalformedAppendDoesNotPublishValidPrefix(t *testing.T) {
+	srv := protectedTestServer(t)
+	const chatID = "chat-1234"
+	first := event("e1", "YQ==")
+	res := do(t, srv, "alice", "POST", "/v1/chats/"+chatID+"/events", first+"\n{",
+		map[string]string{"X-Expected-Seq": "0"})
+	wantStatus(t, res, http.StatusBadRequest)
+
+	out := appendEvents(t, srv, "alice", chatID, 0, first)
+	if out.NewSeq != 1 || len(out.Deduped) != 0 {
+		t.Fatalf("malformed append changed the chat: %+v", out)
+	}
+}
+
+type blockedBackupStore struct {
+	store.Provider
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (s *blockedBackupStore) GetKeystore(context.Context) ([]byte, string, error) {
+	s.entered <- struct{}{}
+	<-s.release
+	return nil, "", store.ErrNotFound
+}
+
+func TestBackupUploadsSharePodLimit(t *testing.T) {
+	provider := &blockedBackupStore{entered: make(chan struct{}, 3), release: make(chan struct{})}
+	defer close(provider.release)
+	mux := http.NewServeMux()
+	h := New(provider, nil)
+	h.uploads = newUploadLimiter(2, 2, time.Minute, time.Minute)
+	h.Attach(mux, "")
+
+	start := func(ctx context.Context, method, path, user string) <-chan int {
+		req := httptest.NewRequest(method, path, strings.NewReader("ciphertext")).WithContext(ctx)
+		req.Header.Set("X-Forwarded-User", user)
+		done := make(chan int, 1)
+		go func() {
+			res := httptest.NewRecorder()
+			mux.ServeHTTP(res, req)
+			done <- res.Code
+		}()
+		return done
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	blob := start(ctx, "PUT", "/v1/blobs/blob-1234", "alice")
+	file := start(ctx, "PUT", "/v1/files/file-1234", "bob")
+	for range 2 {
+		select {
+		case <-provider.entered:
+		case <-ctx.Done():
+			t.Fatal("two uploads should enter protection")
+		}
+	}
+
+	queuedCtx, cancelQueued := context.WithCancel(ctx)
+	defer cancelQueued()
+	cancelled := start(queuedCtx, "POST", "/v1/chats/chat-1234/events", "claire")
+	batch := start(ctx, "POST", "/v1/files", "claire")
+	select {
+	case <-provider.entered:
+		t.Fatal("queued upload reached storage while both slots were occupied")
+	case <-time.After(25 * time.Millisecond):
+	}
+	cancelQueued()
+	select {
+	case <-cancelled:
+	case <-ctx.Done():
+		t.Fatal("cancelled upload remained queued")
+	}
+
+	provider.release <- struct{}{}
+	select {
+	case <-provider.entered:
+	case <-ctx.Done():
+		t.Fatal("queued batch did not proceed when a slot opened")
+	}
+	for range 2 {
+		provider.release <- struct{}{}
+	}
+	for _, done := range []<-chan int{blob, file, batch} {
+		if status := <-done; status != http.StatusForbidden {
+			t.Fatalf("got %d, want rejection by keystore protection", status)
+		}
+	}
+}
+
+func TestBackupUploadsLimitAccountsAndQueueWait(t *testing.T) {
+	provider := &blockedBackupStore{entered: make(chan struct{}, 3), release: make(chan struct{}, 3)}
+	mux := http.NewServeMux()
+	h := New(provider, nil)
+	h.uploads = newUploadLimiter(3, 1, 50*time.Millisecond, time.Minute)
+	h.Attach(mux, "")
+	start := func(path, user string) <-chan *httptest.ResponseRecorder {
+		req := httptest.NewRequest("PUT", path, strings.NewReader("ciphertext"))
+		req.Header.Set("X-Forwarded-User", user)
+		done := make(chan *httptest.ResponseRecorder, 1)
+		go func() {
+			res := httptest.NewRecorder()
+			mux.ServeHTTP(res, req)
+			done <- res
+		}()
+		return done
+	}
+
+	first := start("/v1/blobs/blob-1234", "alice")
+	<-provider.entered
+	busy := <-start("/v1/blobs/blob-5678", "alice")
+	if busy.Code != http.StatusServiceUnavailable || busy.Header().Get("Retry-After") == "" {
+		t.Fatalf("second upload from one account: %d %v", busy.Code, busy.Header())
+	}
+	other := start("/v1/files/file-1234", "bob")
+	select {
+	case <-provider.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("another account was blocked by alice's upload")
+	}
+	provider.release <- struct{}{}
+	provider.release <- struct{}{}
+	for _, done := range []<-chan *httptest.ResponseRecorder{first, other} {
+		if res := <-done; res.Code != http.StatusForbidden {
+			t.Fatalf("got %d, want rejection by keystore protection", res.Code)
+		}
+	}
+	if len(h.uploads.accounts) != 0 {
+		t.Fatalf("idle accounts retained: %v", h.uploads.accounts)
+	}
+}
+
+func TestStalledUploadBodyReleasesItsSlot(t *testing.T) {
+	limiter := newUploadLimiter(1, 1, 5*time.Second, 100*time.Millisecond)
+	srv := httptest.NewServer(limiter.wrap(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.ReadAll(r.Body); err != nil {
+			w.WriteHeader(http.StatusRequestTimeout)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	stalled, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stalled.Close()
+	fmt.Fprintf(stalled, "PUT / HTTP/1.1\r\nHost: test\r\nX-Forwarded-User: alice\r\nContent-Length: 100\r\n\r\npartial")
+	time.Sleep(20 * time.Millisecond) // let the stalled request take the only slot
+
+	req, _ := http.NewRequest("PUT", srv.URL, strings.NewReader("complete"))
+	req.Header.Set("X-Forwarded-User", "bob")
+	res, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("upload behind a stalled body: %d", res.StatusCode)
+	}
+}
+
+func TestDirectUploadRoutesNeverFallThroughWhenDisabled(t *testing.T) {
+	mux := http.NewServeMux()
+	// The real server proxies unclaimed /api routes to the model API.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	New(newTestStore(t), testStoreMiddleware).Attach(mux, "")
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	for _, path := range []string{"/v1/blobs/blob-1234/upload-session", "/v1/files/file-1234/upload-complete"} {
+		wantStatus(t, do(t, srv, "alice", "POST", path, "{}", nil), http.StatusNotImplemented)
+	}
+}
+
+func TestLimitUploadsKeepsAccountCapWithinPod(t *testing.T) {
+	h := New(nil, nil).LimitUploads(1)
+	if cap(h.uploads.pod) != 1 || h.uploads.perUser != 1 {
+		t.Fatalf("pod %d, account %d", cap(h.uploads.pod), h.uploads.perUser)
+	}
+	if h := New(nil, nil).LimitUploads(0); cap(h.uploads.pod) != podUploads {
+		t.Fatalf("unset limit changed the default: %d", cap(h.uploads.pod))
 	}
 }
 

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
@@ -38,6 +39,13 @@ func backupProvider(cfg *config.Config) (store.Provider, func(http.Handler) http
 			}
 		}
 		p := storeonedrive.New()
+		if secret := cfg.Backup.DirectUploadKey; secret != "" {
+			key, err := base64.StdEncoding.DecodeString(secret)
+			if err != nil || len(key) < 32 {
+				return nil, nil, fmt.Errorf("BACKUP_DIRECT_UPLOAD_KEY must be base64 encoding at least 32 bytes")
+			}
+			p.EnableDirectUploads(key)
+		}
 		middleware := func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				token := ""

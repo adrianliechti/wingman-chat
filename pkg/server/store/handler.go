@@ -13,11 +13,15 @@ import (
 type Handler struct {
 	store      store.Provider
 	middleware func(http.Handler) http.Handler
+	uploads    *uploadLimiter
 }
 
 // New serves the backup API. middleware, if non-nil, wraps every route.
 func New(store store.Provider, middleware func(http.Handler) http.Handler) *Handler {
-	return &Handler{store: store, middleware: middleware}
+	return &Handler{
+		store: store, middleware: middleware,
+		uploads: newUploadLimiter(podUploads, perAccountUploads, uploadQueueWait, uploadBodyTimeout),
+	}
 }
 
 func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
@@ -43,20 +47,35 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 
 	handle("GET "+prefix+"/v1/chats", h.requireProtection(h.handleListChats))
 	handle("GET "+prefix+"/v1/chats/{id}/events", h.requireProtection(h.handleReadEvents))
-	handle("POST "+prefix+"/v1/chats/{id}/events", h.requireProtection(h.handleAppendEvents))
+	handle("POST "+prefix+"/v1/chats/{id}/events", h.uploads.wrap(h.requireProtection(h.handleAppendEvents)))
 	handle("POST "+prefix+"/v1/chats/{id}/compact", h.requireProtection(h.handleCompactChat))
 	handle("DELETE "+prefix+"/v1/chats/{id}", h.requireProtection(h.handleDeleteChat))
 
 	handle("GET "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleGetObject(store.BlobObject)))
 	handle("HEAD "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleHeadBlob))
-	handle("PUT "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handlePutObject(store.BlobObject)))
+	handle("PUT "+prefix+"/v1/blobs/{id}", h.uploads.wrap(h.requireProtection(h.handlePutObject(store.BlobObject))))
 	handle("DELETE "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleDeleteObject(store.BlobObject)))
 
 	handle("GET "+prefix+"/v1/files", h.requireProtection(h.handleListFiles))
-	handle("POST "+prefix+"/v1/files", h.requireProtection(h.handlePutFiles))
+	handle("POST "+prefix+"/v1/files", h.uploads.wrap(h.requireProtection(h.handlePutFiles)))
 	handle("GET "+prefix+"/v1/files/{id}", h.requireProtection(h.handleGetObject(store.FileObject)))
-	handle("PUT "+prefix+"/v1/files/{id}", h.requireProtection(h.handlePutObject(store.FileObject)))
+	handle("PUT "+prefix+"/v1/files/{id}", h.uploads.wrap(h.requireProtection(h.handlePutObject(store.FileObject))))
 	handle("DELETE "+prefix+"/v1/files/{id}", h.requireProtection(h.handleDeleteObject(store.FileObject)))
+
+	uploader, supportsDirect := h.store.(store.DirectUploader)
+	for resource, kind := range map[string]store.ObjectKind{"blobs": store.BlobObject, "files": store.FileObject} {
+		base := "POST " + prefix + "/v1/" + resource + "/{id}"
+		if !supportsDirect || !uploader.DirectUploadsEnabled() {
+			unavailable := func(w http.ResponseWriter, _ *http.Request) {
+				writeStoreError(w, store.ErrDirectUnavailable)
+			}
+			mux.HandleFunc(base+"/upload-session", unavailable)
+			mux.HandleFunc(base+"/upload-complete", unavailable)
+			continue
+		}
+		handle(base+"/upload-session", h.uploads.wrap(h.requireProtection(h.handleStartUpload(uploader, kind))))
+		handle(base+"/upload-complete", h.uploads.wrap(h.requireProtection(h.handleCompleteUpload(uploader, kind))))
+	}
 }
 
 // casFromRequest maps conditional request headers onto the provider's ifMatch

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"iter"
 	"time"
 )
 
@@ -27,7 +28,7 @@ type FileMeta struct {
 	Size    int64     `json:"size"`
 }
 
-// AppendResult is returned by AppendEvents.
+// AppendResult is returned by AppendEventStream.
 //
 // NewSeq is the seq assigned to the last accepted frame; if all input
 // frames were deduplicated, NewSeq equals the head before the call.
@@ -38,6 +39,12 @@ type AppendResult struct {
 	Deduped []string `json:"deduped,omitempty"`
 }
 
+// EventFrame is one opaque encrypted frame and its deduplication ID.
+type EventFrame struct {
+	ID    string `json:"id"`
+	Frame string `json:"frame"`
+}
+
 // ObjectKind separates workspace files from attachment blobs, even when IDs match.
 // Providers reject kinds other than FileObject and BlobObject with ErrInvalidID.
 type ObjectKind uint8
@@ -46,6 +53,20 @@ const (
 	FileObject ObjectKind = iota + 1
 	BlobObject
 )
+
+// DirectUploader reserves a OneDrive object and publishes it after the browser
+// has sent the ciphertext to storage.
+type DirectUploader interface {
+	DirectUploadsEnabled() bool
+	StartUpload(ctx context.Context, kind ObjectKind, id string, size int64, ifMatch string) (UploadSession, error)
+	CompleteUpload(ctx context.Context, kind ObjectKind, id, ticket, sha256, quickXor string) (string, error)
+}
+
+type UploadSession struct {
+	URL       string    `json:"uploadUrl"`
+	Ticket    string    `json:"ticket"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
 
 // FileWrite is one encrypted workspace file in a PutFiles batch.
 type FileWrite struct {
@@ -80,11 +101,11 @@ type Provider interface {
 	// ListChats returns metadata for every chat owned by the user.
 	ListChats(ctx context.Context) ([]ChatMeta, error)
 
-	// AppendEvents appends one or more frames to a chat's append-only log.
+	// AppendEventStream appends frames to a chat's append-only log. It must
+	// consume the stream without error before publishing any events.
 	// expectedSeq must match the current head; otherwise ErrSeqConflict.
-	// Each frame is paired with an eventID; previously-seen eventIDs are
-	// silently skipped and returned in Deduped.
-	AppendEvents(ctx context.Context, chatID string, expectedSeq int64, eventIDs []string, frames [][]byte) (AppendResult, error)
+	// Previously-seen event IDs are silently skipped and returned in Deduped.
+	AppendEventStream(ctx context.Context, chatID string, expectedSeq int64, events iter.Seq2[EventFrame, error]) (AppendResult, error)
 
 	// ReadEvents streams JSONL frames whose seq > fromSeq. The reader yields
 	// the JSONL envelope format:
@@ -131,13 +152,16 @@ type Provider interface {
 }
 
 var (
-	ErrBackupConflict   = errors.New("store: backup changed; retry with fresh state")
-	ErrNotFound         = errors.New("store: not found")
-	ErrSeqConflict      = errors.New("store: seq conflict")
-	ErrKeystoreConflict = errors.New("store: keystore etag conflict")
-	ErrObjectConflict   = errors.New("store: object etag conflict")
-	ErrInvalidID        = errors.New("store: invalid id")
-	ErrFrameTooLarge    = errors.New("store: frame too large")
+	ErrBackupConflict    = errors.New("store: backup changed; retry with fresh state")
+	ErrNotFound          = errors.New("store: not found")
+	ErrSeqConflict       = errors.New("store: seq conflict")
+	ErrKeystoreConflict  = errors.New("store: keystore etag conflict")
+	ErrObjectConflict    = errors.New("store: object etag conflict")
+	ErrInvalidID         = errors.New("store: invalid id")
+	ErrFrameTooLarge     = errors.New("store: frame too large")
+	ErrDirectUnavailable = errors.New("store: direct upload unavailable")
+	ErrInvalidUpload     = errors.New("store: invalid upload metadata")
+	ErrUploadIncomplete  = errors.New("store: direct upload incomplete")
 )
 
 // MaxFrameBytes caps a single base64-encoded frame envelope. Blobs go

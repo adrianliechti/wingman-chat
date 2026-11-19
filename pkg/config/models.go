@@ -222,8 +222,14 @@ type Risk struct {
 // Backup selects local ZIP backups (the default) or OneDrive.
 // Drive references an existing OneDrive connection in drives.yaml.
 type Backup struct {
-	Provider string `json:"provider" yaml:"provider"`
-	Drive    string `json:"drive,omitempty" yaml:"drive,omitempty"`
+	Provider     string `json:"provider" yaml:"provider"`
+	Drive        string `json:"drive,omitempty" yaml:"drive,omitempty"`
+	DirectUpload bool   `json:"directUpload,omitempty" yaml:"-"`
+	// Uploads caps concurrent upload requests per backend pod. Each can spool
+	// up to 257 MiB to temporary disk. Zero keeps the default.
+	Uploads int `json:"-" yaml:"uploads,omitempty"`
+	// DirectUploadKey is the base64 signing secret from BACKUP_DIRECT_UPLOAD_KEY.
+	DirectUploadKey string `json:"-" yaml:"-"`
 }
 
 type Translator struct {

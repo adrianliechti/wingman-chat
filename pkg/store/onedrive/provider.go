@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sync"
+	"time"
 
 	"github.com/adrianliechti/wingman-chat/pkg/drive/graph"
 	"github.com/adrianliechti/wingman-chat/pkg/store"
@@ -24,21 +26,39 @@ var resourceID = regexp.MustCompile(`^[A-Za-z0-9_-]{8,128}$`)
 const indexName = "index.json"
 
 type Provider struct {
-	client  *http.Client
-	base    string
-	tempDir string
+	client    *http.Client
+	base      string
+	tempDir   string
+	uploadKey []byte
+
+	sweepInterval time.Duration
+	sweepMu       sync.Mutex
+	sweeps        map[string]time.Time
 }
 
 func New() *Provider {
-	return &Provider{client: http.DefaultClient, base: graph.GraphURL}
+	return &Provider{
+		client: http.DefaultClient, base: graph.GraphURL,
+		sweepInterval: orphanSweepInterval, sweeps: map[string]time.Time{},
+	}
+}
+
+// EnableDirectUploads is called during server setup with a shared signing key
+// of at least 32 bytes; the caller validates it.
+func (p *Provider) EnableDirectUploads(key []byte) {
+	p.uploadKey = append([]byte(nil), key...)
+}
+
+func (p *Provider) DirectUploadsEnabled() bool {
+	return len(p.uploadKey) > 0
 }
 
 type sessionKey struct{}
 type session struct {
-	token, folder string
-	index         *index
-	snapshot      *index
-	control       driveItem
+	token, folder, drive string
+	index                *index
+	snapshot             *index
+	control              driveItem
 }
 
 // WithToken creates request-local state. Tokens are never stored on disk or in

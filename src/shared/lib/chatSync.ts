@@ -17,6 +17,7 @@ import { SyncProgressTracker, type SyncProgress } from "./syncProgress";
  */
 
 import { isChatBackupPaused, requireChatBackupReady, BackupPausedError } from "./chatBackupActivity";
+import { BackupBusyError } from "./backupBusy";
 import { isBackupSessionCurrent, withBackupStorage, WORKSPACE_OWNER_KEY } from "./backupLifecycle";
 import { withPersistenceLock } from "./persistence";
 import {
@@ -566,6 +567,17 @@ export class ChatSync {
 
   // internals -----------------------------------------------------------
 
+  private busyRetry: ReturnType<typeof setTimeout> | null = null;
+
+  /** Retry sooner than the auto-sync tick once the backend has capacity. */
+  private retryWhenNotBusy(delayMs: number): void {
+    if (this.busyRetry) return;
+    this.busyRetry = setTimeout(() => {
+      this.busyRetry = null;
+      void this.flushPending().catch((err) => console.warn("chatSync: retry after busy backend failed", err));
+    }, delayMs);
+  }
+
   private async refreshDeletions(): Promise<void> {
     this.deletions = new Map((await pendingDeletions(this.userId)).map((entry) => [entry.id, entry]));
     this.setActivity({});
@@ -734,6 +746,10 @@ export class ChatSync {
       await this.postEntries(chatId, entries);
     } catch (err) {
       if (err instanceof BackupPausedError) return false;
+      if (err instanceof BackupBusyError) {
+        this.retryWhenNotBusy(err.retryAfterMs);
+        return false;
+      }
       this.setActivity({ lastError: errorMessage(err) });
       console.warn(`chatSync.flushChat(${chatId}): post failed`, err);
       return false;

@@ -84,10 +84,10 @@ func TestConflictingWritesRemoveUnpublishedObjects(t *testing.T) {
 	t.Run("append", func(t *testing.T) {
 		p, graph := newTestProvider(t)
 		a, b := loaded(t, p), loaded(t, p)
-		if _, err := p.AppendEvents(a, "chat-1234", 0, []string{"first"}, [][]byte{[]byte("one")}); err != nil {
+		if _, err := appendEvents(p, a, "chat-1234", 0, []string{"first"}, [][]byte{[]byte("one")}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := p.AppendEvents(b, "chat-1234", 0, []string{"second"}, [][]byte{[]byte("two")}); !errors.Is(err, store.ErrSeqConflict) {
+		if _, err := appendEvents(p, b, "chat-1234", 0, []string{"second"}, [][]byte{[]byte("two")}); !errors.Is(err, store.ErrSeqConflict) {
 			t.Fatalf("lost chat CAS: %v", err)
 		}
 		if n := dataObjects(graph); n != 1 {
@@ -96,11 +96,11 @@ func TestConflictingWritesRemoveUnpublishedObjects(t *testing.T) {
 	})
 	t.Run("compact", func(t *testing.T) {
 		p, graph := newTestProvider(t)
-		if _, err := p.AppendEvents(testSession(), "chat-1234", 0, []string{"e1", "e2", "e3"}, [][]byte{[]byte("1"), []byte("2"), []byte("3")}); err != nil {
+		if _, err := appendEvents(p, testSession(), "chat-1234", 0, []string{"e1", "e2", "e3"}, [][]byte{[]byte("1"), []byte("2"), []byte("3")}); err != nil {
 			t.Fatal(err)
 		}
 		stale := loaded(t, p)
-		if _, err := p.AppendEvents(testSession(), "chat-1234", 3, []string{"e4"}, [][]byte{[]byte("4")}); err != nil {
+		if _, err := appendEvents(p, testSession(), "chat-1234", 3, []string{"e4"}, [][]byte{[]byte("4")}); err != nil {
 			t.Fatal(err)
 		}
 		if err := p.CompactChat(stale, "chat-1234", 2); !errors.Is(err, store.ErrSeqConflict) {
@@ -117,7 +117,7 @@ func TestConcurrentlyRemovedDataReturnsConflict(t *testing.T) {
 	if _, err := p.PutObject(testSession(), store.FileObject, "file-1234", strings.NewReader("old"), ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.AppendEvents(testSession(), "chat-1234", 0, []string{"e1"}, [][]byte{[]byte("one")}); err != nil {
+	if _, err := appendEvents(p, testSession(), "chat-1234", 0, []string{"e1"}, [][]byte{[]byte("one")}); err != nil {
 		t.Fatal(err)
 	}
 	stale := loaded(t, p)
@@ -140,7 +140,7 @@ func TestLostDataStillReferencedIsNotFound(t *testing.T) {
 	if _, err := p.PutObject(testSession(), store.FileObject, "file-1234", strings.NewReader("data"), ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.AppendEvents(testSession(), "chat-1234", 0, []string{"e1"}, [][]byte{[]byte("one")}); err != nil {
+	if _, err := appendEvents(p, testSession(), "chat-1234", 0, []string{"e1"}, [][]byte{[]byte("one")}); err != nil {
 		t.Fatal(err)
 	}
 	for _, files := range graph.Folders {
@@ -169,7 +169,7 @@ func TestRecentDedupWindowIsBounded(t *testing.T) {
 			ids[i] = fmt.Sprintf("event-%d-%d", batch, i)
 			frames[i] = []byte("frame")
 		}
-		res, err := p.AppendEvents(testSession(), "chat-1234", head, ids, frames)
+		res, err := appendEvents(p, testSession(), "chat-1234", head, ids, frames)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -187,7 +187,7 @@ func TestRecentDedupWindowIsBounded(t *testing.T) {
 	for i := range frames {
 		frames[i] = []byte("frame")
 	}
-	res, err := p.AppendEvents(testSession(), "chat-1234", head, last, frames)
+	res, err := appendEvents(p, testSession(), "chat-1234", head, last, frames)
 	if err != nil || res.NewSeq != head || len(res.Deduped) != len(last) {
 		t.Fatalf("retried batch not deduped: %+v %v", res, err)
 	}

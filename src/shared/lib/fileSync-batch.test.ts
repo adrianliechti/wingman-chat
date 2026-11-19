@@ -3,6 +3,7 @@ import { FileSync, type FileSyncActivity } from "./fileSync";
 import { decryptFile } from "./crypto";
 import { readJson, readText, writeBlob, writeText } from "./opfs-core";
 import * as api from "./storeClient";
+import { BackupBusyError } from "./backupBusy";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
 import { generateStoreKey } from "./test-support/storeKey";
 
@@ -62,6 +63,20 @@ async function start(): Promise<FileSync> {
 let key: Awaited<ReturnType<typeof generateStoreKey>>;
 beforeEach(async () => {
   key = await generateStoreKey();
+});
+
+it("retries a busy batch as a batch instead of uploading files one by one", async () => {
+  const paths = ["agents/one.md", "agents/two.md"];
+  for (const path of paths) await writeText(path, `contents of ${path}`);
+  vi.mocked(api.putFiles).mockRejectedValueOnce(new BackupBusyError("Backup uploads are busy.", 20));
+
+  await (await start()).fullSync();
+  expect(api.putFile).not.toHaveBeenCalled();
+  expect(activity).toMatchObject({ lastError: null, pendingCount: 2 });
+
+  await vi.waitFor(() => expect(remote.size).toBe(2));
+  expect(api.putFiles).toHaveBeenCalledTimes(2);
+  expect(api.putFile).not.toHaveBeenCalled();
 });
 
 it("uploads an initial backup in batches and restores it intact", async () => {

@@ -3,6 +3,7 @@ import { FileSync, type FileSyncActivity } from "./fileSync";
 import { decryptFile, encryptFile, generateDEK } from "./crypto";
 import { deleteFile, readBlob, readJson, readText, writeBlob, writeText } from "./opfs-core";
 import * as api from "./storeClient";
+import { BackupBusyError } from "./backupBusy";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
 import { generateStoreKey } from "./test-support/storeKey";
 
@@ -107,6 +108,21 @@ it.each([
   await sync.fullSync();
   expect(new Uint8Array(await (await readBlob(path))!.arrayBuffer())).toEqual(bytes);
   expect(api.putFile).toHaveBeenCalledTimes(1);
+});
+
+it("keeps a file pending without an error while the backend is busy, then retries", async () => {
+  const path = "agents/busy.md";
+  await writeText(path, "contents");
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: await generateStoreKey() });
+  sync.subscribeActivity((value) => (activity = value));
+  vi.mocked(api.putFile).mockRejectedValueOnce(new BackupBusyError("Backup uploads are busy.", 20));
+
+  await sync.fullSync();
+  expect(activity).toMatchObject({ lastError: null, pendingCount: 1 });
+  expect(remote.size).toBe(0);
+
+  await vi.waitFor(() => expect(remote.size).toBe(1));
+  await vi.waitFor(() => expect(activity).toMatchObject({ lastError: null, pendingCount: 0 }));
 });
 
 it("retries a restore after local storage fills without marking the file as restored", async () => {

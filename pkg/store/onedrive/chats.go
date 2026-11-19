@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"slices"
 	"sort"
 	"time"
@@ -39,17 +40,10 @@ func (p *Provider) ListChats(ctx context.Context) ([]store.ChatMeta, error) {
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out, nil
 }
-func (p *Provider) AppendEvents(ctx context.Context, chatID string, expectedSeq int64, eventIDs []string, frames [][]byte) (store.AppendResult, error) {
+
+func (p *Provider) AppendEventStream(ctx context.Context, chatID string, expectedSeq int64, events iter.Seq2[store.EventFrame, error]) (store.AppendResult, error) {
 	if err := validateID(chatID); err != nil {
 		return store.AppendResult{}, err
-	}
-	if len(eventIDs) != len(frames) {
-		return store.AppendResult{}, errors.New("OneDrive backup: event/frame count mismatch")
-	}
-	for _, frame := range frames {
-		if len(frame) > store.MaxFrameBytes {
-			return store.AppendResult{}, store.ErrFrameTooLarge
-		}
 	}
 	state, err := p.load(ctx)
 	if err != nil {
@@ -64,31 +58,42 @@ func (p *Provider) AppendEvents(ctx context.Context, chatID string, expectedSeq 
 	for _, id := range ch.Recent {
 		seen[id] = true
 	}
-	var buffer bytes.Buffer
-	encoder := json.NewEncoder(&buffer)
 	first := ch.Head + 1
-	for i, id := range eventIDs {
-		hash := digest([]byte(id))[:32]
-		if seen[hash] {
-			result.Deduped = append(result.Deduped, id)
-			continue
+	spooled, err := p.writeSpool(func(w io.Writer) error {
+		encoder := json.NewEncoder(w)
+		for event, err := range events {
+			if err != nil {
+				return err
+			}
+			if len(event.Frame) > store.MaxFrameBytes {
+				return store.ErrFrameTooLarge
+			}
+			hash := digest([]byte(event.ID))[:32]
+			if seen[hash] {
+				result.Deduped = append(result.Deduped, event.ID)
+				continue
+			}
+			seen[hash] = true
+			ch.Head++
+			if err := encoder.Encode(eventLine{Seq: ch.Head, ID: event.ID, Frame: event.Frame}); err != nil {
+				return err
+			}
+			ch.Recent = append(ch.Recent, hash)
 		}
-		seen[hash] = true
-		ch.Head++
-		if err := encoder.Encode(eventLine{Seq: ch.Head, ID: id, Frame: string(frames[i])}); err != nil {
-			return result, err
-		}
-		ch.Recent = append(ch.Recent, hash)
+		return nil
+	})
+	if err != nil {
+		return store.AppendResult{}, err
 	}
-	if buffer.Len() == 0 {
+	defer spooled.close()
+	if spooled.size == 0 {
 		return result, nil
 	}
 	if len(ch.Recent) > maxRecent {
 		ch.Recent = slices.Clone(ch.Recent[len(ch.Recent)-maxRecent:])
 	}
-	part := segment{object: object{Name: newObject(), Updated: time.Now().UTC()}, First: first, Last: ch.Head}
-	part.ETag, part.Size, err = p.upload(ctx, part.Name, &buffer)
-	if err != nil {
+	part := segment{object: object{Name: newObject(), ETag: spooled.etag, Size: spooled.size, Updated: time.Now().UTC()}, First: first, Last: ch.Head}
+	if err := p.send(ctx, part.Name, spooled); err != nil {
 		return result, err
 	}
 	ch.Segments = append(ch.Segments, part)

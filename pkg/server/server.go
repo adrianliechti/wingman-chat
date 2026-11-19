@@ -37,7 +37,7 @@ func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.
 		panic(fmt.Errorf("store: %w", err))
 	}
 	if provider != nil {
-		storesrv.New(provider, middleware).Attach(mux, prefix)
+		storesrv.New(provider, middleware).LimitUploads(cfg.Backup.Uploads).Attach(mux, prefix)
 	}
 
 	if info, err := os.Stat(skillsDir); err == nil && info.IsDir() {

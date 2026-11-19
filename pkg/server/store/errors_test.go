@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,7 +89,12 @@ func (drainingStore) PutObject(_ context.Context, _ store.ObjectKind, _ string, 
 	_, err := io.Copy(io.Discard, r)
 	return "etag", err
 }
-func (drainingStore) AppendEvents(context.Context, string, int64, []string, [][]byte) (store.AppendResult, error) {
+func (drainingStore) AppendEventStream(_ context.Context, _ string, _ int64, events iter.Seq2[store.EventFrame, error]) (store.AppendResult, error) {
+	for _, err := range events {
+		if err != nil {
+			return store.AppendResult{}, err
+		}
+	}
 	return store.AppendResult{NewSeq: 1}, nil
 }
 

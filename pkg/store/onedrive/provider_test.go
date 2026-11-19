@@ -18,12 +18,23 @@ import (
 	"github.com/adrianliechti/wingman-chat/pkg/store/onedrive/onedrivetest"
 )
 
+func appendEvents(p *Provider, ctx context.Context, chatID string, expectedSeq int64, ids []string, frames [][]byte) (store.AppendResult, error) {
+	return p.AppendEventStream(ctx, chatID, expectedSeq, func(yield func(store.EventFrame, error) bool) {
+		for i, id := range ids {
+			if !yield(store.EventFrame{ID: id, Frame: string(frames[i])}, nil) {
+				return
+			}
+		}
+	})
+}
+
 func newTestProvider(t *testing.T) (*Provider, *onedrivetest.Graph) {
 	t.Helper()
 	p := New()
 	graph := &onedrivetest.Graph{Folders: map[string]map[string][]byte{}}
 	p.client = &http.Client{Transport: graph}
 	p.tempDir = t.TempDir()
+	p.sweepInterval = 0
 	return p, graph
 }
 
@@ -150,16 +161,16 @@ func TestKeystoreKeepsIdentity(t *testing.T) {
 func TestChatAppendReplayCompactionAndIsolation(t *testing.T) {
 	p, _ := newTestProvider(t)
 	withSession(func(ctx context.Context) {
-		result, err := p.AppendEvents(ctx, "chat-1234", 0, []string{"first", "second", "second"}, [][]byte{[]byte("a"), []byte("b"), []byte("b")})
+		result, err := appendEvents(p, ctx, "chat-1234", 0, []string{"first", "second", "second"}, [][]byte{[]byte("a"), []byte("b"), []byte("b")})
 		if err != nil || result.NewSeq != 2 || len(result.Deduped) != 1 {
 			t.Fatalf("append: %+v %v", result, err)
 		}
 	})
 	withSession(func(ctx context.Context) {
-		if _, err := p.AppendEvents(ctx, "chat-1234", 0, []string{"third"}, [][]byte{[]byte("c")}); !errors.Is(err, store.ErrSeqConflict) {
+		if _, err := appendEvents(p, ctx, "chat-1234", 0, []string{"third"}, [][]byte{[]byte("c")}); !errors.Is(err, store.ErrSeqConflict) {
 			t.Fatalf("sequence: %v", err)
 		}
-		result, err := p.AppendEvents(ctx, "chat-1234", 2, []string{"second", "third"}, [][]byte{[]byte("b"), []byte("c")})
+		result, err := appendEvents(p, ctx, "chat-1234", 2, []string{"second", "third"}, [][]byte{[]byte("b"), []byte("c")})
 		if err != nil || result.NewSeq != 3 || len(result.Deduped) != 1 {
 			t.Fatalf("dedup: %+v %v", result, err)
 		}
@@ -178,7 +189,7 @@ func TestChatAppendReplayCompactionAndIsolation(t *testing.T) {
 		if bytes.Contains(data, []byte(`"seq":1`)) || bytes.Count(data, []byte("\n")) != 2 {
 			t.Fatalf("compacted: %s", data)
 		}
-		result, err := p.AppendEvents(ctx, "chat-1234", 3, []string{"first"}, [][]byte{[]byte("a")})
+		result, err := appendEvents(p, ctx, "chat-1234", 3, []string{"first"}, [][]byte{[]byte("a")})
 		if err != nil || result.NewSeq != 3 || len(result.Deduped) != 1 {
 			t.Fatalf("compacted dedup: %+v %v", result, err)
 		}
@@ -212,7 +223,7 @@ func TestFailedCommitKeepsPreviousFileAndChatHead(t *testing.T) {
 		if _, err := p.PutObject(ctx, store.FileObject, "file-1234", strings.NewReader("old"), "*"); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := p.AppendEvents(ctx, "chat-1234", 0, []string{"first"}, [][]byte{[]byte("a")}); err != nil {
+		if _, err := appendEvents(p, ctx, "chat-1234", 0, []string{"first"}, [][]byte{[]byte("a")}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -223,7 +234,7 @@ func TestFailedCommitKeepsPreviousFileAndChatHead(t *testing.T) {
 		}
 	})
 	withSession(func(ctx context.Context) {
-		if _, err := p.AppendEvents(ctx, "chat-1234", 1, []string{"second"}, [][]byte{[]byte("b")}); err == nil {
+		if _, err := appendEvents(p, ctx, "chat-1234", 1, []string{"second"}, [][]byte{[]byte("b")}); err == nil {
 			t.Fatal("failed head accepted")
 		}
 	})
@@ -237,7 +248,7 @@ func TestFailedCommitKeepsPreviousFileAndChatHead(t *testing.T) {
 		if err != nil || len(chats) != 1 || chats[0].HeadSeq != 1 {
 			t.Fatalf("uncommitted head: %+v %v", chats, err)
 		}
-		result, err := p.AppendEvents(ctx, "chat-1234", 1, []string{"second"}, [][]byte{[]byte("b")})
+		result, err := appendEvents(p, ctx, "chat-1234", 1, []string{"second"}, [][]byte{[]byte("b")})
 		if err != nil || result.NewSeq != 2 || len(result.Deduped) != 0 {
 			t.Fatalf("retry: %+v %v", result, err)
 		}
@@ -284,7 +295,8 @@ func TestTokenAndUploadURLValidation(t *testing.T) {
 }
 
 func TestBackupHTTPAPI(t *testing.T) {
-	p, _ := newTestProvider(t)
+	p, graph := newTestProvider(t)
+	p.EnableDirectUploads(bytes.Repeat([]byte{1}, 32))
 	mux := http.NewServeMux()
 	storesrv.New(p, func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -316,6 +328,21 @@ func TestBackupHTTPAPI(t *testing.T) {
 		"kdf": map[string]any{"name": "argon2id", "salt": encode(16), "m": 65536, "t": 3, "p": 1},
 	})
 	call("PUT", "keystore", string(key), 204)
+	const blobPath = "blobs/direct-blob"
+	payload := bytes.Repeat([]byte{0x44}, uploadChunk+1)
+	start := call("POST", blobPath+"/upload-session", fmt.Sprintf(`{"size":%d}`, len(payload)), http.StatusOK)
+	var direct store.UploadSession
+	if err := json.Unmarshal(start.Body.Bytes(), &direct); err != nil || start.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("invalid or cacheable upload session", err)
+	}
+	complete, _ := json.Marshal(map[string]string{
+		"ticket": direct.Ticket, "sha256": digest(payload), "quickXor": onedrivetest.QuickXor(payload),
+	})
+	call("POST", blobPath+"/upload-complete", string(complete), http.StatusTooEarly)
+	transferTestObject(t, graph, direct.URL, payload)
+	call("HEAD", blobPath, "", http.StatusNotFound)
+	call("POST", blobPath+"/upload-complete", string(complete), http.StatusNoContent)
+	call("HEAD", blobPath, "", http.StatusOK)
 	call("POST", "chats/chat-1234/events", `{"id":"event-1234","frame":"ciphertext"}`, 200)
 	log := call("GET", "chats/chat-1234/events?fromSeq=0", "", 200)
 	var line struct {
@@ -368,7 +395,7 @@ func TestHTTPRestoreRejectsInterruptedSegmentDownload(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i := int64(0); i < 2; i++ {
-			if _, err := p.AppendEvents(ctx, "chat-1234", i, []string{fmt.Sprintf("event-%d", i)}, [][]byte{[]byte("ciphertext")}); err != nil {
+			if _, err := appendEvents(p, ctx, "chat-1234", i, []string{fmt.Sprintf("event-%d", i)}, [][]byte{[]byte("ciphertext")}); err != nil {
 				t.Fatal(err)
 			}
 		}

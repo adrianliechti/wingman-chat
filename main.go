@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/adrianliechti/wingman-chat/pkg/config"
 	"github.com/adrianliechti/wingman-chat/pkg/server"
@@ -33,5 +34,13 @@ func main() {
 	}
 
 	handler := server.New(cfg, prefix, url, token, dist, skillsDir)
-	http.ListenAndServe(":"+port, handler)
+	// No ReadTimeout: backup uploads set their own body deadline, and
+	// streaming responses must not be cut off.
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
+	srv.ListenAndServe()
 }

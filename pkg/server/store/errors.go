@@ -20,8 +20,12 @@ func writeStoreError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &tooLarge), errors.Is(err, store.ErrFrameTooLarge):
 		status = http.StatusRequestEntityTooLarge
-	case errors.Is(err, store.ErrInvalidID):
+	case errors.Is(err, store.ErrInvalidID), errors.Is(err, store.ErrInvalidUpload):
 		status = http.StatusBadRequest
+	case errors.Is(err, store.ErrDirectUnavailable):
+		status = http.StatusNotImplemented
+	case errors.Is(err, store.ErrUploadIncomplete):
+		status = http.StatusTooEarly
 	case errors.Is(err, store.ErrNotFound):
 		status = http.StatusNotFound
 	case errors.Is(err, store.ErrBackupConflict), errors.Is(err, store.ErrSeqConflict):

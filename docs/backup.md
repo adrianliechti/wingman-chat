@@ -38,14 +38,15 @@ Alternatively, configure `backup.yaml` using the existing OneDrive connection:
 ```yaml
 provider: onedrive
 drive: personal # optional
+uploads: 4 # optional: concurrent uploads per backend pod
 ```
 
 The providers are `local` (ZIP files) and `onedrive` (encrypted OneDrive
 storage). The backend exposes the choice as `backup: { provider: "onedrive" }` in
 `/config.json`; `onedrive` enables online backup controls, while `local` keeps
 the ZIP backup controls. Unknown providers or missing or ambiguous connections
-fail startup. `BACKUP_PROVIDER` and `BACKUP_DRIVE` take precedence over
-`backup.yaml`. Restart the backend after changing configuration.
+fail startup. `BACKUP_PROVIDER`, `BACKUP_DRIVE`, and `BACKUP_UPLOADS` take
+precedence over `backup.yaml`. Restart the backend after changing configuration.
 
 Switching providers or OneDrive connections selects a separate backup; it does
 not migrate or delete the old one. Each browser records which backup its local
@@ -109,15 +110,53 @@ upload together in batches of up to 50 files or 16 MiB; the backend uploads a
 batch's objects in parallel and publishes them with one index commit. A batch
 is all-or-nothing: if any file's precondition fails, nothing is published and
 the browser retries those files one at a time. An index publishes committed versions only after their objects
-are uploaded. Failed writes remain pending in the browser. File and blob uploads use temporary
-encrypted files on the chat backend, removed when the request finishes, to bound
-memory. Chat appends encode one incoming batch in memory before uploading it. The backend
-rejects file and blob bodies over 257 MiB and append and batch bodies over 64 MiB with 413;
-the browser splits large chat uploads into several appends below that cap. Automatic
+are uploaded. Failed writes remain pending in the browser. Each backend pod handles up to
+four chat, file, or blob upload requests at a time (configurable with `uploads` or
+`BACKUP_UPLOADS`), and at most two per account. Additional
+requests wait before the backend loads the index or reads their bodies; after 10 seconds
+they fail with 503 and `Retry-After`, and the browser retries them. A slot is held for at
+most 10 minutes while the backend reads the request body. File and blob uploads stream
+to temporary encrypted files, and chat appends validate and write one frame at a time to a
+temporary file. The backend rejects file and blob bodies over 257 MiB and append and batch
+bodies over 64 MiB with 413.
+The browser splits large chat uploads into several appends below that cap. Automatic
 chat compaction only publishes snapshots that fit in one append request; larger
-chats retain their complete event history. Files larger than 10 MiB use upload sessions with sequential 10 MiB
-fragments. Throttled requests retry with bounded backoff; interrupted operations
-retry through the existing sync loop. Sessions are not persisted across requests.
+chats retain their complete event history. Objects larger than 10 MiB use upload sessions with
+sequential 10 MiB fragments streamed from the temporary file. Throttled requests retry with
+bounded backoff. Interrupted operations retry through the existing sync loop. Sessions are
+not persisted across requests.
+
+### Direct uploads for large objects
+
+To pilot direct uploads, configure `BACKUP_DIRECT_UPLOAD_KEY` on every replica
+with the same base64-encoded secret of at least 32 random bytes. Omit the
+variable to disable the feature. Test from the deployed Wingman origin with
+the Microsoft account types in use. The OneDrive upload host must allow the
+browser's cross-origin requests with `Content-Range`.
+
+For chat attachments and individual workspace files larger than 10 MiB,
+Wingman creates a temporary OneDrive upload session. The browser sends the
+encrypted data to OneDrive in sequential fragments. The backend checks the
+finished object's size and QuickXorHash against OneDrive and publishes it in
+the index after checking the backup generation and workspace file version. The
+backend never sees the ciphertext, so the object's SHA-256 ETag is the value the
+browser reports. Grouped small-file uploads and chat event batches continue
+through the backend.
+
+When direct upload is disabled or the browser's first upload request is blocked,
+Wingman relays the file through its existing upload endpoint. If the final
+fragment or completion response is lost, the browser checks the session and
+retries completion. If the final fragment keeps failing, completion still
+runs and reports an unconfirmed upload if OneDrive never shows the object. The
+OneDrive upload session lasts at most 30 minutes, but the browser stops after
+its 10-minute transfer timeout.
+
+OneDrive expires incomplete sessions. Completion deletes a transferred object
+that can't be published because its size or checksum is wrong or the file
+changed. Other objects that never make it into the index, such as uploads whose
+ticket expired, are removed by a background sweep: when an account starts a
+direct upload, each replica checks that account at most once a day and deletes
+unreferenced objects older than 24 hours.
 
 OneDrive uses conditional index writes with Microsoft Graph ETags to coordinate
 requests across replicas. Unrelated resource

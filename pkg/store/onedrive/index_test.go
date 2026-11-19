@@ -99,10 +99,10 @@ func TestConcurrentResourceEditsConflict(t *testing.T) {
 		a, b := testSession(), testSession()
 		p.load(a)
 		p.load(b)
-		if _, err := p.AppendEvents(a, "chat-1234", 0, []string{"first"}, [][]byte{[]byte("one")}); err != nil {
+		if _, err := appendEvents(p, a, "chat-1234", 0, []string{"first"}, [][]byte{[]byte("one")}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := p.AppendEvents(b, "chat-1234", 0, []string{"second"}, [][]byte{[]byte("two")}); !errors.Is(err, store.ErrSeqConflict) {
+		if _, err := appendEvents(p, b, "chat-1234", 0, []string{"second"}, [][]byte{[]byte("two")}); !errors.Is(err, store.ErrSeqConflict) {
 			t.Fatalf("lost chat CAS: %v", err)
 		}
 		r, err := p.ReadEvents(testSession(), "chat-1234", 0)

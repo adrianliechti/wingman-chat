@@ -20,6 +20,7 @@ import { publishStorageChanges } from "./storageChanges";
  */
 
 import { areFileBackupsPaused, requireFileBackupReady, BackupPausedError } from "./chatBackupActivity";
+import { BackupBusyError } from "./backupBusy";
 import * as api from "./storeClient";
 import { type RootKey, decryptFile, encryptFile } from "./crypto";
 import {
@@ -288,9 +289,9 @@ export class FileSync {
     if (this.flushTimer) clearTimeout(this.flushTimer);
   }
 
-  private scheduleFlush(): void {
+  private scheduleFlush(delayMs = FLUSH_DEBOUNCE_MS): void {
     if (this.flushTimer) clearTimeout(this.flushTimer);
-    this.flushTimer = setTimeout(() => void this.flushDirty(), FLUSH_DEBOUNCE_MS);
+    this.flushTimer = setTimeout(() => void this.flushDirty(), delayMs);
   }
 
   /** Push every dirty path (uploads, deletions, conflict resolution). */
@@ -358,6 +359,10 @@ export class FileSync {
     } catch (err) {
       this.dirty.add(path);
       if (err instanceof BackupPausedError) return false;
+      if (err instanceof BackupBusyError) {
+        this.scheduleFlush(err.retryAfterMs);
+        return false;
+      }
       this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
       console.warn(`fileSync: flush failed for ${path}`, err);
       return err instanceof FileTooLargeError;
@@ -396,8 +401,9 @@ export class FileSync {
         })),
       );
     } catch (err) {
-      if (err instanceof BackupPausedError) {
+      if (err instanceof BackupPausedError || err instanceof BackupBusyError) {
         for (const item of items) this.dirty.add(item.path);
+        if (err instanceof BackupBusyError) this.scheduleFlush(err.retryAfterMs);
         return false;
       }
       if (err instanceof api.ServerError && (err.status === 404 || err.status === 405)) {

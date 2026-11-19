@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/adrianliechti/wingman-chat/pkg/config"
 	storesrv "github.com/adrianliechti/wingman-chat/pkg/server/store"
+	"github.com/adrianliechti/wingman-chat/pkg/store"
 	storeonedrive "github.com/adrianliechti/wingman-chat/pkg/store/onedrive"
 )
 
@@ -34,6 +37,33 @@ func TestDefaultBackupConfigurationNeedsNoDriveConnection(t *testing.T) {
 	}
 	if provider != nil || middleware != nil {
 		t.Fatal("default configuration enabled online backup")
+	}
+}
+
+func TestDirectUploadKeyValidation(t *testing.T) {
+	encode := func(n int) string { return base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, n)) }
+	for _, test := range []struct {
+		name, key string
+		valid     bool
+	}{
+		{"unset", "", true},
+		{"not base64", "not base64!", false},
+		{"too short", encode(31), false},
+		{"valid", encode(32), true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := &config.Config{
+				Drives: []config.Drive{{ID: "personal", Type: "onedrive"}},
+				Backup: &config.Backup{Provider: "onedrive", DirectUploadKey: test.key},
+			}
+			selected, _, err := backupProvider(cfg)
+			if (err == nil) != test.valid {
+				t.Fatalf("got error %v, want valid=%v", err, test.valid)
+			}
+			if err == nil && selected.(store.DirectUploader).DirectUploadsEnabled() != (test.key != "") {
+				t.Fatal("direct uploads enabled without a key, or disabled with one")
+			}
+		})
 	}
 }
 
