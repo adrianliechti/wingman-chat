@@ -26,6 +26,8 @@ func writeStoreError(w http.ResponseWriter, err error) {
 		status = http.StatusNotImplemented
 	case errors.Is(err, store.ErrUploadIncomplete):
 		status = http.StatusTooEarly
+	case errors.Is(err, store.ErrInvalidBackup):
+		status = http.StatusUnprocessableEntity
 	case errors.Is(err, store.ErrNotFound):
 		status = http.StatusNotFound
 	case errors.Is(err, store.ErrBackupConflict), errors.Is(err, store.ErrSeqConflict):

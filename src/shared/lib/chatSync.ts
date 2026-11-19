@@ -83,9 +83,78 @@ const withDeletionLock = <T>(userId: string, id: string, operation: () => Promis
   withPersistenceLock(`chat-deletion:${encodeURIComponent(userId)}:${encodeURIComponent(id)}`, operation);
 
 async function journalDeletion(userId: string, id: string, expectedSeq: number): Promise<void> {
-  await withDeletionLock(userId, id, () =>
-    writeJson(deletePath(userId, id), { id, token: crypto.randomUUID(), expectedSeq }),
-  );
+  await withDeletionLock(userId, id, async () => {
+    // A new deletion supersedes an earlier cancelled one; its files may go now.
+    await deleteFile(keepPath(userId, id));
+    await writeJson(deletePath(userId, id), { id, token: crypto.randomUUID(), expectedSeq });
+  });
+}
+
+// Chat workspace files ----------------------------------------------------
+//
+// Artifacts under chats/<id>/ sync through FileSync, which sees a removed chat
+// folder as a deletion of each file. Their fate follows the chat's: they are
+// deleted remotely only once the server confirms the chat deletion. When the
+// deletion is cancelled because another device saved newer work, or local
+// edits recreate a chat another device deleted, a marker tells FileSync to
+// restore or re-upload the files instead of deleting them.
+
+const keepDir = (userId: string) => `_sync/keep-files/u-${encodeURIComponent(userId)}`;
+const keepPath = (userId: string, id: string) => `${keepDir(userId)}/${encodeURIComponent(id)}.json`;
+
+/** "restore": bring back files removed with a cancelled deletion.
+ *  "reupload": upload files again for a chat recreated after a remote deletion. */
+export type WorkspaceKeep = { token: string; kind: "restore" | "reupload" };
+
+function keepMarker(id: string, kind: WorkspaceKeep["kind"]) {
+  return { id, kind, token: crypto.randomUUID() };
+}
+
+async function keepChatWorkspace(userId: string, id: string, kind: WorkspaceKeep["kind"]): Promise<void> {
+  await withDeletionLock(userId, id, () => writeJson(keepPath(userId, id), keepMarker(id, kind)));
+}
+
+function parseKeep(marker: { token?: unknown; kind?: unknown } | undefined): WorkspaceKeep | null {
+  if (typeof marker?.token !== "string" || (marker.kind !== "restore" && marker.kind !== "reupload")) return null;
+  return { token: marker.token, kind: marker.kind };
+}
+
+export interface ChatWorkspaceState {
+  /** A local deletion of the chat awaits the server's decision. */
+  deleting: boolean;
+  keep: WorkspaceKeep | null;
+  /** The chat has local edits that the backup has not confirmed yet. */
+  pendingEdit: boolean;
+}
+
+export async function chatWorkspaceState(userId: string, id: string): Promise<ChatWorkspaceState> {
+  const [deletion, keep, pendingEdit] = await Promise.all([
+    readJson<PendingDeletion>(deletePath(userId, id)),
+    readJson<{ token?: unknown; kind?: unknown }>(keepPath(userId, id)),
+    fileExists(targetPath(id)),
+  ]);
+  return { deleting: !!deletion, keep: parseKeep(keep), pendingEdit };
+}
+
+/** Keep markers by chat ID. */
+export async function keptChatWorkspaces(userId: string): Promise<Map<string, WorkspaceKeep>> {
+  const dir = keepDir(userId);
+  const kept = new Map<string, WorkspaceKeep>();
+  for (const file of await listFiles(dir)) {
+    if (!file.endsWith(".json")) continue;
+    const marker = await readJson<{ id?: unknown; token?: unknown; kind?: unknown }>(`${dir}/${file}`);
+    const keep = parseKeep(marker);
+    if (typeof marker?.id === "string" && keep) kept.set(marker.id, keep);
+  }
+  return kept;
+}
+
+/** Drop a keep marker once its files have been reconciled. */
+export async function releaseChatWorkspace(userId: string, id: string, token: string): Promise<void> {
+  await withDeletionLock(userId, id, async () => {
+    const path = keepPath(userId, id);
+    if ((await readJson<{ token?: string }>(path))?.token === token) await deleteFile(path);
+  });
 }
 
 async function pendingDeletions(userId: string): Promise<PendingDeletion[]> {
@@ -523,7 +592,10 @@ export class ChatSync {
     try {
       for (const del of deletes) {
         if (isChatBackupPaused(del.id)) continue;
-        if (await this.pushDelete(del)) {
+        const outcome = await this.pushDelete(del);
+        if (outcome) {
+          // Keep the chat's workspace files: the next pull restores the chat.
+          if (outcome === "cancelled") await keepChatWorkspace(this.userId, del.id, "restore");
           await acknowledgeDeletion(this.userId, del);
           this.deletions.delete(del.id);
           this.pendingTargets.delete(del.id);
@@ -678,18 +750,18 @@ export class ChatSync {
     if (head !== disk?.heads[chatId]) await saveChatState(this.state, chatId);
   }
 
-  private async pushDelete(del: PendingDeletion): Promise<boolean> {
+  private async pushDelete(del: PendingDeletion): Promise<"deleted" | "cancelled" | false> {
     try {
       requireChatBackupReady(del.id);
       await api.deleteChat(del.id, del.expectedSeq);
       // Content-addressed blobs can be shared by other chats or devices.
       // Keep them until account reset; deleting without a reference index loses data.
-      return true;
+      return "deleted";
     } catch (err) {
       if (err instanceof BackupPausedError) return false;
       // A newer edit wins over this deletion. Drop its journal so the next pull
       // restores the current server copy instead of suppressing it forever.
-      if (err instanceof api.ServerError && err.status === 412) return true;
+      if (err instanceof api.ServerError && err.status === 412) return "cancelled";
       this.setActivity({ lastError: errorMessage(err) });
       console.warn(`chatSync: server delete failed for ${del.id}`, err);
       return false;
@@ -838,6 +910,7 @@ export class ChatSync {
       for (const blobId of collectChatBlobIds(baseline)) {
         const blob = await getChatBlob(chatId, blobId);
         if (blob) await writeBlob(`chats/${id}/blobs/${blobId}.bin`, blob);
+        else await this.downloadBlob(id, blobId);
       }
       await writeLocalChatSnapshot(copy, true);
     }
@@ -1000,9 +1073,13 @@ export class ChatSync {
       await withChatTarget(chatId, async () => {
         const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
         if (target) {
+          // The pending edit recreates the chat; its workspace files go with it.
+          await writeJson(keepPath(this.userId, chatId), keepMarker(chatId, "reupload"));
           this.pendingTargets.set(chatId, normalizeStoredChat(target));
           await deleteFile(historyPath(chatId));
         } else {
+          // The chat is gone everywhere; an earlier marker must not revive its files.
+          await deleteFile(keepPath(this.userId, chatId));
           await deleteDirectory(`chats/${chatId}`);
           await removeIndexEntry("chats", chatId);
           await completeChatIndexRepair(chatId);
@@ -1115,11 +1192,18 @@ export class ChatSync {
   private async downloadMissingBlobs(chatId: string, stored: StoredChat): Promise<void> {
     for (const blobId of collectChatBlobIds(stored)) {
       if (await getChatBlob(chatId, blobId)) continue;
-      const cipher = await api.getBlob(blobId);
-      if (!cipher) throw new Error(`Attachment ${blobId} is missing from backup ${chatId}.`);
-      const plain = await decryptBlob(this.dek, cipher, this.accountId, blobId);
-      await writeBlob(`chats/${chatId}/blobs/${blobId}.bin`, new Blob([new Uint8Array(plain)]));
+      if (!(await this.downloadBlob(chatId, blobId))) {
+        throw new Error(`Attachment ${blobId} is missing from backup ${chatId}.`);
+      }
     }
+  }
+
+  private async downloadBlob(chatId: string, blobId: string): Promise<boolean> {
+    const cipher = await api.getBlob(blobId);
+    if (!cipher) return false;
+    const plain = await decryptBlob(this.dek, cipher, this.accountId, blobId);
+    await writeBlob(`chats/${chatId}/blobs/${blobId}.bin`, new Blob([new Uint8Array(plain)]));
+    return true;
   }
 }
 

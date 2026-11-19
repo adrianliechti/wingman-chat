@@ -91,7 +91,7 @@ func TestDirectUploadConflictsAndReset(t *testing.T) {
 		t.Fatalf("upload survived keystore change: %v", err)
 	}
 	beforeReset = start(etag)
-	if err := p.ResetUser(testSession()); err != nil {
+	if err := p.ResetUser(testSession(), store.ResetCondition{Unconditional: true}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.CompleteUpload(testSession(), store.FileObject, id, beforeReset.Ticket, hash, checksum); !errors.Is(err, store.ErrBackupConflict) {

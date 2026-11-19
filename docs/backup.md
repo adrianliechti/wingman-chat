@@ -191,14 +191,19 @@ Usage reports OneDrive's account-folder size, which may update with a delay.
 Old objects are reclaimed in the background after a successful replacement, so
 requests don't wait for the cleanup; cleanup failures and
 uncertain commits may leave unreferenced objects that still consume quota.
+Reset is conditional on the backup the user confirmed: the browser records the
+keystore ETag it saw (or that there was none, or that the index was unreadable)
+and sends it as `If-Match` / `If-None-Match: *` / `X-Confirm-Backup-Reset: unreadable`.
+The backend returns 412 when the backup changed since, and 428 without a
+condition. A browser whose reset response was lost retries on its next load; if
+another device reset or configured a new backup in between, the retry gets 412
+and only clears local sync tracking, keeping the new backup.
 Reset also works when the index contents are corrupt or unsupported. It atomically clears the index and its key material, retaining an empty index
-with a fresh generation to fence stale writers. It then deletes a snapshot of
-existing encrypted objects, including objects left by earlier failed commits.
-An upload already in progress can leave an unpublished object after reset; it
-cannot publish into the new backup. A browser whose reset response was lost
-retries the reset on its next load; if another device configured a new backup in
-between, that retry removes it too. Object cleanup is best-effort;
-a later reset can reclaim objects left behind. Concurrent deletion or reset can interrupt a download; restore reports the
+with a fresh generation to fence stale writers. After responding, it deletes a
+snapshot of existing encrypted objects in the background, including objects left
+by earlier failed commits. An upload already in progress can leave an unpublished
+object after reset; it cannot publish into the new backup. Object cleanup is
+best-effort; a later reset can reclaim objects left behind. Concurrent deletion or reset can interrupt a download; restore reports the
 failure and must be retried rather than accepting a partial backup. OneDrive's recycle
 bin and version-history policies still apply: a reset or PIN change cannot revoke
 historical copies already retained by OneDrive. Restoring backups uses Wingman's
@@ -282,8 +287,17 @@ adopts the backup, an edit that only adds to it uploads normally, and a divergen
 edit keeps this device's version while the other version is first backed up as a
 separate "(conflicted copy)" chat. Chats restored from a ZIP or left after a
 reset count as having an unknown origin. An open, idle chat follows newer changes
-from other devices. Ordinary file conflicts use modification times. Remote deletion removes
+from other devices. Ordinary file conflicts pick a winner by modification time;
+because those come from different devices' clocks, the losing version is kept
+next to the file as `name (conflicted copy <hash>).ext` and backed up too.
+Merged collection indexes stay marked as changed until uploaded. Remote deletion removes
 unchanged local copies, while pending local edits survive and can upload again.
+A chat's workspace files (artifacts, their state and revisions) follow the chat:
+they are deleted from the backup only once the chat deletion is confirmed and the
+chat is still deleted there. A cancelled deletion restores them, and local edits
+that recreate a chat another device deleted upload them again. Saving a chat
+keeps attachments the last backed-up version still references, and a conflicted
+copy downloads any attachment this device no longer has.
 Pending chat deletions use a separate per-chat local journal so simultaneous
 offline deletions in different tabs cannot overwrite each other.
 Chat deletions apply only to the server head this browser last confirmed. If

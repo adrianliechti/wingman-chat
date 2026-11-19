@@ -136,11 +136,28 @@ func (h *Handler) handlePutKeystore(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleResetBackup(w http.ResponseWriter, r *http.Request) {
 	// A non-simple header prevents cross-origin form submissions. Reset needs
 	// the signed-in account, not the lost PIN/passkey used for decryption.
-	if r.Header.Get("X-Confirm-Backup-Reset") != "true" {
+	var cond store.ResetCondition
+	switch r.Header.Get("X-Confirm-Backup-Reset") {
+	case "true":
+	case "unreadable":
+		cond.Unreadable = true
+	default:
 		http.Error(w, "Backup reset confirmation required", http.StatusBadRequest)
 		return
 	}
-	if err := h.store.ResetUser(r.Context()); err != nil {
+	// The confirmed backup must still be current: a delayed retry must not
+	// delete a backup configured after the user confirmed the reset.
+	if !cond.Unreadable {
+		switch cas := casFromRequest(r); cas {
+		case "":
+			http.Error(w, "If-Match or If-None-Match required", http.StatusPreconditionRequired)
+			return
+		case "*":
+		default:
+			cond.Keystore = cas
+		}
+	}
+	if err := h.store.ResetUser(r.Context(), cond); err != nil {
 		writeStoreError(w, err)
 		return
 	}

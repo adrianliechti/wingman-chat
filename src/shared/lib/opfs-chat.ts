@@ -312,10 +312,14 @@ export function collectChatBlobIds(chat: Pick<StoredChat, "messages">): string[]
 export async function deleteUnreferencedChatBlobs(
   chat: StoredChat,
   retainedBlobIds: readonly string[] = [],
+  /** Further references, read only when some blob would otherwise be deleted. */
+  moreRetained?: () => Promise<Iterable<string>>,
 ): Promise<void> {
   const referenced = new Set([...collectChatBlobIds(chat), ...retainedBlobIds]);
-  const stored = await listChatBlobs(chat.id);
-  await Promise.all(
-    stored.filter((blobId) => !referenced.has(blobId)).map((blobId) => deleteChatBlob(chat.id, blobId)),
-  );
+  let candidates = (await listChatBlobs(chat.id)).filter((blobId) => !referenced.has(blobId));
+  if (candidates.length && moreRetained) {
+    const more = new Set(await moreRetained());
+    candidates = candidates.filter((blobId) => !more.has(blobId));
+  }
+  await Promise.all(candidates.map((blobId) => deleteChatBlob(chat.id, blobId)));
 }

@@ -143,6 +143,8 @@ it("cancels a stale offline deletion and restores the other device's newer work"
   const fresh = await ChatSync.create({ userId: "user", accountId: "user", dek });
   await fresh.flushPending();
   expect(await readJson("_sync/deletes/u-user/chat.json")).toBeUndefined();
+  // The chat comes back, so its workspace files must be restored, not deleted.
+  expect(await readJson("_sync/keep-files/u-user/chat.json")).toMatchObject({ id: "chat" });
   const updated = { ...original, title: "other device's work", updated: new Date() };
   const second = await encryptEvent(
     dek,
@@ -182,6 +184,7 @@ it("recreates a deleted log above its tombstone and updates a device that missed
     vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 2, deleted: true, updated: "2026-01-03" }]);
     expect(await sync.pull()).toMatchObject([{ title: "offline work survives" }]);
     expect(await readJson("_sync/state.json")).toMatchObject({ tombstones: { chat: 2 }, heads: {} });
+    expect(await readJson("_sync/keep-files/u-user/chat.json")).toMatchObject({ id: "chat" });
   } finally {
     await finishChatBackupPause(release);
   }
@@ -1031,6 +1034,28 @@ describe("pending edits made without another device's newer events", () => {
     expect(copy?.customTitle).toBe("Untitled chat (conflicted copy)");
     expect(copy?.messages.map((m) => m.id)).toEqual(remote.messages.map((m) => m.id));
     expect((await readLocalChat("chat", false))?.messages.map((m) => m.id)).toEqual([hello.id, offline.id]);
+  });
+
+  it("downloads attachments a conflicted copy needs but this device no longer has", async () => {
+    const dek = await generateStoreKey();
+    await serve(dek, [v1()]);
+    await (await ChatSync.create({ userId: "user", accountId: "user", dek })).pull();
+    const remote = { ...v1(), messages: [hello, userMessage([mediaFromDataUrl("data:image/png;base64,YWJj")])] };
+    const [blobId] = collectChatBlobIds(await extractChatBlobs(remote));
+    await serve(dek, [v1(), remote]);
+    vi.mocked(api.getBlob).mockResolvedValue(await encryptBlob(dek, new TextEncoder().encode("abc"), "user", blobId));
+    await stashPendingTarget({ ...v1(), baseSeq: 1, messages: [hello, userMessage("A: offline")] });
+
+    const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
+    await sync.pull();
+    await opfs.deleteFile(`chats/chat/blobs/${blobId}.bin`);
+    await sync.flushPending();
+
+    const copyId = vi
+      .mocked(api.appendEvents)
+      .mock.calls.map(([id]) => id)
+      .find((id) => id.startsWith("conflict-"))!;
+    expect(await readText(`chats/${copyId}/blobs/${blobId}.bin`)).toBe("abc");
   });
 
   it("adopts a newer backup over an older copy left by a reset instead of truncating it", async () => {

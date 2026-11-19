@@ -22,8 +22,11 @@ import { publishStorageChanges } from "./storageChanges";
 import { areFileBackupsPaused, requireFileBackupReady, BackupPausedError } from "./chatBackupActivity";
 import { BackupBusyError } from "./backupBusy";
 import * as api from "./storeClient";
+import { chatWorkspaceState, keptChatWorkspaces, releaseChatWorkspace } from "./chatSync";
+import { localChatPath } from "./localChats";
 import { type RootKey, decryptFile, encryptFile } from "./crypto";
 import {
+  fileExists,
   getRoot,
   type IndexEntry,
   onOpfsMutation,
@@ -31,6 +34,7 @@ import {
   readFileMetadata,
   readJson,
   replaceFileIfUnchanged,
+  writeBlob,
   writeJson,
 } from "./opfs-core";
 
@@ -88,6 +92,11 @@ interface FileSyncState {
   entries: Record<string, FileEntry>; // path → last synced state
 }
 
+/** The chat whose workspace contains this path, if any. */
+function chatWorkspaceOf(path: string): string | undefined {
+  return CHAT_FILE_PREFIX.test(path) ? path.split("/")[1] : undefined;
+}
+
 function isExcluded(path: string): boolean {
   if (path === "_sync" || path.startsWith("_sync/")) return true;
   // The revision listing is derived from immutable revision files on restore.
@@ -136,6 +145,25 @@ function parseIndex(bytes: Uint8Array): IndexEntry[] | null {
   } catch {
     return null;
   }
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((byte, index) => byte === b[index]);
+}
+
+/**
+ * Sibling path that preserves the losing side of a file conflict. Named after
+ * its content, so retrying the same conflict reuses the copy.
+ */
+async function conflictedCopyPath(path: string, bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes));
+  const tag = Array.from(new Uint8Array(digest).slice(0, 4), (b) => b.toString(16).padStart(2, "0")).join("");
+  const slash = path.lastIndexOf("/");
+  const dir = path.slice(0, slash + 1);
+  const name = path.slice(slash + 1);
+  const dot = name.lastIndexOf(".");
+  const [base, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+  return `${dir}${base} (conflicted copy ${tag})${ext}`;
 }
 
 /** Scan the OPFS tree (minus excludes) into path → mtime. */
@@ -194,6 +222,7 @@ export class FileSync {
           if (state && state.userId !== this.userId)
             throw new Error("The local backup account changed. Reload before syncing.");
           this.state = state ?? { userId: this.userId, entries: {} };
+          this.liveChats.clear();
           for (const directory of this.removedDirectories) {
             for (const path of Object.keys(this.state.entries)) {
               if (path.startsWith(`${directory}/`)) this.dirty.add(path);
@@ -309,6 +338,12 @@ export class FileSync {
 
   private async flushDirtyUnlocked(): Promise<void> {
     if (areFileBackupsPaused()) return;
+    try {
+      await this.restoreCancelledDeletions();
+    } catch (err) {
+      if (err instanceof BackupBusyError) this.scheduleFlush(err.retryAfterMs);
+      return;
+    }
     const paths = Array.from(this.dirty);
     const progress = this.progress.begin("backup", paths.length);
     let batch: PreparedUpload[] = [];
@@ -410,11 +445,77 @@ export class FileSync {
     }
   }
 
+  /**
+   * Whether the backup holds a live (not deleted) copy of the chat. Callers
+   * check the chat's deletion journal first; the answer is cached per chat for
+   * the current sync operation, so it is fetched after that check.
+   */
+  private liveChats = new Map<string, Promise<boolean>>();
+  private chatLivesRemotely(chatId: string, fresh = false): Promise<boolean> {
+    let live = fresh ? undefined : this.liveChats.get(chatId);
+    if (!live) {
+      requireFileBackupReady();
+      live = api.listChats().then((chats) => chats.some((meta) => meta.id === chatId && !meta.deleted));
+      this.liveChats.set(chatId, live);
+      live.catch(() => this.liveChats.delete(chatId));
+    }
+    return live;
+  }
+
+  private async chatExistsLocally(chatId: string, pendingEdit: boolean): Promise<boolean> {
+    return pendingEdit || (await fileExists(localChatPath(chatId)));
+  }
+
+  /**
+   * How to treat a chat workspace file missing locally but still in the backup.
+   * Removing a chat folder deletes its files only once the chat itself is
+   * deleted in the backup. If that deletion is pending, wait; if the chat lives
+   * on in the backup (its deletion was cancelled), restore the file.
+   */
+  private async workspaceDeletion(path: string): Promise<"delete" | "defer" | "restore"> {
+    const chatId = chatWorkspaceOf(path);
+    if (chatId === undefined) return "delete";
+    const workspace = await chatWorkspaceState(this.userId, chatId);
+    if (workspace.deleting) return "defer";
+    // The chat still exists locally: a single file was deleted.
+    if (await this.chatExistsLocally(chatId, workspace.pendingEdit)) return "delete";
+    return (await this.chatLivesRemotely(chatId)) ? "restore" : "delete";
+  }
+
+  /**
+   * Restore files removed with a chat whose deletion the server cancelled. Runs
+   * before deletions are propagated: once the next pull restores the chat, a
+   * missing file would otherwise look like a single deleted file.
+   */
+  private async restoreCancelledDeletions(): Promise<void> {
+    for (const [chatId, keep] of await keptChatWorkspaces(this.userId)) {
+      if (keep.kind !== "restore") continue;
+      try {
+        const workspace = await chatWorkspaceState(this.userId, chatId);
+        if (workspace.deleting) continue; // a newer deletion clears the marker
+        if (await this.chatLivesRemotely(chatId)) {
+          const prefix = `chats/${chatId}/`;
+          for (const [path, entry] of Object.entries(this.state.entries)) {
+            if (!path.startsWith(prefix) || (await readFileMetadata(path))) continue;
+            await this.restoreWorkspaceFile(path, entry, this.versionForPath(path));
+          }
+          await this.saveState();
+        }
+        await releaseChatWorkspace(this.userId, chatId, keep.token);
+      } catch (err) {
+        if (err instanceof BackupPausedError || err instanceof BackupBusyError) throw err;
+        console.warn(`fileSync: couldn't restore files of chat ${chatId}`, err);
+      }
+    }
+  }
+
   /** A path deleted locally since its last sync; a batch propagates it. */
   private async prepareBatchDelete(path: string): Promise<PreparedDelete | undefined> {
     const entry = this.state.entries[path];
     if (!entry) return undefined;
     try {
+      // Deferred or restored chat workspace files sync individually.
+      if ((await this.workspaceDeletion(path)) !== "delete") return undefined;
       return (await readFileMetadata(path)) ? undefined : { path, entry };
     } catch {
       return undefined;
@@ -541,6 +642,8 @@ export class FileSync {
     this.applyFailures = 0;
     try {
       const versions = new Map(this.mutationVersion);
+      // Markers present now; this reconcile may release them afterwards.
+      const kept = await keptChatWorkspaces(this.userId);
       const [local, remote] = await Promise.all([scanLocalTree(), api.listFiles()]);
       const remoteById = new Map(remote.map((m) => [m.id, m]));
       const stateById = new Map(Object.entries(this.state.entries).map(([path, e]) => [e.id, { path, entry: e }]));
@@ -579,7 +682,11 @@ export class FileSync {
       for (const [path, entry] of Object.entries(this.state.entries)) {
         if (remoteById.has(entry.id)) continue;
         const localMtime = local.get(path);
-        if (localMtime !== undefined && localMtime === entry.mtime) {
+        if (localMtime !== undefined && (await this.recreatesWorkspace(path))) {
+          // Another device deleted the chat, but local edits recreate it:
+          // upload its files again rather than deleting them here.
+          this.dirty.add(path);
+        } else if (localMtime !== undefined && localMtime === entry.mtime) {
           // Unchanged locally → the other device's deletion wins.
           const version = this.versionForPath(path, versions);
           if (!(await this.replaceLocal(path, localMtime, undefined, version))) {
@@ -603,6 +710,22 @@ export class FileSync {
       await this.saveState();
       progress.finish(); // the upload below reports its own progress
       await this.flushDirtyUnlocked();
+
+      // A recreated workspace is settled once its files are uploaded and the
+      // chat lives in the backup again; deletions sent later by the device that
+      // deleted it then see the live chat and restore instead. A chat deleted
+      // again needs no marker either.
+      for (const [chatId, keep] of kept) {
+        if (keep.kind !== "reupload") continue;
+        const prefix = `chats/${chatId}/`;
+        if ([...this.dirty].some((path) => path.startsWith(prefix))) continue;
+        const workspace = await chatWorkspaceState(this.userId, chatId);
+        if (workspace.pendingEdit) continue;
+        const live = await this.chatLivesRemotely(chatId, true);
+        if (live || !(await this.chatExistsLocally(chatId, false))) {
+          await releaseChatWorkspace(this.userId, chatId, keep.token);
+        }
+      }
 
       if (this.applyFailures > 0) {
         throw new Error(
@@ -628,6 +751,17 @@ export class FileSync {
     if (!meta) {
       // Locally deleted. Propagate unless the file was never synced.
       if (entry) {
+        const decision = await this.workspaceDeletion(path);
+        if (decision === "defer") {
+          // Its chat's deletion may still be cancelled by newer work on another
+          // device. Keep the backup copy until the server decides.
+          this.dirty.add(path);
+          return;
+        }
+        if (decision === "restore") {
+          await this.restoreWorkspaceFile(path, entry, version);
+          return;
+        }
         requireFileBackupReady();
         try {
           await api.deleteFile(entry.id, { ifMatch: entry.etag });
@@ -691,14 +825,51 @@ export class FileSync {
         }
       }
 
+      // Modification times come from different devices' clocks, so the losing
+      // version is kept as a conflicted copy rather than discarded.
       if (header.mtime > decrypted.header.mtime) {
+        await this.keepConflictedCopy(path, decrypted.bytes, bytes);
         requireFileBackupReady();
         const etag = await api.putFile(id, cipher, { ifMatch: remote.etag });
         this.state.entries[path] = { id, etag, mtime: header.mtime };
       } else {
+        await this.keepConflictedCopy(path, bytes, decrypted.bytes);
         await this.writeLocal(decrypted.header.path, decrypted.bytes, id, remote.etag, meta.lastModified, version);
       }
     }
+  }
+
+  /** Whether a file another device deleted belongs to a chat this device recreates. */
+  private async recreatesWorkspace(path: string): Promise<boolean> {
+    const chatId = chatWorkspaceOf(path);
+    if (chatId === undefined) return false;
+    const workspace = await chatWorkspaceState(this.userId, chatId);
+    if (workspace.keep?.kind === "reupload") return true;
+    // Before the pull records a recreation, a pending edit to a chat deleted in
+    // the backup recreates it too. Edits to a live chat don't undo single deletions.
+    return workspace.pendingEdit && !(await this.chatLivesRemotely(chatId));
+  }
+
+  /** Save the losing side of a conflict next to the file; the copy syncs like any other. */
+  private async keepConflictedCopy(path: string, loser: Uint8Array, winner: Uint8Array): Promise<void> {
+    if (sameBytes(loser, winner) || isCollectionIndex(path) || !isSafePath(path)) return;
+    // Immutable revisions with the same path hold the same content.
+    if (/^chats\/[^/]+\/artifact-versions\//.test(path)) return;
+    const copy = await conflictedCopyPath(path, loser);
+    if (isExcluded(copy) || (await readFileMetadata(copy))) return;
+    await writeBlob(copy, new Blob([new Uint8Array(loser)]));
+  }
+
+  /** Restore a chat workspace file removed with a chat whose deletion was cancelled. */
+  private async restoreWorkspaceFile(path: string, entry: FileEntry, version: number): Promise<void> {
+    requireFileBackupReady();
+    const remote = await api.getFile(entry.id);
+    if (!remote) {
+      delete this.state.entries[path];
+      return;
+    }
+    const { header, bytes } = await decryptFile<FileHeader>(this.dek, remote.data, this.accountId, entry.id);
+    await this.writeLocal(header.path, bytes, entry.id, remote.etag, undefined, version);
   }
 
   /** Download one file by id and adopt it locally. */
@@ -728,6 +899,10 @@ export class FileSync {
               local.get(header.path),
               this.versionForPath(header.path, versions),
             );
+            // The merged bytes are not in the backup yet. Persist that, so a
+            // reload before the upload still sees the file as changed.
+            const written = this.state.entries[header.path];
+            if (written?.etag === remote.etag) written.mtime = -1;
             this.dirty.add(header.path);
             return;
           }
@@ -761,6 +936,12 @@ export class FileSync {
         }
       }
 
+      if (!this.state.entries[header.path]) {
+        // An untracked local file older than the backup's copy is replaced;
+        // keep its bytes in case the other device's clock ran ahead.
+        const existing = isSafePath(header.path) ? await readBlob(header.path) : undefined;
+        if (existing) await this.keepConflictedCopy(header.path, new Uint8Array(await existing.arrayBuffer()), bytes);
+      }
       await this.writeLocal(
         header.path,
         bytes,

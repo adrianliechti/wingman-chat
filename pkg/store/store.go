@@ -93,7 +93,8 @@ type Provider interface {
 	BackupSize(ctx context.Context) (int64, error)
 
 	// ResetUser removes backup data and keys, fencing concurrent stale writes.
-	ResetUser(ctx context.Context) error
+	// It returns ErrKeystoreConflict when the backup no longer matches cond.
+	ResetUser(ctx context.Context, cond ResetCondition) error
 
 	// GetKeystore returns the raw keystore bytes and an opaque etag.
 	// Returns ErrNotFound if no keystore exists yet for the user.
@@ -162,8 +163,20 @@ type Provider interface {
 	ListFiles(ctx context.Context) ([]FileMeta, error)
 }
 
+// ResetCondition names the backup the user confirmed deleting, so a delayed
+// or retried reset cannot remove a backup configured after the confirmation.
+type ResetCondition struct {
+	// Keystore is the confirmed keystore ETag; empty means no keystore existed.
+	Keystore string
+	// Unreadable confirms deleting an index that cannot be decoded.
+	Unreadable bool
+	// Unconditional skips the check. Not reachable over HTTP.
+	Unconditional bool
+}
+
 var (
 	ErrBackupConflict    = errors.New("store: backup changed; retry with fresh state")
+	ErrInvalidBackup     = errors.New("store: backup index is unreadable")
 	ErrNotFound          = errors.New("store: not found")
 	ErrSeqConflict       = errors.New("store: seq conflict")
 	ErrKeystoreConflict  = errors.New("store: keystore etag conflict")

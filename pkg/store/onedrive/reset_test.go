@@ -18,9 +18,11 @@ func TestResetRecoversCorruptIndex(t *testing.T) {
 				t.Fatal(err)
 			}
 			graph.Folders["backup"][indexName] = []byte(content)
-			if err := p.ResetUser(testSession()); err != nil {
+			graph.Revisions["backup!"+indexName]++
+			if err := p.ResetUser(testSession(), store.ResetCondition{Unreadable: true}); err != nil {
 				t.Fatalf("cannot reset corrupt backup: %v", err)
 			}
+			p.cleanup.Wait()
 			files, err := p.ListFiles(testSession())
 			if err != nil || len(files) != 0 {
 				t.Fatalf("backup not empty: %v %v", files, err)
@@ -38,13 +40,14 @@ func TestCorruptIndexResetDoesNotDeleteConcurrentReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	graph.Folders["backup"][indexName] = []byte("{broken")
+	graph.Revisions["backup!"+indexName]++
 	writer := New()
 	writer.client = &http.Client{Transport: graph}
 	replaced := false
 	p.client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if !replaced && strings.HasSuffix(r.URL.Path, "/children") && r.Method == "GET" {
 			replaced = true
-			if err := writer.ResetUser(testSession()); err != nil {
+			if err := writer.ResetUser(testSession(), store.ResetCondition{Unconditional: true}); err != nil {
 				return nil, err
 			}
 			if _, err := writer.PutObject(testSession(), store.FileObject, "new-file1", strings.NewReader("new"), "*"); err != nil {
@@ -53,7 +56,7 @@ func TestCorruptIndexResetDoesNotDeleteConcurrentReplacement(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession()); !errors.Is(err, store.ErrBackupConflict) {
+	if err := p.ResetUser(testSession(), store.ResetCondition{Unreadable: true}); !errors.Is(err, store.ErrBackupConflict) {
 		t.Fatalf("stale reset succeeded: %v", err)
 	}
 	reader, _, err := writer.GetObject(testSession(), store.FileObject, "new-file1")
@@ -73,7 +76,7 @@ func TestResetSucceedsWhenOldObjectCleanupFails(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession()); err != nil {
+	if err := p.ResetUser(testSession(), store.ResetCondition{Unconditional: true}); err != nil {
 		t.Fatal(err)
 	}
 	files, err := p.ListFiles(testSession())

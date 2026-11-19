@@ -127,7 +127,7 @@ func TestBackupRoundTripAndConflicts(t *testing.T) {
 		}
 	})
 	ctx := WithToken(context.Background(), "graph-token")
-	if err := p.ResetUser(ctx); err != nil {
+	if err := p.ResetUser(ctx, store.ResetCondition{Unconditional: true}); err != nil {
 		t.Fatal(err)
 	}
 	withSession(func(ctx context.Context) {
@@ -312,6 +312,7 @@ func TestBackupHTTPAPI(t *testing.T) {
 			next.ServeHTTP(w, r.WithContext(WithToken(r.Context(), "graph-token")))
 		})
 	}).Attach(mux, "/api")
+	keyETag := ""
 	call := func(method, path, body string, expected int) *httptest.ResponseRecorder {
 		t.Helper()
 		r := httptest.NewRequest(method, "/api/v1/"+path, strings.NewReader(body))
@@ -321,6 +322,9 @@ func TestBackupHTTPAPI(t *testing.T) {
 		r.Header.Set("X-Confirm-Backup-Reset", "true")
 		if path == "keystore" {
 			r.Header.Set("If-None-Match", "*")
+		}
+		if path == "backup" {
+			r.Header.Set("If-Match", keyETag)
 		}
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
@@ -336,7 +340,7 @@ func TestBackupHTTPAPI(t *testing.T) {
 		"accountId": "0123456789abcdef0123456789abcdef", "generation": "test-generation", "pinProtected": true, "wrappedDek": encode(48), "nonce": encode(12),
 		"kdf": map[string]any{"name": "argon2id", "salt": encode(16), "m": 65536, "t": 3, "p": 1},
 	})
-	call("PUT", "keystore", string(key), 204)
+	keyETag = call("PUT", "keystore", string(key), 204).Header().Get("ETag")
 	const blobPath = "blobs/direct-blob"
 	payload := bytes.Repeat([]byte{0x44}, uploadChunk+1)
 	start := call("POST", blobPath+"/upload-session", fmt.Sprintf(`{"size":%d}`, len(payload)), http.StatusOK)

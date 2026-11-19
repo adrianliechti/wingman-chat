@@ -86,20 +86,33 @@ function conditionalHeaders(opts: ConditionalOptions, base: Record<string, strin
   return base;
 }
 
-/** Only the signed-in account is needed; restore secrets may have been lost. */
-export async function resetBackup(): Promise<void> {
-  const res = await fetch(`${PREFIX}/backup`, {
-    method: "DELETE",
-    headers: { "X-Confirm-Backup-Reset": "true" },
-  });
+/** The backup the user confirmed deleting: its keystore ETag, none, or an unreadable index. */
+export type ResetTarget = { keystore: string | null } | { unreadable: true };
+
+/**
+ * Only the signed-in account is needed; restore secrets may have been lost.
+ * Returns false when the confirmed backup no longer exists, e.g. because it was
+ * already reset or another device configured a new one, which must be kept.
+ */
+export async function resetBackup(target: ResetTarget): Promise<boolean> {
+  const headers: Record<string, string> = {};
+  if ("unreadable" in target) headers["X-Confirm-Backup-Reset"] = "unreadable";
+  else {
+    headers["X-Confirm-Backup-Reset"] = "true";
+    if (target.keystore) headers["If-Match"] = `"${target.keystore}"`;
+    else headers["If-None-Match"] = "*";
+  }
+  const res = await fetch(`${PREFIX}/backup`, { method: "DELETE", headers });
+  if (res.status === 412) return false;
   await ensureOk(res);
+  return true;
 }
 
 interface ServerUser {
   id: string;
 }
 
-interface ServerChatMeta {
+export interface ServerChatMeta {
   id: string;
   headSeq: number;
   updated: string; // RFC 3339

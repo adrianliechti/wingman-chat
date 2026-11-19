@@ -23,7 +23,7 @@ func (conflictingStore) CompactChat(context.Context, string, int64) error {
 func (conflictingStore) DeleteObject(context.Context, store.ObjectKind, string, string) error {
 	return store.ErrObjectConflict
 }
-func (conflictingStore) ResetUser(context.Context) error {
+func (conflictingStore) ResetUser(context.Context, store.ResetCondition) error {
 	return store.ErrBackupConflict
 }
 
@@ -44,6 +44,7 @@ func TestConcurrentStoreChangesReturnConflict(t *testing.T) {
 			req.Header.Set("X-Forwarded-User", "alice")
 			req.Header.Set("X-Backup-Generation", "test-generation")
 			req.Header.Set("X-Confirm-Backup-Reset", "true")
+			req.Header.Set("If-Match", `"key"`)
 			req.Header.Set("X-Expected-Seq", "1")
 			res := httptest.NewRecorder()
 			mux.ServeHTTP(res, req)

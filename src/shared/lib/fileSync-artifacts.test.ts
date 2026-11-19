@@ -1,7 +1,14 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FileSync, type FileSyncActivity } from "./fileSync";
 import { decryptFile, encryptFile } from "./crypto";
-import { deleteDirectory, deleteFile, readText, writeJson, writeText } from "./opfs-core";
+import {
+  deleteDirectory,
+  deleteFile,
+  readFileMetadata as readFileMetadataFor,
+  readText,
+  writeJson,
+  writeText,
+} from "./opfs-core";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
 import * as api from "./storeClient";
 import {
@@ -17,6 +24,7 @@ import { generateStoreKey } from "./test-support/storeKey";
 vi.mock("./storeClient", async (importOriginal) => ({
   ServerError: (await importOriginal<typeof import("./storeClient")>()).ServerError,
   listFiles: vi.fn(),
+  listChats: vi.fn(),
   getFile: vi.fn(),
   putFile: vi.fn(),
   deleteFile: vi.fn(),
@@ -34,6 +42,7 @@ beforeEach(() => {
   memory.reset();
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => memory.root } });
   vi.mocked(api.listFiles).mockResolvedValue([]);
+  vi.mocked(api.listChats).mockResolvedValue([]);
   vi.mocked(api.putFile).mockResolvedValue("etag");
 });
 afterEach(() => sync?.stop());
@@ -320,4 +329,172 @@ it("preserves skill index entries whose IDs differ from their folder names", asy
   sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
   await sync.fullSync();
   expect(await readText("skills/index.json")).toBe(index);
+});
+
+describe("chat workspace files follow their chat's deletion", () => {
+  const path = "chats/one/artifacts/report.txt";
+  const journal = "_sync/deletes/u-alice/one.json";
+  const marker = "_sync/keep-files/u-alice/one.json";
+
+  async function syncedArtifact(key: Awaited<ReturnType<typeof generateStoreKey>>) {
+    const id = await idFor(path);
+    const data = await encryptFile(key, { path, mtime: 1000 }, new TextEncoder().encode("report"), "alice", id);
+    vi.mocked(api.getFile).mockResolvedValue({ etag: "etag", data });
+    vi.mocked(api.listFiles).mockResolvedValue([{ id, etag: "etag", updated: "2026-01-01", size: data.length }]);
+    await writeJson("_sync/files.json", { userId: "alice", entries: { [path]: { id, etag: "etag", mtime: 1000 } } });
+    return id;
+  }
+
+  it("keeps the backup copy while the chat deletion is pending and restores it when cancelled", async () => {
+    const key = await generateStoreKey();
+    await syncedArtifact(key);
+    await writeJson(journal, { id: "one", token: "t", expectedSeq: 3 });
+    sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+    await sync.fullSync();
+    expect(api.deleteFile).not.toHaveBeenCalled();
+
+    // Another device saved newer work: the server cancelled the deletion.
+    await deleteFile(journal);
+    await writeJson(marker, { id: "one", token: "t", kind: "restore" });
+    vi.mocked(api.listChats).mockResolvedValue([{ id: "one", headSeq: 5, updated: "2026-01-02" }]);
+    // The pull may restore the chat itself before the files come back.
+    await writeJson("chats/one/chat.json", { id: "one", messages: [] });
+    await sync.fullSync();
+    expect(api.deleteFile).not.toHaveBeenCalled();
+    expect(await readText(path)).toBe("report");
+    expect(await readText(marker)).toBeUndefined();
+
+    // Afterwards, deleting the restored file is an ordinary single deletion.
+    await deleteFile(path);
+    await sync.fullSync();
+    expect(api.deleteFile).toHaveBeenCalledOnce();
+  });
+
+  it("restores files of a removed chat that still lives in the backup", async () => {
+    const key = await generateStoreKey();
+    await syncedArtifact(key);
+    vi.mocked(api.listChats).mockResolvedValue([{ id: "one", headSeq: 5, updated: "2026-01-02" }]);
+    sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+    await sync.fullSync();
+    expect(api.deleteFile).not.toHaveBeenCalled();
+    expect(await readText(path)).toBe("report");
+  });
+
+  it("deletes files once the chat is deleted in the backup", async () => {
+    const key = await generateStoreKey();
+    const id = await syncedArtifact(key);
+    vi.mocked(api.listChats).mockResolvedValue([{ id: "one", headSeq: 5, updated: "2026-01-02", deleted: true }]);
+    sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+    await sync.fullSync();
+    expect(api.deleteFile).toHaveBeenCalledWith(id, { ifMatch: "etag" });
+  });
+
+  it("lets another device delete a single file of a live chat with pending edits", async () => {
+    const key = await generateStoreKey();
+    const id = await idFor(path);
+    memory.put(path, "report");
+    const { lastModified } = (await readFileMetadataFor(path))!;
+    await writeJson("_sync/files.json", {
+      userId: "alice",
+      entries: { [path]: { id, etag: "etag", mtime: lastModified } },
+    });
+    await writeJson("chats/one/target.json", { id: "one", messages: [] });
+    vi.mocked(api.listChats).mockResolvedValue([{ id: "one", headSeq: 5, updated: "2026-01-02" }]);
+    sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+    await sync.fullSync();
+    expect(await readText(path)).toBeUndefined();
+    expect(api.putFile).not.toHaveBeenCalled();
+  });
+
+  it.each(["marker", "pending edit"])("re-uploads files of a chat recreated by a %s", async (reason) => {
+    const key = await generateStoreKey();
+    const id = await idFor(path);
+    memory.put(path, "report");
+    const { lastModified } = (await readFileMetadataFor(path))!;
+    await writeJson("_sync/files.json", {
+      userId: "alice",
+      entries: { [path]: { id, etag: "etag", mtime: lastModified } },
+    });
+    if (reason === "marker") await writeJson(marker, { id: "one", token: "t", kind: "reupload" });
+    else await writeJson("chats/one/target.json", { id: "one", messages: [] });
+    vi.mocked(api.putFile).mockRejectedValueOnce(new api.ServerError(412, "gone"));
+    vi.mocked(api.getFile).mockResolvedValue(null);
+    sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+    await sync.fullSync();
+    expect(await readText(path)).toBe("report");
+    expect(api.putFile).toHaveBeenLastCalledWith(id, expect.anything(), { ifNoneMatch: "*" });
+  });
+});
+
+it("still uploads a merged collection index after a reload interrupts its upload", async () => {
+  const key = await generateStoreKey();
+  const path = "agents/index.json";
+  const id = await idFor(path);
+  const localEntry = { id: "local", updated: "2026-01-01" };
+  const remoteEntry = { id: "remote", updated: "2026-01-01" };
+  memory.put(path, JSON.stringify([localEntry]));
+  const data = await encryptFile(
+    key,
+    { path, mtime: 1000 },
+    new TextEncoder().encode(JSON.stringify([remoteEntry])),
+    "alice",
+    id,
+  );
+  vi.mocked(api.listFiles).mockResolvedValue([{ id, etag: "remote", updated: "2026-01-01", size: data.length }]);
+  vi.mocked(api.getFile).mockResolvedValue({ etag: "remote", data });
+  vi.mocked(api.putFile).mockRejectedValue(new Error("offline"));
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+  await sync.fullSync();
+  expect(JSON.parse((await readText(path))!)).toEqual([localEntry, remoteEntry]);
+
+  vi.mocked(api.putFile).mockReset();
+  vi.mocked(api.putFile).mockResolvedValue("merged");
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+  await sync.fullSync();
+  const uploaded = vi.mocked(api.putFile).mock.calls.find(([fileId]) => fileId === id);
+  expect(uploaded).toBeDefined();
+  const { bytes } = await decryptFile(key, uploaded![1], "alice", id);
+  expect(JSON.parse(new TextDecoder().decode(bytes))).toEqual([localEntry, remoteEntry]);
+});
+
+describe("file conflicts keep the losing version", () => {
+  const path = "agents/one/notes.md";
+  const copyOf = async (bytes: string) => {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(bytes));
+    const tag = Array.from(new Uint8Array(digest).slice(0, 4), (b) => b.toString(16).padStart(2, "0")).join("");
+    return `agents/one/notes (conflicted copy ${tag}).md`;
+  };
+
+  it.each([
+    ["the backup's copy is newer", 9e15, "remote", "local"],
+    ["this device's copy is newer", 1, "local", "remote"],
+  ])("when %s", async (_case, remoteMtime, winner, loser) => {
+    const key = await generateStoreKey();
+    const id = await idFor(path);
+    memory.put(path, "local");
+    await writeJson("_sync/files.json", { userId: "alice", entries: { [path]: { id, etag: "old", mtime: 1 } } });
+    vi.mocked(api.putFile).mockRejectedValueOnce(new api.ServerError(412, "changed elsewhere"));
+    vi.mocked(api.getFile).mockResolvedValue({
+      etag: "remote",
+      data: await encryptFile(key, { path, mtime: remoteMtime }, new TextEncoder().encode("remote"), "alice", id),
+    });
+    sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+    await sync.flushDirty().catch(() => {});
+    await sync.fullSync().catch(() => {});
+    if (winner === "remote") expect(await readText(path)).toBe("remote");
+    expect(await readText(await copyOf(loser))).toBe(loser);
+  });
+
+  it("when an untracked local file is older than the backup's copy", async () => {
+    const key = await generateStoreKey();
+    const id = await idFor(path);
+    memory.put(path, "local");
+    const data = await encryptFile(key, { path, mtime: 9e15 }, new TextEncoder().encode("remote"), "alice", id);
+    vi.mocked(api.listFiles).mockResolvedValue([{ id, etag: "remote", updated: "2026-01-01", size: data.length }]);
+    vi.mocked(api.getFile).mockResolvedValue({ etag: "remote", data });
+    sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+    await sync.fullSync();
+    expect(await readText(path)).toBe("remote");
+    expect(await readText(await copyOf("local"))).toBe("local");
+  });
 });

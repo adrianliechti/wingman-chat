@@ -9,6 +9,8 @@ import type { Chat } from "@/shared/types/chat";
 import { loadChat, loadChatIndex, removeChat, storeChat } from "./chatStorage";
 import { createAttachmentLoader } from "./chatAttachments";
 import { generateStoreKey } from "@/shared/lib/test-support/storeKey";
+import { encodeHistory } from "@/shared/lib/localChats";
+import { diffChat } from "@/shared/lib/chatLog";
 
 vi.mock("@/shared/lib/storeClient", () => ({
   listChats: vi.fn(),
@@ -50,6 +52,21 @@ beforeEach(() => {
 });
 
 describe("chat persistence", () => {
+  it("keeps attachments the confirmed backup version still references", async () => {
+    const withImage = { ...chat(), messages: [userMessage([image()])] };
+    const synced = await opfs.extractChatBlobs(withImage);
+    const [blobId] = opfs.collectChatBlobIds(synced);
+    await opfs.writeText("chats/chat/history.jsonl", encodeHistory(diffChat(null, synced), { head: 1, count: 1 }));
+
+    // A pending local edit that predates the downloaded version lacks the image.
+    await storeChat({ ...chat(), messages: [userMessage("offline edit")] });
+    expect(await opfs.fileExists(`chats/chat/blobs/${blobId}.bin`)).toBe(true);
+
+    await opfs.deleteFile("chats/chat/history.jsonl");
+    await storeChat({ ...chat(), messages: [userMessage("offline edit")] });
+    expect(await opfs.fileExists(`chats/chat/blobs/${blobId}.bin`)).toBe(false);
+  });
+
   it("preserves a native save made while backup tracking is being reset", async () => {
     config.store = true;
     const value = { ...chat(), title: "before reset" };

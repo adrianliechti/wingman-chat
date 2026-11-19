@@ -1,6 +1,6 @@
 import { resetLocalBackupState } from "./chatSync";
 import { flushPersistence, withPersistenceLock } from "./persistence";
-import { fetchMe, resetBackup } from "./storeClient";
+import { fetchMe, getKeystore, resetBackup, ServerError, type ResetTarget } from "./storeClient";
 import { readJson, writeJson } from "./opfs-core";
 import {
   BACKUP_GENERATION_KEY,
@@ -27,10 +27,22 @@ if (typeof window !== "undefined") {
   });
 }
 
+/** Identify the backup being confirmed, so a delayed retry cannot delete a newer one. */
+async function currentResetTarget(): Promise<ResetTarget> {
+  try {
+    const keystore = await getKeystore();
+    return { keystore: keystore?.etag ?? null };
+  } catch (error) {
+    if (error instanceof ServerError && error.status === 422) return { unreadable: true };
+    throw error;
+  }
+}
+
 export async function requestBackupReset(): Promise<void> {
   const user = await fetchMe();
+  const target = await currentResetTarget();
   await flushPersistence();
-  markBackupReset(user.id);
+  markBackupReset(user.id, target);
   window.location.reload();
 }
 
@@ -39,10 +51,12 @@ export async function completePendingBackupReset(userId: string): Promise<void> 
   await withPersistenceLock("backup-reset", async () => {
     const pending = localStorage.getItem(BACKUP_RESET_KEY);
     if (!pending) return;
-    const request = JSON.parse(pending) as { userId: string; phase: "delete" | "local" };
+    const request = JSON.parse(pending) as { userId: string; phase: "delete" | "local"; target?: ResetTarget };
     if (request.userId !== userId) throw new Error("Sign in to the account that requested the backup reset.");
     if (request.phase === "delete") {
-      await resetBackup();
+      // Without a confirmed target the server cannot tell which backup was meant,
+      // so only local cleanup is safe. A 412 means the confirmed backup is gone.
+      if (request.target) await resetBackup(request.target);
       // A local cleanup retry must never erase a newly configured remote backup.
       localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId, phase: "local" }));
     } else if (request.phase !== "local") {

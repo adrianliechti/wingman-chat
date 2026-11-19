@@ -155,7 +155,7 @@ func TestResetFencesInFlightUpload(t *testing.T) {
 				finished <- err
 			}()
 			<-input.started
-			resetErr := p.ResetUser(testSession())
+			resetErr := p.ResetUser(testSession(), store.ResetCondition{Unconditional: true})
 			if resetErr != nil {
 				close(input.resume)
 				<-finished
@@ -296,7 +296,10 @@ func TestResetCleansOrphansAndPreservesNewBackup(t *testing.T) {
 	writer := New()
 	writer.client = &http.Client{Transport: graph}
 	created := false
+	var hook sync.Mutex
 	p.client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		hook.Lock()
+		defer hook.Unlock()
 		if !created && r.Method == "DELETE" {
 			created = true
 			if _, err := writer.PutObject(testSession(), store.FileObject, "new-file1", strings.NewReader("new"), "*"); err != nil {
@@ -305,9 +308,10 @@ func TestResetCleansOrphansAndPreservesNewBackup(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession()); err != nil {
+	if err := p.ResetUser(testSession(), store.ResetCondition{Unconditional: true}); err != nil {
 		t.Fatal(err)
 	}
+	p.cleanup.Wait()
 	files, err := p.ListFiles(testSession())
 	if err != nil || !created || len(files) != 1 || files[0].ID != "new-file1" {
 		t.Fatalf("reset deleted fresh backup: %+v %v", files, err)
@@ -330,7 +334,7 @@ func TestResetRejectsUntrustedListingContinuation(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession()); err == nil {
+	if err := p.ResetUser(testSession(), store.ResetCondition{Unconditional: true}); err == nil {
 		t.Fatal("untrusted continuation accepted")
 	}
 }
@@ -360,9 +364,10 @@ func TestResetFollowsListingPages(t *testing.T) {
 		}
 		return graph.RoundTrip(r)
 	})}
-	if err := p.ResetUser(testSession()); err != nil {
+	if err := p.ResetUser(testSession(), store.ResetCondition{Unconditional: true}); err != nil {
 		t.Fatal(err)
 	}
+	p.cleanup.Wait()
 	if pages != 2 {
 		t.Fatalf("only read %d listing pages", pages)
 	}

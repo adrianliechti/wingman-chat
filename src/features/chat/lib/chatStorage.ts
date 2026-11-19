@@ -3,6 +3,7 @@ import {
   chatRetentionCutoff,
   completeChatIndexRepair,
   pendingChatIndexRepairs,
+  readChatHistory,
   readLocalChat,
   withChatTarget,
   writeLocalChatSnapshot,
@@ -38,7 +39,12 @@ export async function storeChat(chat: Chat): Promise<void> {
     // leave all blobs intact; cleanup failure is not a failed save.
     try {
       const legacy = await opfs.readJson<unknown>(legacyChatPath(chat.id));
-      await opfs.deleteUnreferencedChatBlobs(stored, collectLegacyChatBlobIds(legacy));
+      // The confirmed backup version may reference attachments this edit
+      // dropped; a conflicted copy or adopted baseline still needs them.
+      await opfs.deleteUnreferencedChatBlobs(stored, collectLegacyChatBlobIds(legacy), async () => {
+        const synced = (await readChatHistory(chat.id))?.chat;
+        return synced ? opfs.collectChatBlobIds(synced) : [];
+      });
     } catch (error) {
       console.warn("Chat blob cleanup failed:", error);
     }

@@ -341,8 +341,9 @@ requests started later by an old device. Other browsers notice the reset (or a
 switched backup destination) by the changed keystore account ID; they clear
 their sync tracking instead of treating previously synced chats as remotely
 deleted, so their local data uploads again into the new backup. A reset whose
-response was lost is retried on the next load and also removes a backup that
-another device configured in between.
+response was lost is retried on the next load, conditioned on the keystore the
+user confirmed; if another device has configured a new backup in between, the
+server keeps it and the retry only clears local tracking.
 
 ## Verification
 

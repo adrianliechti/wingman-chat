@@ -45,7 +45,7 @@ type index struct {
 
 const indexAttempts = 5
 
-var errInvalidIndex = errors.New("OneDrive backup: invalid backup index")
+var errInvalidIndex = store.ErrInvalidBackup
 
 func emptyIndex() *index {
 	return &index{Version: 1, Chats: map[string]chat{}, Files: map[string]object{}, Blobs: map[string]object{}}
