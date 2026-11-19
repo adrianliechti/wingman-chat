@@ -728,3 +728,28 @@ func TestFileBatchUpload(t *testing.T) {
 	wantStatus(t, do(t, srv, "alice", "POST", "/v1/files", body, map[string]string{"Content-Type": contentType}), http.StatusBadRequest)
 	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files/"+c, "", nil), http.StatusNotFound)
 }
+
+func TestFileBatchDelete(t *testing.T) {
+	srv := protectedTestServer(t)
+	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	body, contentType := batchBody(t, `[{"id":"`+a+`","ifNoneMatch":"*"},{"id":"`+b+`","ifNoneMatch":"*"}]`, [2]string{a, "cipher-a"}, [2]string{b, "cipher-b"})
+	wantStatus(t, do(t, srv, "alice", "POST", "/v1/files", body, map[string]string{"Content-Type": contentType}), http.StatusOK)
+
+	res := do(t, srv, "alice", "POST", "/v1/files/delete", `{"files":[{"id":"`+a+`"},{"id":"`+b+`","ifMatch":"\"stale\""}]}`, map[string]string{"Content-Type": "application/json"})
+	wantStatus(t, res, http.StatusOK)
+	var result struct {
+		Files []struct {
+			ID      string `json:"id"`
+			Deleted bool   `json:"deleted"`
+		} `json:"files"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Files) != 2 || result.Files[0].ID != a || !result.Files[0].Deleted || result.Files[1].Deleted {
+		t.Fatalf("unexpected delete result: %+v", result)
+	}
+	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files/"+a, "", nil), http.StatusNotFound)
+	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files/"+b, "", nil), http.StatusOK)
+	wantStatus(t, do(t, srv, "alice", "POST", "/v1/files/delete", `{"files":[]}`, nil), http.StatusBadRequest)
+}

@@ -2,6 +2,7 @@ package onedrive
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -93,6 +94,7 @@ func TestPutFilesPublishesBatchInOneIndexCommit(t *testing.T) {
 		t.Fatalf("replaced file: %q %q", got, etag)
 	}
 	// The replaced object is reclaimed; index plus two live objects remain.
+	p.cleanup.Wait()
 	if objects := len(graph.Folders["backup"]); objects != 3 {
 		t.Fatalf("%d stored objects, want 3", objects)
 	}
@@ -109,5 +111,41 @@ func TestPutFilesPublishesBatchInOneIndexCommit(t *testing.T) {
 	}
 	if objects := len(graph.Folders["backup"]); objects != 3 {
 		t.Fatalf("conflicting batch left %d objects", objects)
+	}
+}
+
+func TestDeleteFilesCommitsOnceAndKeepsChangedFiles(t *testing.T) {
+	p, graph := newTestProvider(t)
+	etags, err := p.PutFiles(testSession(), []store.FileWrite{
+		{ID: "first-123456", Body: strings.NewReader("1"), IfMatch: "*"},
+		{ID: "second-12345", Body: strings.NewReader("2"), IfMatch: "*"},
+		{ID: "changed-1234", Body: strings.NewReader("3"), IfMatch: "*"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := graph.NextRevision
+	deleted, err := p.DeleteFiles(testSession(), []store.FileDelete{
+		{ID: "first-123456", IfMatch: etags[0]},
+		{ID: "second-12345"},
+		{ID: "changed-1234", IfMatch: "stale"},
+		{ID: "missing-1234", IfMatch: "gone"},
+	})
+	if err != nil || !slices.Equal(deleted, []bool{true, true, false, true}) {
+		t.Fatalf("deleted: %v %v", deleted, err)
+	}
+	if writes := graph.NextRevision - before; writes != 1 {
+		t.Fatalf("batch delete made %d index commits, want 1", writes)
+	}
+	files, err := p.ListFiles(testSession())
+	if err != nil || len(files) != 1 || files[0].ID != "changed-1234" {
+		t.Fatalf("remaining files: %+v %v", files, err)
+	}
+	p.cleanup.Wait()
+	if n := dataObjects(graph); n != 1 {
+		t.Fatalf("%d data objects remain, want 1", n)
+	}
+	if _, err := p.DeleteFiles(testSession(), []store.FileDelete{{ID: "first-123456"}, {ID: "first-123456"}}); !errors.Is(err, store.ErrInvalidID) {
+		t.Fatalf("duplicate IDs: %v", err)
 	}
 }

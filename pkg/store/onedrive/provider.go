@@ -30,6 +30,7 @@ type Provider struct {
 	base      string
 	tempDir   string
 	uploadKey []byte
+	fragment  int64
 
 	sweepInterval time.Duration
 	sweepMu       sync.Mutex
@@ -41,7 +42,7 @@ type Provider struct {
 
 func New() *Provider {
 	return &Provider{
-		client: http.DefaultClient, base: graph.GraphURL,
+		client: http.DefaultClient, base: graph.GraphURL, fragment: uploadFragment,
 		sweepInterval: orphanSweepInterval, sweeps: map[string]time.Time{},
 	}
 }

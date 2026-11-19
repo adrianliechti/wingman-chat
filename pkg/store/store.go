@@ -75,6 +75,12 @@ type FileWrite struct {
 	IfMatch string
 }
 
+// FileDelete is one workspace file in a DeleteFiles batch.
+type FileDelete struct {
+	ID      string
+	IfMatch string
+}
+
 // Provider is a pluggable backend for the per-user chat store.
 // The account is resolved from the request context (e.g. a delegated token),
 // so the caller cannot address another user's data.
@@ -139,6 +145,11 @@ type Provider interface {
 	// ErrObjectConflict is returned. ETags are returned in input order.
 	PutFiles(ctx context.Context, writes []FileWrite) ([]string, error)
 
+	// DeleteFiles removes several workspace files with a single index commit.
+	// Each IfMatch follows DeleteObject. A file whose precondition fails is kept
+	// and reported false; deleted and missing files report true, in input order.
+	DeleteFiles(ctx context.Context, deletes []FileDelete) ([]bool, error)
+
 	// DeleteObject removes encrypted content. Missing objects return nil.
 	// ifMatch is empty or "*" for an unconditional delete, or an ETag that must
 	// match the current object; a mismatch returns ErrObjectConflict.
@@ -177,7 +188,8 @@ const MaxObjectBytes = 256<<20 + 1<<20
 // MaxAppendBytes caps one append request body (all JSONL event lines).
 const MaxAppendBytes = 64 << 20 // 64 MiB
 
-// MaxBatchBytes caps one PutFiles request body; MaxBatchFiles caps its entries.
+// MaxBatchBytes caps one PutFiles request body; MaxBatchFiles caps the
+// entries of a PutFiles or DeleteFiles request.
 const (
 	MaxBatchBytes = 64 << 20 // 64 MiB
 	MaxBatchFiles = 100

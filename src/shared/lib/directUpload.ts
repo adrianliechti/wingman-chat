@@ -1,11 +1,18 @@
 import { isBackupSessionCurrent } from "./backupLifecycle";
 
+// Objects above this size use an upload session; it matches the backend.
 export const DIRECT_UPLOAD_CHUNK = 10 * 1024 * 1024;
 
+// Graph requires fragments in multiples of 320 KiB and below 60 MiB. Each one
+// costs about a second of fixed latency on personal OneDrive; larger fragments
+// are faster but resend more data when a fragment fails.
+export const DIRECT_UPLOAD_FRAGMENT = 96 * 320 * 1024; // 30 MiB
+
 // These URLs are credentials. Share the allowlist with fetch telemetry so the
-// complete URL never becomes a span attribute.
+// complete URL never becomes a span attribute. Personal accounts upload to
+// my.microsoftpersonalcontent.com.
 export const ONE_DRIVE_UPLOAD_URL =
-  /^https:\/\/(?:[a-z0-9-]+\.)*(?:1drv\.com|sharepoint\.com|storage\.live\.com|onedrive\.com)(?::443)?(?:\/|$)/i;
+  /^https:\/\/(?:[a-z0-9-]+\.)*(?:1drv\.com|sharepoint\.com|storage\.live\.com|onedrive\.com|microsoftpersonalcontent\.com)(?::443)?(?:\/|$)/i;
 
 export interface DirectUploadSession {
   uploadUrl: string;
@@ -78,7 +85,7 @@ export async function transferDirectUpload(
   };
 
   for (let offset = 0; offset < body.size;) {
-    const end = Math.min(offset + DIRECT_UPLOAD_CHUNK, body.size);
+    const end = Math.min(offset + DIRECT_UPLOAD_FRAGMENT, body.size);
     const final = end === body.size;
     for (let attempt = 0; ; attempt++) {
       const response = await graphFetch({

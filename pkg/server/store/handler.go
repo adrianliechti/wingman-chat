@@ -58,6 +58,7 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 
 	handle("GET "+prefix+"/v1/files", h.requireProtection(h.handleListFiles))
 	handle("POST "+prefix+"/v1/files", h.uploads.wrap(h.requireProtection(h.handlePutFiles)))
+	handle("POST "+prefix+"/v1/files/delete", h.requireProtection(h.handleDeleteFiles))
 	handle("GET "+prefix+"/v1/files/{id}", h.requireProtection(h.handleGetObject(store.FileObject)))
 	handle("PUT "+prefix+"/v1/files/{id}", h.uploads.wrap(h.requireProtection(h.handlePutObject(store.FileObject))))
 	handle("DELETE "+prefix+"/v1/files/{id}", h.requireProtection(h.handleDeleteObject(store.FileObject)))

@@ -109,8 +109,9 @@ func (p *Provider) PutObject(ctx context.Context, kind store.ObjectKind, id stri
 	return obj.ETag, nil
 }
 
-// batchUploads bounds concurrent Graph uploads within one PutFiles request.
-const batchUploads = 4
+// batchUploads bounds concurrent Graph requests within one batch. On personal
+// OneDrive, 16 uploaded a 100-file batch twice as fast as 4, with no throttling.
+const batchUploads = 16
 
 func (p *Provider) PutFiles(ctx context.Context, writes []store.FileWrite) ([]string, error) {
 	if len(writes) == 0 {
@@ -282,6 +283,44 @@ func (p *Provider) DeleteObject(ctx context.Context, kind store.ObjectKind, id s
 	}
 	p.removeLater(ctx, old.Name)
 	return nil
+}
+
+func (p *Provider) DeleteFiles(ctx context.Context, deletes []store.FileDelete) ([]bool, error) {
+	seen := make(map[string]bool, len(deletes))
+	for _, d := range deletes {
+		if err := validateID(d.ID); err != nil {
+			return nil, err
+		}
+		if seen[d.ID] {
+			return nil, store.ErrInvalidID
+		}
+		seen[d.ID] = true
+	}
+	state, err := p.load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	deleted := make([]bool, len(deletes))
+	var names []string
+	for i, d := range deletes {
+		old, ok := state.Files[d.ID]
+		if ok && d.IfMatch != "" && d.IfMatch != "*" && d.IfMatch != old.ETag {
+			continue
+		}
+		deleted[i] = true
+		if ok {
+			delete(state.Files, d.ID)
+			names = append(names, old.Name)
+		}
+	}
+	if len(names) == 0 {
+		return deleted, nil
+	}
+	if err := p.save(ctx, state); err != nil {
+		return nil, err
+	}
+	p.removeLater(ctx, names...)
+	return deleted, nil
 }
 func (p *Provider) BlobExists(ctx context.Context, blobID string) (bool, error) {
 	if err := validateID(blobID); err != nil {

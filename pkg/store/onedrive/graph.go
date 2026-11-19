@@ -18,7 +18,13 @@ import (
 	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
 
-const uploadChunk = 10 * 1024 * 1024 // Multiple of Graph's 320 KiB fragment size.
+// Objects up to uploadChunk use a single PUT; larger ones use an upload session.
+const uploadChunk = 10 * 1024 * 1024
+
+// Graph requires session fragments in multiples of 320 KiB and below 60 MiB.
+// Each fragment costs about a second of fixed latency on personal OneDrive, so
+// the backend's stable connection uses large fragments.
+const uploadFragment = 160 * 320 * 1024 // 50 MiB
 
 type graphError struct {
 	status     int
@@ -325,7 +331,7 @@ func (p *Provider) send(ctx context.Context, name string, spooled *spooledObject
 			}
 		}()
 		for offset := int64(0); offset < size; {
-			length := min(uploadChunk, size-offset)
+			length := min(p.fragment, size-offset)
 			fragment := io.NewSectionReader(f, offset, length)
 			headers := http.Header{"Content-Type": {"application/octet-stream"}, "Content-Range": {fmt.Sprintf("bytes %d-%d/%d", offset, offset+length-1, size)}}
 			res, err := p.request(ctx, "PUT", session.URL, fragment, headers, false)
@@ -367,7 +373,8 @@ func validUploadURL(raw string) bool {
 		return false
 	}
 	host := strings.ToLower(u.Hostname())
-	for _, domain := range []string{"1drv.com", "sharepoint.com", "storage.live.com", "onedrive.com"} {
+	// Personal accounts receive upload URLs on my.microsoftpersonalcontent.com.
+	for _, domain := range []string{"1drv.com", "sharepoint.com", "storage.live.com", "onedrive.com", "microsoftpersonalcontent.com"} {
 		if host == domain || strings.HasSuffix(host, "."+domain) {
 			return true
 		}

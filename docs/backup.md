@@ -113,10 +113,12 @@ opaque objects and a metadata index containing sizes, resource IDs and timing.
 
 Chat appends upload immutable event segments; changed workspace files and blobs
 upload separately. When several workspace files are pending, files up to 4 MiB
-upload together in batches of up to 50 files or 16 MiB; the backend uploads a
-batch's objects in parallel and publishes them with one index commit. A batch
+upload together in batches of up to 100 files or 16 MiB; the backend uploads up to
+16 of a batch's objects in parallel and publishes them with one index commit. A batch
 is all-or-nothing: if any file's precondition fails, nothing is published and
-the browser retries those files one at a time. An index publishes committed versions only after their objects
+the browser retries those files one at a time. Several local deletions are likewise
+sent as one batch of up to 100 files with one index commit. A file another device changed
+since this browser's last sync is kept, as with a single deletion. An index publishes committed versions only after their objects
 are uploaded. Failed writes remain pending in the browser. Each backend pod handles up to
 four chat, file, or blob upload requests at a time (configurable with `uploads` or
 `BACKUP_UPLOADS`), and at most two per account. Additional
@@ -129,7 +131,9 @@ bodies over 64 MiB with 413.
 The browser splits large chat uploads into several appends below that cap. Automatic
 chat compaction only publishes snapshots that fit in one append request; larger
 chats retain their complete event history. Objects larger than 10 MiB use upload sessions with
-sequential 10 MiB fragments streamed from the temporary file. Throttled requests retry with
+sequential 50 MiB fragments streamed from the temporary file. Each fragment costs about a
+second of fixed latency on personal OneDrive, so large fragments roughly halve the upload
+time compared with Microsoft's suggested 10 MiB. Throttled requests retry with
 bounded backoff. Interrupted operations retry through the existing sync loop. Sessions are
 not persisted across requests.
 
@@ -143,7 +147,8 @@ browser's cross-origin requests with `Content-Range`.
 
 For chat attachments and individual workspace files larger than 10 MiB,
 Wingman creates a temporary OneDrive upload session. The browser sends the
-encrypted data to OneDrive in sequential fragments. The backend checks the
+encrypted data to OneDrive in sequential 30 MiB fragments, which are smaller than the
+backend's to limit what a failed fragment resends over slower connections. The backend checks the
 finished object's size and QuickXorHash against OneDrive and publishes it in
 the index after checking the backup generation and workspace file version. The
 backend never sees the ciphertext, so the object's SHA-256 ETag is the value the

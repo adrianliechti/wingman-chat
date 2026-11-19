@@ -270,7 +270,16 @@ func TestLargeUploadFragmentsAndRetries(t *testing.T) {
 			t.Fatal("large upload corrupted")
 		}
 	})
-	if graph.Fragments != 2 {
+	if graph.Fragments != 1 {
+		t.Fatalf("default fragments: %d", graph.Fragments)
+	}
+	p.fragment = uploadChunk
+	withSession(func(ctx context.Context) {
+		if _, err := p.PutObject(ctx, store.BlobObject, "blob-5678", bytes.NewReader(data), ""); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if graph.Fragments != 3 {
 		t.Fatalf("fragments: %d", graph.Fragments)
 	}
 }
@@ -284,7 +293,7 @@ func TestTokenAndUploadURLValidation(t *testing.T) {
 			t.Fatalf("unsafe URL: %s", raw)
 		}
 	}
-	if !validUploadURL("https://sn3302.up.1drv.com/session") {
+	if !validUploadURL("https://sn3302.up.1drv.com/session") || !validUploadURL("https://my.microsoftpersonalcontent.com/personal/abc/_api/v2.0/drive/items/1/uploadSession?tempauth=x") {
 		t.Fatal("valid upload host rejected")
 	}
 	withSession(func(ctx context.Context) {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FileSync, type FileSyncActivity } from "./fileSync";
 import { decryptFile } from "./crypto";
-import { readJson, readText, writeBlob, writeText } from "./opfs-core";
+import { deleteFile, readJson, readText, writeBlob, writeText } from "./opfs-core";
 import * as api from "./storeClient";
 import { BackupBusyError } from "./backupBusy";
 import { MemoryOpfs } from "./test-support/memoryOpfs";
@@ -14,6 +14,7 @@ vi.mock("./storeClient", async (original) => ({
   putFile: vi.fn(),
   putFiles: vi.fn(),
   deleteFile: vi.fn(),
+  deleteFiles: vi.fn(),
 }));
 
 const memory = new MemoryOpfs();
@@ -53,6 +54,18 @@ beforeEach(() => {
 
 afterEach(() => sync?.stop());
 
+function mockDeletes() {
+  vi.mocked(api.deleteFile).mockImplementation(async (id) => {
+    remote.delete(id);
+  });
+  vi.mocked(api.deleteFiles).mockImplementation(async (files) =>
+    files.map((file) => {
+      if (file.ifMatch && remote.get(file.id)?.etag !== file.ifMatch) return false;
+      return remote.delete(file.id) || true;
+    }),
+  );
+}
+
 async function start(): Promise<FileSync> {
   sync?.stop();
   sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
@@ -84,7 +97,7 @@ it("uploads an initial backup in batches and restores it intact", async () => {
   for (const path of paths) await writeText(path, `contents of ${path}`);
   await (await start()).fullSync();
 
-  expect(vi.mocked(api.putFiles).mock.calls.map(([files]) => files.length)).toEqual([50, 50, 20]);
+  expect(vi.mocked(api.putFiles).mock.calls.map(([files]) => files.length)).toEqual([100, 20]);
   expect(api.putFile).not.toHaveBeenCalled();
   expect(remote.size).toBe(paths.length);
   expect(activity).toMatchObject({ pendingCount: 0, lastError: null, progress: [] });
@@ -153,4 +166,36 @@ it("stops batching against a server without batch uploads", async () => {
   expect(api.putFiles).toHaveBeenCalledOnce();
   expect(api.putFile).toHaveBeenCalledTimes(4);
   expect(remote.size).toBe(4);
+});
+
+it("propagates several local deletions with one batch", async () => {
+  mockDeletes();
+  const paths = ["agents/a.md", "agents/b.md", "agents/c.md"];
+  for (const path of paths) await writeText(path, path);
+  const s = await start();
+  await s.fullSync();
+  expect(remote.size).toBe(3);
+
+  for (const path of paths) await deleteFile(path);
+  await s.fullSync();
+  expect(vi.mocked(api.deleteFiles).mock.calls.map(([files]) => files.length)).toEqual([3]);
+  expect(api.deleteFile).not.toHaveBeenCalled();
+  expect(remote.size).toBe(0);
+  const state = await readJson<{ entries: Record<string, unknown> }>("_sync/files.json");
+  expect(state!.entries).toEqual({});
+});
+
+it("deletes files individually when the server lacks batch deletes", async () => {
+  mockDeletes();
+  const paths = ["agents/a.md", "agents/b.md"];
+  for (const path of paths) await writeText(path, path);
+  const s = await start();
+  await s.fullSync();
+
+  vi.mocked(api.deleteFiles).mockRejectedValue(new api.ServerError(404, "not found"));
+  for (const path of paths) await deleteFile(path);
+  await s.fullSync();
+  expect(api.deleteFile).toHaveBeenCalledTimes(2);
+  expect(remote.size).toBe(0);
+  expect(activity).toMatchObject({ pendingCount: 0, lastError: null });
 });

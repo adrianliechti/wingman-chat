@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { DIRECT_UPLOAD_CHUNK, ONE_DRIVE_UPLOAD_URL, directUploadHashes } from "./directUpload";
+import { DIRECT_UPLOAD_CHUNK, DIRECT_UPLOAD_FRAGMENT, ONE_DRIVE_UPLOAD_URL, directUploadHashes } from "./directUpload";
 
 vi.mock("./backupLifecycle", () => ({ isBackupSessionCurrent: () => true }));
 
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 it("sends only metadata to Wingman, commits a file, and retries ambiguous completion", async () => {
-  const data = new Uint8Array(DIRECT_UPLOAD_CHUNK + 23).fill(0x22);
+  const data = new Uint8Array(DIRECT_UPLOAD_FRAGMENT + 23).fill(0x22);
   const fetch = vi
     .fn<typeof globalThis.fetch>()
     .mockResolvedValueOnce(session())
@@ -37,8 +37,8 @@ it("sends only metadata to Wingman, commits a file, and retries ambiguous comple
   expect(first[0]).toBe(url);
   expect(first[1].credentials).toBe("omit");
   expect(new Headers(first[1].headers).get("Authorization")).toBeNull();
-  expect(new Headers(first[1].headers).get("Content-Range")).toBe(`bytes 0-${DIRECT_UPLOAD_CHUNK - 1}/${data.length}`);
-  expect((first[1].body as Blob).size).toBe(DIRECT_UPLOAD_CHUNK);
+  expect(new Headers(first[1].headers).get("Content-Range")).toBe(`bytes 0-${DIRECT_UPLOAD_FRAGMENT - 1}/${data.length}`);
+  expect((first[1].body as Blob).size).toBe(DIRECT_UPLOAD_FRAGMENT);
   expect((last[1].body as Blob).size).toBe(23);
   expect(status[0]).toBe(url);
   expect(status[1]?.method).toBe("GET");
@@ -99,7 +99,7 @@ it("reports an unconfirmed final fragment when completion never sees the object"
   const api = await import("./storeClient");
   api.setDirectUploads(true);
 
-  await expect(api.putBlob("attachment", new Blob([new Uint8Array(DIRECT_UPLOAD_CHUNK + 1)]))).rejects.toThrow(
+  await expect(api.putBlob("attachment", new Blob([new Uint8Array(DIRECT_UPLOAD_FRAGMENT + 1)]))).rejects.toThrow(
     "OneDrive did not confirm the final upload fragment",
   );
 });
@@ -208,6 +208,8 @@ it.each([
   ["https://api.onedrive.com/rup/abc", true],
   ["https://contoso-my.sharepoint.com/personal/upload", true],
   ["https://upload.1drv.com/session", true],
+  ["https://my.microsoftpersonalcontent.com/personal/abc/uploadSession", true],
+  ["https://microsoftpersonalcontent.com.attacker.example/upload", false],
   ["https://1drv.com.attacker.example/upload", false],
   ["https://attacker.example/1drv.com", false],
   ["http://upload.1drv.com/session", false],

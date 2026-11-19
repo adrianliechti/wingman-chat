@@ -373,6 +373,25 @@ export async function deleteFile(fileId: string, opts: Pick<ConditionalOptions, 
   await ensureOk(res, true);
 }
 
+/**
+ * Delete several files with one backup index commit. Returns, in input order,
+ * whether each file is gone; false means another device changed it since `ifMatch`.
+ */
+export async function deleteFiles(files: { id: string; ifMatch?: string }[]): Promise<boolean[]> {
+  const res = await storeFetch(`${PREFIX}/files/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ files: files.map(({ id, ifMatch }) => ({ id, ifMatch })) }),
+  });
+  await ensureOk(res);
+  const body = (await res.json()) as { files?: { id: string; deleted: boolean }[] };
+  const results = body.files ?? [];
+  if (results.length !== files.length || results.some((result, i) => result.id !== files[i].id)) {
+    throw new Error("Invalid batch delete response");
+  }
+  return results.map((result) => result.deleted === true);
+}
+
 /** Stored encrypted data and metadata, excluding filesystem overhead. */
 export async function getBackupSize(): Promise<number> {
   const res = await fetchOrThrow(`${PREFIX}/backup/usage`);

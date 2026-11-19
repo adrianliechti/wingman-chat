@@ -161,6 +161,43 @@ func (h *Handler) handlePutFiles(w http.ResponseWriter, r *http.Request) {
 	}{Files: results})
 }
 
+// handleDeleteFiles accepts {"files":[{"id","ifMatch"}]} and reports per file
+// whether it is gone; a file whose precondition failed is kept.
+func (h *Handler) handleDeleteFiles(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Files []batchEntry `json:"files"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
+		http.Error(w, "invalid batch", http.StatusBadRequest)
+		return
+	}
+	if len(body.Files) == 0 || len(body.Files) > store.MaxBatchFiles {
+		http.Error(w, "batch must contain 1 to "+strconv.Itoa(store.MaxBatchFiles)+" files", http.StatusBadRequest)
+		return
+	}
+	deletes := make([]store.FileDelete, len(body.Files))
+	for i, entry := range body.Files {
+		deletes[i] = store.FileDelete{ID: entry.ID, IfMatch: strings.Trim(strings.TrimSpace(entry.IfMatch), `"`)}
+	}
+	deleted, err := h.store.DeleteFiles(r.Context(), deletes)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	type result struct {
+		ID      string `json:"id"`
+		Deleted bool   `json:"deleted"`
+	}
+	results := make([]result, len(deletes))
+	for i, d := range deletes {
+		results[i] = result{ID: d.ID, Deleted: deleted[i]}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(struct {
+		Files []result `json:"files"`
+	}{Files: results})
+}
+
 type batchParts struct {
 	reader *multipart.Reader
 	next   int

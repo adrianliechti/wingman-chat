@@ -42,8 +42,9 @@ const FLUSH_DEBOUNCE_MS = 2_000;
  *  file in memory, so the cap guards the tab, not the server). Sized to
  *  fit large office documents and notebook media. */
 const MAX_FILE_BYTES = 256 * 1024 * 1024;
-/** Small files upload together, publishing one backup index update per batch. */
-const BATCH_MAX_FILES = 50;
+/** Small files upload together, publishing one backup index update per batch.
+ *  The server accepts up to 100 files per batch. */
+const BATCH_MAX_FILES = 100;
 const BATCH_MAX_BYTES = 16 * 1024 * 1024;
 const BATCH_MAX_FILE_BYTES = 4 * 1024 * 1024;
 
@@ -65,6 +66,11 @@ interface FileEntry {
   id: string;
   etag: string;
   mtime: number;
+}
+
+interface PreparedDelete {
+  path: string;
+  entry: FileEntry;
 }
 
 interface PreparedUpload {
@@ -211,6 +217,8 @@ export class FileSync {
   private unsubMutations: (() => void) | null = null;
   /** Cleared when the server lacks batch uploads. */
   private batchUploads = true;
+  /** Cleared when the server lacks batch deletes. */
+  private batchDeletes = true;
   /** Remote applies that failed during the current fullSync. */
   private applyFailures = 0;
 
@@ -305,6 +313,7 @@ export class FileSync {
     const progress = this.progress.begin("backup", paths.length);
     let batch: PreparedUpload[] = [];
     let batchBytes = 0;
+    let deletes: PreparedDelete[] = [];
     let stopped = false;
     try {
       for (const path of paths) {
@@ -313,6 +322,18 @@ export class FileSync {
           break;
         }
         this.dirty.delete(path);
+        const deletion = this.batchDeletes && paths.length > 1 ? await this.prepareBatchDelete(path) : undefined;
+        if (deletion) {
+          deletes.push(deletion);
+          if (deletes.length < BATCH_MAX_FILES) continue;
+          const pending = deletes;
+          deletes = [];
+          if (!(await this.deleteBatch(pending, progress))) {
+            stopped = true;
+            break;
+          }
+          continue;
+        }
         const prepared = this.batchUploads && paths.length > 1 ? await this.prepareBatchUpload(path) : undefined;
         if (!prepared) {
           if (!(await this.syncPath(path, progress))) {
@@ -333,9 +354,11 @@ export class FileSync {
         }
       }
       if (stopped || areFileBackupsPaused()) {
-        for (const item of batch) this.dirty.add(item.path);
-      } else if (batch.length) {
-        await this.uploadBatch(batch, progress);
+        for (const item of [...batch, ...deletes]) this.dirty.add(item.path);
+      } else {
+        if (batch.length && !(await this.uploadBatch(batch, progress))) stopped = true;
+        if (stopped) for (const item of deletes) this.dirty.add(item.path);
+        else if (deletes.length) await this.deleteBatch(deletes, progress);
       }
       await this.saveState();
       if (this.dirty.size === 0) {
@@ -385,6 +408,58 @@ export class FileSync {
     } catch {
       return undefined;
     }
+  }
+
+  /** A path deleted locally since its last sync; a batch propagates it. */
+  private async prepareBatchDelete(path: string): Promise<PreparedDelete | undefined> {
+    const entry = this.state.entries[path];
+    if (!entry) return undefined;
+    try {
+      return (await readFileMetadata(path)) ? undefined : { path, entry };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Propagate several deletions with one index commit; returns false when the flush should stop. */
+  private async deleteBatch(items: PreparedDelete[], progress: SyncProgressTask): Promise<boolean> {
+    if (items.length === 1) return this.syncPath(items[0].path, progress);
+    try {
+      requireFileBackupReady();
+      // A file another device changed is kept remotely; its edit beats this
+      // deletion and comes back with the next restore, as for single deletes.
+      await api.deleteFiles(items.map(({ entry }) => ({ id: entry.id, ifMatch: entry.etag })));
+    } catch (err) {
+      if (err instanceof BackupPausedError || err instanceof BackupBusyError) {
+        for (const item of items) this.dirty.add(item.path);
+        if (err instanceof BackupBusyError) this.scheduleFlush(err.retryAfterMs);
+        return false;
+      }
+      if (err instanceof api.ServerError && (err.status === 404 || err.status === 405)) {
+        // The server predates batch deletes.
+        this.batchDeletes = false;
+      } else {
+        console.warn("fileSync: batch delete failed; retrying files individually", err);
+      }
+      for (const [index, item] of items.entries()) {
+        if (await this.syncPath(item.path, progress)) continue;
+        for (const rest of items.slice(index + 1)) this.dirty.add(rest.path);
+        return false;
+      }
+      return true;
+    }
+    for (const item of items) {
+      if (this.state.entries[item.path] === item.entry) delete this.state.entries[item.path];
+    }
+    try {
+      await this.saveState();
+    } catch (err) {
+      this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
+      console.warn("fileSync: couldn't save backup progress", err);
+      return false;
+    }
+    for (let i = 0; i < items.length; i++) progress.advance();
+    return true;
   }
 
   /** Publish several uploads with one index commit; returns false when the flush should stop. */
