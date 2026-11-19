@@ -738,6 +738,18 @@ it("keeps a chat pending when a referenced attachment is missing locally and rem
   expect(await readJson("chats/chat/target.json")).toEqual(JSON.parse(JSON.stringify(stored)));
 });
 
+it("checks each attachment on the server once per session", async () => {
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
+  const messages = [userMessage([mediaFromDataUrl("data:image/png;base64,YWJj")])];
+  for (const extra of [[], [userMessage("again")]]) {
+    await sync.saveChat({ ...chat(), messages: [...messages, ...extra] });
+    await sync.flushPending();
+    await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
+  }
+  expect(api.appendEvents).toHaveBeenCalledTimes(2);
+  expect(api.headBlob).toHaveBeenCalledTimes(1);
+});
+
 it("retains shared server attachments when one of their chats is deleted", async () => {
   const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
   const messages = [userMessage([mediaFromDataUrl("data:image/png;base64,YWJj")])];

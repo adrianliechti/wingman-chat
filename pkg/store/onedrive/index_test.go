@@ -204,11 +204,13 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 
 func TestIndexReadRetriesChangedETag(t *testing.T) {
 	p, graph := newTestProvider(t)
-	if _, err := p.PutObject(testSession(), store.FileObject, "file-old1", strings.NewReader("old"), "*"); err != nil {
-		t.Fatal(err)
-	}
 	writer := New()
 	writer.client = &http.Client{Transport: graph}
+	writer.tempDir = t.TempDir()
+	// Write through another replica, so p has no cached snapshot to reuse.
+	if _, err := writer.PutObject(testSession(), store.FileObject, "file-old1", strings.NewReader("old"), "*"); err != nil {
+		t.Fatal(err)
+	}
 	changed := false
 	p.client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		res, err := graph.RoundTrip(r)

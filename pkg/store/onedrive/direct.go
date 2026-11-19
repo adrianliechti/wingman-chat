@@ -192,7 +192,7 @@ func (p *Provider) CompleteUpload(ctx context.Context, kind store.ObjectKind, id
 		return "", err
 	}
 	if previous.Name != "" {
-		_ = p.remove(ctx, previous.Name)
+		p.removeLater(ctx, previous.Name)
 	}
 	return hash, nil
 }

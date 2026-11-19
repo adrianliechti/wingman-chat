@@ -172,6 +172,10 @@ func (p *Provider) folder(ctx context.Context) (string, error) {
 	if session.folder != "" {
 		return session.folder, nil
 	}
+	if cached, ok := p.cache.folder(session.token); ok {
+		session.folder, session.drive, session.cachedFolder = cached.folder, cached.drive, true
+		return session.folder, nil
+	}
 	var root driveItem
 	if err := p.jsonRequest(ctx, "GET", p.base+"/me/drive/special/approot", nil, &root); err != nil {
 		return "", err
@@ -199,6 +203,7 @@ func (p *Provider) folder(ctx context.Context) (string, error) {
 	}
 	session.folder = folder.ID
 	session.drive = folder.ParentReference.DriveID
+	p.cache.storeFolder(session.token, session.folder, session.drive)
 	return folder.ID, nil
 }
 

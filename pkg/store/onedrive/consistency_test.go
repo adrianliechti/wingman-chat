@@ -127,6 +127,7 @@ func TestConcurrentlyRemovedDataReturnsConflict(t *testing.T) {
 	if err := p.DeleteChat(testSession(), "chat-1234", 1); err != nil {
 		t.Fatal(err)
 	}
+	p.cleanup.Wait()
 	if _, _, err := p.GetObject(stale, store.FileObject, "file-1234"); !errors.Is(err, store.ErrBackupConflict) {
 		t.Fatalf("replaced file: %v", err)
 	}

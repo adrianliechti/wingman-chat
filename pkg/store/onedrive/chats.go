@@ -231,9 +231,11 @@ func (p *Provider) DeleteChat(ctx context.Context, chatID string, expectedSeq in
 	if err := p.save(ctx, state); err != nil {
 		return err
 	}
-	for _, part := range ch.Segments {
-		_ = p.remove(ctx, part.Name)
+	names := make([]string, len(ch.Segments))
+	for i, part := range ch.Segments {
+		names[i] = part.Name
 	}
+	p.removeLater(ctx, names...)
 	return nil
 }
 func (p *Provider) CompactChat(ctx context.Context, chatID string, beforeSeq int64) error {
@@ -281,8 +283,6 @@ func (p *Provider) CompactChat(ctx context.Context, chatID string, beforeSeq int
 		p.discard(ctx, err, uploaded...)
 		return err
 	}
-	for _, name := range removed {
-		_ = p.remove(ctx, name)
-	}
+	p.removeLater(ctx, removed...)
 	return nil
 }

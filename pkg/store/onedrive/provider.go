@@ -34,6 +34,9 @@ type Provider struct {
 	sweepInterval time.Duration
 	sweepMu       sync.Mutex
 	sweeps        map[string]time.Time
+
+	cache   cache
+	cleanup sync.WaitGroup
 }
 
 func New() *Provider {
@@ -56,9 +59,11 @@ func (p *Provider) DirectUploadsEnabled() bool {
 type sessionKey struct{}
 type session struct {
 	token, folder, drive string
-	index                *index
-	snapshot             *index
-	control              driveItem
+	// cachedFolder marks a folder ID from an earlier request, which may be stale.
+	cachedFolder bool
+	index        *index
+	snapshot     *index
+	control      driveItem
 }
 
 // WithToken creates request-local state. Tokens are never stored on disk or in

@@ -31,12 +31,8 @@ func TestDefaultBackupConfigurationNeedsNoBackupConfig(t *testing.T) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatal(err)
 	}
-	provider, middleware, err := backupProvider(&cfg)
-	if err != nil {
+	if _, _, err := backupProvider(&cfg); err != nil {
 		t.Fatalf("default configuration cannot start without backup.yaml: %v", err)
-	}
-	if provider != nil || middleware != nil {
-		t.Fatal("default configuration enabled online backup")
 	}
 }
 

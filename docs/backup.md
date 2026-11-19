@@ -174,8 +174,17 @@ also has a generation identifier that rejects requests from devices using an old
 filesystem are required. Encrypted upload
 spools use the backend's temporary directory and are removed after each request.
 
+Each Graph call costs a few hundred milliseconds, so each replica keeps two
+in-memory caches. It caches the app-folder ID per access token for up to an hour, and
+re-resolves the folder when the index is not found there. It also keeps the most recent
+index snapshots (up to 32 MiB) by item ID and ETag. A request still reads the
+index metadata with its own token, and uses the cached snapshot only when the
+ETag matches; otherwise it downloads the index. A typical request therefore
+needs one Graph call before its own work instead of five.
+
 Usage reports OneDrive's account-folder size, which may update with a delay.
-Old objects are reclaimed after a successful replacement; cleanup failures and
+Old objects are reclaimed in the background after a successful replacement, so
+requests don't wait for the cleanup; cleanup failures and
 uncertain commits may leave unreferenced objects that still consume quota.
 Reset also works when the index contents are corrupt or unsupported. It atomically clears the index and its key material, retaining an empty index
 with a fresh generation to fence stale writers. It then deletes a snapshot of

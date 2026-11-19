@@ -104,7 +104,7 @@ func (p *Provider) PutObject(ctx context.Context, kind store.ObjectKind, id stri
 		return "", err
 	}
 	if exists {
-		_ = p.remove(ctx, old.Name)
+		p.removeLater(ctx, old.Name)
 	}
 	return obj.ETag, nil
 }
@@ -181,7 +181,7 @@ func (p *Provider) PutFiles(ctx context.Context, writes []store.FileWrite) ([]st
 			replaced = append(replaced, previous[i].Name)
 		}
 	}
-	p.removeAll(ctx, replaced)
+	p.removeLater(ctx, replaced...)
 
 	etags := make([]string, len(writes))
 	for i := range uploaded {
@@ -241,6 +241,22 @@ func (p *Provider) removeAll(ctx context.Context, names []string) {
 	})
 }
 
+// removeLater deletes objects that a committed index no longer references
+// after the request returns, so clients don't wait for the cleanup.
+func (p *Provider) removeLater(ctx context.Context, names ...string) {
+	s, err := sessionFrom(ctx)
+	if err != nil || len(names) == 0 {
+		return
+	}
+	// The request's session is not safe to share once it returns.
+	background := context.WithValue(context.Background(), sessionKey{}, &session{token: s.token, folder: s.folder, drive: s.drive, cachedFolder: s.cachedFolder})
+	p.cleanup.Add(1)
+	go func() {
+		defer p.cleanup.Done()
+		p.removeAll(background, names)
+	}()
+}
+
 func (p *Provider) DeleteObject(ctx context.Context, kind store.ObjectKind, id string, ifMatch string) error {
 	if err := validateID(id); err != nil {
 		return err
@@ -264,7 +280,7 @@ func (p *Provider) DeleteObject(ctx context.Context, kind store.ObjectKind, id s
 	if err := p.save(ctx, state); err != nil {
 		return err
 	}
-	_ = p.remove(ctx, old.Name)
+	p.removeLater(ctx, old.Name)
 	return nil
 }
 func (p *Provider) BlobExists(ctx context.Context, blobID string) (bool, error) {

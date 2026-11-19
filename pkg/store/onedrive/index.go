@@ -94,6 +94,13 @@ func (p *Provider) readIndexControl(ctx context.Context) (driveItem, error) {
 	var item driveItem
 	err = p.jsonRequest(ctx, "GET", endpoint, nil, &item)
 	if statusIs(err, http.StatusNotFound) {
+		if s, _ := sessionFrom(ctx); s != nil && s.cachedFolder {
+			// The account folder may have been deleted or recreated since it was
+			// cached. Resolve it again before treating the backup as empty.
+			p.cache.forgetFolder(s.token)
+			s.folder, s.drive, s.cachedFolder = "", "", false
+			return p.readIndexControl(ctx)
+		}
 		return driveItem{}, nil
 	}
 	if err != nil {
@@ -116,6 +123,9 @@ func (p *Provider) readIndex(ctx context.Context) (*index, driveItem, error) {
 		}
 		if before.ID == "" {
 			return emptyIndex(), driveItem{}, nil
+		}
+		if cached := p.cache.index(before); cached != nil {
+			return cached, before, nil
 		}
 		reader, err := p.open(ctx, indexName)
 		if errors.Is(err, store.ErrNotFound) {
@@ -140,6 +150,7 @@ func (p *Provider) readIndex(ctx context.Context) (*index, driveItem, error) {
 		if len(data) > 64<<20 || json.Unmarshal(data, state) != nil || state.Version != 1 || state.Chats == nil || state.Files == nil || state.Blobs == nil {
 			return nil, driveItem{}, errInvalidIndex
 		}
+		p.cache.storeIndex(after, cloneIndex(state), len(data))
 		return state, after, nil
 	}
 	return nil, driveItem{}, store.ErrBackupConflict
@@ -184,6 +195,7 @@ func (p *Provider) commit(ctx context.Context, state *index, control driveItem) 
 	if updated.ID == "" || updated.ETag == "" {
 		return errors.New("OneDrive backup: invalid index commit response")
 	}
+	p.cache.storeIndex(updated, cloneIndex(state), len(data))
 	s, _ := sessionFrom(ctx)
 	s.control = updated
 	return nil

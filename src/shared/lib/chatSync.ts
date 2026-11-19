@@ -248,6 +248,9 @@ export class ChatSync {
   private flushAgain = false;
   /** A conflict resolution changed chats the UI shows. */
   private viewChanged = false;
+  // Attachments are immutable and content-addressed, so one confirmation per
+  // session saves a request per attachment on every later save of the chat.
+  private backedUpBlobs = new Set<string>();
   private readonly userId: string;
   private readonly accountId: string;
   private readonly retentionDays?: number;
@@ -707,14 +710,19 @@ export class ChatSync {
 
   private async uploadMissingBlobs(chatId: string, stored: StoredChat): Promise<void> {
     for (const blobId of collectChatBlobIds(stored)) {
+      if (this.backedUpBlobs.has(blobId)) continue;
       requireChatBackupReady(chatId);
-      if (await api.headBlob(blobId)) continue;
+      if (await api.headBlob(blobId)) {
+        this.backedUpBlobs.add(blobId);
+        continue;
+      }
       const blob = await getChatBlob(chatId, blobId);
       if (!blob) throw new Error(`Attachment ${blobId} is missing locally and has not been backed up.`);
       const plain = new Uint8Array(await blob.arrayBuffer());
       const cipher = await encryptBlob(this.dek, plain, this.accountId, blobId);
       requireChatBackupReady(chatId);
       await api.putBlob(blobId, cipher);
+      this.backedUpBlobs.add(blobId);
     }
   }
 
