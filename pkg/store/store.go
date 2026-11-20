@@ -45,6 +45,19 @@ type EventFrame struct {
 	Frame string `json:"frame"`
 }
 
+// ChatAppend is one chat's encrypted events and expected head in a batch.
+type ChatAppend struct {
+	ID          string       `json:"id"`
+	ExpectedSeq int64        `json:"expectedSeq"`
+	Events      []EventFrame `json:"events"`
+}
+
+// ChatBatchAppender publishes compatible appends with one index commit.
+// Results follow input order; nil marks a chat whose head has changed.
+type ChatBatchAppender interface {
+	AppendChatBatch(ctx context.Context, writes []ChatAppend) ([]*AppendResult, error)
+}
+
 // ObjectKind separates workspace files from attachment blobs, even when IDs match.
 // Providers reject kinds other than FileObject and BlobObject with ErrInvalidID.
 type ObjectKind uint8
@@ -200,6 +213,12 @@ const MaxObjectBytes = 256<<20 + 1<<20
 
 // MaxAppendBytes caps one append request body (all JSONL event lines).
 const MaxAppendBytes = 64 << 20 // 64 MiB
+
+// Chat batches bound the total buffered ciphertext and the number of logs.
+const (
+	MaxChatBatchBytes = 16 << 20
+	MaxChatBatchChats = 8
+)
 
 // MaxBatchBytes caps one PutFiles request body; MaxBatchFiles caps the
 // entries of a PutFiles or DeleteFiles request.

@@ -1,4 +1,14 @@
-import { ChevronDown, CloudOff, Download, EllipsisVertical, Lock, Power, RefreshCw, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  CloudOff,
+  Download,
+  EllipsisVertical,
+  LoaderCircle,
+  Lock,
+  Power,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as storeSession from "@/shared/lib/storeSession";
 import { PIN_MAX_LENGTH, PIN_MIN_LENGTH } from "@/shared/lib/keystore";
@@ -6,6 +16,7 @@ import { supportsPasskeys } from "@/shared/lib/passkey";
 import { notify } from "@/shared/lib/notify";
 import { confirm } from "@/shared/lib/confirm";
 import { adoptLocalWorkspace, requestBackupReset } from "@/shared/lib/backupReset";
+import { BACKUP_RESET_KEY, REOPEN_BACKUP_SETTINGS_KEY } from "@/shared/lib/backupLifecycle";
 import { type SyncHealth, useSyncStatus } from "../hooks/useSyncStatus";
 import { describeSyncProgress } from "@/shared/lib/syncProgress";
 import { BackupSetup, type BackupSetupStep } from "./BackupSetup";
@@ -105,6 +116,9 @@ export function SyncSection({
   const [confirmPin, setConfirmPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [startingReset, setStartingReset] = useState(false);
+  const [resumingReset] = useState(() => localStorage.getItem(BACKUP_RESET_KEY) !== null);
+  const resetting = startingReset || (status === "initializing" && resumingReset);
 
   async function onResetBackup() {
     if (
@@ -118,11 +132,15 @@ export function SyncSection({
     )
       return;
     setBusy(true);
+    setStartingReset(true);
     setError(null);
     try {
+      sessionStorage.setItem(REOPEN_BACKUP_SETTINGS_KEY, "true");
       await requestBackupReset();
     } catch (err) {
+      sessionStorage.removeItem(REOPEN_BACKUP_SETTINGS_KEY);
       notify.error("Couldn't reset backups", err);
+      setStartingReset(false);
       setBusy(false);
     }
   }
@@ -262,7 +280,7 @@ export function SyncSection({
     }
   }
 
-  const active = status === "ready";
+  const active = status === "ready" && !resetting;
   // Saving the PIN moves the session through locked and ready before the next step is shown.
   const settingUp =
     (setupStep === "pin" && (status === "setup" || busy)) || (status === "ready" && setupStep === "passkey");
@@ -324,31 +342,40 @@ export function SyncSection({
               {backupMenu}
             </div>
           )}
-          {!settingUp && (
+          {(resetting || !settingUp) && (
             <BackupStatusRow
+              compact={resetting}
               icon={
-                status === "setup" || status === "locked" ? (
+                resetting ? (
+                  <LoaderCircle
+                    size={14}
+                    aria-hidden="true"
+                    className="shrink-0 text-neutral-500 motion-safe:animate-spin dark:text-neutral-400"
+                  />
+                ) : status === "setup" || status === "locked" ? (
                   <CloudOff size={28} aria-hidden="true" className="shrink-0 text-neutral-500 dark:text-neutral-400" />
                 ) : (
                   <BackupStatusIcon health={health} size={28} />
                 )
               }
               title={
-                active
-                  ? health === "syncing" && progress.some((item) => item.direction === "restore")
-                    ? "Restoring your backup"
-                    : (BACKUP_HEALTH_TITLES[health] ?? "Checking your backup")
-                  : status === "setup" || status === "locked"
-                    ? recovering
-                      ? "Ready to restore"
-                      : "Backup is off"
-                    : status === "error"
-                      ? "Backup needs attention"
-                      : "Checking your backup"
+                resetting
+                  ? "Deletion pending"
+                  : active
+                    ? health === "syncing" && progress.some((item) => item.direction === "restore")
+                      ? "Restoring your backup"
+                      : (BACKUP_HEALTH_TITLES[health] ?? "Checking your backup")
+                    : status === "setup" || status === "locked"
+                      ? recovering
+                        ? "Ready to restore"
+                        : "Backup is off"
+                      : status === "error"
+                        ? "Backup needs attention"
+                        : "Checking your backup"
               }
               size={active && backupBytes !== null ? `≈ ${formatBytes(backupBytes)}` : undefined}
               description={
-                status === "setup" ? (
+                resetting ? null : status === "setup" ? (
                   "Your data is saved only in this browser. Turn on backup to keep a copy online."
                 ) : active ? (
                   <>
@@ -380,7 +407,7 @@ export function SyncSection({
               }
               actions={
                 <>
-                  {status === "setup" && setupStep === "intro" && (
+                  {!resetting && status === "setup" && setupStep === "intro" && (
                     <button
                       ref={setupStartRef}
                       type="button"
@@ -402,7 +429,7 @@ export function SyncSection({
                       Sync now
                     </button>
                   )}
-                  {status === "locked" && mode === "none" && (
+                  {!resetting && status === "locked" && mode === "none" && (
                     <button
                       type="button"
                       disabled={busy || (passkeyProtected && !supportsPasskeys())}
@@ -631,7 +658,7 @@ export function SyncSection({
               separately.
             </p>
           )}
-          <fieldset disabled={busy || syncBusy || dangerDisabled} className="flex flex-wrap gap-2">
+          <fieldset disabled={busy || resetting || syncBusy || dangerDisabled} className="flex flex-wrap gap-2">
             {status !== "disabled" && (
               <button
                 type="button"
@@ -640,7 +667,7 @@ export function SyncSection({
                 className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-300 px-3 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
               >
                 <Trash2 size={14} aria-hidden="true" />
-                Reset online backup
+                {resetting ? "Resetting…" : "Reset online backup"}
               </button>
             )}
             {dangerActions}
@@ -652,6 +679,7 @@ export function SyncSection({
 }
 
 interface BackupStatusRowProps {
+  compact?: boolean;
   icon: ReactNode;
   title: string;
   size?: string;
@@ -659,9 +687,15 @@ interface BackupStatusRowProps {
   actions: ReactNode;
 }
 
-function BackupStatusRow({ icon, title, size, description, actions }: BackupStatusRowProps) {
+function BackupStatusRow({ compact = false, icon, title, size, description, actions }: BackupStatusRowProps) {
   return (
-    <div className="grid grid-cols-[28px_minmax(0,1fr)] items-center gap-x-3 gap-y-3 sm:grid-cols-[28px_minmax(0,1fr)_auto]">
+    <div
+      className={
+        compact
+          ? "flex items-center gap-2"
+          : "grid grid-cols-[28px_minmax(0,1fr)] items-center gap-x-3 gap-y-3 sm:grid-cols-[28px_minmax(0,1fr)_auto]"
+      }
+    >
       {icon}
       <div className="min-w-0 space-y-0.5" role="status">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">

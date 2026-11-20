@@ -282,7 +282,7 @@ test("reset confirms deletion, keeps local files, resets other tabs, and permits
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (path.endsWith("/backup") && request.method() === "DELETE") {
+    if (path === "/api/v1/store" && request.method() === "DELETE") {
       expect(request.headers()["x-confirm-backup-reset"]).toBe("true");
       resets++;
       key = null;
@@ -365,9 +365,10 @@ test("a failed reset preserves local data and retries on reload", async ({ page 
     route.fulfill({ json: { models: [], backup: { provider: "onedrive" } } }),
   );
   await page.route(/\/api\/v1\/|\/me$/, (route) => {
-    const path = new URL(route.request().url()).pathname;
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (path.endsWith("/backup")) {
+    if (path === "/api/v1/store" && request.method() === "DELETE") {
       resets++;
       return fail ? route.fulfill({ status: 500, body: "Reset unavailable" }) : route.fulfill({ status: 204 });
     }
@@ -405,7 +406,7 @@ test("reset waits for a peer upload's local writes and fences the stale tab afte
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice" } });
-    if (path.endsWith("/backup")) {
+    if (path === "/api/v1/store" && request.method() === "DELETE") {
       resets++;
       key = null;
       return route.fulfill({ status: 204 });

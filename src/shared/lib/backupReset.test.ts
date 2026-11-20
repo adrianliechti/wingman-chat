@@ -101,8 +101,23 @@ it("finishes locally when the confirmed backup was replaced", async () => {
     BACKUP_RESET_KEY,
     JSON.stringify({ userId: "alice", phase: "delete", target: { keystore: "old" } }),
   );
-  vi.mocked(resetBackup).mockResolvedValueOnce(false);
+  vi.mocked(getKeystore).mockResolvedValueOnce({ data: "{}", etag: "replacement" });
   await completePendingBackupReset("alice");
+  expect(resetLocalBackupState).toHaveBeenCalledOnce();
+  expect(localStorage.getItem(BACKUP_RESET_KEY)).toBeNull();
+});
+
+it("keeps the reset pending while the confirmed keystore still exists", async () => {
+  const pending = JSON.stringify({ userId: "alice", phase: "delete", target: { keystore: "old" } });
+  localStorage.setItem(BACKUP_RESET_KEY, pending);
+  vi.mocked(getKeystore).mockResolvedValueOnce({ data: "{}", etag: "old" }).mockResolvedValueOnce(null);
+
+  await expect(completePendingBackupReset("alice")).rejects.toThrow("The confirmed online backup is still present");
+  expect(localStorage.getItem(BACKUP_RESET_KEY)).toBe(pending);
+  expect(resetLocalBackupState).not.toHaveBeenCalled();
+
+  await completePendingBackupReset("alice");
+  expect(resetBackup).toHaveBeenNthCalledWith(2, { keystore: "old" });
   expect(resetLocalBackupState).toHaveBeenCalledOnce();
   expect(localStorage.getItem(BACKUP_RESET_KEY)).toBeNull();
 });

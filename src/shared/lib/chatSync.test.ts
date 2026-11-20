@@ -26,6 +26,7 @@ vi.mock("./storeClient", async (original) => ({
   listChats: vi.fn(),
   readEvents: vi.fn(),
   appendEvents: vi.fn(),
+  appendChatBatch: vi.fn(),
   headBlob: vi.fn(),
   getBlob: vi.fn(),
   putBlob: vi.fn(),
@@ -70,7 +71,25 @@ beforeEach(() => {
   vi.mocked(api.listChats).mockResolvedValue([]);
   vi.mocked(api.readEvents).mockResolvedValue([]);
   vi.mocked(api.appendEvents).mockImplementation(async (_id, seq, events) => ({ newSeq: seq + events.length }));
+  vi.mocked(api.appendChatBatch).mockResolvedValue(null);
   vi.mocked(api.headBlob).mockResolvedValue(true);
+});
+
+it("retries only the chat whose batch append conflicted", async () => {
+  await stashPendingTarget({ ...chat(), id: "chat-conflict" });
+  await stashPendingTarget({ ...chat(), id: "chat-ready" });
+  vi.mocked(api.appendChatBatch).mockImplementation(async (writes) =>
+    writes.map(({ id, events }) => (id === "chat-conflict" ? null : { newSeq: events.length })),
+  );
+  const sync = await ChatSync.create({ userId: "alice", accountId: "alice", dek: await generateStoreKey() });
+  await sync.flushPending();
+
+  expect(api.appendChatBatch).toHaveBeenCalledOnce();
+  expect(api.appendEvents).toHaveBeenCalledExactlyOnceWith("chat-conflict", 0, expect.any(Array));
+  expect((await readJson<{ heads: Record<string, number> }>("_sync/state.json"))?.heads).toEqual({
+    "chat-conflict": 1,
+    "chat-ready": 1,
+  });
 });
 
 it("expires an incoming old backup without reviving its chat or draft", async () => {

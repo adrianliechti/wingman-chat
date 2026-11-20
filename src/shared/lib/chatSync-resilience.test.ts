@@ -14,6 +14,7 @@ vi.mock("./storeClient", async (original) => ({
   listChats: vi.fn(),
   readEvents: vi.fn(),
   appendEvents: vi.fn(),
+  appendChatBatch: vi.fn(),
   headBlob: vi.fn(),
   getBlob: vi.fn(),
   putBlob: vi.fn(),
@@ -47,6 +48,7 @@ beforeEach(() => {
     events.forEach((event) => frames.push({ ...event, seq: frames.length + 1 }));
     return { newSeq: frames.length };
   });
+  vi.mocked(api.appendChatBatch).mockResolvedValue(null);
   vi.mocked(api.headBlob).mockImplementation(async (id) => blobs.has(id));
   vi.mocked(api.putBlob).mockImplementation(async (id, bytes) => {
     blobs.set(id, bytes instanceof Blob ? new Uint8Array(await bytes.arrayBuffer()) : bytes);

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import JSZip from "jszip";
 import { expect, test, type Page } from "@playwright/test";
+import { choosePin } from "./helpers/backup-client";
 
 async function configure(page: Page, online?: boolean, store = true) {
   let keystore: unknown = null;
@@ -16,6 +17,10 @@ async function configure(page: Page, online?: boolean, store = true) {
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/store/usage")) return route.fulfill({ json: { bytes: 12949914 } });
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice", name: "Alice" } });
+    if (path === "/api/v1/store" && request.method() === "DELETE") {
+      keystore = null;
+      return route.fulfill({ status: 204 });
+    }
     if (path.endsWith("/keystore")) {
       if (request.method() === "GET") {
         return keystore
@@ -29,6 +34,38 @@ async function configure(page: Page, online?: boolean, store = true) {
     return route.fulfill({ json: [] });
   });
 }
+
+test("backup settings reopen after reset and show a loader until the server responds", async ({ page }) => {
+  await configure(page, true);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Backup is off — click to turn on", exact: true }).click();
+  await choosePin(page);
+
+  let releaseReset!: () => void;
+  const resetPaused = new Promise<void>((resolve) => {
+    releaseReset = resolve;
+  });
+  await page.route("**/api/v1/store", async (route) => {
+    if (route.request().method() === "DELETE") await resetPaused;
+    await route.fallback();
+  });
+  await page.getByRole("button", { name: "Danger zone", exact: true }).click();
+  await page.getByRole("button", { name: "Reset online backup", exact: true }).click();
+  const deleteRequest = page.waitForRequest(
+    (request) => request.method() === "DELETE" && request.url().endsWith("/api/v1/store"),
+  );
+  try {
+    await page.getByRole("button", { name: "Delete online backup and reset", exact: true }).click();
+    await deleteRequest;
+    const backup = page.getByRole("region", { name: "Online backup", exact: true }).getByRole("status");
+    await expect(backup).toContainText("Deletion pending");
+    await expect(page.getByRole("button", { name: /^(Turn on backup|Unlock backup|Restore backup)$/ })).toHaveCount(0);
+  } finally {
+    releaseReset();
+  }
+  await expect(page.getByRole("button", { name: "Turn on backup", exact: true })).toBeVisible();
+  await expect(page.getByText("Deletion pending", { exact: true })).toHaveCount(0);
+});
 
 test("PIN setup stays visible until the optional passkey step is ready", async ({ page }) => {
   await configure(page, true);

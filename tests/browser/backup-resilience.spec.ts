@@ -8,6 +8,7 @@ import {
   sync,
   expectLocal,
   restore,
+  withRestoredBackup,
   matchesUpload,
   fixture,
   filePath,
@@ -29,6 +30,39 @@ test("backup and restore chats and files on a fresh device", async ({ page, cont
   );
   await sync(page);
   await restore(context, backupServer, user, "original backup");
+});
+
+test("initial backup batches pending chats and restores each chat on another device", async ({
+  page,
+  context,
+  backupServer,
+}) => {
+  const { network, user } = await connect(context, backupServer);
+  const chats = Array.from({ length: 8 }, (_, i) => ({ id: `chat-batch-${i}`, text: `Pending chat ${i}` }));
+  const batchSizes: number[] = [];
+  network.interrupt = async (route) => {
+    const request = route.request();
+    if (request.method() === "POST" && request.url().endsWith("/api/v1/store/chats/append")) {
+      batchSizes.push(request.postDataJSON().length);
+    }
+    return false;
+  };
+
+  await page.goto(fixture);
+  await page.evaluate(async (chats) => {
+    for (const { id, text } of chats) await window.syncSecurityE2E.saveChat(text, id);
+  }, chats);
+  await choosePin(page);
+  await sync(page);
+  expect(batchSizes.some((size) => size > 1)).toBe(true);
+
+  await withRestoredBackup(context, backupServer, user, async (device) => {
+    for (const { id, text } of chats) {
+      await expect
+        .poll(() => device.evaluate((id) => window.syncSecurityE2E.readChat(id).then(JSON.stringify), id))
+        .toContain(text);
+    }
+  });
 });
 
 test("missing backup routes report 404 and recover when routing is fixed", async ({ page, context, backupServer }) => {

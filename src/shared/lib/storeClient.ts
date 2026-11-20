@@ -91,10 +91,10 @@ export type ResetTarget = { keystore: string | null } | { unreadable: true };
 
 /**
  * Only the signed-in account is needed; restore secrets may have been lost.
- * Returns false when the confirmed backup no longer exists, e.g. because it was
- * already reset or another device configured a new one, which must be kept.
+ * A precondition failure can mean an earlier attempt succeeded or the backup
+ * changed. The caller checks the current keystore before finishing the reset.
  */
-export async function resetBackup(target: ResetTarget): Promise<boolean> {
+export async function resetBackup(target: ResetTarget): Promise<void> {
   const headers: Record<string, string> = {};
   if ("unreadable" in target) headers["X-Confirm-Backup-Reset"] = "unreadable";
   else {
@@ -102,10 +102,10 @@ export async function resetBackup(target: ResetTarget): Promise<boolean> {
     if (target.keystore) headers["If-Match"] = `"${target.keystore}"`;
     else headers["If-None-Match"] = "*";
   }
-  const res = await fetch(PREFIX, { method: "DELETE", headers });
-  if (res.status === 412) return false;
+  const res = await fetch(PREFIX, { method: "DELETE", headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  if (res.status === 204 || res.status === 412) return;
   await ensureOk(res);
-  return true;
+  throw new ServerError(res.status, "The server did not confirm the backup reset.");
 }
 
 interface ServerUser {
@@ -131,6 +131,12 @@ interface AppendRequest {
 
 interface AppendResponse {
   newSeq: number;
+}
+
+export interface ChatAppend {
+  id: string;
+  expectedSeq: number;
+  events: AppendRequest[];
 }
 
 interface ConditionalOptions {
@@ -164,8 +170,13 @@ export async function fetchMe(): Promise<ServerUser> {
   return { id: user.id };
 }
 
-export async function getKeystore(): Promise<KeystoreResponse | null> {
-  const res = await ensureOk(await storeFetch(`${PREFIX}/keystore`, { cache: "no-store" }), true);
+export async function getKeystore({ forReset = false } = {}): Promise<KeystoreResponse | null> {
+  const url = `${PREFIX}/keystore`;
+  // Reset verification happens while sync requests are fenced.
+  const response = forReset
+    ? await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+    : await storeFetch(url, { cache: "no-store" });
+  const res = await ensureOk(response, true);
   if (res.status === 404) return null;
   const etag = unquote(res.headers.get("ETag") ?? "");
   return { data: await res.text(), etag };
@@ -216,6 +227,27 @@ export async function appendEvents(
   if (res.status === 409) return null;
   await ensureOk(res);
   return res.json();
+}
+
+/** Null means retry each append through the single-chat endpoint. A null
+ * item marks a sequence conflict for that chat alone. */
+export async function appendChatBatch(writes: ChatAppend[]): Promise<(AppendResponse | null)[] | null> {
+  const res = await storeFetch(`${PREFIX}/chats/append`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(writes),
+  });
+  if ([400, 404, 405, 409, 413, 500, 501].includes(res.status)) return null;
+  await ensureOk(res);
+  const results: unknown = await res.json();
+  if (
+    !Array.isArray(results) ||
+    results.length !== writes.length ||
+    results.some((result, i) => result !== null && result?.newSeq !== writes[i].expectedSeq + writes[i].events.length)
+  ) {
+    throw new Error("Invalid chat append batch response");
+  }
+  return results;
 }
 
 export async function compactChat(chatId: string, beforeSeq: number): Promise<void> {

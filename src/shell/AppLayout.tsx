@@ -14,6 +14,7 @@ import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
 import { useBreakpoint, useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
+import { REOPEN_BACKUP_SETTINGS_KEY } from "@/shared/lib/backupLifecycle";
 import { ProviderState } from "@/shared/types/chat";
 import { useApp } from "@/shell/hooks/useApp";
 import { useNavigation } from "@/shell/hooks/useNavigation";
@@ -81,9 +82,16 @@ export function AppLayout() {
   // Share the visible viewport with pages and portaled sheets at every width.
   useVisualViewport();
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [resumeBackupSettings] = useState(() => sessionStorage.getItem(REOPEN_BACKUP_SETTINGS_KEY) === "true");
+  const [settingsOpen, setSettingsOpen] = useState(resumeBackupSettings);
   const [settingsAdvanced, setSettingsAdvanced] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(
+    resumeBackupSettings ? "backup" : undefined,
+  );
+
+  useEffect(() => {
+    if (resumeBackupSettings) sessionStorage.removeItem(REOPEN_BACKUP_SETTINGS_KEY);
+  }, [resumeBackupSettings]);
 
   const openSettings = useCallback(({ advanced, section }: { advanced: boolean; section?: string }) => {
     setSettingsInitialSection(section);

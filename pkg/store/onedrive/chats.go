@@ -53,6 +53,25 @@ func (p *Provider) AppendEventStream(ctx context.Context, chatID string, expecte
 	if ch.Head != expectedSeq {
 		return store.AppendResult{}, store.ErrSeqConflict
 	}
+	updated, result, spooled, err := p.prepareAppend(ch, events)
+	if err != nil || spooled == nil {
+		return result, err
+	}
+	defer spooled.close()
+	name := updated.Segments[len(updated.Segments)-1].Name
+	if err := p.send(ctx, name, spooled); err != nil {
+		return store.AppendResult{}, err
+	}
+	state.Chats[chatID] = updated
+	if err := p.save(ctx, state); err != nil {
+		p.discard(ctx, err, name)
+		return store.AppendResult{}, err
+	}
+	return result, nil
+}
+
+// prepareAppend fully validates and spools a chat's events before publishing.
+func (p *Provider) prepareAppend(ch chat, events iter.Seq2[store.EventFrame, error]) (chat, store.AppendResult, *spooledObject, error) {
 	result := store.AppendResult{NewSeq: ch.Head}
 	seen := make(map[string]bool, len(ch.Recent))
 	for _, id := range ch.Recent {
@@ -83,29 +102,93 @@ func (p *Provider) AppendEventStream(ctx context.Context, chatID string, expecte
 		return nil
 	})
 	if err != nil {
-		return store.AppendResult{}, err
+		return chat{}, store.AppendResult{}, nil, err
 	}
-	defer spooled.close()
 	if spooled.size == 0 {
-		return result, nil
+		spooled.close()
+		return ch, result, nil, nil
 	}
 	if len(ch.Recent) > maxRecent {
 		ch.Recent = slices.Clone(ch.Recent[len(ch.Recent)-maxRecent:])
 	}
 	part := segment{object: object{Name: newObject(), ETag: spooled.etag, Size: spooled.size, Updated: time.Now().UTC()}, First: first, Last: ch.Head}
-	if err := p.send(ctx, part.Name, spooled); err != nil {
-		return result, err
-	}
 	ch.Segments = append(ch.Segments, part)
 	ch.Updated = part.Updated
 	ch.Deleted = false
-	state.Chats[chatID] = ch
-	if err := p.save(ctx, state); err != nil {
-		p.discard(ctx, err, part.Name)
-		return result, err
-	}
 	result.NewSeq = ch.Head
-	return result, nil
+	return ch, result, spooled, nil
+}
+
+func (p *Provider) AppendChatBatch(ctx context.Context, writes []store.ChatAppend) ([]*store.AppendResult, error) {
+	seen := make(map[string]bool, len(writes))
+	for _, write := range writes {
+		if err := validateID(write.ID); err != nil {
+			return nil, err
+		}
+		if seen[write.ID] {
+			return nil, store.ErrInvalidID
+		}
+		seen[write.ID] = true
+	}
+	state, err := p.load(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	type pendingAppend struct {
+		id      string
+		updated chat
+		name    string
+		spool   *spooledObject
+	}
+	var pending []pendingAppend
+	var names []string
+	defer func() {
+		for _, append := range pending {
+			append.spool.close()
+		}
+	}()
+	results := make([]*store.AppendResult, len(writes))
+	for i, write := range writes {
+		current := state.Chats[write.ID]
+		if current.Head != write.ExpectedSeq {
+			continue
+		}
+		updated, result, spooled, err := p.prepareAppend(current, func(yield func(store.EventFrame, error) bool) {
+			for _, event := range write.Events {
+				if !yield(event, nil) {
+					return
+				}
+			}
+		})
+		if err != nil {
+			return nil, err
+		}
+		results[i] = &result
+		if spooled != nil {
+			name := updated.Segments[len(updated.Segments)-1].Name
+			pending = append(pending, pendingAppend{write.ID, updated, name, spooled})
+			names = append(names, name)
+		}
+	}
+	if len(pending) == 0 {
+		return results, nil
+	}
+	if err := p.parallel(ctx, len(pending), func(ctx context.Context, i int) error {
+		item := pending[i]
+		return p.send(ctx, item.name, item.spool)
+	}); err != nil {
+		p.removeAll(ctx, names)
+		return nil, err
+	}
+	for _, append := range pending {
+		state.Chats[append.id] = append.updated
+	}
+	if err := p.save(ctx, state); err != nil {
+		p.discard(ctx, err, names...)
+		return nil, err
+	}
+	return results, nil
 }
 
 // eventReader opens one immutable segment at a time, bounds memory to one frame,

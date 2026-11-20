@@ -3,6 +3,7 @@ import type { ResetTarget } from "./storeClient";
 
 export const WORKSPACE_OWNER_KEY = "wingman:workspace-owner";
 export const BACKUP_RESET_KEY = "wingman:backup-reset";
+export const REOPEN_BACKUP_SETTINGS_KEY = "wingman:reopen-backup-settings";
 export const BACKUP_GENERATION_KEY = "wingman:backup-generation";
 
 /** Local workspace was bound to a different account ID than the signed-in one. */

@@ -126,6 +126,51 @@ func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
+func (h *Handler) handleAppendChatBatch(appender store.ChatBatchAppender) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, store.MaxChatBatchBytes))
+		var writes []store.ChatAppend
+		err := decoder.Decode(&writes)
+		if err == nil {
+			err = decoder.Decode(new(json.RawMessage))
+			switch err {
+			case io.EOF:
+				err = nil
+			case nil:
+				err = errors.New("trailing data")
+			}
+		}
+		var tooLarge *http.MaxBytesError
+		switch {
+		case errors.As(err, &tooLarge):
+			writeStoreError(w, err)
+			return
+		case err != nil || len(writes) < 2 || len(writes) > store.MaxChatBatchChats:
+			http.Error(w, "invalid chat append batch", http.StatusBadRequest)
+			return
+		}
+		for _, write := range writes {
+			if write.ExpectedSeq < 0 || len(write.Events) == 0 {
+				http.Error(w, "invalid chat append", http.StatusBadRequest)
+				return
+			}
+			for _, event := range write.Events {
+				if event.ID == "" || event.Frame == "" {
+					http.Error(w, "id and frame required", http.StatusBadRequest)
+					return
+				}
+			}
+		}
+		results, err := appender.AppendChatBatch(r.Context(), writes)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(results)
+	}
+}
+
 func (h *Handler) handleCompactChat(w http.ResponseWriter, r *http.Request) {
 	chatID := r.PathValue("id")
 	v := r.URL.Query().Get("beforeSeq")

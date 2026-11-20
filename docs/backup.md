@@ -112,8 +112,12 @@ has its own OneDrive. Data and
 protected recovery keys are encrypted in the browser before upload. OneDrive sees
 opaque objects and a metadata index containing sizes, resource IDs and timing.
 
-Chat appends upload immutable event segments; changed workspace files and blobs
-upload separately. When several workspace files are pending, files up to 4 MiB
+Chat appends upload immutable event segments. When several chats are pending,
+the browser can group up to eight appends of up to 1 MiB each. OneDrive receives
+their segments in parallel and publishes them with one index commit. A stale
+chat head is retried separately. The browser uses the single-chat endpoint for
+larger appends and when a server does not support batches. Chats with attachments
+upload individually. When several workspace files are pending, files up to 4 MiB
 upload together in batches of up to 100 files or 16 MiB; the backend uploads up to
 16 of a batch's objects in parallel and publishes them with one index commit. A batch
 is all-or-nothing: if any file's precondition fails, nothing is published and
@@ -198,8 +202,10 @@ keystore ETag it saw (or that there was none, or that the index was unreadable)
 and sends it as `If-Match` / `If-None-Match: *` / `X-Confirm-Backup-Reset: unreadable`.
 The backend returns 412 when the backup changed since, and 428 without a
 condition. A browser whose reset response was lost retries on its next load; if
-another device reset or configured a new backup in between, the retry gets 412
-and only clears local sync tracking, keeping the new backup.
+another device reset or configured a new backup in between, the retry gets 412.
+Before clearing local sync tracking, the browser checks that the confirmed
+keystore is gone or has changed. If the same backup is still present, the reset
+stays pending and settings shows an error.
 Reset also works when the index contents are corrupt or unsupported. It atomically clears the index and its key material, retaining an empty index
 with a fresh generation to fence stale writers. After responding, it deletes a
 snapshot of existing encrypted objects in the background, including objects left

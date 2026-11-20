@@ -10,7 +10,6 @@ import {
   fixture,
   restore,
   sync,
-  unlockRestoredBackup,
 } from "./helpers/backup-client";
 import { test } from "./helpers/backup-server";
 
@@ -30,7 +29,7 @@ async function saveLocal(page: Page, text: string) {
   );
 }
 
-test("a reset from another browser preserves local copies in both tabs and permits a fresh backup", async ({
+test("a locked browser can reset without the PIN and the original browser can set up backup again", async ({
   page,
   context,
   browser,
@@ -49,7 +48,8 @@ test("a reset from another browser preserves local copies in both tabs and permi
   try {
     await connect(other, backupServer, user);
     const resetter = await other.newPage();
-    await unlockRestoredBackup(resetter);
+    await resetter.goto(fixture);
+    await expect(resetter.getByRole("button", { name: "Restore backup", exact: true })).toBeVisible();
     await resetOnlineBackup(resetter);
     await expect(resetter.getByRole("button", { name: "Turn on backup", exact: true })).toBeVisible();
 
@@ -67,6 +67,28 @@ test("a reset from another browser preserves local copies in both tabs and permi
   } finally {
     await other.close();
   }
+});
+
+test("a reset reports an unexpected successful response instead of showing the backup as off", async ({
+  page,
+  context,
+  backupServer,
+}) => {
+  const { network } = await connect(context, backupServer);
+  await enableBackup(page);
+  network.interrupt = async (route) => {
+    if (route.request().method() !== "DELETE" || !route.request().url().endsWith("/api/v1/store")) return false;
+    await route.fulfill({ status: 200, json: {} });
+    return true;
+  };
+
+  await resetOnlineBackup(page);
+  await expect(page.getByRole("alert")).toContainText("The server did not confirm the backup reset.");
+  await expect(page.getByRole("button", { name: /^(Unlock backup|Turn on backup)$/ })).toHaveCount(0);
+
+  network.interrupt = undefined;
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Turn on backup", exact: true })).toBeVisible();
 });
 
 test("reset bypasses an old keystore in the browser HTTP cache", async ({ page, baseURL, backupServer }) => {

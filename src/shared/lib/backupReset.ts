@@ -30,7 +30,8 @@ if (typeof window !== "undefined") {
 /** Identify the backup being confirmed, so a delayed retry cannot delete a newer one. */
 async function currentResetTarget(): Promise<ResetTarget> {
   try {
-    const keystore = await getKeystore();
+    const keystore = await getKeystore({ forReset: true });
+    if (keystore && !keystore.etag) throw new Error("The backup server did not provide a keystore ETag.");
     return { keystore: keystore?.etag ?? null };
   } catch (error) {
     if (error instanceof ServerError && error.status === 422) return { unreadable: true };
@@ -55,8 +56,16 @@ export async function completePendingBackupReset(userId: string): Promise<void> 
     if (request.userId !== userId) throw new Error("Sign in to the account that requested the backup reset.");
     if (request.phase === "delete") {
       // Without a confirmed target the server cannot tell which backup was meant,
-      // so only local cleanup is safe. A 412 means the confirmed backup is gone.
-      if (request.target) await resetBackup(request.target);
+      // so only local cleanup is safe.
+      if (request.target) {
+        await resetBackup(request.target);
+        const current = await currentResetTarget();
+        const unchanged =
+          "unreadable" in current
+            ? "unreadable" in request.target
+            : current.keystore !== null && "keystore" in request.target && current.keystore === request.target.keystore;
+        if (unchanged) throw new Error("The confirmed online backup is still present. Try resetting it again.");
+      }
       // A local cleanup retry must never erase a newly configured remote backup.
       localStorage.setItem(BACKUP_RESET_KEY, JSON.stringify({ userId, phase: "local" }));
     } else if (request.phase !== "local") {

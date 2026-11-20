@@ -18,6 +18,7 @@ import { SyncProgressTracker, type SyncProgress } from "./syncProgress";
 
 import { isChatBackupPaused, requireChatBackupReady, BackupPausedError } from "./chatBackupActivity";
 import { BackupBusyError } from "./backupBusy";
+import { CHAT_APPEND_BATCH_SIZE, createChatAppendBatch } from "./chatAppendBatch";
 import { isBackupSessionCurrent, withBackupStorage, WORKSPACE_OWNER_KEY } from "./backupLifecycle";
 import { withPersistenceLock } from "./persistence";
 import {
@@ -606,11 +607,18 @@ export class ChatSync {
         }
       }
 
-      // Keep going past failures — one poisoned chat must not block the rest.
-      for (const chatId of chats) {
-        if (isChatBackupPaused(chatId)) continue;
-        if (!(await this.withChat(chatId, () => this.flushChat(chatId)))) failed = true;
-        else progress.advance();
+      for (const group of this.groupChatUploads(chats)) {
+        const append = group.length > 1 ? createChatAppendBatch() : api.appendEvents;
+        const outcomes = await Promise.allSettled(
+          group.map(async (chatId) => {
+            if (isChatBackupPaused(chatId)) return;
+            if (await this.withChat(chatId, () => this.flushChat(chatId, append))) progress.advance();
+            else failed = true;
+          }),
+        );
+        // Wait for every local commit before releasing the backup lock.
+        const fatal = outcomes.find((outcome) => outcome.status === "rejected");
+        if (fatal) throw fatal.reason;
       }
       await this.refreshDeletions();
     } catch (error) {
@@ -798,9 +806,29 @@ export class ChatSync {
     }
   }
 
+  private *groupChatUploads(ids: string[]): Iterable<string[]> {
+    let group: string[] = [];
+    for (const id of ids) {
+      const target = this.pendingTargets.get(id);
+      // Attachment uploads can hold a large plaintext and ciphertext in memory.
+      if (target && collectChatBlobIds(target).length > 0) {
+        if (group.length) yield group;
+        yield [id];
+        group = [];
+        continue;
+      }
+      group.push(id);
+      if (group.length === CHAT_APPEND_BATCH_SIZE) {
+        yield group;
+        group = [];
+      }
+    }
+    if (group.length) yield group;
+  }
+
   /** Compute the delta for one chat and post it (caller holds the chat lock).
    *  Returns true on success (or no-op), false on network/persistent conflict. */
-  private async flushChat(chatId: string): Promise<boolean> {
+  private async flushChat(chatId: string, append = api.appendEvents): Promise<boolean> {
     const target = this.pendingTargets.get(chatId);
     if (!target) return true;
 
@@ -823,7 +851,7 @@ export class ChatSync {
       // reference them.
       await this.uploadMissingBlobs(chatId, target);
       if (isChatBackupPaused(chatId)) return false;
-      await this.postEntries(chatId, entries);
+      await this.postEntries(chatId, entries, false, append);
     } catch (err) {
       if (err instanceof BackupPausedError) return false;
       if (err instanceof BackupBusyError) {
@@ -946,7 +974,12 @@ export class ChatSync {
    *  since a re-diffed delta must never be mistaken for a compaction base.
    *  Snapshots must fit one request so their init cannot publish a partial chat.
    *  Returns the first posted seq, or null when nothing (more) was posted. */
-  private async postEntries(chatId: string, entries: LogEntry[], snapshot = false): Promise<number | null> {
+  private async postEntries(
+    chatId: string,
+    entries: LogEntry[],
+    snapshot = false,
+    append = api.appendEvents,
+  ): Promise<number | null> {
     let firstSeq: number | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       // One frame per chunk. A first-sync snapshot of a long chat easily
@@ -968,7 +1001,8 @@ export class ChatSync {
       for (const batch of batches) {
         const expectedSeq = this.headSeq(chatId);
         requireChatBackupReady(chatId);
-        const res = await api.appendEvents(
+        const post = attempt === 0 && batches.length === 1 ? append : api.appendEvents;
+        const res = await post(
           chatId,
           expectedSeq,
           batch.map(({ id, frame }) => ({ id, frame })),

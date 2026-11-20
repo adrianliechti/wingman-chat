@@ -45,6 +45,9 @@ func (h *Handler) Attach(mux *http.ServeMux, basePath string) {
 	handle("GET "+basePath+"/usage", h.requireProtection(h.handleBackupUsage))
 
 	handle("GET "+basePath+"/chats", h.requireProtection(h.handleListChats))
+	if appender, ok := h.store.(store.ChatBatchAppender); ok {
+		handle("POST "+basePath+"/chats/append", h.uploads.wrap(h.requireProtection(h.handleAppendChatBatch(appender))))
+	}
 	handle("GET "+basePath+"/chats/{id}/events", h.requireProtection(h.handleReadEvents))
 	handle("POST "+basePath+"/chats/{id}/events", h.uploads.wrap(h.requireProtection(h.handleAppendEvents)))
 	handle("POST "+basePath+"/chats/{id}/compact", h.requireProtection(h.handleCompactChat))
