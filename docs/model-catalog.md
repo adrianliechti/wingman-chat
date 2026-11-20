@@ -160,6 +160,15 @@ own supported efforts instead of inheriting a vendor profile.
   thinking, and output share a 1,048,576-token window. Synchronous output is
   capped at 65,536 tokens; longer output requires long decode, which the gateway
   does not enable. Sampling parameters are omitted; only implicit caching applies.
+- [Gemini 4 Neon](https://aistudio.google.com/docs/models/gemini-4-neon)
+  (reviewed November 19, 2026): low, medium, high (default), xhigh, like
+  Hydrogen; `minimal` is rejected, so low is its minimal effort. It sits between
+  Hydrogen and Carbon, with the same unified 1,048,576-token window,
+  65,536-token synchronous output cap, and request shape as the other Gemini 4
+  models. Google does not position it as Argon's successor, so the bundled
+  high-effort slider preset sits before Argon's instead of replacing it, and
+  appears when the gateway lists `gemini-4-neon`. The gateway must pass `xhigh`
+  through for this ID, otherwise the level runs as high.
 - [Gemini 4 Carbon](https://aistudio.google.com/docs/models/gemini-4-carbon)
   (reviewed November 14, 2026): low, medium (default), high; the same unified
   window and synchronous output capacity as Argon.
@@ -249,7 +258,8 @@ configured; such an override cannot be clamped until the deployment supplies a
 capacity.
 
 Examples of documented capacities (reviewed September 23, 2026; Haiku 5.5 added
-October 8, 2026; GPT-6.1 Terra added October 26, 2026; Gemini 4 Hydrogen added November 14, 2026):
+October 8, 2026; GPT-6.1 Terra added October 26, 2026; Gemini 4 Hydrogen added November 14, 2026;
+Gemini 4 Neon added November 19, 2026):
 
 | Model                                                                                                                            | Capacity | Default chat budget |
 | -------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
@@ -264,6 +274,7 @@ October 8, 2026; GPT-6.1 Terra added October 26, 2026; Gemini 4 Hydrogen added N
 | [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview)                                                | 128,000  | 64,000              |
 | [Claude Sonnet 4.6 on Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html) | 64,000   | 64,000              |
 | [Gemini 4 Hydrogen](https://aistudio.google.com/docs/models/gemini-4-hydrogen)                                                   | 65,536   | 64,000              |
+| [Gemini 4 Neon](https://aistudio.google.com/docs/models/gemini-4-neon)                                                           | 65,536   | 64,000              |
 | [Gemini 4 Carbon](https://aistudio.google.com/docs/models/gemini-4-carbon)                                                       | 65,536   | 64,000              |
 | [Gemini 4 Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)                                                    | 65,536   | 64,000              |
 | [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)                                                | 65,536   | 64,000              |
