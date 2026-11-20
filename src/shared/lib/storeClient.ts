@@ -165,7 +165,7 @@ export async function fetchMe(): Promise<ServerUser> {
 }
 
 export async function getKeystore(): Promise<KeystoreResponse | null> {
-  const res = await ensureOk(await storeFetch(`${PREFIX}/keystore`), true);
+  const res = await ensureOk(await storeFetch(`${PREFIX}/keystore`, { cache: "no-store" }), true);
   if (res.status === 404) return null;
   const etag = unquote(res.headers.get("ETag") ?? "");
   return { data: await res.text(), etag };

@@ -15,6 +15,9 @@ func TestResetBackup(t *testing.T) {
 	}
 	key := do(t, srv, "alice", "GET", "/v1/keystore", "", nil)
 	wantStatus(t, key, http.StatusOK)
+	if got := key.Header.Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("keystore Cache-Control = %q, want no-store", got)
+	}
 	headers := map[string]string{"X-Confirm-Backup-Reset": "true", "If-Match": key.Header.Get("ETag")}
 	wantStatus(t, do(t, srv, "", "DELETE", "/v1/backup", "", headers), http.StatusUnauthorized)
 	wantStatus(t, do(t, srv, "alice", "DELETE", "/v1/backup", "", nil), http.StatusBadRequest)
@@ -22,7 +25,11 @@ func TestResetBackup(t *testing.T) {
 	wantStatus(t, do(t, srv, "alice", "DELETE", "/v1/backup", "", headers), http.StatusNoContent)
 	// A retry whose first response was lost finds the confirmed backup gone.
 	wantStatus(t, do(t, srv, "alice", "DELETE", "/v1/backup", "", headers), http.StatusPreconditionFailed)
-	wantStatus(t, do(t, srv, "alice", "GET", "/v1/keystore", "", nil), http.StatusNotFound)
+	missing := do(t, srv, "alice", "GET", "/v1/keystore", "", nil)
+	wantStatus(t, missing, http.StatusNotFound)
+	if got := missing.Header.Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("missing keystore Cache-Control = %q, want no-store", got)
+	}
 	wantStatus(t, do(t, srv, "alice", "POST", "/v1/chats/chat-1234/events", event("late", "old-key"), nil), http.StatusForbidden)
 
 	// Re-enrolling must reveal an empty store, including attachments and files.
