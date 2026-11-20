@@ -4,7 +4,7 @@ import { DIRECT_UPLOAD_CHUNK, DIRECT_UPLOAD_FRAGMENT, ONE_DRIVE_UPLOAD_URL, dire
 vi.mock("./backupLifecycle", () => ({ isBackupSessionCurrent: () => true }));
 
 const url = "https://upload.1drv.com/session?secret=test";
-const path = "/api/v1/files/workspace-file";
+const path = "/api/v1/store/files/workspace-file";
 const session = () =>
   Response.json({ uploadUrl: url, ticket: "signed-ticket", expiresAt: new Date(Date.now() + 60_000).toISOString() });
 
@@ -37,7 +37,9 @@ it("sends only metadata to Wingman, commits a file, and retries ambiguous comple
   expect(first[0]).toBe(url);
   expect(first[1].credentials).toBe("omit");
   expect(new Headers(first[1].headers).get("Authorization")).toBeNull();
-  expect(new Headers(first[1].headers).get("Content-Range")).toBe(`bytes 0-${DIRECT_UPLOAD_FRAGMENT - 1}/${data.length}`);
+  expect(new Headers(first[1].headers).get("Content-Range")).toBe(
+    `bytes 0-${DIRECT_UPLOAD_FRAGMENT - 1}/${data.length}`,
+  );
   expect((first[1].body as Blob).size).toBe(DIRECT_UPLOAD_FRAGMENT);
   expect((last[1].body as Blob).size).toBe(23);
   expect(status[0]).toBe(url);
@@ -66,10 +68,10 @@ it("falls back to the normal upload after the first cross-origin request fails",
   await api.putBlob("attachment", attachment);
   await api.putBlob("attachment-two", attachment);
   expect(fetch.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
-    ["/api/v1/blobs/attachment/upload-session", "POST"],
+    ["/api/v1/store/blobs/attachment/upload-session", "POST"],
     [url, "PUT"],
-    ["/api/v1/blobs/attachment", "PUT"],
-    ["/api/v1/blobs/attachment-two", "PUT"],
+    ["/api/v1/store/blobs/attachment", "PUT"],
+    ["/api/v1/store/blobs/attachment-two", "PUT"],
   ]);
 });
 
@@ -157,9 +159,9 @@ it("relays uploads for the rest of the page when the backend lacks direct upload
   await api.putBlob("attachment", large);
   await api.putBlob("attachment-two", large);
   expect(fetch.mock.calls.map(([target]) => target)).toEqual([
-    "/api/v1/blobs/attachment/upload-session",
-    "/api/v1/blobs/attachment",
-    "/api/v1/blobs/attachment-two",
+    "/api/v1/store/blobs/attachment/upload-session",
+    "/api/v1/store/blobs/attachment",
+    "/api/v1/store/blobs/attachment-two",
   ]);
 });
 
@@ -201,7 +203,10 @@ it("uses the relay for small objects and when direct uploads are off", async () 
   await api.putBlob("small", new Uint8Array(DIRECT_UPLOAD_CHUNK));
   api.setDirectUploads(false);
   await api.putBlob("large", new Uint8Array(DIRECT_UPLOAD_CHUNK + 1));
-  expect(fetch.mock.calls.map(([target]) => target)).toEqual(["/api/v1/blobs/small", "/api/v1/blobs/large"]);
+  expect(fetch.mock.calls.map(([target]) => target)).toEqual([
+    "/api/v1/store/blobs/small",
+    "/api/v1/store/blobs/large",
+  ]);
 });
 
 it.each([

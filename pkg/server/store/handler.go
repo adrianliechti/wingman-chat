@@ -24,8 +24,7 @@ func New(store store.Provider, middleware func(http.Handler) http.Handler) *Hand
 	}
 }
 
-func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
-	prefix = strings.TrimRight(prefix, "/")
+func (h *Handler) Attach(mux *http.ServeMux, basePath string) {
 	handle := func(pattern string, handler http.HandlerFunc) {
 		var wrapped http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if _, ok := identity.FromRequest(r); !ok {
@@ -40,32 +39,32 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 		mux.Handle(pattern, wrapped)
 	}
 
-	handle("GET "+prefix+"/v1/keystore", h.handleGetKeystore)
-	handle("PUT "+prefix+"/v1/keystore", h.handlePutKeystore)
-	handle("DELETE "+prefix+"/v1/backup", h.handleResetBackup)
-	handle("GET "+prefix+"/v1/backup/usage", h.requireProtection(h.handleBackupUsage))
+	handle("GET "+basePath+"/keystore", h.handleGetKeystore)
+	handle("PUT "+basePath+"/keystore", h.handlePutKeystore)
+	handle("DELETE "+basePath, h.handleResetBackup)
+	handle("GET "+basePath+"/usage", h.requireProtection(h.handleBackupUsage))
 
-	handle("GET "+prefix+"/v1/chats", h.requireProtection(h.handleListChats))
-	handle("GET "+prefix+"/v1/chats/{id}/events", h.requireProtection(h.handleReadEvents))
-	handle("POST "+prefix+"/v1/chats/{id}/events", h.uploads.wrap(h.requireProtection(h.handleAppendEvents)))
-	handle("POST "+prefix+"/v1/chats/{id}/compact", h.requireProtection(h.handleCompactChat))
-	handle("DELETE "+prefix+"/v1/chats/{id}", h.requireProtection(h.handleDeleteChat))
+	handle("GET "+basePath+"/chats", h.requireProtection(h.handleListChats))
+	handle("GET "+basePath+"/chats/{id}/events", h.requireProtection(h.handleReadEvents))
+	handle("POST "+basePath+"/chats/{id}/events", h.uploads.wrap(h.requireProtection(h.handleAppendEvents)))
+	handle("POST "+basePath+"/chats/{id}/compact", h.requireProtection(h.handleCompactChat))
+	handle("DELETE "+basePath+"/chats/{id}", h.requireProtection(h.handleDeleteChat))
 
-	handle("GET "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleGetObject(store.BlobObject)))
-	handle("HEAD "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleHeadBlob))
-	handle("PUT "+prefix+"/v1/blobs/{id}", h.uploads.wrap(h.requireProtection(h.handlePutObject(store.BlobObject))))
-	handle("DELETE "+prefix+"/v1/blobs/{id}", h.requireProtection(h.handleDeleteObject(store.BlobObject)))
+	handle("GET "+basePath+"/blobs/{id}", h.requireProtection(h.handleGetObject(store.BlobObject)))
+	handle("HEAD "+basePath+"/blobs/{id}", h.requireProtection(h.handleHeadBlob))
+	handle("PUT "+basePath+"/blobs/{id}", h.uploads.wrap(h.requireProtection(h.handlePutObject(store.BlobObject))))
+	handle("DELETE "+basePath+"/blobs/{id}", h.requireProtection(h.handleDeleteObject(store.BlobObject)))
 
-	handle("GET "+prefix+"/v1/files", h.requireProtection(h.handleListFiles))
-	handle("POST "+prefix+"/v1/files", h.uploads.wrap(h.requireProtection(h.handlePutFiles)))
-	handle("POST "+prefix+"/v1/files/delete", h.requireProtection(h.handleDeleteFiles))
-	handle("GET "+prefix+"/v1/files/{id}", h.requireProtection(h.handleGetObject(store.FileObject)))
-	handle("PUT "+prefix+"/v1/files/{id}", h.uploads.wrap(h.requireProtection(h.handlePutObject(store.FileObject))))
-	handle("DELETE "+prefix+"/v1/files/{id}", h.requireProtection(h.handleDeleteObject(store.FileObject)))
+	handle("GET "+basePath+"/files", h.requireProtection(h.handleListFiles))
+	handle("POST "+basePath+"/files", h.uploads.wrap(h.requireProtection(h.handlePutFiles)))
+	handle("POST "+basePath+"/files/delete", h.requireProtection(h.handleDeleteFiles))
+	handle("GET "+basePath+"/files/{id}", h.requireProtection(h.handleGetObject(store.FileObject)))
+	handle("PUT "+basePath+"/files/{id}", h.uploads.wrap(h.requireProtection(h.handlePutObject(store.FileObject))))
+	handle("DELETE "+basePath+"/files/{id}", h.requireProtection(h.handleDeleteObject(store.FileObject)))
 
 	uploader, supportsDirect := h.store.(store.DirectUploader)
 	for resource, kind := range map[string]store.ObjectKind{"blobs": store.BlobObject, "files": store.FileObject} {
-		base := "POST " + prefix + "/v1/" + resource + "/{id}"
+		base := "POST " + basePath + "/" + resource + "/{id}"
 		if !supportsDirect || !uploader.DirectUploadsEnabled() {
 			unavailable := func(w http.ResponseWriter, _ *http.Request) {
 				writeStoreError(w, store.ErrDirectUnavailable)

@@ -59,8 +59,8 @@ func TestUnprotectedKeystoreBlocksBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	New(provider, testStoreMiddleware).Attach(mux, "")
-	req := httptest.NewRequest("GET", "/v1/files", nil)
+	New(provider, testStoreMiddleware).Attach(mux, "/v1/store")
+	req := httptest.NewRequest("GET", "/v1/store/files", nil)
 	req.Header.Set("X-Forwarded-User", "alice")
 	req.Header.Set("X-Backup-Generation", "test-generation")
 	res := httptest.NewRecorder()

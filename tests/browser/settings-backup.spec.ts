@@ -14,7 +14,7 @@ async function configure(page: Page, online?: boolean, store = true) {
   await page.route(/\/api\/v1\/|\/me$/, (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    if (path.endsWith("/backup/usage")) return route.fulfill({ json: { bytes: 12949914 } });
+    if (path.endsWith("/store/usage")) return route.fulfill({ json: { bytes: 12949914 } });
     if (path.endsWith("/me")) return route.fulfill({ json: { id: "alice", name: "Alice" } });
     if (path.endsWith("/keystore")) {
       if (request.method() === "GET") {
@@ -40,7 +40,7 @@ test("PIN setup stays visible until the optional passkey step is ready", async (
   const started = new Promise<void>((resolve) => {
     provisioningStarted = resolve;
   });
-  await page.route("**/api/v1/keystore", async (route) => {
+  await page.route("**/api/v1/store/keystore", async (route) => {
     if (route.request().method() === "PUT") {
       provisioningStarted();
       await provisioning;
@@ -81,7 +81,7 @@ test("initial backup and restore display confirmed file counts and progress bars
   await configure(page, true);
   const releases: (() => void)[] = [];
   const files = new Map<string, Buffer>();
-  await page.route("**/api/v1/files/**", async (route) => {
+  await page.route("**/api/v1/store/files/**", async (route) => {
     if (route.request().method() === "PUT") {
       const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
       files.set(id, route.request().postDataBuffer()!);
@@ -119,7 +119,7 @@ test("initial backup and restore display confirmed file counts and progress bars
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     }
   } finally {
-    await page.unroute("**/api/v1/files/**");
+    await page.unroute("**/api/v1/store/files/**");
     for (const release of releases) release();
   }
   await expect(progress).toHaveCount(0);
@@ -134,7 +134,7 @@ test("initial backup and restore display confirmed file counts and progress bars
     for await (const name of root.keys()) await root.removeEntry(name, { recursive: true });
   });
   const downloads: (() => void)[] = [];
-  await page.route("**/api/v1/files", (route) =>
+  await page.route("**/api/v1/store/files", (route) =>
     route.fulfill({
       json: Array.from(files, ([id, data]) => ({
         id,
@@ -144,7 +144,7 @@ test("initial backup and restore display confirmed file counts and progress bars
       })),
     }),
   );
-  await page.route("**/api/v1/files/**", async (route) => {
+  await page.route("**/api/v1/store/files/**", async (route) => {
     const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
     const data = files.get(id);
     if (route.request().method() !== "GET" || !data) return route.fallback();
@@ -167,7 +167,7 @@ test("initial backup and restore display confirmed file counts and progress bars
     await expect(page.getByText(`Restoring files · 1 / ${files.size}`, { exact: true })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath("restore-progress-375.png"), animations: "disabled" });
   } finally {
-    await page.unroute("**/api/v1/files/**");
+    await page.unroute("**/api/v1/store/files/**");
     for (const release of downloads) release();
   }
   await expect(restoring).toHaveCount(0);

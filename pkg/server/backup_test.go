@@ -102,7 +102,7 @@ func TestOneDriveIgnoresDriveConnections(t *testing.T) {
 		Drives: []config.Drive{{ID: "first", Type: "onedrive", Auth: &auth}, {ID: "second", Type: "onedrive", Auth: &auth}},
 	}
 	mux := serveBackup(t, cfg)
-	request(mux, "GET", "/api/v1/keystore", "Authorization", "Bearer user-token")
+	request(mux, "GET", "/api/v1/store/keystore", "Authorization", "Bearer user-token")
 	if len(fake.assertions) != 0 {
 		t.Fatalf("backup used drives.yaml auth: %q", fake.assertions)
 	}
@@ -115,12 +115,12 @@ func TestOneDriveMiddlewareRequiresTokenAndScopesRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	storesrv.New(selected, middleware).Attach(mux, "/api")
+	storesrv.New(selected, middleware).Attach(mux, "/api/v1/store")
 	mux.HandleFunc("GET /api/v1/models", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })
 	for _, test := range []struct {
 		path   string
 		status int
-	}{{"/api/v1/keystore", 401}, {"/api/v1/models", 204}} {
+	}{{"/api/v1/store/keystore", 401}, {"/api/v1/models", 204}} {
 		r := httptest.NewRequest("GET", test.path, nil)
 		r.Header.Set("X-Forwarded-User", "alice")
 		w := httptest.NewRecorder()
@@ -140,7 +140,7 @@ func TestOneDriveMiddlewareRequiresTokenAndScopesRoutes(t *testing.T) {
 			}
 			w.WriteHeader(204)
 		}))
-		r := httptest.NewRequest("GET", "/api/v1/keystore", nil)
+		r := httptest.NewRequest("GET", "/api/v1/store/keystore", nil)
 		if header == "Authorization" {
 			r.Header.Set(header, "Bearer graph-token")
 		} else {
@@ -151,6 +151,52 @@ func TestOneDriveMiddlewareRequiresTokenAndScopesRoutes(t *testing.T) {
 		if w.Code != 204 {
 			t.Fatalf("token header %s: %d", header, w.Code)
 		}
+	}
+}
+
+func TestStoreNamespaceRouting(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Upstream-Path", r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	target, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, provider := range []string{"local", "onedrive"} {
+		t.Run(provider, func(t *testing.T) {
+			cfg := &config.Config{Backup: &config.Backup{Provider: provider}}
+			handler := New(cfg, "/api", target, "", fstest.MapFS{}, "")
+			keyStatus, resetStatus := http.StatusNotFound, http.StatusNotFound
+			if provider == "onedrive" {
+				keyStatus, resetStatus = http.StatusUnauthorized, http.StatusUnauthorized
+			}
+			tests := []struct {
+				method, path string
+				status       int
+				upstreamPath string
+			}{
+				{http.MethodGet, "/api/v1/store/keystore", keyStatus, ""},
+				{http.MethodDelete, "/api/v1/store", resetStatus, ""},
+				{http.MethodGet, "/api/v1/store/unknown", http.StatusNotFound, ""},
+				{http.MethodGet, "/api/v1/storefront", http.StatusNoContent, "/v1/storefront"},
+				{http.MethodGet, "/api/v1/keystore", http.StatusNoContent, "/v1/keystore"},
+				{http.MethodDelete, "/api/v1/backup", http.StatusNoContent, "/v1/backup"},
+				{http.MethodGet, "/api/v1/backup/usage", http.StatusNoContent, "/v1/backup/usage"},
+				{http.MethodGet, "/api/v1/chats", http.StatusNoContent, "/v1/chats"},
+				{http.MethodGet, "/api/v1/files/file-1234", http.StatusNoContent, "/v1/files/file-1234"},
+				{http.MethodPost, "/api/v1/blobs/blob-1234/upload-session", http.StatusNoContent, "/v1/blobs/blob-1234/upload-session"},
+			}
+			for _, test := range tests {
+				got := request(handler, test.method, test.path)
+				if path := got.Header().Get("X-Upstream-Path"); got.Code != test.status || path != test.upstreamPath {
+					t.Errorf("%s %s: got status %d and upstream path %q, want %d and %q",
+						test.method, test.path, got.Code, path, test.status, test.upstreamPath)
+				}
+			}
+		})
 	}
 }
 
@@ -209,7 +255,7 @@ func serveBackup(t *testing.T, cfg *config.Config) *http.ServeMux {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	storesrv.New(selected, middleware).Attach(mux, "/api")
+	storesrv.New(selected, middleware).Attach(mux, "/api/v1/store")
 	return mux
 }
 
@@ -227,7 +273,7 @@ func request(mux http.Handler, method, path string, headers ...string) *httptest
 func TestOneDriveExchangesTokenOnBehalfOfUser(t *testing.T) {
 	fake := useFakeMicrosoft(t)
 	mux := serveBackup(t, oboConfig(config.DriveAuth{Issuer: "https://login.test/tenant", ClientID: "app", ClientSecret: "secret"}))
-	w := request(mux, "GET", "/api/v1/keystore", "Authorization", "Bearer user-token")
+	w := request(mux, "GET", "/api/v1/store/keystore", "Authorization", "Bearer user-token")
 	if w.Code == http.StatusUnauthorized {
 		t.Fatalf("exchange rejected: %s", w.Body.String())
 	}
@@ -247,7 +293,7 @@ func TestOneDriveExchangesTokenOnBehalfOfUser(t *testing.T) {
 func TestOneDriveUsesConfiguredExchangeScope(t *testing.T) {
 	fake := useFakeMicrosoft(t)
 	mux := serveBackup(t, oboConfig(config.DriveAuth{Issuer: "https://login.test/tenant", ClientID: "app", ClientSecret: "secret", Scope: "Files.ReadWrite.AppFolder"}))
-	request(mux, "GET", "/api/v1/keystore", "Authorization", "Bearer user-token")
+	request(mux, "GET", "/api/v1/store/keystore", "Authorization", "Bearer user-token")
 	if len(fake.assertions) != 1 || fake.assertions[0] != "user-token Files.ReadWrite.AppFolder" {
 		t.Fatalf("scope: %q", fake.assertions)
 	}
@@ -257,7 +303,7 @@ func TestOneDriveExchangeFailureAsksToReconnect(t *testing.T) {
 	fake := useFakeMicrosoft(t)
 	fake.failExchange = true
 	mux := serveBackup(t, oboConfig(config.DriveAuth{Issuer: "https://login.test/tenant", ClientID: "app", ClientSecret: "secret"}))
-	w := request(mux, "GET", "/api/v1/keystore", "Authorization", "Bearer revoked")
+	w := request(mux, "GET", "/api/v1/store/keystore", "Authorization", "Bearer revoked")
 	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "Reconnect your Microsoft account") {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
@@ -305,7 +351,7 @@ func TestOneDriveTokenHeaderPrecedence(t *testing.T) {
 			next := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				selected.ListChats(r.Context())
 			}))
-			request(next, "GET", "/api/v1/keystore", test.headers...)
+			request(next, "GET", "/api/v1/store/keystore", test.headers...)
 			if len(fake.graphTokens) == 0 || fake.graphTokens[0] != test.want {
 				t.Fatalf("Graph received %q, want %q", fake.graphTokens, test.want)
 			}
@@ -318,14 +364,14 @@ func TestEveryOneDriveRouteRequiresToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	routes := regexp.MustCompile(`handle\("([A-Z]+) "\+prefix\+"([^"]+)"`).FindAllStringSubmatch(string(source), -1)
+	routes := regexp.MustCompile(`handle\("([A-Z]+) "\+basePath(?:\+"([^"]+)")?,`).FindAllStringSubmatch(string(source), -1)
 	if len(routes) < 10 {
 		t.Fatalf("route table not found: %d routes", len(routes))
 	}
 	fake := useFakeMicrosoft(t)
 	mux := serveBackup(t, &config.Config{Backup: &config.Backup{Provider: "onedrive"}})
 	for _, route := range routes {
-		method, path := route[1], "/api"+strings.ReplaceAll(route[2], "{id}", "chat-0001")
+		method, path := route[1], "/api/v1/store"+strings.ReplaceAll(route[2], "{id}", "chat-0001")
 		if w := request(mux, method, path); w.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s without token: %d", method, path, w.Code)
 		}
@@ -342,25 +388,11 @@ func TestProviderNamesAreCaseSensitive(t *testing.T) {
 	}
 }
 
-func TestServerBackupWiring(t *testing.T) {
-	t.Run("invalid provider fails startup", func(t *testing.T) {
-		defer func() {
-			if recover() == nil {
-				t.Fatal("server started with an invalid backup provider")
-			}
-		}()
-		New(&config.Config{Backup: &config.Backup{Provider: "typo"}}, "/api", &url.URL{Scheme: "http", Host: "localhost"}, "", fstest.MapFS{}, t.TempDir())
-	})
-	t.Run("local backup mounts no store routes", func(t *testing.T) {
-		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusTeapot)
-		}))
-		defer upstream.Close()
-		target, _ := url.Parse(upstream.URL)
-		mux := New(&config.Config{Backup: &config.Backup{Provider: "local"}}, "/api", target, "", fstest.MapFS{}, t.TempDir())
-		// Unclaimed /api routes fall through to the model API proxy.
-		if w := request(mux, "GET", "/api/v1/keystore", "Authorization", "Bearer token"); w.Code != http.StatusTeapot {
-			t.Fatalf("keystore route mounted for local backup: %d", w.Code)
+func TestServerRejectsInvalidBackupProvider(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("server started with an invalid backup provider")
 		}
-	})
+	}()
+	New(&config.Config{Backup: &config.Backup{Provider: "typo"}}, "/api", &url.URL{Scheme: "http", Host: "localhost"}, "", fstest.MapFS{}, t.TempDir())
 }

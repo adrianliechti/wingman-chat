@@ -29,11 +29,11 @@ func (interruptedReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedE
 
 func TestObjectDownloadsRejectInterruptedStreams(t *testing.T) {
 	mux := http.NewServeMux()
-	New(interruptedObjectStore{}, nil).Attach(mux, "")
+	New(interruptedObjectStore{}, nil).Attach(mux, "/v1/store")
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	for _, path := range []string{"/v1/files/file-1234", "/v1/blobs/blob-1234"} {
+	for _, path := range []string{"/v1/store/files/file-1234", "/v1/store/blobs/blob-1234"} {
 		t.Run(path, func(t *testing.T) {
 			req, err := http.NewRequest("GET", server.URL+path, nil)
 			if err != nil {

@@ -1,7 +1,7 @@
 /**
  * Thin HTTP wrapper around the server store API.
  *
- * Routes follow `/api/v1/...` (see pkg/server/store/handler.go).
+ * Routes follow `/api/v1/store/...` (see pkg/server/store/handler.go).
  * The server identifies the user via reverse-proxy headers, so this
  * client never needs to send any auth itself.
  */
@@ -16,7 +16,7 @@ import {
   type DirectUploadSession,
 } from "./directUpload";
 
-const PREFIX = "/api/v1";
+const PREFIX = "/api/v1/store";
 
 let backupGeneration: string | undefined;
 
@@ -102,7 +102,7 @@ export async function resetBackup(target: ResetTarget): Promise<boolean> {
     if (target.keystore) headers["If-Match"] = `"${target.keystore}"`;
     else headers["If-None-Match"] = "*";
   }
-  const res = await fetch(`${PREFIX}/backup`, { method: "DELETE", headers });
+  const res = await fetch(PREFIX, { method: "DELETE", headers });
   if (res.status === 412) return false;
   await ensureOk(res);
   return true;
@@ -407,7 +407,7 @@ export async function deleteFiles(files: { id: string; ifMatch?: string }[]): Pr
 
 /** Stored encrypted data and metadata, excluding filesystem overhead. */
 export async function getBackupSize(): Promise<number> {
-  const res = await fetchOrThrow(`${PREFIX}/backup/usage`);
+  const res = await fetchOrThrow(`${PREFIX}/usage`);
   const data: unknown = await res.json();
   if (
     typeof data !== "object" ||

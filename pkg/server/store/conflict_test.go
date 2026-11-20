@@ -29,15 +29,15 @@ func (conflictingStore) ResetUser(context.Context, store.ResetCondition) error {
 
 func TestConcurrentStoreChangesReturnConflict(t *testing.T) {
 	mux := http.NewServeMux()
-	New(conflictingStore{}, nil).Attach(mux, "")
+	New(conflictingStore{}, nil).Attach(mux, "/v1/store")
 	for _, test := range []struct {
 		method, path string
 		status       int
 	}{
-		{"DELETE", "/v1/chats/chat-1234", 412},
-		{"POST", "/v1/chats/chat-1234/compact?beforeSeq=2", 409},
-		{"DELETE", "/v1/files/file-1234", 412},
-		{"DELETE", "/v1/backup", 409},
+		{"DELETE", "/v1/store/chats/chat-1234", 412},
+		{"POST", "/v1/store/chats/chat-1234/compact?beforeSeq=2", 409},
+		{"DELETE", "/v1/store/files/file-1234", 412},
+		{"DELETE", "/v1/store", 409},
 	} {
 		t.Run(test.method+test.path, func(t *testing.T) {
 			req := httptest.NewRequest(test.method, test.path, nil)

@@ -26,7 +26,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	provider := newTestStore(t)
 
 	mux := http.NewServeMux()
-	New(provider, testStoreMiddleware).Attach(mux, "")
+	New(provider, testStoreMiddleware).Attach(mux, "/v1/store")
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -42,8 +42,6 @@ func do(t *testing.T, srv *httptest.Server, user, method, path, body string, hea
 	}
 	if user != "" {
 		req.Header.Set("X-Forwarded-User", user)
-	}
-	if method == "DELETE" && path == "/v1/backup" {
 	}
 	req.Header.Set("X-Backup-Generation", "test-generation")
 	for k, v := range headers {
@@ -78,7 +76,7 @@ func readBody(t *testing.T, res *http.Response) string {
 func appendEvents(t *testing.T, srv *httptest.Server, user, chatID string, expectedSeq int64, events ...string) store.AppendResult {
 	t.Helper()
 
-	res := do(t, srv, user, "POST", "/v1/chats/"+chatID+"/events", strings.Join(events, "\n"),
+	res := do(t, srv, user, "POST", "/v1/store/chats/"+chatID+"/events", strings.Join(events, "\n"),
 		map[string]string{"X-Expected-Seq": fmt.Sprint(expectedSeq)})
 	wantStatus(t, res, http.StatusOK)
 
@@ -110,7 +108,7 @@ func protectedTestKey(note string) string {
 func protectedTestServer(t *testing.T) *httptest.Server {
 	srv := newTestServer(t)
 	for _, user := range []string{"alice", "bob"} {
-		wantStatus(t, do(t, srv, user, "PUT", "/v1/keystore", protectedTestKey("initial"), map[string]string{"If-None-Match": "*"}), http.StatusNoContent)
+		wantStatus(t, do(t, srv, user, "PUT", "/v1/store/keystore", protectedTestKey("initial"), map[string]string{"If-None-Match": "*"}), http.StatusNoContent)
 	}
 	return srv
 }
@@ -119,23 +117,23 @@ func TestRequireUser(t *testing.T) {
 	srv := newTestServer(t)
 
 	for _, route := range []struct{ method, path string }{
-		{"GET", "/v1/keystore"},
-		{"PUT", "/v1/keystore"},
-		{"DELETE", "/v1/backup"},
-		{"GET", "/v1/backup/usage"},
-		{"GET", "/v1/chats"},
-		{"GET", "/v1/chats/chat-1234/events"},
-		{"POST", "/v1/chats/chat-1234/events"},
-		{"POST", "/v1/chats/chat-1234/compact"},
-		{"DELETE", "/v1/chats/chat-1234"},
-		{"GET", "/v1/blobs/blob-1234"},
-		{"HEAD", "/v1/blobs/blob-1234"},
-		{"PUT", "/v1/blobs/blob-1234"},
-		{"DELETE", "/v1/blobs/blob-1234"},
-		{"GET", "/v1/files"},
-		{"GET", "/v1/files/file-1234"},
-		{"PUT", "/v1/files/file-1234"},
-		{"DELETE", "/v1/files/file-1234"},
+		{"GET", "/v1/store/keystore"},
+		{"PUT", "/v1/store/keystore"},
+		{"DELETE", "/v1/store"},
+		{"GET", "/v1/store/usage"},
+		{"GET", "/v1/store/chats"},
+		{"GET", "/v1/store/chats/chat-1234/events"},
+		{"POST", "/v1/store/chats/chat-1234/events"},
+		{"POST", "/v1/store/chats/chat-1234/compact"},
+		{"DELETE", "/v1/store/chats/chat-1234"},
+		{"GET", "/v1/store/blobs/blob-1234"},
+		{"HEAD", "/v1/store/blobs/blob-1234"},
+		{"PUT", "/v1/store/blobs/blob-1234"},
+		{"DELETE", "/v1/store/blobs/blob-1234"},
+		{"GET", "/v1/store/files"},
+		{"GET", "/v1/store/files/file-1234"},
+		{"PUT", "/v1/store/files/file-1234"},
+		{"DELETE", "/v1/store/files/file-1234"},
 	} {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
 			res := do(t, srv, "", route.method, route.path, "", nil)
@@ -148,13 +146,13 @@ func TestIdentityNormalization(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Padded and trimmed header values must land in the same store.
-	res := do(t, srv, "  alice  ", "PUT", "/v1/keystore", protectedTestKey("one"), map[string]string{"If-None-Match": "*"})
+	res := do(t, srv, "  alice  ", "PUT", "/v1/store/keystore", protectedTestKey("one"), map[string]string{"If-None-Match": "*"})
 	wantStatus(t, res, http.StatusNoContent)
-	res = do(t, srv, "alice", "GET", "/v1/keystore", "", nil)
+	res = do(t, srv, "alice", "GET", "/v1/store/keystore", "", nil)
 	wantStatus(t, res, http.StatusOK)
 
 	// A whitespace-only user header is not an identity, even with an email.
-	res = do(t, srv, "   ", "PUT", "/v1/keystore", protectedTestKey("two"), map[string]string{
+	res = do(t, srv, "   ", "PUT", "/v1/store/keystore", protectedTestKey("two"), map[string]string{
 		"If-None-Match":     "*",
 		"X-Forwarded-Email": "bob@example.com",
 	})
@@ -164,10 +162,10 @@ func TestIdentityNormalization(t *testing.T) {
 func TestKeystoreLifecycle(t *testing.T) {
 	srv := newTestServer(t)
 
-	res := do(t, srv, "alice", "GET", "/v1/keystore", "", nil)
+	res := do(t, srv, "alice", "GET", "/v1/store/keystore", "", nil)
 	wantStatus(t, res, http.StatusNotFound)
 
-	res = do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("one"), map[string]string{"If-None-Match": "*"})
+	res = do(t, srv, "alice", "PUT", "/v1/store/keystore", protectedTestKey("one"), map[string]string{"If-None-Match": "*"})
 	wantStatus(t, res, http.StatusNoContent)
 	etag := strings.Trim(res.Header.Get("ETag"), `"`)
 	if etag == "" {
@@ -175,22 +173,22 @@ func TestKeystoreLifecycle(t *testing.T) {
 	}
 
 	// unconditional replace → precondition required
-	res = do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("two"), nil)
+	res = do(t, srv, "alice", "PUT", "/v1/store/keystore", protectedTestKey("two"), nil)
 	wantStatus(t, res, http.StatusPreconditionRequired)
 
 	// create-only again → conflict
-	res = do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("two"), map[string]string{"If-None-Match": "*"})
+	res = do(t, srv, "alice", "PUT", "/v1/store/keystore", protectedTestKey("two"), map[string]string{"If-None-Match": "*"})
 	wantStatus(t, res, http.StatusPreconditionFailed)
 
 	// CAS with a stale etag → conflict
-	res = do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("two"), map[string]string{"If-Match": `"bogus"`})
+	res = do(t, srv, "alice", "PUT", "/v1/store/keystore", protectedTestKey("two"), map[string]string{"If-Match": `"bogus"`})
 	wantStatus(t, res, http.StatusPreconditionFailed)
 
 	// CAS with the current etag → accepted
-	res = do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("two"), map[string]string{"If-Match": `"` + etag + `"`})
+	res = do(t, srv, "alice", "PUT", "/v1/store/keystore", protectedTestKey("two"), map[string]string{"If-Match": `"` + etag + `"`})
 	wantStatus(t, res, http.StatusNoContent)
 
-	res = do(t, srv, "alice", "GET", "/v1/keystore", "", nil)
+	res = do(t, srv, "alice", "GET", "/v1/store/keystore", "", nil)
 	wantStatus(t, res, http.StatusOK)
 	if body := readBody(t, res); body != protectedTestKey("two") {
 		t.Fatalf("unexpected keystore body: %s", body)
@@ -206,14 +204,14 @@ func TestAppendAndReadEvents(t *testing.T) {
 		t.Fatalf("newSeq = %d, want 2", out.NewSeq)
 	}
 
-	res := do(t, srv, "alice", "GET", "/v1/chats/"+chatID+"/events", "", nil)
+	res := do(t, srv, "alice", "GET", "/v1/store/chats/"+chatID+"/events", "", nil)
 	wantStatus(t, res, http.StatusOK)
 	lines := strings.Split(strings.TrimSpace(readBody(t, res)), "\n")
 	if len(lines) != 2 {
 		t.Fatalf("got %d lines, want 2: %v", len(lines), lines)
 	}
 
-	res = do(t, srv, "alice", "GET", "/v1/chats/"+chatID+"/events?fromSeq=1", "", nil)
+	res = do(t, srv, "alice", "GET", "/v1/store/chats/"+chatID+"/events?fromSeq=1", "", nil)
 	wantStatus(t, res, http.StatusOK)
 	body := strings.TrimSpace(readBody(t, res))
 	if !strings.Contains(body, `"seq":2`) || strings.Contains(body, `"seq":1`) {
@@ -221,14 +219,14 @@ func TestAppendAndReadEvents(t *testing.T) {
 	}
 
 	// stale expected seq → 409
-	res = do(t, srv, "alice", "POST", "/v1/chats/"+chatID+"/events", event("e3", "eA=="),
+	res = do(t, srv, "alice", "POST", "/v1/store/chats/"+chatID+"/events", event("e3", "eA=="),
 		map[string]string{"X-Expected-Seq": "0"})
 	wantStatus(t, res, http.StatusConflict)
 
 	// missing header / empty body → 400
-	res = do(t, srv, "alice", "POST", "/v1/chats/"+chatID+"/events", event("e4", "eA=="), nil)
+	res = do(t, srv, "alice", "POST", "/v1/store/chats/"+chatID+"/events", event("e4", "eA=="), nil)
 	wantStatus(t, res, http.StatusBadRequest)
-	res = do(t, srv, "alice", "POST", "/v1/chats/"+chatID+"/events", "", map[string]string{"X-Expected-Seq": "2"})
+	res = do(t, srv, "alice", "POST", "/v1/store/chats/"+chatID+"/events", "", map[string]string{"X-Expected-Seq": "2"})
 	wantStatus(t, res, http.StatusBadRequest)
 }
 
@@ -252,7 +250,7 @@ func TestMalformedAppendDoesNotPublishValidPrefix(t *testing.T) {
 	srv := protectedTestServer(t)
 	const chatID = "chat-1234"
 	first := event("e1", "YQ==")
-	res := do(t, srv, "alice", "POST", "/v1/chats/"+chatID+"/events", first+"\n{",
+	res := do(t, srv, "alice", "POST", "/v1/store/chats/"+chatID+"/events", first+"\n{",
 		map[string]string{"X-Expected-Seq": "0"})
 	wantStatus(t, res, http.StatusBadRequest)
 
@@ -280,7 +278,7 @@ func TestBackupUploadsSharePodLimit(t *testing.T) {
 	mux := http.NewServeMux()
 	h := New(provider, nil)
 	h.uploads = newUploadLimiter(2, 2, time.Minute, time.Minute)
-	h.Attach(mux, "")
+	h.Attach(mux, "/v1/store")
 
 	start := func(ctx context.Context, method, path, user string) <-chan int {
 		req := httptest.NewRequest(method, path, strings.NewReader("ciphertext")).WithContext(ctx)
@@ -295,8 +293,8 @@ func TestBackupUploadsSharePodLimit(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	blob := start(ctx, "PUT", "/v1/blobs/blob-1234", "alice")
-	file := start(ctx, "PUT", "/v1/files/file-1234", "bob")
+	blob := start(ctx, "PUT", "/v1/store/blobs/blob-1234", "alice")
+	file := start(ctx, "PUT", "/v1/store/files/file-1234", "bob")
 	for range 2 {
 		select {
 		case <-provider.entered:
@@ -307,8 +305,8 @@ func TestBackupUploadsSharePodLimit(t *testing.T) {
 
 	queuedCtx, cancelQueued := context.WithCancel(ctx)
 	defer cancelQueued()
-	cancelled := start(queuedCtx, "POST", "/v1/chats/chat-1234/events", "claire")
-	batch := start(ctx, "POST", "/v1/files", "claire")
+	cancelled := start(queuedCtx, "POST", "/v1/store/chats/chat-1234/events", "claire")
+	batch := start(ctx, "POST", "/v1/store/files", "claire")
 	select {
 	case <-provider.entered:
 		t.Fatal("queued upload reached storage while both slots were occupied")
@@ -342,7 +340,7 @@ func TestBackupUploadsLimitAccountsAndQueueWait(t *testing.T) {
 	mux := http.NewServeMux()
 	h := New(provider, nil)
 	h.uploads = newUploadLimiter(3, 1, 50*time.Millisecond, time.Minute)
-	h.Attach(mux, "")
+	h.Attach(mux, "/v1/store")
 	start := func(path, user string) <-chan *httptest.ResponseRecorder {
 		req := httptest.NewRequest("PUT", path, strings.NewReader("ciphertext"))
 		req.Header.Set("X-Forwarded-User", user)
@@ -355,13 +353,13 @@ func TestBackupUploadsLimitAccountsAndQueueWait(t *testing.T) {
 		return done
 	}
 
-	first := start("/v1/blobs/blob-1234", "alice")
+	first := start("/v1/store/blobs/blob-1234", "alice")
 	<-provider.entered
-	busy := <-start("/v1/blobs/blob-5678", "alice")
+	busy := <-start("/v1/store/blobs/blob-5678", "alice")
 	if busy.Code != http.StatusServiceUnavailable || busy.Header().Get("Retry-After") == "" {
 		t.Fatalf("second upload from one account: %d %v", busy.Code, busy.Header())
 	}
-	other := start("/v1/files/file-1234", "bob")
+	other := start("/v1/store/files/file-1234", "bob")
 	select {
 	case <-provider.entered:
 	case <-time.After(5 * time.Second):
@@ -414,10 +412,10 @@ func TestDirectUploadRoutesNeverFallThroughWhenDisabled(t *testing.T) {
 	mux := http.NewServeMux()
 	// The real server proxies unclaimed /api routes to the model API.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) })
-	New(newTestStore(t), testStoreMiddleware).Attach(mux, "")
+	New(newTestStore(t), testStoreMiddleware).Attach(mux, "/v1/store")
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
-	for _, path := range []string{"/v1/blobs/blob-1234/upload-session", "/v1/files/file-1234/upload-complete"} {
+	for _, path := range []string{"/v1/store/blobs/blob-1234/upload-session", "/v1/store/files/file-1234/upload-complete"} {
 		wantStatus(t, do(t, srv, "alice", "POST", path, "{}", nil), http.StatusNotImplemented)
 	}
 }
@@ -436,7 +434,7 @@ func TestListChats(t *testing.T) {
 	srv := protectedTestServer(t)
 	chatID := "33333333-3333-3333-3333-333333333333"
 
-	res := do(t, srv, "alice", "GET", "/v1/chats", "", nil)
+	res := do(t, srv, "alice", "GET", "/v1/store/chats", "", nil)
 	wantStatus(t, res, http.StatusOK)
 	if body := strings.TrimSpace(readBody(t, res)); body != "[]" {
 		t.Fatalf("empty store should list []: %s", body)
@@ -444,7 +442,7 @@ func TestListChats(t *testing.T) {
 
 	appendEvents(t, srv, "alice", chatID, 0, event("e1", "ZnJhbWUx"))
 
-	res = do(t, srv, "alice", "GET", "/v1/chats", "", nil)
+	res = do(t, srv, "alice", "GET", "/v1/store/chats", "", nil)
 	var chats []store.ChatMeta
 	if err := json.NewDecoder(res.Body).Decode(&chats); err != nil {
 		t.Fatal(err)
@@ -460,10 +458,10 @@ func TestCompact(t *testing.T) {
 
 	appendEvents(t, srv, "alice", chatID, 0, event("e1", "YQ=="), event("e2", "Yg=="), event("e3", "Yw=="))
 
-	res := do(t, srv, "alice", "POST", "/v1/chats/"+chatID+"/compact?beforeSeq=3", "", nil)
+	res := do(t, srv, "alice", "POST", "/v1/store/chats/"+chatID+"/compact?beforeSeq=3", "", nil)
 	wantStatus(t, res, http.StatusNoContent)
 
-	res = do(t, srv, "alice", "GET", "/v1/chats/"+chatID+"/events", "", nil)
+	res = do(t, srv, "alice", "GET", "/v1/store/chats/"+chatID+"/events", "", nil)
 	body := strings.TrimSpace(readBody(t, res))
 	if strings.Contains(body, `"seq":1`) || strings.Contains(body, `"seq":2`) || !strings.Contains(body, `"seq":3`) {
 		t.Fatalf("compaction should keep only seq >= 3: %s", body)
@@ -472,9 +470,9 @@ func TestCompact(t *testing.T) {
 	// head must survive compaction: next append still requires expectedSeq 3
 	appendEvents(t, srv, "alice", chatID, 3, event("e4", "ZA=="))
 
-	res = do(t, srv, "alice", "POST", "/v1/chats/"+chatID+"/compact?beforeSeq=0", "", nil)
+	res = do(t, srv, "alice", "POST", "/v1/store/chats/"+chatID+"/compact?beforeSeq=0", "", nil)
 	wantStatus(t, res, http.StatusBadRequest)
-	res = do(t, srv, "alice", "POST", "/v1/chats/"+chatID+"/compact", "", nil)
+	res = do(t, srv, "alice", "POST", "/v1/store/chats/"+chatID+"/compact", "", nil)
 	wantStatus(t, res, http.StatusBadRequest)
 }
 
@@ -484,10 +482,10 @@ func TestDeleteChat(t *testing.T) {
 
 	appendEvents(t, srv, "alice", chatID, 0, event("e1", "YQ=="))
 
-	res := do(t, srv, "alice", "DELETE", "/v1/chats/"+chatID, "", map[string]string{"X-Expected-Seq": "1"})
+	res := do(t, srv, "alice", "DELETE", "/v1/store/chats/"+chatID, "", map[string]string{"X-Expected-Seq": "1"})
 	wantStatus(t, res, http.StatusNoContent)
 
-	res = do(t, srv, "alice", "GET", "/v1/chats", "", nil)
+	res = do(t, srv, "alice", "GET", "/v1/store/chats", "", nil)
 	var chats []store.ChatMeta
 	if err := json.NewDecoder(res.Body).Decode(&chats); err != nil || len(chats) != 1 || !chats[0].Deleted || chats[0].HeadSeq != 2 {
 		t.Fatalf("expected deletion cursor: %+v (%v)", chats, err)
@@ -496,7 +494,7 @@ func TestDeleteChat(t *testing.T) {
 
 func TestChatDeletionRejectsStaleVersionsAndPreservesRecreatedLogs(t *testing.T) {
 	srv := protectedTestServer(t)
-	path := "/v1/chats/chat-delete-safe"
+	path := "/v1/store/chats/chat-delete-safe"
 	appendEvents(t, srv, "alice", "chat-delete-safe", 0, event("e1", "YQ=="), event("e2", "Yg=="))
 	for _, headers := range []map[string]string{nil, {"X-Expected-Seq": "-1"}, {"X-Expected-Seq": "invalid"}} {
 		wantStatus(t, do(t, srv, "alice", "DELETE", path, "", headers), http.StatusBadRequest)
@@ -531,27 +529,27 @@ func TestBlobLifecycle(t *testing.T) {
 	srv := protectedTestServer(t)
 	blobID := "66666666-6666-6666-6666-666666666666"
 
-	res := do(t, srv, "alice", "HEAD", "/v1/blobs/"+blobID, "", nil)
+	res := do(t, srv, "alice", "HEAD", "/v1/store/blobs/"+blobID, "", nil)
 	wantStatus(t, res, http.StatusNotFound)
 
-	res = do(t, srv, "alice", "PUT", "/v1/blobs/"+blobID, "encrypted-bytes", nil)
+	res = do(t, srv, "alice", "PUT", "/v1/store/blobs/"+blobID, "encrypted-bytes", nil)
 	wantStatus(t, res, http.StatusNoContent)
 
-	res = do(t, srv, "alice", "HEAD", "/v1/blobs/"+blobID, "", nil)
+	res = do(t, srv, "alice", "HEAD", "/v1/store/blobs/"+blobID, "", nil)
 	wantStatus(t, res, http.StatusOK)
 
-	res = do(t, srv, "alice", "GET", "/v1/blobs/"+blobID, "", nil)
+	res = do(t, srv, "alice", "GET", "/v1/store/blobs/"+blobID, "", nil)
 	wantStatus(t, res, http.StatusOK)
 	if body := readBody(t, res); body != "encrypted-bytes" {
 		t.Fatalf("unexpected blob body: %q", body)
 	}
 
-	res = do(t, srv, "alice", "DELETE", "/v1/blobs/"+blobID, "", nil)
+	res = do(t, srv, "alice", "DELETE", "/v1/store/blobs/"+blobID, "", nil)
 	wantStatus(t, res, http.StatusNoContent)
-	res = do(t, srv, "alice", "GET", "/v1/blobs/"+blobID, "", nil)
+	res = do(t, srv, "alice", "GET", "/v1/store/blobs/"+blobID, "", nil)
 	wantStatus(t, res, http.StatusNotFound)
 	// idempotent
-	res = do(t, srv, "alice", "DELETE", "/v1/blobs/"+blobID, "", nil)
+	res = do(t, srv, "alice", "DELETE", "/v1/store/blobs/"+blobID, "", nil)
 	wantStatus(t, res, http.StatusNoContent)
 }
 
@@ -561,16 +559,16 @@ func TestUserIsolation(t *testing.T) {
 	blobID := "88888888-8888-8888-8888-888888888888"
 
 	appendEvents(t, srv, "alice", chatID, 0, event("e1", "YQ=="))
-	res := do(t, srv, "alice", "PUT", "/v1/blobs/"+blobID, "secret", nil)
+	res := do(t, srv, "alice", "PUT", "/v1/store/blobs/"+blobID, "secret", nil)
 	wantStatus(t, res, http.StatusNoContent)
 
-	res = do(t, srv, "bob", "GET", "/v1/chats", "", nil)
+	res = do(t, srv, "bob", "GET", "/v1/store/chats", "", nil)
 	if body := strings.TrimSpace(readBody(t, res)); body != "[]" {
 		t.Fatalf("bob must not see alice's chats: %s", body)
 	}
-	res = do(t, srv, "bob", "GET", "/v1/blobs/"+blobID, "", nil)
+	res = do(t, srv, "bob", "GET", "/v1/store/blobs/"+blobID, "", nil)
 	wantStatus(t, res, http.StatusNotFound)
-	res = do(t, srv, "bob", "GET", "/v1/chats/"+chatID+"/events", "", nil)
+	res = do(t, srv, "bob", "GET", "/v1/store/chats/"+chatID+"/events", "", nil)
 	wantStatus(t, res, http.StatusNotFound)
 }
 
@@ -578,13 +576,13 @@ func TestFileLifecycle(t *testing.T) {
 	srv := protectedTestServer(t)
 	fileID := strings.Repeat("a", 64)
 
-	res := do(t, srv, "alice", "GET", "/v1/files", "", nil)
+	res := do(t, srv, "alice", "GET", "/v1/store/files", "", nil)
 	wantStatus(t, res, http.StatusOK)
 	if body := strings.TrimSpace(readBody(t, res)); body != "[]" {
 		t.Fatalf("empty store should list []: %s", body)
 	}
 
-	res = do(t, srv, "alice", "PUT", "/v1/files/"+fileID, "cipher-v1", map[string]string{"If-None-Match": "*"})
+	res = do(t, srv, "alice", "PUT", "/v1/store/files/"+fileID, "cipher-v1", map[string]string{"If-None-Match": "*"})
 	wantStatus(t, res, http.StatusNoContent)
 	etag := strings.Trim(res.Header.Get("ETag"), `"`)
 	if etag == "" {
@@ -592,17 +590,17 @@ func TestFileLifecycle(t *testing.T) {
 	}
 
 	// create-only again → 412
-	res = do(t, srv, "alice", "PUT", "/v1/files/"+fileID, "cipher-v2", map[string]string{"If-None-Match": "*"})
+	res = do(t, srv, "alice", "PUT", "/v1/store/files/"+fileID, "cipher-v2", map[string]string{"If-None-Match": "*"})
 	wantStatus(t, res, http.StatusPreconditionFailed)
 	// stale etag → 412
-	res = do(t, srv, "alice", "PUT", "/v1/files/"+fileID, "cipher-v2", map[string]string{"If-Match": `"bogus"`})
+	res = do(t, srv, "alice", "PUT", "/v1/store/files/"+fileID, "cipher-v2", map[string]string{"If-Match": `"bogus"`})
 	wantStatus(t, res, http.StatusPreconditionFailed)
 	// current etag → accepted
-	res = do(t, srv, "alice", "PUT", "/v1/files/"+fileID, "cipher-v2", map[string]string{"If-Match": `"` + etag + `"`})
+	res = do(t, srv, "alice", "PUT", "/v1/store/files/"+fileID, "cipher-v2", map[string]string{"If-Match": `"` + etag + `"`})
 	wantStatus(t, res, http.StatusNoContent)
 	etag2 := strings.Trim(res.Header.Get("ETag"), `"`)
 
-	res = do(t, srv, "alice", "GET", "/v1/files/"+fileID, "", nil)
+	res = do(t, srv, "alice", "GET", "/v1/store/files/"+fileID, "", nil)
 	wantStatus(t, res, http.StatusOK)
 	if got := strings.Trim(res.Header.Get("ETag"), `"`); got != etag2 {
 		t.Fatalf("GET etag %s, want %s", got, etag2)
@@ -611,7 +609,7 @@ func TestFileLifecycle(t *testing.T) {
 		t.Fatalf("unexpected body: %q", body)
 	}
 
-	res = do(t, srv, "alice", "GET", "/v1/files", "", nil)
+	res = do(t, srv, "alice", "GET", "/v1/store/files", "", nil)
 	var list []store.FileMeta
 	if err := json.NewDecoder(res.Body).Decode(&list); err != nil {
 		t.Fatal(err)
@@ -621,15 +619,15 @@ func TestFileLifecycle(t *testing.T) {
 	}
 
 	// isolation
-	res = do(t, srv, "bob", "GET", "/v1/files/"+fileID, "", nil)
+	res = do(t, srv, "bob", "GET", "/v1/store/files/"+fileID, "", nil)
 	wantStatus(t, res, http.StatusNotFound)
 
-	res = do(t, srv, "alice", "DELETE", "/v1/files/"+fileID, "", nil)
+	res = do(t, srv, "alice", "DELETE", "/v1/store/files/"+fileID, "", nil)
 	wantStatus(t, res, http.StatusNoContent)
-	res = do(t, srv, "alice", "GET", "/v1/files/"+fileID, "", nil)
+	res = do(t, srv, "alice", "GET", "/v1/store/files/"+fileID, "", nil)
 	wantStatus(t, res, http.StatusNotFound)
 	// idempotent
-	res = do(t, srv, "alice", "DELETE", "/v1/files/"+fileID, "", nil)
+	res = do(t, srv, "alice", "DELETE", "/v1/store/files/"+fileID, "", nil)
 	wantStatus(t, res, http.StatusNoContent)
 }
 
@@ -638,7 +636,7 @@ func TestFrameTooLarge(t *testing.T) {
 	chatID := "99999999-9999-9999-9999-999999999999"
 
 	frame := strings.Repeat("A", store.MaxFrameBytes+1)
-	res := do(t, srv, "alice", "POST", "/v1/chats/"+chatID+"/events", event("e1", frame),
+	res := do(t, srv, "alice", "POST", "/v1/store/chats/"+chatID+"/events", event("e1", frame),
 		map[string]string{"X-Expected-Seq": "0"})
 	wantStatus(t, res, http.StatusRequestEntityTooLarge)
 }
@@ -646,21 +644,21 @@ func TestFrameTooLarge(t *testing.T) {
 func TestBackupsRequireProtection(t *testing.T) {
 	srv := newTestServer(t)
 	for _, body := range []string{`{"pinProtected":false}`, `{"pinProtected":true}`, `{"passkeyProtected":true}`, `{}`, `invalid`} {
-		wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", body, nil), http.StatusBadRequest)
+		wantStatus(t, do(t, srv, "alice", "PUT", "/v1/store/keystore", body, nil), http.StatusBadRequest)
 	}
 	for _, request := range []struct{ method, path string }{
-		{"PUT", "/v1/files/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
-		{"PUT", "/v1/blobs/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"},
-		{"POST", "/v1/chats/cccccccc-cccc-cccc-cccc-cccccccccccc/events"},
-		{"GET", "/v1/chats"}, {"GET", "/v1/files"},
+		{"PUT", "/v1/store/files/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
+		{"PUT", "/v1/store/blobs/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"},
+		{"POST", "/v1/store/chats/cccccccc-cccc-cccc-cccc-cccccccccccc/events"},
+		{"GET", "/v1/store/chats"}, {"GET", "/v1/store/files"},
 	} {
 		wantStatus(t, do(t, srv, "alice", request.method, request.path, "payload", nil), http.StatusForbidden)
 	}
-	res := do(t, srv, "alice", "PUT", "/v1/keystore", protectedTestKey("protected"), map[string]string{"If-None-Match": "*"})
+	res := do(t, srv, "alice", "PUT", "/v1/store/keystore", protectedTestKey("protected"), map[string]string{"If-None-Match": "*"})
 	wantStatus(t, res, http.StatusNoContent)
 	// An older client cannot turn a protected account back into plaintext mode.
-	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/keystore", `{"pinProtected":false}`, map[string]string{"If-Match": res.Header.Get("ETag")}), http.StatusBadRequest)
-	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files", "", nil), http.StatusOK)
+	wantStatus(t, do(t, srv, "alice", "PUT", "/v1/store/keystore", `{"pinProtected":false}`, map[string]string{"If-Match": res.Header.Get("ETag")}), http.StatusBadRequest)
+	wantStatus(t, do(t, srv, "alice", "GET", "/v1/store/files", "", nil), http.StatusOK)
 }
 
 func newTestStore(t *testing.T) *onedrive.Provider {
@@ -700,7 +698,7 @@ func TestFileBatchUpload(t *testing.T) {
 	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
 
 	body, contentType := batchBody(t, `[{"id":"`+a+`","ifNoneMatch":"*"},{"id":"`+b+`","ifNoneMatch":"*"}]`, [2]string{a, "cipher-a"}, [2]string{b, "cipher-b"})
-	res := do(t, srv, "alice", "POST", "/v1/files", body, map[string]string{"Content-Type": contentType})
+	res := do(t, srv, "alice", "POST", "/v1/store/files", body, map[string]string{"Content-Type": contentType})
 	wantStatus(t, res, http.StatusOK)
 	var result struct {
 		Files []struct{ ID, ETag string } `json:"files"`
@@ -711,7 +709,7 @@ func TestFileBatchUpload(t *testing.T) {
 	if len(result.Files) != 2 || result.Files[0].ID != a || result.Files[1].ID != b || result.Files[0].ETag == "" {
 		t.Fatalf("unexpected batch result: %+v", result)
 	}
-	res = do(t, srv, "alice", "GET", "/v1/files/"+b, "", nil)
+	res = do(t, srv, "alice", "GET", "/v1/store/files/"+b, "", nil)
 	wantStatus(t, res, http.StatusOK)
 	if got := readBody(t, res); got != "cipher-b" {
 		t.Fatalf("batched file body %q", got)
@@ -720,22 +718,22 @@ func TestFileBatchUpload(t *testing.T) {
 	// One failed precondition publishes nothing.
 	c := strings.Repeat("c", 64)
 	body, contentType = batchBody(t, `[{"id":"`+c+`","ifNoneMatch":"*"},{"id":"`+a+`","ifMatch":"stale"}]`, [2]string{c, "cipher-c"}, [2]string{a, "cipher-a2"})
-	wantStatus(t, do(t, srv, "alice", "POST", "/v1/files", body, map[string]string{"Content-Type": contentType}), http.StatusPreconditionFailed)
-	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files/"+c, "", nil), http.StatusNotFound)
+	wantStatus(t, do(t, srv, "alice", "POST", "/v1/store/files", body, map[string]string{"Content-Type": contentType}), http.StatusPreconditionFailed)
+	wantStatus(t, do(t, srv, "alice", "GET", "/v1/store/files/"+c, "", nil), http.StatusNotFound)
 
 	// Parts must follow the manifest.
 	body, contentType = batchBody(t, `[{"id":"`+c+`"}]`, [2]string{a, "cipher"})
-	wantStatus(t, do(t, srv, "alice", "POST", "/v1/files", body, map[string]string{"Content-Type": contentType}), http.StatusBadRequest)
-	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files/"+c, "", nil), http.StatusNotFound)
+	wantStatus(t, do(t, srv, "alice", "POST", "/v1/store/files", body, map[string]string{"Content-Type": contentType}), http.StatusBadRequest)
+	wantStatus(t, do(t, srv, "alice", "GET", "/v1/store/files/"+c, "", nil), http.StatusNotFound)
 }
 
 func TestFileBatchDelete(t *testing.T) {
 	srv := protectedTestServer(t)
 	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
 	body, contentType := batchBody(t, `[{"id":"`+a+`","ifNoneMatch":"*"},{"id":"`+b+`","ifNoneMatch":"*"}]`, [2]string{a, "cipher-a"}, [2]string{b, "cipher-b"})
-	wantStatus(t, do(t, srv, "alice", "POST", "/v1/files", body, map[string]string{"Content-Type": contentType}), http.StatusOK)
+	wantStatus(t, do(t, srv, "alice", "POST", "/v1/store/files", body, map[string]string{"Content-Type": contentType}), http.StatusOK)
 
-	res := do(t, srv, "alice", "POST", "/v1/files/delete", `{"files":[{"id":"`+a+`"},{"id":"`+b+`","ifMatch":"\"stale\""}]}`, map[string]string{"Content-Type": "application/json"})
+	res := do(t, srv, "alice", "POST", "/v1/store/files/delete", `{"files":[{"id":"`+a+`"},{"id":"`+b+`","ifMatch":"\"stale\""}]}`, map[string]string{"Content-Type": "application/json"})
 	wantStatus(t, res, http.StatusOK)
 	var result struct {
 		Files []struct {
@@ -749,7 +747,7 @@ func TestFileBatchDelete(t *testing.T) {
 	if len(result.Files) != 2 || result.Files[0].ID != a || !result.Files[0].Deleted || result.Files[1].Deleted {
 		t.Fatalf("unexpected delete result: %+v", result)
 	}
-	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files/"+a, "", nil), http.StatusNotFound)
-	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files/"+b, "", nil), http.StatusOK)
-	wantStatus(t, do(t, srv, "alice", "POST", "/v1/files/delete", `{"files":[]}`, nil), http.StatusBadRequest)
+	wantStatus(t, do(t, srv, "alice", "GET", "/v1/store/files/"+a, "", nil), http.StatusNotFound)
+	wantStatus(t, do(t, srv, "alice", "GET", "/v1/store/files/"+b, "", nil), http.StatusOK)
+	wantStatus(t, do(t, srv, "alice", "POST", "/v1/store/files/delete", `{"files":[]}`, nil), http.StatusBadRequest)
 }

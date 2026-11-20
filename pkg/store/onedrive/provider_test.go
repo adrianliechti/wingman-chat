@@ -311,19 +311,19 @@ func TestBackupHTTPAPI(t *testing.T) {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			next.ServeHTTP(w, r.WithContext(WithToken(r.Context(), "graph-token")))
 		})
-	}).Attach(mux, "/api")
+	}).Attach(mux, "/api/v1/store")
 	keyETag := ""
 	call := func(method, path, body string, expected int) *httptest.ResponseRecorder {
 		t.Helper()
-		r := httptest.NewRequest(method, "/api/v1/"+path, strings.NewReader(body))
+		r := httptest.NewRequest(method, "/api/v1/store"+path, strings.NewReader(body))
 		r.Header.Set("X-Forwarded-User", "alice")
 		r.Header.Set("X-Backup-Generation", "test-generation")
 		r.Header.Set("X-Expected-Seq", "0")
 		r.Header.Set("X-Confirm-Backup-Reset", "true")
-		if path == "keystore" {
+		if path == "/keystore" {
 			r.Header.Set("If-None-Match", "*")
 		}
-		if path == "backup" {
+		if path == "" {
 			r.Header.Set("If-Match", keyETag)
 		}
 		w := httptest.NewRecorder()
@@ -333,15 +333,15 @@ func TestBackupHTTPAPI(t *testing.T) {
 		}
 		return w
 	}
-	call("GET", "keystore", "", 404)
-	call("GET", "chats", "", 403)
+	call("GET", "/keystore", "", 404)
+	call("GET", "/chats", "", 403)
 	encode := func(size int) string { return base64.StdEncoding.EncodeToString(make([]byte, size)) }
 	key, _ := json.Marshal(map[string]any{
 		"accountId": "0123456789abcdef0123456789abcdef", "generation": "test-generation", "pinProtected": true, "wrappedDek": encode(48), "nonce": encode(12),
 		"kdf": map[string]any{"name": "argon2id", "salt": encode(16), "m": 65536, "t": 3, "p": 1},
 	})
-	keyETag = call("PUT", "keystore", string(key), 204).Header().Get("ETag")
-	const blobPath = "blobs/direct-blob"
+	keyETag = call("PUT", "/keystore", string(key), 204).Header().Get("ETag")
+	const blobPath = "/blobs/direct-blob"
 	payload := bytes.Repeat([]byte{0x44}, uploadChunk+1)
 	start := call("POST", blobPath+"/upload-session", fmt.Sprintf(`{"size":%d}`, len(payload)), http.StatusOK)
 	var direct store.UploadSession
@@ -356,8 +356,8 @@ func TestBackupHTTPAPI(t *testing.T) {
 	call("HEAD", blobPath, "", http.StatusNotFound)
 	call("POST", blobPath+"/upload-complete", string(complete), http.StatusNoContent)
 	call("HEAD", blobPath, "", http.StatusOK)
-	call("POST", "chats/chat-1234/events", `{"id":"event-1234","frame":"ciphertext"}`, 200)
-	log := call("GET", "chats/chat-1234/events?fromSeq=0", "", 200)
+	call("POST", "/chats/chat-1234/events", `{"id":"event-1234","frame":"ciphertext"}`, 200)
+	log := call("GET", "/chats/chat-1234/events?fromSeq=0", "", 200)
 	var line struct {
 		Seq   int64  `json:"seq"`
 		ID    string `json:"id"`
@@ -366,14 +366,14 @@ func TestBackupHTTPAPI(t *testing.T) {
 	if err := json.Unmarshal(log.Body.Bytes(), &line); err != nil || line.Frame != "ciphertext" || line.Seq != 1 {
 		t.Fatalf("replay format: %s %v", log.Body.String(), err)
 	}
-	call("PUT", "files/file-1234", "encrypted file", 204)
-	call("GET", "files/file-1234", "", 200)
-	call("PUT", "blobs/blob-1234", "encrypted blob", 204)
-	call("HEAD", "blobs/blob-1234", "", 200)
-	call("GET", "backup/usage", "", 200)
-	call("DELETE", "backup", "", 204)
-	call("GET", "keystore", "", 404)
-	call("GET", "files", "", 403)
+	call("PUT", "/files/file-1234", "encrypted file", 204)
+	call("GET", "/files/file-1234", "", 200)
+	call("PUT", "/blobs/blob-1234", "encrypted blob", 204)
+	call("HEAD", "/blobs/blob-1234", "", 200)
+	call("GET", "/usage", "", 200)
+	call("DELETE", "", "", 204)
+	call("GET", "/keystore", "", 404)
+	call("GET", "/files", "", 403)
 }
 
 func TestMissingRemoteBlobCanBeReuploaded(t *testing.T) {
@@ -423,10 +423,10 @@ func TestHTTPRestoreRejectsInterruptedSegmentDownload(t *testing.T) {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			next.ServeHTTP(w, r.WithContext(WithToken(r.Context(), "graph-token")))
 		})
-	}).Attach(mux, "/api")
+	}).Attach(mux, "/api/v1/store")
 	server := httptest.NewServer(mux)
 	defer server.Close()
-	req, err := http.NewRequest("GET", server.URL+"/api/v1/chats/chat-1234/events", nil)
+	req, err := http.NewRequest("GET", server.URL+"/api/v1/store/chats/chat-1234/events", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,6 +11,7 @@ import { skillsDevPlugin } from "./scripts/skills-dev";
 const src = path.resolve(import.meta.dirname, "src");
 
 const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:4242";
+const wingmanApiPrefix = process.env.WINGMAN_API_PREFIX ?? "";
 const wingmanToken = process.env.WINGMAN_TOKEN || "none";
 const wingmanUser = process.env.WINGMAN_USER || "default";
 
@@ -79,7 +80,7 @@ export default defineConfig({
         target: wingmanUrl,
         ws: true,
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/api/, ""),
+        rewrite: (p) => p.replace(/^\/api/, wingmanApiPrefix),
         configure: impersonate,
       },
       "^/me$": {

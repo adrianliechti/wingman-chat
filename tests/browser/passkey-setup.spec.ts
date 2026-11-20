@@ -99,7 +99,7 @@ test("a remembered PIN device confirms the PIN before adding a passkey", async (
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
   const keystore = await (
-    await page.request.get(`${backupServer}/api/v1/keystore`, { headers: { "X-Forwarded-User": backupUser } })
+    await page.request.get(`${backupServer}/api/v1/store/keystore`, { headers: { "X-Forwarded-User": backupUser } })
   ).json();
   expect(keystore.kdf).toMatchObject({ name: "argon2id", m: 65536, t: 3, p: 1 });
 

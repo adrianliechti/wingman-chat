@@ -104,7 +104,7 @@ func (zeros) Read(p []byte) (int, error) { clear(p); return len(p), nil }
 
 func TestRequestBodyLimits(t *testing.T) {
 	mux := http.NewServeMux()
-	New(drainingStore{}, nil).Attach(mux, "")
+	New(drainingStore{}, nil).Attach(mux, "/v1/store")
 	send := func(method, path string, body io.Reader, headers map[string]string) int {
 		req := httptest.NewRequest(method, path, body)
 		req.Header.Set("X-Forwarded-User", "alice")
@@ -116,7 +116,7 @@ func TestRequestBodyLimits(t *testing.T) {
 		mux.ServeHTTP(res, req)
 		return res.Code
 	}
-	for _, path := range []string{"/v1/files/file-1234", "/v1/blobs/blob-1234"} {
+	for _, path := range []string{"/v1/store/files/file-1234", "/v1/store/blobs/blob-1234"} {
 		if code := send("PUT", path, io.LimitReader(zeros{}, store.MaxObjectBytes), nil); code != http.StatusNoContent {
 			t.Fatalf("%s at limit: %d", path, code)
 		}
@@ -127,10 +127,10 @@ func TestRequestBodyLimits(t *testing.T) {
 	line := event("event-id", strings.Repeat("A", 1<<20)) + "\n"
 	fit := store.MaxAppendBytes / len(line)
 	lines := func(n int) io.Reader { return strings.NewReader(strings.Repeat(line, n)) }
-	if code := send("POST", "/v1/chats/chat-1234/events", lines(fit+1), map[string]string{"X-Expected-Seq": "0"}); code != http.StatusRequestEntityTooLarge {
+	if code := send("POST", "/v1/store/chats/chat-1234/events", lines(fit+1), map[string]string{"X-Expected-Seq": "0"}); code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("append over limit: %d", code)
 	}
-	if code := send("POST", "/v1/chats/chat-1234/events", lines(fit), map[string]string{"X-Expected-Seq": "0"}); code != http.StatusOK {
+	if code := send("POST", "/v1/store/chats/chat-1234/events", lines(fit), map[string]string{"X-Expected-Seq": "0"}); code != http.StatusOK {
 		t.Fatalf("append under limit: %d", code)
 	}
 }
@@ -138,14 +138,14 @@ func TestRequestBodyLimits(t *testing.T) {
 func TestDeleteFileHonorsIfMatch(t *testing.T) {
 	srv := protectedTestServer(t)
 	fileID := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-	res := do(t, srv, "alice", "PUT", "/v1/files/"+fileID, "ciphertext", nil)
+	res := do(t, srv, "alice", "PUT", "/v1/store/files/"+fileID, "ciphertext", nil)
 	wantStatus(t, res, http.StatusNoContent)
 	etag := res.Header.Get("ETag")
 
-	wantStatus(t, do(t, srv, "alice", "DELETE", "/v1/files/"+fileID, "", map[string]string{"If-Match": `"stale"`}), http.StatusPreconditionFailed)
-	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files/"+fileID, "", nil), http.StatusOK)
-	wantStatus(t, do(t, srv, "alice", "DELETE", "/v1/files/"+fileID, "", map[string]string{"If-Match": etag}), http.StatusNoContent)
-	wantStatus(t, do(t, srv, "alice", "GET", "/v1/files/"+fileID, "", nil), http.StatusNotFound)
+	wantStatus(t, do(t, srv, "alice", "DELETE", "/v1/store/files/"+fileID, "", map[string]string{"If-Match": `"stale"`}), http.StatusPreconditionFailed)
+	wantStatus(t, do(t, srv, "alice", "GET", "/v1/store/files/"+fileID, "", nil), http.StatusOK)
+	wantStatus(t, do(t, srv, "alice", "DELETE", "/v1/store/files/"+fileID, "", map[string]string{"If-Match": etag}), http.StatusNoContent)
+	wantStatus(t, do(t, srv, "alice", "GET", "/v1/store/files/"+fileID, "", nil), http.StatusNotFound)
 	// Already gone: the caller's intent holds, so a conditional delete is idempotent.
-	wantStatus(t, do(t, srv, "alice", "DELETE", "/v1/files/"+fileID, "", map[string]string{"If-Match": etag}), http.StatusNoContent)
+	wantStatus(t, do(t, srv, "alice", "DELETE", "/v1/store/files/"+fileID, "", map[string]string{"If-Match": etag}), http.StatusNoContent)
 }

@@ -272,7 +272,7 @@ To run the Go server against the built frontend:
 
 ```bash
 npm run build
-PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
+PORT=8080 WINGMAN_URL=http://localhost:4242 go run .
 # or: task serve
 ```
 
@@ -283,6 +283,8 @@ open the URL printed by Vite using `localhost`. The Go server listens on port
 `WINGMAN_URL`, falling back to `OPENAI_BASE_URL`, then `http://localhost:4242`.
 Set `WINGMAN_URL` (and `WINGMAN_TOKEN` if required) when using another platform.
 `task ui` connects the frontend to the Go server at `http://localhost:8080`.
+The Go server handles backup requests under `/api/v1/store` and forwards other
+requests under `/api` to the gateway, except for configured drive routes.
 
 Run the backup resilience browser tests with:
 

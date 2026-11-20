@@ -120,12 +120,12 @@ for (const upload of ["chat", "file"] as const) {
       await expect(page.getByText("Backup needs attention", { exact: true })).toBeVisible();
       await expectLocal(page, "interrupted backup");
       // Check what was committed independently of the browser's pending state.
-      const keystore = await page.request.get(`${backupServer}/api/v1/keystore`, {
+      const keystore = await page.request.get(`${backupServer}/api/v1/store/keystore`, {
         headers: { "X-Forwarded-User": user },
       });
       expect(keystore.ok()).toBe(true);
       const { generation } = await keystore.json();
-      const remote = await page.request.get(`${backupServer}/api/v1/${upload === "chat" ? "chats" : "files"}`, {
+      const remote = await page.request.get(`${backupServer}/api/v1/store/${upload === "chat" ? "chats" : "files"}`, {
         headers: { "X-Forwarded-User": user, "X-Backup-Generation": generation },
       });
       expect(remote.ok()).toBe(true);

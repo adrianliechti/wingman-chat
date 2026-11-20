@@ -81,9 +81,9 @@ test("reset bypasses an old keystore in the browser HTTP cache", async ({ page, 
       response.end(JSON.stringify({ models: [], backup: { provider: "onedrive" } }));
       return;
     }
-    const api = path === "/me" || path.startsWith("/api/v1/");
+    const api = path === "/me" || path === "/api/v1/store" || path.startsWith("/api/v1/store/");
     const target = new URL(api ? backupServer : baseURL!);
-    const readKeystore = incoming.method === "GET" && path === "/api/v1/keystore";
+    const readKeystore = incoming.method === "GET" && path === "/api/v1/store/keystore";
     if (readKeystore) keystoreReads++;
     const headers = { ...incoming.headers, host: target.host };
     const upstream = request(
@@ -110,10 +110,12 @@ test("reset bypasses an old keystore in the browser HTTP cache", async ({ page, 
     await choosePin(page);
 
     const before = keystoreReads;
-    expect(await page.evaluate(async () => (await fetch("/api/v1/keystore", { cache: "reload" })).status)).toBe(200);
-    expect(await page.evaluate(async () => (await fetch("/api/v1/keystore", { cache: "force-cache" })).status)).toBe(
+    expect(await page.evaluate(async () => (await fetch("/api/v1/store/keystore", { cache: "reload" })).status)).toBe(
       200,
     );
+    expect(
+      await page.evaluate(async () => (await fetch("/api/v1/store/keystore", { cache: "force-cache" })).status),
+    ).toBe(200);
     expect(keystoreReads).toBe(before + 1);
 
     await resetOnlineBackup(page);
@@ -145,7 +147,7 @@ test("failed local cleanup resumes after reload without repeating the online del
   const { network } = await connect(context, backupServer);
   let deletes = 0;
   network.interrupt = async (route) => {
-    if (route.request().method() === "DELETE" && route.request().url().endsWith("/v1/backup")) deletes++;
+    if (route.request().method() === "DELETE" && route.request().url().endsWith("/v1/store")) deletes++;
     return false;
   };
   await enableBackup(page);
@@ -177,11 +179,11 @@ test("a different account cannot complete a pending reset", async ({ page, conte
       return true;
     }
     // The reset request looks up the signed-in account before it reads the keystore.
-    if (path === "/api/v1/keystore" && route.request().method() === "GET" && switchAfterConfirmation) {
+    if (path === "/api/v1/store/keystore" && route.request().method() === "GET" && switchAfterConfirmation) {
       otherAccount = true;
       switchAfterConfirmation = false;
     }
-    if (path === "/api/v1/backup" && route.request().method() === "DELETE") deletes++;
+    if (path === "/api/v1/store" && route.request().method() === "DELETE") deletes++;
     return false;
   };
 
@@ -210,10 +212,10 @@ test("retry after a lost reset response preserves a replacement backup and shows
   let committed = false;
   network.interrupt = async (route) => {
     const req = route.request();
-    if (req.method() !== "DELETE" || new URL(req.url()).pathname !== "/api/v1/backup" || replacementReady) return false;
+    if (req.method() !== "DELETE" || new URL(req.url()).pathname !== "/api/v1/store" || replacementReady) return false;
     if (!committed) {
       const result = await route.fetch({
-        url: `${backupServer}/api/v1/backup`,
+        url: `${backupServer}/api/v1/store`,
         headers: { ...req.headers(), "X-Forwarded-User": user },
       });
       expect(result.status()).toBe(204);
@@ -232,7 +234,7 @@ test("retry after a lost reset response preserves a replacement backup and shows
     await connect(replacement, backupServer, user);
     await enableBackup(await replacement.newPage());
     const staleDelete = page.waitForResponse(
-      (response) => response.request().method() === "DELETE" && response.url().endsWith("/v1/backup"),
+      (response) => response.request().method() === "DELETE" && response.url().endsWith("/v1/store"),
     );
     replacementReady = true;
     await page.reload();
@@ -250,11 +252,11 @@ test("reset from an unreadable backup error returns to setup", async ({ page, co
   let unreadable = true;
   network.interrupt = async (route) => {
     const req = route.request();
-    if (req.method() === "GET" && req.url().endsWith("/v1/keystore") && unreadable) {
+    if (req.method() === "GET" && req.url().endsWith("/v1/store/keystore") && unreadable) {
       await route.fulfill({ status: 422, body: "Backup index is unreadable" });
       return true;
     }
-    if (req.method() === "DELETE" && req.url().endsWith("/v1/backup")) {
+    if (req.method() === "DELETE" && req.url().endsWith("/v1/store")) {
       expect(req.headers()["x-confirm-backup-reset"]).toBe("unreadable");
       unreadable = false;
       await route.fulfill({ status: 204 });
