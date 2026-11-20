@@ -116,6 +116,10 @@ func (p *Provider) readIndexControl(ctx context.Context) (driveItem, error) {
 // redirect to a separate host, so their HTTP ETag need not be the Graph item
 // ETag. Accept the snapshot only when the item's identity and ETag are stable.
 func (p *Provider) readIndex(ctx context.Context) (*index, driveItem, error) {
+	s, err := sessionFrom(ctx)
+	if err != nil {
+		return nil, driveItem{}, err
+	}
 	for attempt := 0; attempt < indexAttempts; attempt++ {
 		before, err := p.readIndexControl(ctx)
 		if err != nil {
@@ -124,7 +128,8 @@ func (p *Provider) readIndex(ctx context.Context) (*index, driveItem, error) {
 		if before.ID == "" {
 			return emptyIndex(), driveItem{}, nil
 		}
-		if cached := p.cache.index(before); cached != nil {
+		drive := s.drive
+		if cached := p.cache.index(drive, before); cached != nil {
 			return cached, before, nil
 		}
 		reader, err := p.open(ctx, indexName)
@@ -143,14 +148,14 @@ func (p *Provider) readIndex(ctx context.Context) (*index, driveItem, error) {
 		if err != nil {
 			return nil, driveItem{}, err
 		}
-		if before.ID != after.ID || before.ETag != after.ETag {
+		if drive != s.drive || before.ID != after.ID || before.ETag != after.ETag {
 			continue
 		}
 		state := emptyIndex()
 		if len(data) > 64<<20 || json.Unmarshal(data, state) != nil || state.Version != 1 || state.Chats == nil || state.Files == nil || state.Blobs == nil {
 			return nil, driveItem{}, errInvalidIndex
 		}
-		p.cache.storeIndex(after, cloneIndex(state), len(data))
+		p.cache.storeIndex(drive, after, cloneIndex(state), len(data))
 		return state, after, nil
 	}
 	return nil, driveItem{}, store.ErrBackupConflict
@@ -195,8 +200,8 @@ func (p *Provider) commit(ctx context.Context, state *index, control driveItem) 
 	if updated.ID == "" || updated.ETag == "" {
 		return errors.New("OneDrive backup: invalid index commit response")
 	}
-	p.cache.storeIndex(updated, cloneIndex(state), len(data))
 	s, _ := sessionFrom(ctx)
+	p.cache.storeIndex(s.drive, updated, cloneIndex(state), len(data))
 	s.control = updated
 	return nil
 }

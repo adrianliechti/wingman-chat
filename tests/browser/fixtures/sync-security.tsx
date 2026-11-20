@@ -7,7 +7,7 @@ import { loadConfig } from "../../../src/shared/config";
 import { clearAll, deleteDirectory, deleteFile, readText, writeText } from "../../../src/shared/lib/opfs-core";
 import { syncedChatStorage } from "../../../src/features/chat/lib/syncedChatStorage";
 import { readLocalChat } from "../../../src/shared/lib/localChats";
-import { userMessage } from "../../../src/shared/lib/messages";
+import { mediaFromDataUrl, text, userMessage } from "../../../src/shared/lib/messages";
 import "../../../src/index.css";
 
 declare global {
@@ -19,6 +19,7 @@ declare global {
       clear(): Promise<void>;
       sessionStatus(): Promise<string>;
       saveChat(text: string, id?: string): Promise<void>;
+      appendChat(text: string, attachment: string): Promise<void>;
       readChat(id?: string): Promise<unknown>;
       removeChat(id: string): Promise<void>;
       removeFile(path: string): Promise<void>;
@@ -41,6 +42,15 @@ window.syncSecurityE2E = {
       messages: [userMessage(text)],
     }),
   readChat: (id = "reset-chat") => readLocalChat(id, false),
+  appendChat: async (message, attachment) => {
+    const chat = await readLocalChat("reset-chat");
+    if (!chat) throw new Error("Expected an existing backup chat");
+    await syncedChatStorage.store({
+      ...chat,
+      updated: new Date(),
+      messages: [...chat.messages, userMessage([text(message), mediaFromDataUrl(attachment, `${message}.png`)])],
+    });
+  },
   removeChat: syncedChatStorage.remove,
   removeFile: deleteFile,
   removeDirectory: deleteDirectory,

@@ -1,7 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { createServer, request } from "node:http";
 import { expect, type Page } from "@playwright/test";
-import { choosePin, connect, enableBackup, expectLocal, filePath, fixture } from "./helpers/backup-client";
+import {
+  choosePin,
+  connect,
+  enableBackup,
+  expectLocal,
+  filePath,
+  fixture,
+  restore,
+  sync,
+  unlockRestoredBackup,
+} from "./helpers/backup-client";
 import { test } from "./helpers/backup-server";
 
 async function resetOnlineBackup(page: Page) {
@@ -19,6 +29,45 @@ async function saveLocal(page: Page, text: string) {
     { filePath, text },
   );
 }
+
+test("a reset from another browser preserves local copies in both tabs and permits a fresh backup", async ({
+  page,
+  context,
+  browser,
+  baseURL,
+  backupServer,
+}) => {
+  const { user } = await connect(context, backupServer);
+  await enableBackup(page);
+  await saveLocal(page, "kept after reset on another device");
+  await sync(page);
+  const peer = await context.newPage();
+  await peer.goto(fixture);
+  await expect(peer.getByText("Everything looks fine", { exact: true })).toBeVisible();
+
+  const other = await browser.newContext({ baseURL });
+  try {
+    await connect(other, backupServer, user);
+    const resetter = await other.newPage();
+    await unlockRestoredBackup(resetter);
+    await resetOnlineBackup(resetter);
+    await expect(resetter.getByRole("button", { name: "Turn on backup", exact: true })).toBeVisible();
+
+    await page.reload();
+    for (const tab of [page, peer]) {
+      await expect(tab.getByRole("button", { name: "Turn on backup", exact: true })).toBeVisible();
+      await expectLocal(tab, "kept after reset on another device");
+      expect(await tab.evaluate(() => window.syncSecurityE2E.read("_sync/backup.json"))).toBeUndefined();
+    }
+    await choosePin(page);
+    await sync(page);
+    await peer.reload();
+    await expect(peer.getByText("Everything looks fine", { exact: true })).toBeVisible();
+    await restore(context, backupServer, user, "kept after reset on another device");
+  } finally {
+    await other.close();
+  }
+});
 
 test("reset bypasses an old keystore in the browser HTTP cache", async ({ page, baseURL, backupServer }) => {
   const user = randomUUID();

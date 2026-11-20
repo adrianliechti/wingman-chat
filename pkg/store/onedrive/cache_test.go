@@ -108,12 +108,30 @@ func TestReplacedObjectIsRemovedAfterResponse(t *testing.T) {
 func TestIndexCacheIsBounded(t *testing.T) {
 	var c cache
 	for _, id := range []string{"a", "b", "c"} {
-		c.storeIndex(driveItem{ID: id, ETag: "1"}, emptyIndex(), indexCacheBytes/2)
+		c.storeIndex("drive", driveItem{ID: id, ETag: "1"}, emptyIndex(), indexCacheBytes/2)
 	}
-	if len(c.indexes) != 2 || c.indexBytes > indexCacheBytes || c.index(driveItem{ID: "c", ETag: "1"}) == nil {
+	if len(c.indexes) != 2 || c.indexBytes > indexCacheBytes || c.index("drive", driveItem{ID: "c", ETag: "1"}) == nil {
 		t.Fatalf("cache kept %d entries (%d bytes)", len(c.indexes), c.indexBytes)
 	}
-	if c.index(driveItem{ID: "c", ETag: "2"}) != nil {
+	if c.index("drive", driveItem{ID: "c", ETag: "2"}) != nil {
 		t.Fatal("snapshot returned for a different ETag")
+	}
+}
+
+func TestIndexCacheSeparatesDrives(t *testing.T) {
+	var c cache
+	control := driveItem{ID: "index", ETag: "1"}
+	for _, drive := range []string{"first", "second"} {
+		state := emptyIndex()
+		state.Generation = drive
+		c.storeIndex(drive, control, state, 1)
+	}
+	for _, drive := range []string{"first", "second"} {
+		if state := c.index(drive, control); state == nil || state.Generation != drive {
+			t.Fatalf("wrong snapshot for drive %q: %+v", drive, state)
+		}
+	}
+	if state := c.index("", control); state != nil {
+		t.Fatalf("used a cached snapshot without a drive ID: %+v", state)
 	}
 }

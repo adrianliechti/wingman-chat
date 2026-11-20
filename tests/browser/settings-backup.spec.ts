@@ -48,7 +48,7 @@ test("PIN setup stays visible until the optional passkey step is ready", async (
     await route.fallback();
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Backups disabled — set a PIN or passkey", exact: true }).click();
+  await page.getByRole("button", { name: "Backup is off — click to turn on", exact: true }).click();
   await page.getByRole("button", { name: "Turn on backup", exact: true }).click();
   await expect(page.getByText("Without your PIN or a passkey,", { exact: false })).toBeVisible();
   await page.getByLabel("New PIN", { exact: true }).fill("12345678");
@@ -90,7 +90,7 @@ test("initial backup and restore display confirmed file counts and progress bars
     await route.fallback();
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Backups disabled — set a PIN or passkey", exact: true }).click();
+  await page.getByRole("button", { name: "Backup is off — click to turn on", exact: true }).click();
   await page.evaluate(async () => {
     const modulePath = "/src/shared/lib/opfs-core.ts";
     const { writeText } = await import(/* @vite-ignore */ modulePath);
@@ -176,7 +176,7 @@ test("initial backup and restore display confirmed file counts and progress bars
 test("online backup keeps local recovery controls in a collapsed section", async ({ page }, testInfo) => {
   await configure(page, true);
   await page.goto("/");
-  await page.getByRole("button", { name: "Backups disabled — set a PIN or passkey", exact: true }).click();
+  await page.getByRole("button", { name: "Backup is off — click to turn on", exact: true }).click();
   const settings = page.getByRole("dialog");
   await expect(settings.getByRole("heading", { name: "Online backup", exact: true, level: 3 })).toBeVisible();
   await expect(settings.getByRole("heading", { name: "Online backup", exact: true })).toBeVisible();
@@ -320,3 +320,103 @@ for (const mode of [
     await expect(settings.getByRole("heading", { name: "Backup", exact: true, level: 3 })).not.toBeInViewport();
   });
 }
+
+test("a downloaded ZIP merges through Settings and both tabs can open restored data", async ({
+  page,
+  context,
+  browser,
+  baseURL,
+}) => {
+  const image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO/aS6QAAAAASUVORK5CYII=";
+  const source = await browser.newContext({ baseURL });
+  const configureLocal = async (tab: Page) => {
+    await configure(tab, false, false);
+    await tab.setViewportSize({ width: 375, height: 740 });
+    await tab.goto("/");
+  };
+  const openBackup = async (tab: Page) => {
+    await tab.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
+    await tab.getByRole("button", { name: "Settings", exact: true }).click();
+    const settings = tab.getByRole("dialog");
+    await settings.getByRole("button", { name: "Backup", exact: true }).click();
+    return settings;
+  };
+  const seed = (tab: Page, id: string, title: string, message: string, attachment?: string) =>
+    tab.evaluate(
+      async ({ id, title, message, attachment }) => {
+        const storagePath = "/src/features/chat/lib/chatStorage.ts";
+        const { storeChat } = (await import(
+          /* @vite-ignore */ storagePath
+        )) as typeof import("../../src/features/chat/lib/chatStorage");
+        const messagesPath = "/src/shared/lib/messages.ts";
+        const { mediaFromDataUrl, text, userMessage } = (await import(
+          /* @vite-ignore */ messagesPath
+        )) as typeof import("../../src/shared/lib/messages");
+        const parts = [
+          text(message),
+          ...(attachment ? [mediaFromDataUrl(`data:image/png;base64,${attachment}`, "pixel.png")] : []),
+        ];
+        await storeChat({
+          id,
+          customTitle: title,
+          created: new Date(),
+          updated: new Date(),
+          model: null,
+          messages: [userMessage(parts)],
+        });
+      },
+      { id, title, message, attachment },
+    );
+
+  try {
+    const exporting = await source.newPage();
+    await configureLocal(exporting);
+    await seed(exporting, "zip-chat", "Recovered conversation", "Conversation from the downloaded backup", image);
+    const exportSettings = await openBackup(exporting);
+    const downloading = exporting.waitForEvent("download");
+    await exportSettings.getByRole("button", { name: "Download backup", exact: true }).click();
+    const archive = await downloading;
+
+    await configureLocal(page);
+    await seed(page, "local-chat", "Keep this conversation", "Existing conversation in the destination");
+    await seed(page, "zip-chat", "Previous copy", "Older version in the destination");
+    const peer = await context.newPage();
+    await configureLocal(peer);
+    const importSettings = await openBackup(page);
+    const choosing = page.waitForEvent("filechooser");
+    await importSettings.getByRole("button", { name: "Restore from file", exact: true }).click();
+    const chooser = await choosing;
+    await chooser.setFiles({
+      name: archive.suggestedFilename(),
+      mimeType: "application/zip",
+      buffer: await readFile((await archive.path())!),
+    });
+    const dialog = page.getByRole("dialog", { name: "Restore backup?" });
+    await expect(dialog.getByRole("heading", { name: "Restore backup?" })).toBeVisible();
+    const reloaded = page.waitForEvent("framenavigated", { predicate: (frame) => frame === page.mainFrame() });
+    await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+    await reloaded;
+    await peer.reload();
+
+    for (const tab of [page, peer]) {
+      await tab.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
+      await expect(tab.getByText("Keep this conversation", { exact: true })).toBeVisible();
+      await expect(tab.getByText("Previous copy", { exact: true })).toHaveCount(0);
+      await tab.getByText("Recovered conversation", { exact: true }).click();
+      await expect(tab.getByText("Conversation from the downloaded backup", { exact: true })).toBeVisible();
+      const attachment = await tab.evaluate(async () => {
+        const path = "/src/features/chat/lib/chatStorage.ts";
+        const { loadChat } = (await import(
+          /* @vite-ignore */ path
+        )) as typeof import("../../src/features/chat/lib/chatStorage");
+        return (await loadChat("zip-chat"))?.messages[0].parts[1];
+      });
+      expect(attachment).toMatchObject({
+        type: "image",
+        source: { type: "data", mimeType: "image/png", value: image },
+      });
+    }
+  } finally {
+    await source.close();
+  }
+});

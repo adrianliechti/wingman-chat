@@ -22,13 +22,17 @@ const (
 type cache struct {
 	mu         sync.Mutex
 	folders    map[string]cachedFolder
-	indexes    map[string]cachedIndex
+	indexes    map[indexCacheKey]cachedIndex
 	indexBytes int
 }
 
 type cachedFolder struct {
 	folder, drive string
 	expires       time.Time
+}
+
+type indexCacheKey struct {
+	drive, item string
 }
 
 type cachedIndex struct {
@@ -80,39 +84,44 @@ func (c *cache) forgetFolder(token string) {
 }
 
 // index returns a private copy of the snapshot published as control.
-func (c *cache) index(control driveItem) *index {
+func (c *cache) index(drive string, control driveItem) *index {
+	if drive == "" {
+		return nil
+	}
+	key := indexCacheKey{drive: drive, item: control.ID}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	entry, ok := c.indexes[control.ID]
+	entry, ok := c.indexes[key]
 	if !ok || entry.etag != control.ETag {
 		return nil
 	}
 	entry.used = time.Now()
-	c.indexes[control.ID] = entry
+	c.indexes[key] = entry
 	return cloneIndex(entry.state)
 }
 
 // storeIndex records state as the content of control. Callers must not
 // modify state afterwards.
-func (c *cache) storeIndex(control driveItem, state *index, size int) {
-	if control.ID == "" || control.ETag == "" || size > indexCacheBytes {
+func (c *cache) storeIndex(drive string, control driveItem, state *index, size int) {
+	if drive == "" || control.ID == "" || control.ETag == "" || size > indexCacheBytes {
 		return
 	}
+	key := indexCacheKey{drive: drive, item: control.ID}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.indexes == nil {
-		c.indexes = map[string]cachedIndex{}
+		c.indexes = map[indexCacheKey]cachedIndex{}
 	}
-	if old, ok := c.indexes[control.ID]; ok {
+	if old, ok := c.indexes[key]; ok {
 		c.indexBytes -= old.size
 	}
-	c.indexes[control.ID] = cachedIndex{etag: control.ETag, state: state, size: size, used: time.Now()}
+	c.indexes[key] = cachedIndex{etag: control.ETag, state: state, size: size, used: time.Now()}
 	c.indexBytes += size
 	for c.indexBytes > indexCacheBytes {
-		oldest := ""
-		for key, entry := range c.indexes {
-			if key != control.ID && (oldest == "" || entry.used.Before(c.indexes[oldest].used)) {
-				oldest = key
+		var oldest indexCacheKey
+		for candidate, entry := range c.indexes {
+			if candidate != key && (oldest.item == "" || entry.used.Before(c.indexes[oldest].used)) {
+				oldest = candidate
 			}
 		}
 		c.indexBytes -= c.indexes[oldest].size

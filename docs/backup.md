@@ -184,7 +184,7 @@ spools use the backend's temporary directory and are removed after each request.
 Each Graph call costs a few hundred milliseconds, so each replica keeps two
 in-memory caches. It caches the app-folder ID per access token for up to an hour, and
 re-resolves the folder when the index is not found there. It also keeps the most recent
-index snapshots (up to 32 MiB) by item ID and ETag. A request still reads the
+index snapshots (up to 32 MiB) by drive ID, item ID, and ETag. A request still reads the
 index metadata with its own token, and uses the cached snapshot only when the
 ETag matches; otherwise it downloads the index. A typical request therefore
 needs one Graph call before its own work instead of five.

@@ -7,6 +7,7 @@ export const pin = "12345678";
 
 export async function connect(context: BrowserContext, server: string, user: string = randomUUID()) {
   const network = {
+    user,
     offline: false,
     unavailable: false,
     interrupt: undefined as undefined | ((route: Route) => Promise<boolean>),
@@ -21,7 +22,7 @@ export async function connect(context: BrowserContext, server: string, user: str
     const request = route.request();
     const response = await route.fetch({
       url: `${server}${new URL(request.url()).pathname}${new URL(request.url()).search}`,
-      headers: { ...request.headers(), "X-Forwarded-User": user },
+      headers: { ...request.headers(), "X-Forwarded-User": network.user },
     });
     await route.fulfill({ response });
   });
@@ -31,6 +32,14 @@ export async function connect(context: BrowserContext, server: string, user: str
 export async function enableBackup(page: Page) {
   await page.goto(fixture);
   await choosePin(page);
+}
+
+export async function unlockRestoredBackup(page: Page) {
+  await page.goto(fixture);
+  await page.getByRole("button", { name: "Restore backup", exact: true }).click();
+  await page.getByLabel("PIN", { exact: true }).fill(pin);
+  await page.getByRole("button", { name: "Restore backup", exact: true }).click();
+  await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
 }
 
 export async function choosePin(page: Page) {
@@ -76,11 +85,7 @@ export async function withRestoredBackup(
   try {
     await connect(device, server, user);
     const page = await device.newPage();
-    await page.goto(fixture);
-    await page.getByRole("button", { name: "Restore backup", exact: true }).click();
-    await page.getByLabel("PIN", { exact: true }).fill(pin);
-    await page.getByRole("button", { name: "Restore backup", exact: true }).click();
-    await expect(page.getByText("Everything looks fine", { exact: true })).toBeVisible();
+    await unlockRestoredBackup(page);
     await verify(page);
   } finally {
     await device.close();
