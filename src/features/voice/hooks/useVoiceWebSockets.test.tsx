@@ -82,8 +82,8 @@ function createHarness(tools: Tool[] = [], getContext = () => "active_file: /fir
   };
 }
 
-function toolCall(socket: Socket, args: Record<string, unknown>) {
-  const item = { id: "item", type: "function_call", name: "edit", call_id: "call", arguments: JSON.stringify(args) };
+function toolCall(socket: Socket, args: Record<string, unknown>, name = "edit") {
+  const item = { id: "item", type: "function_call", name, call_id: "call", arguments: JSON.stringify(args) };
   socket.message({ type: "response.created", response: { id: "response" } });
   socket.message({
     type: "response.output_item.done",
@@ -234,6 +234,34 @@ describe("voice request context and tool lifecycle", () => {
       await vi.waitFor(() => expect(onResult).toHaveBeenCalledOnce());
       expect(handler).not.toHaveBeenCalled();
       expect(socket.sent.some((event) => event.item?.output?.includes("Unknown or non-executable tool"))).toBe(true);
+    } finally {
+      await hook.stop();
+    }
+  });
+
+  it("gives execute_script the current voice tool selection after a session update", async () => {
+    const execute = vi.fn<Tool["execute"]>(async () => []);
+    const script = { name: "execute_script", description: "Run code", inputSchema: z.object({}), execute };
+    const source: Tool = {
+      name: "old_source",
+      description: "Read source",
+      inputSchema: z.object({}),
+      script: true,
+      execute: async () => [],
+    };
+    const { hook, start, onResult } = createHarness([script, source]);
+    try {
+      const socket = await start();
+      const selected = [script, { ...source, name: "selected_source" }];
+      hook.updateSession(selected);
+      await vi.waitFor(() =>
+        expect(socket.sent.filter((event) => event.type === "session.update").at(-1)?.session.tools).toContainEqual(
+          expect.objectContaining({ name: "selected_source" }),
+        ),
+      );
+      toolCall(socket, {}, "execute_script");
+      await vi.waitFor(() => expect(onResult).toHaveBeenCalledOnce());
+      expect(execute.mock.calls[0][1]?.context?.scriptTools).toEqual(selected);
     } finally {
       await hook.stop();
     }

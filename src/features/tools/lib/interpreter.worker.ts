@@ -32,7 +32,7 @@ import type {
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
-import { callMainThread, describeError } from "./interpreterRpc";
+import { callMainThread, describeError, scriptToolClient } from "./interpreterRpc";
 import { formatPythonTraceback } from "./pythonTraceback";
 import { loadPythonPackages } from "./pythonPackages";
 import LLM_SHIM from "./llmShim.py?raw";
@@ -42,6 +42,7 @@ import PYTHON_SCRIPTS from "./pythonScripts.py?raw";
 import RENDER_SHIM from "./renderShim.py?raw";
 import SQL_SHIM from "./sqlShim.py?raw";
 import SYNTHESIZE_SHIM from "./synthesizeShim.py?raw";
+import TOOLS_SHIM from "./toolsShim.py?raw";
 import TRANSCRIBE_SHIM from "./transcribeShim.py?raw";
 import TRANSLATE_SHIM from "./translateShim.py?raw";
 import VISION_SHIM from "./visionShim.py?raw";
@@ -346,12 +347,14 @@ const USER_SHIMS = [
   TRANSLATE_SHIM,
   PDF_RASTERIZE_SHIM,
   SQL_SHIM,
+  TOOLS_SHIM,
 ];
 
 async function installExecutionHelpers(
   pyodide: PyodideInterface,
   signal: AbortSignal,
   globals: PyodideInterface["globals"],
+  port: MessagePort,
 ): Promise<void> {
   // Python tasks can retain their globals after runPythonAsync returns. Bind
   // bridges to this execution so delayed work cannot borrow the next run's
@@ -363,6 +366,11 @@ async function installExecutionHelpers(
     });
   };
   setBridge("_wingman_llm", requestLlm);
+  const tools = scriptToolClient(port, signal);
+  setBridge("_wingman_list_tools", async () => JSON.stringify(await tools.list()));
+  setBridge("_wingman_call_tool", async (name: string, args: string) =>
+    JSON.stringify(await tools.call(name, JSON.parse(args))),
+  );
   setBridge("_wingman_ocr", (path: string) => requestOcr(pyodide, path));
   setBridge("_wingman_vision", (path: string, prompt: string | null) => requestVision(pyodide, path, prompt));
   setBridge("_wingman_render", (prompt: string, output: string, inputsJson: string, optionsJson: string | null) =>
@@ -417,7 +425,11 @@ function loadPyodide(): Promise<PyodideInterface> {
   return pyodideReady;
 }
 
-async function executeCode(request: CodeExecutionRequest, onStarted?: () => void): Promise<CodeExecutionResult> {
+async function executeCode(
+  request: CodeExecutionRequest,
+  port: MessagePort,
+  onStarted?: () => void,
+): Promise<CodeExecutionResult> {
   const { files = {} } = request;
   let maxOutputBytes = DEFAULT_CODE_EXECUTION_LIMITS.maxOutputBytes;
   // Declared outside the try so a failed run still returns what it printed.
@@ -458,7 +470,7 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
       scope = scriptScope!(filename, JSON.stringify(request.args ?? []));
       globals = scope.namespace;
       // Attribute proxies are borrowed from scope; retain their owner until cleanup.
-      await installExecutionHelpers(pyodide, executionController.signal, globals);
+      await installExecutionHelpers(pyodide, executionController.signal, globals, port);
       if (pyodide.loadedPackages.duckdb) {
         closeDuckDb = pyodide.runPython(DUCKDB_SCOPE, { globals, filename: "<wingman-duckdb>" }) as typeof closeDuckDb;
       }
@@ -729,7 +741,7 @@ ctx.addEventListener("message", (event) => {
       }
     };
     // executeCode never throws — errors come back as { success: false }.
-    const result = await executeCode(request, signalStarted);
+    const result = await executeCode(request, port, signalStarted);
     try {
       port.postMessage({ type: "result", result } satisfies ExecuteReply);
     } catch (error) {

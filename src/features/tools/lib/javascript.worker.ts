@@ -27,7 +27,7 @@ import type {
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
-import { callMainThread, describeError } from "./interpreterRpc";
+import { callMainThread, describeError, scriptToolClient } from "./interpreterRpc";
 
 // Typed view of the worker global scope (project compiles against the DOM lib,
 // not the webworker lib).
@@ -481,7 +481,11 @@ const LAZY_GLOBALS: { name: string; test: RegExp; load: () => Promise<unknown> }
   { name: "jsPDF", test: /\bjsPDF\b/, load: async () => (await import("jspdf")).jsPDF },
 ];
 
-async function executeJs(request: CodeExecutionRequest, onStarted?: () => void): Promise<CodeExecutionResult> {
+async function executeJs(
+  request: CodeExecutionRequest,
+  port: MessagePort,
+  onStarted?: () => void,
+): Promise<CodeExecutionResult> {
   patchNetwork();
   const { files = {} } = request;
   // Function bodies do not accept a file's hashbang. Keep its newline so error
@@ -512,7 +516,7 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
   // declare locals named `render`, `translate`, … without a duplicate-parameter
   // SyntaxError. Removed in finally.
   const g = globalThis as Record<string, unknown>;
-  const bridges: Record<string, unknown> = { llm, sql, ...buildBridges(vfs, limits) };
+  const bridges: Record<string, unknown> = { llm, sql, tools: scriptToolClient(port), ...buildBridges(vfs, limits) };
   Object.assign(g, bridges);
 
   try {
@@ -579,7 +583,7 @@ ctx.addEventListener("message", (event) => {
       }
     };
     // executeJs never throws — errors come back as { success: false }.
-    const result = await executeJs(request, signalStarted);
+    const result = await executeJs(request, port, signalStarted);
     try {
       port.postMessage({ type: "result", result } satisfies ExecuteReply);
     } catch (error) {

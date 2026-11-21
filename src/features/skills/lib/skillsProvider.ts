@@ -183,6 +183,7 @@ function displaySkillTool(
   const resource = tool.name === "read_skill_resource";
   return {
     name: tool.name,
+    script: true,
     description: resource
       ? "Read one bundled resource of an available skill, including scripts, references and assets. skill is the exact listed skill name; path is relative to its root, such as scripts/check.py, not the /skills/... interpreter mount path. Use paths returned by load_skill. Returns content and encoding (utf8 or base64). For editing personal library resources, read with list_skills({name, path}) instead."
       : tool.description,

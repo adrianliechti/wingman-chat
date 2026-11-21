@@ -6,6 +6,7 @@ function services() {
   return {
     ocr: vi.fn<BashServices["ocr"]>(async () => "Grüezi 🪽\nextracted text"),
     llm: vi.fn<BashServices["llm"]>(async () => "Résumé 🪽"),
+    tools: { list: vi.fn(async () => []), call: vi.fn(async () => "") },
   };
 }
 

@@ -44,6 +44,11 @@ export const NO_OUTPUT_MESSAGE = "Code executed successfully (no output)";
 
 export type ExecuteReply = { type: "started" } | { type: "result"; result: CodeExecutionResult };
 
+/** Tool access uses the owning execution's private port, including in reused Python workers. */
+export type ScriptToolRequest =
+  | { type: "tools-list"; port: MessagePort }
+  | { type: "tools-call"; name: string; args: unknown; port: MessagePort };
+
 /** Input image for the `render` helper — bytes plus the path whose basename routes the upload by format. */
 export interface RenderInput {
   data: Uint8Array;

@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import type { Tool } from "@/shared/types/chat";
 import type { ExecuteMessage } from "./interpreterProtocol";
+import { scriptToolClient } from "./interpreterRpc";
 import { createWorkerHost } from "./workerHost";
 
 class TestWorker extends EventTarget {
@@ -18,6 +21,63 @@ class TestWorker extends EventTarget {
 describe("interpreter host coordination", () => {
   afterEach(() => vi.useRealTimers());
 
+  it("scopes the tool catalog and cancels running and queued calls when the script finishes", async () => {
+    const workers = [new TestWorker(), new TestWorker()];
+    const host = createWorkerHost({
+      createWorker: vi.fn().mockReturnValueOnce(workers[0]).mockReturnValueOnce(workers[1]),
+      handleMessage: vi.fn(),
+      crashMessage: "crashed",
+    });
+    const execute = vi.fn<Tool["execute"]>(async (_args, execution) => {
+      await new Promise<void>((resolve) =>
+        execution!.abortSignal!.addEventListener("abort", () => resolve(), { once: true }),
+      );
+      return [];
+    });
+    const wait: Tool = {
+      name: "wait",
+      description: "Wait for cancellation",
+      inputSchema: z.object({}),
+      script: true,
+      execute,
+    };
+    const run = host.execute(
+      { code: "work" },
+      {
+        context: {
+          chatId: "chat",
+          scriptTools: [
+            wait,
+            { ...wait, name: "execute_script" },
+            { ...wait, name: "direct_only", script: undefined },
+            { ...wait, name: "requires_native_approval", needsApproval: true },
+          ],
+        },
+      },
+    );
+    const tools = scriptToolClient(workers[0].requests[0].port);
+    expect(await tools.list()).toEqual([
+      expect.objectContaining({ name: "wait", parameters: expect.objectContaining({ type: "object" }) }),
+    ]);
+    await expect(tools.call("direct_only")).rejects.toThrow("unavailable");
+    const calls = Promise.allSettled([tools.call("wait"), tools.call("wait")]);
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+    workers[0].finish(0, "done");
+    await run;
+    expect((await calls).map((r) => r.status)).toEqual(["rejected", "rejected"]);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute.mock.calls[0][1]?.context).toMatchObject({
+      chatId: "chat",
+      signal: expect.objectContaining({ aborted: true }),
+    });
+
+    const editor = host.execute({ code: "manual" });
+    expect(workers[0].terminate).toHaveBeenCalledOnce();
+    expect(await scriptToolClient(workers[1].requests[0].port).list()).toEqual([]);
+    workers[1].finish(0, "done");
+    await editor;
+  });
+
   it("honors parent invocation cancellation without a separate execution signal", async () => {
     const worker = new TestWorker();
     const host = createWorkerHost({
@@ -33,6 +93,24 @@ describe("interpreter host coordination", () => {
     expect(worker.terminate).toHaveBeenCalledOnce();
     expect((await host.execute({ code: "must not start" }, { context })).error).toBe("Execution cancelled");
     expect(worker.requests).toHaveLength(1);
+  });
+
+  it("stops repeated discovery once the script's tool request budget is spent", async () => {
+    const worker = new TestWorker();
+    const host = createWorkerHost({
+      createWorker: () => worker as unknown as Worker,
+      handleMessage: vi.fn(),
+      crashMessage: "crashed",
+    });
+    const run = host.execute({ code: "discover" });
+    const controller = new AbortController();
+    const tools = scriptToolClient(worker.requests[0].port, controller.signal);
+    for (let count = 0; count < 1000; count++) await tools.list();
+    const last = tools.list().catch(() => {});
+    expect((await run).error).toContain("1000 tool requests");
+    expect(worker.terminate).toHaveBeenCalledOnce();
+    controller.abort();
+    await last;
   });
 
   it("settles a failed execution post and recovers with a new worker", async () => {

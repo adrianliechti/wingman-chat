@@ -1,9 +1,11 @@
 import { defineCommand, type Command, type ExecResult, type ResolvedCommandContext } from "just-bash/browser";
 import type { LlmCallOptions } from "./interpreterProtocol";
+import type { scriptToolClient } from "./interpreterRpc";
 
 export interface BashServices {
   ocr(data: Uint8Array, path: string, signal?: AbortSignal): Promise<string>;
   llm(prompt: string, options: LlmCallOptions, signal?: AbortSignal): Promise<string>;
+  tools: ReturnType<typeof scriptToolClient>;
 }
 
 const EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
@@ -42,6 +44,11 @@ function parseArgs(args: string[], flags: Record<string, string>) {
 
 function failure(name: string, error: unknown, exitCode = 1): ExecResult {
   return { stdout: "", stderr: `${name}: ${error instanceof Error ? error.message : String(error)}\n`, exitCode };
+}
+
+function stdinText(ctx: ResolvedCommandContext): string {
+  // just-bash passes a latin1 byte string through pipes.
+  return new TextDecoder().decode(Uint8Array.from(ctx.stdin as unknown as string, (char) => char.charCodeAt(0)));
 }
 
 async function textResult(text: string, output: string | undefined, ctx: ResolvedCommandContext): Promise<ExecResult> {
@@ -94,11 +101,7 @@ export function createBashCommands(services: BashServices): Command[] {
       const effort = parsed.options.get("effort");
       if (effort !== undefined && !EFFORTS.has(effort))
         throw new Error(`--effort requires one of: ${[...EFFORTS].join(", ")}`);
-      // stdin is a latin1 byte string, not a JavaScript Unicode string.
-      const stdin = new TextDecoder().decode(
-        Uint8Array.from(ctx.stdin as unknown as string, (char) => char.charCodeAt(0)),
-      );
-      prompt = [parsed.rest.join(" "), stdin].filter(Boolean).join("\n\n");
+      prompt = [parsed.rest.join(" "), stdinText(ctx)].filter(Boolean).join("\n\n");
       if (!prompt.trim()) throw new Error(usage);
     } catch (error) {
       return failure("llm", error, 2);
@@ -115,5 +118,24 @@ export function createBashCommands(services: BashServices): Command[] {
       return failure("llm", error);
     }
   });
-  return [...extraction, llm];
+
+  const tools = defineCommand("tools", async (args, ctx) => {
+    const usage = "usage: tools list | tools call NAME [JSON object] (also accepts JSON on stdin)";
+    try {
+      ctx.signal?.throwIfAborted();
+      let value: unknown;
+      if (args.length === 1 && args[0] === "list") {
+        value = await services.tools.list();
+      } else if (args[0] === "call" && args[1] && args.length <= 3) {
+        const input = args[2] ?? stdinText(ctx);
+        value = await services.tools.call(args[1], input.trim() ? JSON.parse(input) : {});
+      } else {
+        return failure("tools", usage, 2);
+      }
+      return await textResult(typeof value === "string" ? value : JSON.stringify(value), undefined, ctx);
+    } catch (error) {
+      return failure("tools", error);
+    }
+  });
+  return [...extraction, llm, tools];
 }

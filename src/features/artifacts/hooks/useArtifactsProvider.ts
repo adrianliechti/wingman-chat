@@ -113,8 +113,10 @@ export function useArtifactsProvider(): ToolProvider | null {
           "from shebang or extension; language overrides detection. Prefer path for long or bundled scripts. " +
           "args contains literal arguments, excluding the script path. " +
           "Python/Bash work under /home/user/; JavaScript uses vfs with artifact paths such as /data.csv. " +
+          "Use await tools.list() and await tools.call(name, args) to filter, paginate or combine results from " +
+          "enabled chat and MCP tools. In Bash use tools list and tools call NAME 'JSON'. " +
           "There is no host shell, Node, DOM, package installation or direct remote networking. " +
-          "File changes commit on success and are discarded on failure. Treat mounted skill resources as read-only. " +
+          "Workspace changes commit on success. External tool actions take effect when called. Treat mounted skill resources as read-only. " +
           "See the runtime instructions for bundled libraries, helpers, output and file limits.",
         inputSchema: SCRIPT_EXECUTION_SCHEMA,
         execute: (args: Record<string, unknown>, execution) => {
