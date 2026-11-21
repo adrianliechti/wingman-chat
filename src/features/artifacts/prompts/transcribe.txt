@@ -1,4 +1,4 @@
 ### Transcription
-`await transcribe(path)` in Python/JavaScript returns text via the configured service. Accepts common audio/video formats including WAV, MP3, M4A, OGG, MP4 and WebM. Pass video directly; audio extraction is automatic.
+`await transcribe(path)` in Python/JavaScript returns text via the configured service. Pass workspace artifact paths directly (for example, `/recordings/song.mp3`). Accepts common audio/video formats including WAV, MP3, M4A, OGG, MP4 and WebM. Pass video directly; audio extraction is automatic.
 
 Send the whole recording unless a service limit or requested segment requires splitting. Preserve segment order when combining results.

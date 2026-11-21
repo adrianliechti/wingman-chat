@@ -613,6 +613,50 @@ for (const runtime of ["executeJavaScript", "executePython"] as const) {
   });
 }
 
+test("Python transcribes workspace MP3s by artifact path on the first call", async ({ page }) => {
+  const uploads: string[] = [];
+  await page.route("**/config.json", (route) => route.fulfill({ json: { stt: { model: "stt-test" } } }));
+  await page.route("**/api/v1/audio/transcriptions", (route) => {
+    uploads.push(route.request().postData() ?? "");
+    return route.fulfill({ json: { text: "Test transcript" } });
+  });
+  await openFixture(page);
+  const [transcribed, missing] = await page.evaluate(async () => {
+    await window.interpreterE2E.initializeLlm();
+    const song = { content: `data:audio/mpeg;base64,${btoa("workspace audio")}`, contentType: "audio/mpeg" };
+    return window.interpreterE2E.runScripts(
+      "python-transcribe-paths",
+      [
+        {
+          language: "python",
+          code: `from pathlib import Path
+print(await transcribe("/recordings/song.mp3"))
+print(await transcribe("recordings/song.mp3"))
+print(await transcribe("/home/user/recordings/song.mp3"))
+temp = Path("/tmp/song.mp3")
+temp.write_bytes(b"temporary audio")
+try:
+    print(await transcribe(temp))
+finally:
+    temp.unlink()`,
+        },
+        { language: "python", code: 'await transcribe("/missing.mp3")' },
+      ],
+      { "/recordings/song.mp3": song, "/tmp/song.mp3": song },
+    );
+  });
+  expect(transcribed.success, transcribed.error).toBe(true);
+  expect(transcribed.output).toBe(Array(4).fill("Test transcript").join("\n"));
+  expect(missing.success).toBe(false);
+  expect(missing.error).toContain("transcribe: cannot read file: /missing.mp3");
+  expect(uploads).toHaveLength(4);
+  for (const upload of uploads.slice(0, 3)) {
+    expect(upload).toContain("Content-Type: audio/mpeg");
+    expect(upload).toContain("workspace audio");
+  }
+  expect(uploads[3]).toContain("temporary audio");
+});
+
 test("finished Python executions cannot make delayed LLM calls during the next execution", async ({ page }) => {
   const requests: string[] = [];
   await page.route("**/config.json", (route) => route.fulfill({ json: { vision: {} } }));
