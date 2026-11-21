@@ -1,4 +1,5 @@
 import { defineCommand, type Command, type ExecResult, type ResolvedCommandContext } from "just-bash/browser";
+import { bridgeInputPaths, bridgeOutputPath } from "./bridgePaths";
 import type { LlmCallOptions } from "./interpreterProtocol";
 import type { scriptToolClient } from "./interpreterRpc";
 
@@ -51,13 +52,20 @@ function stdinText(ctx: ResolvedCommandContext): string {
   return new TextDecoder().decode(Uint8Array.from(ctx.stdin as unknown as string, (char) => char.charCodeAt(0)));
 }
 
+async function prepareOutput(output: string | undefined, ctx: ResolvedCommandContext): Promise<string | undefined> {
+  if (output === undefined) return;
+  const path = bridgeOutputPath(output, ctx.cwd);
+  if ((await ctx.fs.exists(path)) && (await ctx.fs.stat(path)).isDirectory) {
+    throw new Error(`Output path is a directory: ${path}`);
+  }
+  await ctx.fs.mkdir(path.slice(0, path.lastIndexOf("/")), { recursive: true });
+  return path;
+}
+
 async function textResult(text: string, output: string | undefined, ctx: ResolvedCommandContext): Promise<ExecResult> {
   ctx.signal?.throwIfAborted();
   if (output !== undefined) {
-    if (!output) throw new Error("output path must not be empty");
-    const path = ctx.fs.resolvePath(ctx.cwd, output);
-    await ctx.fs.mkdir(path.slice(0, path.lastIndexOf("/")) || "/", { recursive: true });
-    await ctx.fs.writeFile(path, text);
+    await ctx.fs.writeFile(output, text);
     return { stdout: "", stderr: "", exitCode: 0 };
   }
   // The explicit kind keeps Unicode intact through just-bash's byte-oriented pipes.
@@ -79,10 +87,15 @@ export function createBashCommands(services: BashServices): Command[] {
         return failure(name, error, 2);
       }
       try {
-        const path = ctx.fs.resolvePath(ctx.cwd, parsed.rest[0]);
-        const bytes = await ctx.fs.readFileBuffer(path);
-        const text = await services.ocr(bytes, path, ctx.signal);
-        return await textResult(text, parsed.options.get("output"), ctx);
+        const input = parsed.rest[0];
+        for (const path of bridgeInputPaths(input, ctx.cwd)) {
+          if (!(await ctx.fs.exists(path))) continue;
+          const bytes = await ctx.fs.readFileBuffer(path);
+          const output = await prepareOutput(parsed.options.get("output"), ctx);
+          const text = await services.ocr(bytes, path, ctx.signal);
+          return await textResult(text, output, ctx);
+        }
+        throw new Error(`cannot read file: ${input}`);
       } catch (error) {
         return failure(name, error);
       }
@@ -112,8 +125,9 @@ export function createBashCommands(services: BashServices): Command[] {
         system: parsed.options.get("system"),
         effort: parsed.options.get("effort") as LlmCallOptions["effort"],
       };
+      const output = await prepareOutput(parsed.options.get("output"), ctx);
       const text = await services.llm(prompt, options, ctx.signal);
-      return await textResult(text, parsed.options.get("output"), ctx);
+      return await textResult(text, output, ctx);
     } catch (error) {
       return failure("llm", error);
     }

@@ -46,6 +46,27 @@ describe("Bash service commands", () => {
     expect(result.files?.["/result.txt"].content).toBe("Résumé 🪽");
   });
 
+  it("keeps temporary output and a same-named artifact in their respective directories", async () => {
+    const bridge = services();
+    const result = await runBash(
+      {
+        code: `set -e
+mkdir work
+cd work
+extract -o /tmp/result.txt -- /-quarter.pdf
+cp /tmp/result.txt local.txt
+llm -o artifact:/tmp/result.txt prompt`,
+        files: { "/-quarter.pdf": { content: "data:application/pdf;base64,AQ==", contentType: "application/pdf" } },
+      },
+      undefined,
+      createBashCommands(bridge),
+    );
+    expect(result.success, result.error).toBe(true);
+    expect(bridge.ocr.mock.calls[0][1]).toBe("/home/user/-quarter.pdf");
+    expect(result.files?.["/work/local.txt"].content).toBe("Grüezi 🪽\nextracted text");
+    expect(result.files?.["/tmp/result.txt"].content).toBe("Résumé 🪽");
+  });
+
   it("rejects malformed invocations and missing inputs before calling services", async () => {
     const bridge = services();
     for (const code of [

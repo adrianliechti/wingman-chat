@@ -2,6 +2,13 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* WebKit accepts Apple's system text style on desktop and mobile. */
+@custom-variant non-webkit {
+  @supports not (font: -apple-system-body) {
+    @slot;
+  }
+}
+
 /* ─── Mobile shell tokens ────────────────────────────────────────────────────
    Safe areas (status bar, home indicator) and the floating top-bar region used
    by every page. `--app-keyboard` tracks the on-screen

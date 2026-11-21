@@ -9,7 +9,7 @@ Use scripts to page through MCP results, feed one tool's output into another, or
 
 Await each call. Calls run in submission order and keep their individual approvals. Rejections and MCP errors raise an exception or give the Bash command a nonzero status. Completed external actions survive a later script failure.
 
-Python/Bash work in /home/user/: artifact /data.csv is /home/user/data.csv. JavaScript uses artifact paths directly. Repository files are not mounted. Selected skill resources are under skills/<name>/ in each workspace; treat them as read-only and save outputs elsewhere. Reuse known paths; inspect unfamiliar data before transforming it and verify results against source data.
+Python/Bash native file operations work in /home/user/: artifact /data.csv is /home/user/data.csv. JavaScript uses artifact paths directly. File-backed helpers in all three runtimes accept workspace paths such as /data.csv and sandbox:/data.csv. For Bash redirects use a workspace-relative path or /home/user/...; the helper -o option also accepts /result.txt. Repository files are not mounted. Selected skill resources are under skills/<name>/ in each workspace; treat them as read-only and save outputs elsewhere. Reuse known paths; inspect unfamiliar data before transforming it and verify results against source data.
 
 Python:
 - Python 3.14 / Pyodide, NumPy 2.x, pandas 3.x. Static imports load bundled offline packages, including imports in local modules. For other dynamic imports, explicitly import the package to preload it. pandas preloads its Excel, Parquet and Markdown engines.

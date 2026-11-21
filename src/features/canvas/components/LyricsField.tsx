@@ -50,7 +50,7 @@ export function LyricsField({ lyrics, onLyricsChange, onSubmit }: LyricsFieldPro
             onSubmit();
           }
         }}
-        className="block min-h-0 w-full flex-1 resize-none bg-transparent px-4 pt-3 pb-2 text-sm leading-relaxed text-neutral-800 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-500"
+        className="block min-h-0 w-full flex-1 resize-none border-0 bg-transparent px-4 pt-3 pb-2 text-sm leading-relaxed text-neutral-800 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-500"
       />
       <div className="flex shrink-0 flex-wrap items-center gap-1 px-3 pb-3">
         <span className="mr-1 text-[11px] text-neutral-500 dark:text-neutral-400">Add section</span>

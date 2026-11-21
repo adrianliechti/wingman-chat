@@ -63,7 +63,7 @@ export function Filmstrip({
         className={cn(
           ADD_TILE_CLASS,
           creating &&
-            "border-solid border-blue-500 text-blue-600 hover:border-blue-500 hover:text-blue-600 dark:border-blue-400 dark:text-blue-300 dark:hover:border-blue-400 dark:hover:text-blue-300",
+            "text-blue-600 hover:text-blue-600 dark:text-blue-300 dark:hover:text-blue-300 non-webkit:border-solid non-webkit:border-blue-500 non-webkit:hover:border-blue-500 non-webkit:dark:border-blue-400 non-webkit:dark:hover:border-blue-400",
         )}
       >
         <PlusIcon size={20} />
@@ -90,7 +90,9 @@ export function Filmstrip({
             aria-label={item.status === "error" ? "Failed generation" : "Generating media"}
             className={cn(
               "group relative h-16 shrink-0 overflow-hidden rounded-xl",
-              active ? "ring-2 ring-blue-500 dark:ring-blue-400" : "ring-1 ring-neutral-200 dark:ring-neutral-700",
+              active
+                ? "non-webkit:ring-2 non-webkit:ring-blue-500 non-webkit:dark:ring-blue-400"
+                : "ring-1 ring-neutral-200 dark:ring-neutral-700",
             )}
             style={{ aspectRatio: item.aspect ?? 1 }}
           >
@@ -145,7 +147,7 @@ export function Filmstrip({
             className={cn(
               "group relative h-16 shrink-0 overflow-hidden rounded-xl transition-shadow",
               active
-                ? "ring-2 ring-blue-500 shadow-md dark:ring-blue-400"
+                ? "non-webkit:shadow-md non-webkit:ring-2 non-webkit:ring-blue-500 non-webkit:dark:ring-blue-400"
                 : "ring-1 ring-neutral-200 hover:ring-neutral-400 dark:ring-neutral-700 dark:hover:ring-neutral-500",
             )}
             style={{ aspectRatio: tileAspect(image.width, image.height) }}

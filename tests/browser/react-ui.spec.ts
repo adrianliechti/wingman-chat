@@ -1716,14 +1716,30 @@ test("Canvas composes a song from a style and lyrics, plays it and restores it a
   const generate = dialog.getByRole("button", { name: "Generate", exact: true });
   await expect(generate).toBeDisabled();
 
+  const promptField = dialog.getByRole("textbox", { name: "Prompt" });
+  const promptBox = dialog.getByRole("radiogroup", { name: "Song input" }).locator("..");
+  await promptField.focus();
+  await promptField.blur();
+  const restingBorder = await promptBox.evaluate((element) => getComputedStyle(element).borderTopColor);
+  const expectStableBorder = async (field: typeof promptField) => {
+    await field.focus();
+    await expect(field).toHaveCSS("border-top-width", "0px");
+    await expect(field).toHaveCSS("outline-style", "none");
+    await expect(promptBox).toHaveCSS("border-top-color", restingBorder);
+  };
+  await expectStableBorder(promptField);
+
   // Switching the mode swaps the fields without resizing the page.
   const height = () => dialog.evaluate((element: HTMLElement) => element.offsetHeight);
   const described = await height();
   await dialog.getByRole("radio", { name: "Instrumental", exact: true }).click();
   expect(await height()).toBe(described);
+  await expectStableBorder(promptField);
   await dialog.getByRole("radio", { name: "Lyrics", exact: true }).click();
   expect(await height()).toBe(described);
+  await expectStableBorder(dialog.getByRole("textbox", { name: "Style" }));
   const lyrics = dialog.getByRole("textbox", { name: "Lyrics" });
+  await expectStableBorder(lyrics);
   await dialog.getByRole("button", { name: "[Verse]", exact: true }).click();
   await expect(lyrics).toHaveValue("[Verse]\n");
   await expect(lyrics).toBeFocused();
@@ -1787,6 +1803,62 @@ test("Canvas composes a song from a style and lyrics, plays it and restores it a
   const chunks: Buffer[] = [];
   for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
   expect(Buffer.concat(chunks)).toEqual(Buffer.from(bytes));
+});
+
+test("Canvas keeps song controls in place while long lyrics scroll", async ({ page, browserName }) => {
+  await page.setViewportSize({ width: 1024, height: 600 });
+  await open(page, "?canvas&song");
+  const create = page.getByRole("region", { name: "New song" });
+  const player = page.getByRole("region", { name: "Song player" });
+  const text = player.getByRole("region", { name: "Song text" });
+  const seek = player.getByRole("slider", { name: "Seek" });
+  const download = page.getByRole("button", { name: "Download", exact: true });
+  const library = page.getByRole("listbox", { name: "Images, videos and songs" });
+  await expect(library.getByRole("button", { name: "New creation" })).toHaveCSS(
+    "border-top-style",
+    browserName === "webkit" ? "dashed" : "solid",
+  );
+  const generate = async (lyrics: string) => {
+    await create.getByRole("radio", { name: "Lyrics", exact: true }).click();
+    await create.getByRole("textbox", { name: "Lyrics" }).fill(lyrics);
+    await create.getByRole("button", { name: "Generate", exact: true }).click();
+    await expect(text).toBeVisible();
+  };
+  const positions = () => Promise.all([seek.boundingBox(), download.boundingBox()]);
+
+  await generate("A short song");
+  await expect(seek).toBeInViewport();
+  await expect(download).toBeInViewport();
+  const shortPositions = await positions();
+  await page.getByRole("button", { name: "New creation" }).first().click();
+  await generate(Array.from({ length: 60 }, (_, i) => `Line ${i + 1} of the song`).join("\n"));
+  await expect(text).toContainText("Line 60 of the song");
+  expect(await positions()).toEqual(shortPositions);
+  await expect(player).toHaveCSS("border-radius", "0px");
+  await expect(player).toHaveCSS("box-shadow", "none");
+  const tile = library.getByRole("option", { selected: true });
+  if (browserName === "webkit") await expect(tile).toHaveCSS("box-shadow", "none");
+  else await expect(tile).not.toHaveCSS("box-shadow", "none");
+
+  for (const viewport of [
+    { width: 1024, height: 600 },
+    { width: 390, height: 500 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(seek).toBeInViewport();
+    const before = await positions();
+    const [waveform] = before;
+    const stage = await player.boundingBox();
+    const relativeCenter = (waveform!.y + waveform!.height / 2 - stage!.y) / stage!.height;
+    expect(relativeCenter).toBeGreaterThan(0.35);
+    expect(relativeCenter).toBeLessThan(0.6);
+    await text.evaluate((element) => (element.scrollTop = 0));
+    await text.hover();
+    await page.mouse.wheel(0, 500);
+    await expect.poll(() => text.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    expect(await positions()).toEqual(before);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  }
 });
 
 test("Canvas offers image, video and song as tabs, each with its own models", async ({ page }) => {
