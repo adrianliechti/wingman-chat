@@ -6,11 +6,13 @@ import { ACTION_ICON_SIZE, actionButtonClassName } from "./actionButton";
 
 type CopyButtonProps = CopyOptions & {
   className?: string;
+  /** Replaces the subdued icon-button look, where copying is a main action of the page. */
+  buttonClassName?: string;
   /** Render as a small labeled action button (icon + this text). */
   label?: string;
 };
 
-export const CopyButton = ({ text, markdown, html, className, label }: CopyButtonProps) => {
+export const CopyButton = ({ text, markdown, html, className, buttonClassName, label }: CopyButtonProps) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -45,7 +47,7 @@ export const CopyButton = ({ text, markdown, html, className, label }: CopyButto
     "text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-60 hover:opacity-100 p-2 -m-1";
 
   return (
-    <button onClick={handleCopy} className={buttonClasses} title={title} type="button">
+    <button onClick={handleCopy} className={buttonClassName ?? buttonClasses} title={title} type="button">
       {copied ? <CopyCheckIcon className={className || "h-4 w-4"} /> : <CopyIcon className={className || "h-4 w-4"} />}
     </button>
   );

@@ -1,6 +1,7 @@
 import { type Client, HttpError } from "@/shared/lib/client";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { fileExtension, formatBytes } from "@/shared/lib/utils";
+import { wordingInstructions } from "./wording";
 
 /** The gateway calls a translation needs. */
 export type TranslatorClient = Pick<Client, "translate" | "rewriteText">;
@@ -74,7 +75,11 @@ export async function translateText(
   return asText(result);
 }
 
-/** Apply a formality, a style and/or a free instruction to translated text in `lang`. */
+/**
+ * Apply a formality, a style and/or a free instruction to translated text in
+ * `lang`, in one request. A formality the language does not have asks for
+ * nothing; with nothing to ask the text comes back as it is, without a request.
+ */
 export async function rewrite(
   client: TranslatorClient,
   options: TranslatorOptions,
@@ -83,8 +88,15 @@ export async function rewrite(
   change: Rewrite,
   signal?: AbortSignal,
 ): Promise<string> {
-  if (!change.formality && !change.style && !change.instruction?.trim()) return text;
-  return client.rewriteText(options.model ?? "", text, { lang, ...change }, { signal });
+  const instruction = change.instruction?.trim();
+  const instructions = [
+    ...wordingInstructions(lang, change.formality ?? "", change.style ?? ""),
+    ...(instruction
+      ? [`Instruction from the user, which takes precedence where it conflicts with the above: ${instruction}`]
+      : []),
+  ];
+  if (instructions.length === 0) return text;
+  return client.rewriteText(options.model ?? "", text, { lang, instructions, source: change.source }, { signal });
 }
 
 /** `report.docx` → `report_de.docx`; `ext` replaces the extension (`report_de.md`). */

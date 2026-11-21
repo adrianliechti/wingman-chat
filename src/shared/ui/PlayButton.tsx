@@ -9,6 +9,8 @@ type PlayButtonProps = {
   text: string;
   voice?: string;
   className?: string;
+  /** Replaces the subdued icon-button look, where listening is a main action of the page. */
+  buttonClassName?: string;
 };
 
 async function speak(
@@ -24,7 +26,7 @@ async function speak(
   await config.client.speakText(model, text, resolvedVoice, outputDeviceId, { signal, onPlaying });
 }
 
-export function PlayButton({ text, voice, className }: PlayButtonProps) {
+export function PlayButton({ text, voice, className, buttonClassName }: PlayButtonProps) {
   const [status, setStatus] = useState<"idle" | "loading" | "playing">("idle");
   const controllerRef = useRef<AbortController | null>(null);
   const isPlaying = status === "playing";
@@ -72,7 +74,7 @@ export function PlayButton({ text, voice, className }: PlayButtonProps) {
     <button
       type="button"
       onClick={handlePlay}
-      className={buttonClasses}
+      className={buttonClassName ?? buttonClasses}
       title={isLoading ? "Cancel audio generation" : isPlaying ? "Stop playback" : "Play message"}
     >
       {isLoading ? (

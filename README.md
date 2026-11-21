@@ -124,8 +124,9 @@ including live transcription.
 ### Translate
 
 A workspace for translating text and whole documents. Text translates as you type; a formality
-(formal or informal address) and a style (plain, professional, natural, technical) revise the
-translation against the source, a free instruction refines it, and any selected passage offers alternatives. Drop one or more
+(formal or informal address, offered for target languages that have one, such as "Sie" and "du") and
+a style (simple, business, academic, casual) revise the translation against the source, a free
+instruction refines it, and any selected passage offers alternatives. Drop one or more
 documents (PDF, Word, PowerPoint, Excel, Markdown, text) to translate each into the chosen language;
 the original and the translation open side by side in the same viewers the artifacts drawer uses, and
 the translation downloads in the original format. Translators that return text for documents (the AI

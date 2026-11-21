@@ -1032,9 +1032,13 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
   it("preserves replacement tokens in custom rewrite instructions", async () => {
     const instruction = "Keep the regex replacement tokens $&, $`, $', and $$ verbatim.";
     fetchMock.mockResolvedValueOnce(finished(response([textItem('{"rewrittenText":"Rewritten"}')])));
-    expect(await new Client().rewriteText("model", "Original", { lang: "en", instruction, source: "$1 & $2" })).toBe(
-      "Rewritten",
-    );
+    expect(
+      await new Client().rewriteText("model", "Original", {
+        lang: "en",
+        instructions: [instruction],
+        source: "$1 & $2",
+      }),
+    ).toBe("Rewritten");
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(request.instructions).toContain(instruction);
     expect(request.instructions).toContain("<source>\n$1 & $2\n</source>");
@@ -1045,16 +1049,18 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
   it("preserves regional spelling returned by the rewrite model", async () => {
     const rewrittenText = "Die Straße führt zum großen Gebäude.";
     fetchMock.mockResolvedValueOnce(finished(response([textItem(JSON.stringify({ rewrittenText }))])));
-    expect(await new Client().rewriteText("model", "Eine Straße", { lang: "de-DE", formality: "formal" })).toBe(
-      rewrittenText,
-    );
+    const instructions = ["Formal address: address the reader as “Sie” throughout.", "Business writing."];
+    expect(await new Client().rewriteText("model", "Eine Straße", { lang: "de-DE", instructions })).toBe(rewrittenText);
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(request.instructions).toContain("German (Germany)");
-    expect(request.instructions).toContain("polite form of address");
+    // Each requested revision is its own line of the prompt, and the text may not leave its language.
+    expect(request.instructions).toContain(`- ${instructions[0]}\n- ${instructions[1]}`);
+    expect(request.instructions).toContain("never translate it into another language");
   });
 
   it("returns the text untouched when no revision is requested", async () => {
     expect(await new Client().rewriteText("model", "Unchanged", { lang: "de" })).toBe("Unchanged");
+    expect(await new Client().rewriteText("model", "Unchanged", { lang: "de", instructions: [" "] })).toBe("Unchanged");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

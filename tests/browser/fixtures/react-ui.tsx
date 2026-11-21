@@ -30,6 +30,7 @@ const state = {
     markup?: number;
   }[],
   songs: [] as { model: string; prompt: string }[],
+  rewrites: [] as string[][],
 };
 // 1.3 seconds of a 440 Hz tone: a real MP3, so decoding, playback and OPFS are exercised.
 const SONG_MP3 =
@@ -276,6 +277,13 @@ if (parameters.has("panels")) {
   }
   config.client.generateImage = (...args) => config.client.render(...args);
   config.client.generateTitle = async () => "Fixture";
+  // Revising a translation needs structured output, which the fake chat adapter lacks.
+  // Record what was asked and answer a request for the formal German address.
+  config.client.rewriteText = async (_model, text, options) => {
+    const instructions = options?.instructions ?? [];
+    state.rewrites.push(instructions);
+    return instructions.some((instruction) => instruction.includes("“Sie”")) ? "Wie geht es Ihnen?" : text;
+  };
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
   const provider = testClient(
     async (options, handler, onThinking) =>
@@ -392,6 +400,7 @@ declare global {
           markup?: number;
         }[];
         songs: { model: string; prompt: string }[];
+        rewrites: string[][];
       };
       stream(text: string): void;
       think(text: string): void;

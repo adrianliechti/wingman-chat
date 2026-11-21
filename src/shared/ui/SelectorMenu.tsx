@@ -4,12 +4,16 @@ import { DropdownMenu, DropdownMenuItem, MenuButton } from "./DropdownMenu";
 export interface SelectorMenuOption {
   value: string;
   label: string;
+  /** One line under the label saying what the option does. */
+  description?: string;
 }
 
 interface SelectorMenuProps {
   icon: ReactNode;
   label: string;
   options: SelectorMenuOption[];
+  /** The current choice, marked with a check. */
+  value?: string;
   onSelect: (value: string) => void;
   anchor?: "bottom" | "bottom start" | "top" | "top start";
   variant?: "pill" | "text";
@@ -20,6 +24,7 @@ export function SelectorMenu({
   icon,
   label,
   options,
+  value,
   onSelect,
   anchor = "bottom start",
   variant = "text",
@@ -42,7 +47,12 @@ export function SelectorMenu({
       }
     >
       {options.map((option) => (
-        <DropdownMenuItem key={option.value} onClick={() => onSelect(option.value)}>
+        <DropdownMenuItem
+          key={option.value}
+          description={option.description}
+          selected={value !== undefined && option.value === value}
+          onClick={() => onSelect(option.value)}
+        >
           {option.label}
         </DropdownMenuItem>
       ))}

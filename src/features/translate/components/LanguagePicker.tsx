@@ -29,8 +29,9 @@ interface LanguagePickerProps {
   className?: string;
 }
 
+// A plain text button, like the labels beside it in a pane header.
 const BUTTON_CLASS =
-  "inline-flex max-w-full items-center gap-1.5 rounded-full border border-neutral-200/70 bg-white/70 py-1.5 pr-2.5 pl-3 text-sm font-medium text-neutral-800 shadow-sm backdrop-blur-sm transition-colors hover:bg-white disabled:pointer-events-none disabled:opacity-50 dark:border-neutral-700/70 dark:bg-neutral-900/70 dark:text-neutral-100 dark:hover:bg-neutral-900";
+  "inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-neutral-800 transition-colors hover:bg-black/5 disabled:pointer-events-none disabled:opacity-50 dark:text-neutral-100 dark:hover:bg-white/5";
 
 const ANCHOR_MOTION = {
   bottom: "origin-top data-closed:-translate-y-1.5",
@@ -56,8 +57,10 @@ export function LanguagePicker({
   const selectedProvider = providers.find((item) => item.id === provider);
 
   return (
-    // min-w-0 lets the button shrink in a crowded header; the language name then truncates.
-    <Popover className="min-w-0 max-w-full">
+    // min-w-0 lets the button shrink in a crowded header; the translator's name then truncates.
+    // Negative margin: the globe, not the hover background, sits on the pane's inset. It is on
+    // this wrapper because on the button it would take 8px off the width the button may fill.
+    <Popover className="-ml-2 min-w-0 max-w-full">
       <PopoverButton className={cn(BUTTON_CLASS, className)} disabled={disabled} aria-label="Target language">
         <GlobeIcon size={15} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
         <span className="shrink-0 truncate">{selected?.name || value || "Choose a language"}</span>

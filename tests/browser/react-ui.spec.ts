@@ -1,4 +1,4 @@
-import { expect, test as base, type Page } from "@playwright/test";
+import { expect, test as base, type Locator, type Page } from "@playwright/test";
 import { mcpToolName } from "../../src/features/settings/lib/mcpToolNames";
 import { isolateOpfs } from "./helpers/opfs";
 
@@ -1890,4 +1890,166 @@ test("Canvas generates video, downloads its bytes and restores playback after re
   const chunks: Buffer[] = [];
   for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
   expect(Buffer.concat(chunks)).toEqual(Buffer.from(bytes));
+});
+
+test("Translate keeps its controls in the pane headers and only refinement under the result", async ({ page }) => {
+  await page.route("**/config.json", (route) =>
+    route.fulfill({
+      json: {
+        models: [],
+        navigation: true,
+        artifacts: {},
+        tts: { model: "fixture" },
+        translator: {
+          model: "fixture",
+          providers: [
+            { id: "deepl", name: "DeepL" },
+            { id: "llm", name: "Language model" },
+          ],
+          files: [".pdf", ".docx"],
+          languages: ["de", "en"],
+          maxTextLength: 5000,
+        },
+      },
+    }),
+  );
+  await page.route("**/api/v1/translate", (route) =>
+    route.fulfill({ contentType: "text/plain", body: "Guten Morgen zusammen." }),
+  );
+  // German has a formal and an informal address, so the formality setting is offered.
+  await page.addInitScript(() => localStorage.setItem("translate_preferences", JSON.stringify({ targetLang: "de" })));
+  await page.goto("/tests/browser/fixtures/react-ui.html", { waitUntil: "domcontentloaded" });
+  await page.getByRole("link", { name: "Translate", exact: true }).click();
+  const edge = (locator: Locator, side: "top" | "bottom") =>
+    locator.evaluate((element, which) => Math.round(element.getBoundingClientRect()[which]), side);
+
+  // The source header offers a document where the static "Detect language" label was.
+  const source = page.getByRole("region", { name: "Source text" });
+  const input = source.getByRole("textbox", { name: "Text to translate" });
+  await expect(page.getByText("Detect language")).toHaveCount(0);
+  const attach = source.getByRole("button", { name: "Translate a document" });
+  expect(await edge(attach, "bottom")).toBeLessThanOrEqual(await edge(input, "top"));
+  const chooser = page.waitForEvent("filechooser");
+  await attach.click();
+  await chooser;
+
+  await input.fill("Good morning everyone.");
+  await input.press("ControlOrMeta+Enter");
+  const translation = page.getByRole("region", { name: "Translation" });
+  const result = translation.getByText("Guten Morgen zusammen.", { exact: true });
+  await expect(result).toBeVisible();
+  // The way to clear the text sits in that header too, without a character counter.
+  expect(await edge(source.getByRole("button", { name: "Clear text" }), "bottom")).toBeLessThanOrEqual(
+    await edge(input, "top"),
+  );
+  await expect(source.getByText(/\d+ \/ 5,000/)).toHaveCount(0);
+
+  // Everything that acts on the translation is above it, on the language's row.
+  const formality = translation.getByRole("button", { name: "Formality", exact: true });
+  const copy = translation.getByRole("button", { name: /^Copy to clipboard/ });
+  const above = [
+    translation.getByRole("button", { name: "Target language" }),
+    formality,
+    translation.getByRole("button", { name: "Style", exact: true }),
+    translation.getByRole("button", { name: "Play message", exact: true }),
+    copy,
+  ];
+  for (const control of above) {
+    await expect(control).toBeVisible();
+    expect(await edge(control, "bottom")).toBeLessThanOrEqual(await edge(result, "top"));
+  }
+  // With room in the row, the language button names its translator in full.
+  const translator = above[0].getByText("· DeepL", { exact: true });
+  await expect(translator).toBeVisible();
+  expect(await translator.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+  // Under it there is only the field to refine it.
+  const refine = translation.getByRole("textbox", { name: "Refine the translation" });
+  expect(await edge(refine, "top")).toBeGreaterThanOrEqual(await edge(result, "bottom"));
+  await expect(translation.getByRole("button")).toHaveCount(above.length + 1);
+
+  // A pane too narrow for that row keeps formality and style at the bottom; copy stays on top.
+  await input.blur();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(formality).toBeVisible();
+  expect(await edge(formality, "top")).toBeGreaterThanOrEqual(await edge(result, "bottom"));
+  expect(await edge(copy, "bottom")).toBeLessThanOrEqual(await edge(result, "top"));
+  expect(await edge(attach, "bottom")).toBeLessThanOrEqual(await edge(input, "top"));
+});
+
+test("Translate offers formality where the language has it, explains each choice and remembers it", async ({
+  page,
+}) => {
+  const rewrites = () => page.evaluate(() => window.reactUiE2E.state().rewrites);
+  await page.route("**/config.json", (route) =>
+    route.fulfill({
+      json: {
+        models: [],
+        navigation: true,
+        artifacts: {},
+        translator: { model: "fixture", files: [], languages: ["de", "en"] },
+      },
+    }),
+  );
+  await page.route("**/api/v1/translate", (route) =>
+    route.fulfill({ contentType: "text/plain", body: "Wie geht es dir?" }),
+  );
+  await page.addInitScript(() => localStorage.setItem("translate_preferences", JSON.stringify({ targetLang: "de" })));
+  await page.goto("/tests/browser/fixtures/react-ui.html", { waitUntil: "domcontentloaded" });
+  await page.getByRole("link", { name: "Translate", exact: true }).click();
+  const input = page.getByRole("textbox", { name: "Text to translate" });
+  await input.fill("How are you?");
+  await input.press("ControlOrMeta+Enter");
+  const translation = page.getByRole("region", { name: "Translation" });
+  await expect(translation.getByText("Wie geht es dir?", { exact: true })).toBeVisible();
+  // Nothing chosen: the translation is shown as the translator returned it, without a second request.
+  expect(await rewrites()).toHaveLength(0);
+
+  // The menu says what each choice means in German and marks the current one.
+  await translation.getByRole("button", { name: "Formality", exact: true }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    /^Automatic\s*Follows the original text$/,
+    /^Formal\s*Addresses the reader as “Sie”$/,
+    /^Informal\s*Addresses the reader as “du”$/,
+  ]);
+  await expect(menu.locator(".font-semibold")).toHaveText("Automatic");
+  await menu.getByRole("menuitem", { name: /^Formal/ }).click();
+  await expect(translation.getByText("Wie geht es Ihnen?", { exact: true })).toBeVisible();
+  expect(await rewrites()).toEqual([[expect.stringContaining("address the reader as “Sie” throughout")]]);
+  // The button now shows the choice instead of the setting's name.
+  const formal = translation.getByRole("button", { name: "Formal", exact: true });
+  await expect(formal).toBeVisible();
+  await formal.click();
+  await expect(menu.locator(".font-semibold")).toHaveText("Formal");
+  await page.keyboard.press("Escape");
+
+  await translation.getByRole("button", { name: "Style", exact: true }).click();
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    /^Automatic\s*Keeps the style of the original$/,
+    /^Simple\s*Short sentences and everyday words$/,
+    /^Business\s*Polished and professional$/,
+    /^Academic\s*Objective and precise$/,
+    /^Casual\s*Relaxed and conversational$/,
+  ]);
+  await page.keyboard.press("Escape");
+
+  // English has no formal and informal address: the control goes away and nothing is rewritten.
+  await translation.getByRole("button", { name: "Target language" }).click();
+  await page.getByRole("option", { name: /^English/ }).click();
+  await expect(translation.getByText("Wie geht es dir?", { exact: true })).toBeVisible();
+  await expect(translation.getByRole("button", { name: "Style", exact: true })).toBeVisible();
+  await expect(formal).toHaveCount(0);
+  await expect(translation.getByRole("button", { name: "Formality", exact: true })).toHaveCount(0);
+  expect(await rewrites()).toHaveLength(1);
+
+  // Back in German the choice is still there, and it is kept for the next visit.
+  await translation.getByRole("button", { name: "Target language" }).click();
+  await page.getByRole("option", { name: /^German/ }).click();
+  await expect(translation.getByText("Wie geht es Ihnen?", { exact: true })).toBeVisible();
+  await expect(formal).toBeVisible();
+  expect(await rewrites()).toHaveLength(2);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("translate_preferences") ?? "{}"))).toMatchObject({
+    targetLang: "de",
+    formality: "formal",
+  });
 });

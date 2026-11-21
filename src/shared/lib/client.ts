@@ -126,36 +126,14 @@ export interface ClientRequestOptions {
 export interface RewriteOptions {
   /** Target language code; the model is told its name. */
   lang?: string;
-  /** "formal" | "informal": the register of address. */
-  formality?: string;
-  /** "plain" | "professional" | "natural" | "technical". */
-  style?: string;
-  /** Free instruction; overrides the presets where they conflict. */
-  instruction?: string;
+  /** What to change, one requested revision per entry; nothing requested returns the text as is. */
+  instructions?: string[];
   /** The untranslated original, as a fidelity reference. */
   source?: string;
 }
 
 // Each option says what to change and what to leave alone, so a formality and a
 // style combine without conflicting and never justify adding content.
-const FORMALITY_INSTRUCTIONS: Record<string, string> = {
-  formal:
-    "Formal register: use the polite form of address where {language} has one (for example Sie, vous, usted, Lei, formal Japanese), full forms instead of contractions, no slang; courteous without being stiff.",
-  informal:
-    "Informal register: use the familiar form of address where {language} has one (for example du, tu, tú), contractions and everyday wording; relaxed but still correct.",
-};
-
-const STYLE_INSTRUCTIONS: Record<string, string> = {
-  plain:
-    "Plain language: short sentences, common words, one idea per sentence, active voice; spell out jargon and abbreviations; keep every fact.",
-  professional:
-    "Professional writing: precise, courteous and concise, with the standard phrasing of business correspondence in {language}; no colloquialisms, no filler.",
-  natural:
-    "Idiomatic: make it read as if written by a native speaker of {language}; restructure sentences that still follow the source language's word order or idioms.",
-  technical:
-    "Technical and legal precision: keep terminology, sentence structure and formatting exactly; prefer literal wording over paraphrase and translate each term consistently.",
-};
-
 /** English name of a language tag ("de-CH" → "German (Switzerland)"); the tag itself when unknown. */
 function languageLabel(code: string): string {
   try {
@@ -500,9 +478,9 @@ export class Client {
   }
 
   /**
-   * Revise translated text: a formality (register of address), a style, and/or
-   * a free instruction. `source` is the untranslated original, given to the
-   * model as a fidelity reference only. Nothing requested returns the text as is.
+   * Revise translated text as the instructions ask, keeping it a faithful
+   * translation. `source` is the untranslated original, given to the model as
+   * a fidelity reference only. Nothing requested returns the text as is.
    */
   async rewriteText(
     model: string,
@@ -513,12 +491,7 @@ export class Client {
     requestOptions.signal?.throwIfAborted();
     if (!text.trim()) return text;
     const language = options.lang ? languageLabel(options.lang) : "the text's language";
-    const parts = [
-      options.formality && FORMALITY_INSTRUCTIONS[options.formality]?.replaceAll("{language}", language),
-      options.style && STYLE_INSTRUCTIONS[options.style]?.replaceAll("{language}", language),
-      options.instruction?.trim() &&
-        `Instruction from the user, which takes precedence where it conflicts with the above: ${options.instruction.trim()}`,
-    ].filter((part): part is string => !!part);
+    const parts = (options.instructions ?? []).map((part) => part.trim()).filter(Boolean);
     if (parts.length === 0) return text;
     const reference = options.source?.trim()
       ? `The source text it translates, for fidelity only; do not translate it again:\n<source>\n${options.source.trim()}\n</source>`

@@ -196,7 +196,9 @@ export function FileWorkbench({ job }: { job: Translation }) {
           </button>
         ))}
       </div>
-      {resultIsText && job.resultText && <CopyButton text={job.resultText} className="h-3.5 w-3.5" />}
+      {resultIsText && job.resultText && (
+        <CopyButton text={job.resultText} className="size-3.5" buttonClassName={ICON_BUTTON_CLASS} />
+      )}
       {job.status === "done" &&
         job.resultFile &&
         (resultIsText && job.resultFile.name.match(/\.(md|markdown|txt)$/i) ? (
