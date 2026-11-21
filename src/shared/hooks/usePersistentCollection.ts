@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { notify } from "@/shared/lib/notify";
 import { reportPersistenceError, usePersistenceQueue } from "./usePersistenceQueue";
+import { subscribeStorageChanges } from "@/shared/lib/storageChanges";
 
 interface CollectionStorage<T> {
   load: () => Promise<T[]>;
@@ -9,11 +10,11 @@ interface CollectionStorage<T> {
 }
 
 /** Shared ownership of collection state and its ordered persistence queue. */
-export function usePersistentCollection<T extends { id: string }>(storage: CollectionStorage<T>) {
+export function usePersistentCollection<T extends { id: string }>(storage: CollectionStorage<T>, collection: string) {
   const [items, setItems] = useState<T[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const itemsRef = useRef(items);
-  const touched = useRef(new Set<string>());
+  const versions = useRef(new Map<string, number>());
   const queue = usePersistenceQueue();
   const storageRef = useRef(storage);
   useLayoutEffect(() => {
@@ -29,32 +30,44 @@ export function usePersistentCollection<T extends { id: string }>(storage: Colle
 
   useEffect(() => {
     let cancelled = false;
-    void storageRef.current
-      .load()
-      .then((loaded) => {
-        if (cancelled) return;
-        const local = itemsRef.current;
+    let request = 0;
+    const load = async (initial = false) => {
+      const current = ++request;
+      const before = new Map(versions.current);
+      try {
+        const loaded = await storageRef.current.load();
+        if (cancelled || current !== request) return;
+        const protectedIds = new Set(
+          [...versions.current.keys(), ...loaded.map((item) => item.id)].filter(
+            (id) =>
+              queue.hasPending(id) ||
+              before.get(id) !== versions.current.get(id) ||
+              (initial && versions.current.has(id)),
+          ),
+        );
         publish([
-          ...local,
-          ...loaded.filter((item) => !touched.current.has(item.id) && !local.some((current) => current.id === item.id)),
+          ...itemsRef.current.filter((item) => protectedIds.has(item.id)),
+          ...loaded.filter((item) => !protectedIds.has(item.id)),
         ]);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.error("Failed to load saved data:", error);
-        notify.error("Couldn't load saved data", error);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoaded(true);
-      });
+      } catch (error) {
+        if (!cancelled) notify.error("Couldn't load saved data", error);
+      } finally {
+        if (!cancelled && current === request) setIsLoaded(true);
+      }
+    };
+    void load(true);
+    const unsubscribe = subscribeStorageChanges((paths) => {
+      if (paths.some((path) => path.startsWith(`${collection}/`))) void load();
+    });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
-  }, [publish]);
+  }, [collection, publish, queue]);
 
   const put = useCallback(
     (item: T): T => {
-      touched.current.add(item.id);
+      versions.current.set(item.id, (versions.current.get(item.id) ?? 0) + 1);
       publish([item, ...itemsRef.current.filter((current) => current.id !== item.id)]);
       queue.schedule(item.id, () => storageRef.current.store(item));
       return item;
@@ -81,7 +94,7 @@ export function usePersistentCollection<T extends { id: string }>(storage: Colle
       const current = itemsRef.current.find((item) => item.id === id);
       if (!current) return;
       const next = { ...updater(current), id };
-      touched.current.add(id);
+      versions.current.set(id, (versions.current.get(id) ?? 0) + 1);
       publish(itemsRef.current.map((item) => (item.id === id ? next : item)));
       queue.schedule(id, () => storageRef.current.store(next));
     },
@@ -90,7 +103,7 @@ export function usePersistentCollection<T extends { id: string }>(storage: Colle
 
   const remove = useCallback(
     async (id: string) => {
-      touched.current.add(id);
+      versions.current.set(id, (versions.current.get(id) ?? 0) + 1);
       publish(itemsRef.current.filter((item) => item.id !== id));
       queue.schedule(id, () => storageRef.current.remove(id));
       try {

@@ -7,7 +7,7 @@
 /** Reserved path prefix inside a preview session; artifacts cannot write here. */
 export const SDK_PREFIX = "__wingman__/";
 export const SDK_PATH = `${SDK_PREFIX}sdk.js`;
-export const SDK_RPC_TYPE = "wingman:rpc";
+const SDK_RPC_TYPE = "wingman:rpc";
 export const SDK_HELLO_TYPE = "wingman:hello";
 
 export type SdkCapabilityName =
@@ -34,12 +34,6 @@ export interface SdkRpcRequest {
 }
 
 export type SdkRpcReply = { ok: true; value: unknown } | { ok: false; error: string };
-
-export interface SdkHello {
-  type: typeof SDK_HELLO_TYPE;
-  token: string;
-  capabilities: SdkCapabilities;
-}
 
 export function emptyCapabilities(): SdkCapabilities {
   return {

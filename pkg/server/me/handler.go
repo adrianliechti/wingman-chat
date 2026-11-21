@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/adrianliechti/wingman-chat/pkg/server/identity"
 )
 
 type Handler struct{}
 
 type profile struct {
+	// ID is a stable hash of the proxy subject; backup sync keys local state by it.
+	ID    string `json:"id,omitempty"`
 	Name  string `json:"name,omitempty"`
 	Email string `json:"email,omitempty"`
 }
@@ -20,7 +24,9 @@ func New() *Handler {
 
 func (h *Handler) Attach(mux *http.ServeMux) {
 	mux.HandleFunc("GET /me", func(w http.ResponseWriter, r *http.Request) {
+		user, _ := identity.FromRequest(r)
 		p := profile{
+			ID:    user.ID,
 			Name:  nameFromToken(r.Header.Get("X-Forwarded-Access-Token")),
 			Email: r.Header.Get("X-Forwarded-User"),
 		}

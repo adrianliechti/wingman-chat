@@ -5,7 +5,7 @@ import { cn } from "@/shared/lib/cn";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface SelectMenuOption<T> {
+interface SelectMenuOption<T> {
   value: T;
   label: string;
   icon?: ReactNode;

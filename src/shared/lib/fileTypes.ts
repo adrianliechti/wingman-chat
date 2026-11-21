@@ -71,7 +71,7 @@ export function isBinaryContentType(contentType?: string): boolean {
 }
 
 /** Match a file against a config type entry — an extension (".eml") or a MIME type ("message/rfc822"). */
-export function fileMatchesType(name: string, type: string, entry: string): boolean {
+function fileMatchesType(name: string, type: string, entry: string): boolean {
   const e = entry.trim().toLowerCase();
   if (!e) return false;
   if (e.startsWith(".")) return name.toLowerCase().endsWith(e);

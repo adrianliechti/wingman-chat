@@ -50,7 +50,7 @@ export async function getChatBlob(chatId: string, blobId: string): Promise<Blob 
 /**
  * Delete a blob from a chat's blobs folder.
  */
-export async function deleteChatBlob(chatId: string, blobId: string): Promise<void> {
+async function deleteChatBlob(chatId: string, blobId: string): Promise<void> {
   await deleteFile(`chats/${chatId}/blobs/${blobId}.bin`);
 }
 
@@ -232,17 +232,18 @@ function isoDate(value: Date | null): string | null {
 }
 
 /** Runtime state is kept only while it has content, so idle chats stay small. */
-function runtimeFields({ resume, metadata }: Pick<Chat, "resume" | "metadata">) {
+function runtimeFields({ resume, metadata, baseSeq }: Pick<Chat, "resume" | "metadata" | "baseSeq">) {
   return {
     ...(resume ? { resume } : {}),
     ...(metadata && Object.keys(metadata).length ? { metadata } : {}),
+    ...(typeof baseSeq === "number" ? { baseSeq } : {}),
   };
 }
 
 /**
  * Extract all binary data from a chat and store as blobs in chat folder.
  * Returns a StoredChat suitable for JSON serialization.
- * Note: Artifacts should be saved separately via saveArtifacts().
+ * Note: Artifacts are persisted separately by the artifact filesystem.
  */
 export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
   const blobs = new Map<string, Promise<string>>();
@@ -286,7 +287,7 @@ export function restoreChatManifest(stored: StoredChat): Chat {
 /**
  * Rehydrate all blob references in a stored chat.
  * Returns a Chat with all media restored as data.
- * Note: Artifacts should be loaded separately via loadArtifacts().
+ * Note: Artifacts are loaded separately by the artifact filesystem.
  */
 export async function rehydrateChatBlobs(stored: StoredChat): Promise<Chat> {
   const chat = restoreChatManifest(stored);
@@ -311,10 +312,14 @@ export function collectChatBlobIds(chat: Pick<StoredChat, "messages">): string[]
 export async function deleteUnreferencedChatBlobs(
   chat: StoredChat,
   retainedBlobIds: readonly string[] = [],
+  /** Further references, read only when some blob would otherwise be deleted. */
+  moreRetained?: () => Promise<Iterable<string>>,
 ): Promise<void> {
   const referenced = new Set([...collectChatBlobIds(chat), ...retainedBlobIds]);
-  const stored = await listChatBlobs(chat.id);
-  await Promise.all(
-    stored.filter((blobId) => !referenced.has(blobId)).map((blobId) => deleteChatBlob(chat.id, blobId)),
-  );
+  let candidates = (await listChatBlobs(chat.id)).filter((blobId) => !referenced.has(blobId));
+  if (candidates.length && moreRetained) {
+    const more = new Set(await moreRetained());
+    candidates = candidates.filter((blobId) => !more.has(blobId));
+  }
+  await Promise.all(candidates.map((blobId) => deleteChatBlob(chat.id, blobId)));
 }

@@ -1,6 +1,6 @@
 import { createContext } from "react";
 
-export interface BackgroundItem {
+interface BackgroundItem {
   url: string;
 }
 

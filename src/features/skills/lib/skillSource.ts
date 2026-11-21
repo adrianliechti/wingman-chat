@@ -6,7 +6,7 @@ export function skillName(entry: Pick<SkillEntry, "name" | "plugin">): string {
   return entry.plugin ? `${encodeURIComponent(entry.plugin)}:${entry.name}` : entry.name;
 }
 
-export function skillMetadata(entry: SkillEntry): SkillMetadata {
+function skillMetadata(entry: SkillEntry): SkillMetadata {
   return {
     name: skillName(entry),
     description: entry.description,

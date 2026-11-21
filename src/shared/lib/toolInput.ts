@@ -53,7 +53,7 @@ export function inputValue(value: unknown): string {
   return typeof value === "bigint" ? value.toLocaleString() : "";
 }
 
-export function isTextInput(value: unknown): value is string | string[] {
+function isTextInput(value: unknown): value is string | string[] {
   return typeof value === "string"
     ? value.trim() !== ""
     : Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === "string");

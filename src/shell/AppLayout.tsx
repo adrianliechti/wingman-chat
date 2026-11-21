@@ -8,11 +8,13 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useProjects } from "@/features/projects/context/ProjectsContext";
 import { AccountLinks, AccountMenu } from "@/features/settings/components/AccountMenu";
 import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
+import { SyncIndicator } from "@/features/settings/components/SyncIndicator";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
 import { useBreakpoint, useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
+import { REOPEN_BACKUP_SETTINGS_KEY } from "@/shared/lib/backupLifecycle";
 import { ProviderState } from "@/shared/types/chat";
 import { useApp } from "@/shell/hooks/useApp";
 import { useNavigation } from "@/shell/hooks/useNavigation";
@@ -80,9 +82,16 @@ export function AppLayout() {
   // Share the visible viewport with pages and portaled sheets at every width.
   useVisualViewport();
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [resumeBackupSettings] = useState(() => sessionStorage.getItem(REOPEN_BACKUP_SETTINGS_KEY) === "true");
+  const [settingsOpen, setSettingsOpen] = useState(resumeBackupSettings);
   const [settingsAdvanced, setSettingsAdvanced] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(
+    resumeBackupSettings ? "backup" : undefined,
+  );
+
+  useEffect(() => {
+    if (resumeBackupSettings) sessionStorage.removeItem(REOPEN_BACKUP_SETTINGS_KEY);
+  }, [resumeBackupSettings]);
 
   const openSettings = useCallback(({ advanced, section }: { advanced: boolean; section?: string }) => {
     setSettingsInitialSection(section);
@@ -343,6 +352,7 @@ export function AppLayout() {
                     <Coffee size={20} />
                   </button>
                 )}
+                <SyncIndicator onClick={() => openSettings({ advanced: false, section: "backup" })} />
                 {rightActions}
               </div>
               {/* Phones reach the account from the sidebar footer instead. */}

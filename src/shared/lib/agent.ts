@@ -43,7 +43,7 @@ import { getErrorInfo, isAbortError } from "./errors";
 import { aiTelemetry } from "./otel";
 import { packGatewayReasoning, readGatewayReasoning } from "./reasoning";
 
-export type AgentRunStatus = "completed" | "interrupted" | "aborted" | "failed";
+type AgentRunStatus = "completed" | "interrupted" | "aborted" | "failed";
 
 export interface AgentRunResult {
   status: AgentRunStatus;
@@ -52,7 +52,7 @@ export interface AgentRunResult {
 }
 
 /** Provider configuration shared by chat, subagents, and isolated interpreter calls. */
-export type ChatOptions = NonNullable<Parameters<Client["chatOptions"]>[1]> & ClientRequestOptions;
+type ChatOptions = NonNullable<Parameters<Client["chatOptions"]>[1]> & ClientRequestOptions;
 
 /** A tool invocation as the runtime reports it. */
 interface ToolCall {

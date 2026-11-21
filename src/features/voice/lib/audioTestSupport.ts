@@ -10,7 +10,7 @@ export function deferred<T = void>() {
   return { promise, resolve, reject };
 }
 
-export class FakeTrack extends EventTarget {
+class FakeTrack extends EventTarget {
   readyState = "live";
   stop = vi.fn(() => {
     this.readyState = "ended";
@@ -26,7 +26,7 @@ export function fakeStream() {
   return { track, getTracks: () => [track], getAudioTracks: () => [track] };
 }
 
-export class FakeNode extends EventTarget {
+class FakeNode extends EventTarget {
   connect = vi.fn();
   disconnect = vi.fn();
 }

@@ -83,7 +83,7 @@ interface EffortConfig {
   onChange: (effort: Effort) => void;
 }
 
-export interface SubmenuOption {
+interface SubmenuOption {
   value: string;
   /** Primary row text and the badge shown on the collapsed trigger. */
   label: string;
@@ -128,7 +128,7 @@ interface PresetsConfig {
   auto?: { model: Model; selected: boolean; onSelect: () => void };
 }
 
-export interface AgentAction {
+interface AgentAction {
   icon?: React.ReactNode;
   label: string;
   /** Highlights a row that needs attention, e.g. a pending sign-in. */

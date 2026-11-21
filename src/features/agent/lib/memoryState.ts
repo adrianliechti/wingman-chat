@@ -1,4 +1,4 @@
-export interface MemorySource {
+interface MemorySource {
   id: string;
   hash: string;
 }

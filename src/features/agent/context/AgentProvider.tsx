@@ -14,7 +14,15 @@ const AGENT_STORAGE_KEY = "app_agent";
 const storage = { load: loadAgents, store: storeAgent, remove: removeAgent };
 
 export function AgentProvider({ children }: { children: ReactNode }) {
-  const { items: agents, isLoaded, create, update, remove, getItems, flush } = usePersistentCollection(storage);
+  const {
+    items: agents,
+    isLoaded,
+    create,
+    update,
+    remove,
+    getItems,
+    flush,
+  } = usePersistentCollection(storage, "agents");
   const ownerActive = useRef(true);
   const [currentId, setCurrentId] = useState<string | null>(() => {
     try {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { withPersistenceLock } from "@/shared/lib/persistence";
 import { reportPersistenceError, usePersistenceQueue } from "./usePersistenceQueue";
 import * as opfs from "@/shared/lib/opfs";
+import { subscribeStorageChanges } from "@/shared/lib/storageChanges";
 
 /**
  * Options for usePersistedState hook
@@ -81,6 +82,30 @@ export function usePersistedState<T>({
       active = false;
     };
   }, [session]);
+
+  useEffect(() => {
+    let active = true;
+    let request = 0;
+    const unsubscribe = subscribeStorageChanges((paths) => {
+      if (!paths.includes(session.key)) return;
+      const current = ++request;
+      const refresh = async () => {
+        await session.loading;
+        if (queue.hasPending(session.key)) return;
+        const before = session.value;
+        const data = await opfs.readJson<T>(session.key);
+        if (!active || current !== request || queue.hasPending(session.key) || session.value !== before) return;
+        const { defaultValue, onLoad } = callbacks.current;
+        session.value = data === undefined ? defaultValue : onLoad ? onLoad(data) : data;
+        render((n) => n + 1);
+      };
+      void refresh().catch(reportPersistenceError);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [queue, session]);
 
   const setValue = useCallback<React.Dispatch<React.SetStateAction<T>>>(
     (edit) => {

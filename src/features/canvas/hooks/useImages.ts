@@ -15,7 +15,7 @@ export function newVersion(kind: ImageVersion["kind"], prompt?: string, model?: 
 }
 
 export function useImages() {
-  const { items: images, isLoaded, create, update, remove } = usePersistentCollection(storage);
+  const { items: images, isLoaded, create, update, remove } = usePersistentCollection(storage, "images");
   const createImage = useCallback(
     (image: NewImage) => {
       const now = new Date();

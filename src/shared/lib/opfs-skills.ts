@@ -133,7 +133,7 @@ async function removeSkillFiles(name: string): Promise<void> {
 /**
  * List all skill names.
  */
-export async function listSkillNames(): Promise<string[]> {
+async function listSkillNames(): Promise<string[]> {
   return listDirectories("skills");
 }
 

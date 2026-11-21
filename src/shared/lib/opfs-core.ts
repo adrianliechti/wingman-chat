@@ -1,4 +1,6 @@
 import { contentToBlob } from "./fileContent";
+import { forgetBackup } from "./rememberedBackup";
+import { invalidateBackupSessions, WORKSPACE_OWNER_KEY } from "./backupLifecycle";
 import { inferContentTypeFromPath } from "./fileTypes";
 import { stopPersistence, withPersistenceLock } from "./persistence";
 import { decodeDataURL, readAsDataURL } from "./utils";
@@ -49,12 +51,44 @@ import { isRebuildableCollection, salvageIndexEntries, scanFolderIndex } from ".
  */
 
 // ============================================================================
+// Mutation notifications
+// ============================================================================
+
+type OpfsMutationKind = "write" | "delete" | "delete-dir";
+export type OpfsMutationListener = (path: string, kind: OpfsMutationKind) => void;
+
+const mutationListeners = new Set<OpfsMutationListener>();
+
+/** Watch every OPFS mutation that goes through this module. Paths are
+ *  normalized (no leading/duplicate slashes); "delete-dir" paths name a
+ *  directory whose entire subtree was removed. */
+export function onOpfsMutation(fn: OpfsMutationListener): () => void {
+  mutationListeners.add(fn);
+  return () => mutationListeners.delete(fn);
+}
+
+function normalizeOpfsPath(path: string): string {
+  return path.split("/").filter(Boolean).join("/");
+}
+
+function notifyMutation(path: string, kind: OpfsMutationKind): void {
+  const normalized = normalizeOpfsPath(path);
+  for (const fn of mutationListeners) fn(normalized, kind);
+}
+
+// ============================================================================
 // Core OPFS Operations
 // ============================================================================
 
 let rootHandle: FileSystemDirectoryHandle | null = null;
 let storageReset = false;
-const activeWrites = new Set<Promise<void>>();
+const activeWrites = new Set<Promise<unknown>>();
+
+// File mutations share the tree lock; recursive deletion takes it exclusively.
+function withTreeMutation<T>(operation: () => Promise<T>): Promise<T> {
+  if (globalThis.navigator?.locks) return navigator.locks.request("wingman:opfs-tree", { mode: "shared" }, operation);
+  return withPersistenceLock("opfs-tree", operation);
+}
 
 /**
  * Get the OPFS root directory handle.
@@ -112,42 +146,98 @@ export async function writeText(
  * Write binary data to a file.
  * Uses FileSystemWritableFileStream for Safari compatibility.
  */
-export async function writeBlob(path: string, blob: Blob): Promise<void> {
+export function writeBlob(path: string, blob: Blob): Promise<void> {
+  return writeFileBlob(path, blob, false);
+}
+
+async function writeFileBlob(path: string, blob: Blob, append: boolean): Promise<void> {
   if (storageReset) throw new Error("Storage was reset. Reload before saving changes.");
   const { dir, name } = parsePath(path);
-  const result = withPersistenceLock(`file:${dir}/${name}`, async () => {
-    if (storageReset) throw new Error("Storage was reset. Reload before saving changes.");
-    const directory = await getDirectory(dir, { create: true });
-    let fileHandle: FileSystemFileHandle;
-    let created = false;
-    try {
-      fileHandle = await directory.getFileHandle(name);
-    } catch (error) {
-      if (!(error instanceof DOMException) || error.name !== "NotFoundError") throw error;
-      fileHandle = await directory.getFileHandle(name, { create: true });
-      created = true;
-    }
-    let writable: FileSystemWritableFileStream | undefined;
-    try {
-      writable = await fileHandle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-    } catch (error) {
-      // Closing after a failed write can commit truncated data over the last
-      // good file. Abort the staging stream and preserve the original error.
-      await writable?.abort().catch(() => {});
-      // create:true makes an empty file before the write starts. Leaving it
-      // behind poisons JSON loads and can masquerade as a stored hash blob.
-      if (created) await directory.removeEntry(name).catch(() => {});
-      throw error;
-    }
-  });
+  const result = withTreeMutation(() =>
+    withPersistenceLock(`file:${dir}/${name}`, async () => {
+      await writeFileBlobUnlocked(dir, name, blob, append);
+      notifyMutation(path, "write");
+    }),
+  );
   activeWrites.add(result);
   try {
     await result;
   } finally {
     activeWrites.delete(result);
   }
+}
+
+async function writeFileBlobUnlocked(dir: string, name: string, blob: Blob, append: boolean): Promise<void> {
+  if (storageReset) throw new Error("Storage was reset. Reload before saving changes.");
+  const directory = await getDirectory(dir, { create: true });
+  let fileHandle: FileSystemFileHandle;
+  let created = false;
+  try {
+    fileHandle = await directory.getFileHandle(name);
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== "NotFoundError") throw error;
+    fileHandle = await directory.getFileHandle(name, { create: true });
+    created = true;
+  }
+  let writable: FileSystemWritableFileStream | undefined;
+  try {
+    writable = await fileHandle.createWritable(append ? { keepExistingData: true } : undefined);
+    if (append) await writable.seek((await fileHandle.getFile()).size);
+    await writable.write(blob);
+    await writable.close();
+  } catch (error) {
+    // Closing after a failed write can commit truncated data over the last
+    // good file. Abort the staging stream and preserve the original error.
+    await writable?.abort().catch(() => {});
+    // create:true makes an empty file before the write starts. Leaving it
+    // behind poisons JSON loads and can masquerade as a stored hash blob.
+    if (created) await directory.removeEntry(name).catch(() => {});
+    throw error;
+  }
+}
+
+/** Apply a remote file only while the local version still matches a prior scan. */
+export async function replaceFileIfUnchanged(
+  path: string,
+  expectedMtime: number | undefined,
+  options: { blob?: Blob; notify?: (emit: () => void) => void; unchanged?: () => boolean },
+): Promise<boolean> {
+  if (storageReset) throw new Error("Storage was reset. Reload before saving changes.");
+  const { dir, name } = parsePath(path);
+  const result = withTreeMutation(() =>
+    withPersistenceLock(`file:${dir}/${name}`, async () => {
+      if (storageReset) throw new Error("Storage was reset. Reload before saving changes.");
+      const current = await readFileMetadata(path);
+      if (current?.lastModified !== expectedMtime || (options.unchanged && !options.unchanged())) return false;
+      if (options.blob) {
+        await writeFileBlobUnlocked(dir, name, options.blob, false);
+        (options.notify ?? ((emit) => emit()))(() => notifyMutation(path, "write"));
+      } else if (current) {
+        const directory = await getDirectory(dir);
+        await directory.removeEntry(name);
+        (options.notify ?? ((emit) => emit()))(() => notifyMutation(path, "delete"));
+      }
+      return true;
+    }),
+  );
+  activeWrites.add(result);
+  try {
+    return await result;
+  } finally {
+    activeWrites.delete(result);
+  }
+}
+
+/**
+ * Append binary data to a file (creates the file if missing).
+ *
+ * Uses `createWritable({ keepExistingData: true })` and seeks to the
+ * file's current size — supported by every modern browser. This keeps
+ * append-only logs (e.g. JSONL chat logs) from being rewritten in full
+ * on every save.
+ */
+export function appendBlob(path: string, blob: Blob): Promise<void> {
+  return writeFileBlob(path, blob, true);
 }
 
 /**
@@ -229,17 +319,22 @@ export async function readFileMetadata(
  * Silently succeeds if file doesn't exist.
  */
 export async function deleteFile(path: string): Promise<void> {
-  try {
-    const { dir, name } = parsePath(path);
-    const directory = await getDirectory(dir);
-    await directory.removeEntry(name);
-  } catch (error) {
-    // NotFoundError is fine - file already doesn't exist
-    if (error instanceof DOMException && error.name === "NotFoundError") {
-      return;
-    }
-    throw error;
-  }
+  const { dir, name } = parsePath(path);
+  await withTreeMutation(() =>
+    withPersistenceLock(`file:${dir}/${name}`, async () => {
+      try {
+        const directory = await getDirectory(dir);
+        await directory.removeEntry(name);
+        notifyMutation(path, "delete");
+      } catch (error) {
+        // NotFoundError is fine - file already doesn't exist
+        if (error instanceof DOMException && error.name === "NotFoundError") {
+          return;
+        }
+        throw error;
+      }
+    }),
+  );
 }
 
 /**
@@ -311,24 +406,27 @@ export async function listDirectories(dirPath: string): Promise<string[]> {
  * Delete a directory and all its contents recursively.
  */
 export async function deleteDirectory(path: string): Promise<void> {
-  try {
-    const parts = path.split("/").filter(Boolean);
-    if (parts.length === 0) {
-      // Can't delete root
-      return;
-    }
+  return withPersistenceLock("opfs-tree", async () => {
+    try {
+      const parts = path.split("/").filter(Boolean);
+      if (parts.length === 0) {
+        // Can't delete root
+        return;
+      }
 
-    const parentPath = parts.slice(0, -1).join("/");
-    const dirName = parts[parts.length - 1];
+      const parentPath = parts.slice(0, -1).join("/");
+      const dirName = parts[parts.length - 1];
 
-    const parent = parentPath ? await getDirectory(parentPath) : await getRoot();
-    await parent.removeEntry(dirName, { recursive: true });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "NotFoundError") {
-      return;
+      const parent = parentPath ? await getDirectory(parentPath) : await getRoot();
+      await parent.removeEntry(dirName, { recursive: true });
+      notifyMutation(path, "delete-dir");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotFoundError") {
+        return;
+      }
+      throw error;
     }
-    throw error;
-  }
+  });
 }
 
 /**
@@ -336,13 +434,20 @@ export async function deleteDirectory(path: string): Promise<void> {
  */
 export async function clearAll(): Promise<void> {
   storageReset = true;
+  // Fence every sync engine (here and in peer tabs) before the tree disappears;
+  // otherwise they would replay the local deletions against the online backup.
+  invalidateBackupSessions();
+  await forgetBackup();
   await stopPersistence();
   await Promise.allSettled(activeWrites);
-  const root = await getRoot();
-
-  for await (const [name] of root.entries()) {
-    await root.removeEntry(name, { recursive: true });
-  }
+  await withPersistenceLock("opfs-tree", async () => {
+    const root = await getRoot();
+    for await (const [name] of root.entries()) {
+      await root.removeEntry(name, { recursive: true });
+      notifyMutation(name, "delete-dir");
+    }
+  });
+  if (typeof localStorage !== "undefined") localStorage.removeItem(WORKSPACE_OWNER_KEY);
 }
 
 // ============================================================================
@@ -395,7 +500,7 @@ async function healIndex(collection: string, reason: Error): Promise<IndexEntry[
  * Write the index for a collection.
  */
 /** Lock the complete read/modify/write, including updates from other tabs. */
-export async function updateIndex(collection: string, update: (entries: IndexEntry[]) => IndexEntry[]): Promise<void> {
+async function updateIndex(collection: string, update: (entries: IndexEntry[]) => IndexEntry[]): Promise<void> {
   await withPersistenceLock(`index:${collection}`, async () => {
     await writeJson(`${collection}/index.json`, update(await readIndex(collection)));
   });
@@ -419,7 +524,7 @@ export async function removeIndexEntry(collection: string, id: string): Promise<
 // Storage Usage
 // ============================================================================
 
-export interface StorageEntry {
+interface StorageEntry {
   path: string;
   size: number;
 }

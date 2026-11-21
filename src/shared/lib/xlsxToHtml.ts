@@ -68,9 +68,9 @@ export interface XlsxHtmlResult {
 }
 
 /** Hard materialization limits; viewport rendering itself is virtualized. */
-export const MAX_XLSX_ROWS = 100_000;
-export const MAX_XLSX_COLS = 16_384;
-export const MAX_XLSX_CELLS = 250_000;
+const MAX_XLSX_ROWS = 100_000;
+const MAX_XLSX_COLS = 16_384;
+const MAX_XLSX_CELLS = 250_000;
 const MAX_XLSX_MERGED_CELLS = 250_000;
 const MAX_XLSX_DRAWING_OBJECTS = 2_000;
 const MAX_CACHED_XLSX_SHEETS = 4;

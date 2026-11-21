@@ -33,6 +33,8 @@ type Config struct {
 
 	Chat *Chat `json:"chat,omitempty" yaml:"chat,omitempty"`
 
+	Backup *Backup `json:"backup,omitempty" yaml:"backup,omitempty"`
+
 	Telemetry *Telemetry `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
 
 	Backgrounds map[string][]Background `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
@@ -216,6 +218,21 @@ type Risk struct {
 	Severity    string  `json:"severity,omitempty" yaml:"severity,omitempty"`
 	Message     string  `json:"message,omitempty" yaml:"message,omitempty"`
 	Threshold   float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+}
+
+// Backup selects local ZIP backups (the default) or OneDrive.
+// Auth configures an optional On-Behalf-Of exchange for OneDrive; without it
+// the forwarded Microsoft Graph token is used directly.
+type Backup struct {
+	Provider     string     `json:"provider" yaml:"provider"`
+	Auth         *DriveAuth `json:"-" yaml:"auth,omitempty"`
+	DirectUpload bool       `json:"directUpload,omitempty" yaml:"-"`
+	// Uploads caps concurrent upload requests per backend pod. Each can spool
+	// up to 257 MiB to temporary disk. Zero keeps the default.
+	Uploads int `json:"-" yaml:"uploads,omitempty"`
+	// DirectUploadKey is the base64 signing secret for direct uploads, from
+	// backup.yaml or BACKUP_DIRECT_UPLOAD_KEY (which takes precedence).
+	DirectUploadKey string `json:"-" yaml:"direct_upload_key,omitempty"`
 }
 
 type Translator struct {
