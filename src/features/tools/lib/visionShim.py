@@ -21,4 +21,4 @@ async def vision(path, prompt=None):
     Returns:
         The model's text response as a string.
     """
-    return await _wingman_vision(_os.path.abspath(str(path)), None if prompt is None else str(prompt))
+    return await _wingman_vision(_os.fsdecode(path), None if prompt is None else str(prompt))

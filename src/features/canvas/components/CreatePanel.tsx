@@ -293,7 +293,7 @@ export function CreatePanel({
               <div className="flex min-w-0 flex-1 flex-col gap-5">
                 {/* One text box for every kind. A song's modes sit inside it, top left, and own
                     lyrics take its lower part, under the line for their style. */}
-                <div className="flex min-h-28 flex-1 flex-col rounded-xl border border-neutral-200/70 bg-neutral-50/60 focus-within:border-neutral-400 dark:border-neutral-700/60 dark:bg-neutral-800/40 dark:focus-within:border-neutral-500">
+                <div className="flex min-h-28 flex-1 flex-col rounded-xl border border-neutral-200/70 bg-neutral-50/60 dark:border-neutral-700/60 dark:bg-neutral-800/40">
                   {song && (
                     <RadioGroup
                       value={songMode}
@@ -347,7 +347,7 @@ export function CreatePanel({
                       }
                     }}
                     className={cn(
-                      "block w-full resize-none bg-transparent px-4 text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-500",
+                      "block w-full resize-none border-0 bg-transparent px-4 text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-500",
                       song ? "pt-2" : "pt-3",
                       song && !songCopy?.hint ? "pb-3" : "pb-2",
                       ownLyrics ? "shrink-0" : "min-h-0 flex-1",

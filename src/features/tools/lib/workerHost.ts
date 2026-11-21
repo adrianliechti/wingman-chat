@@ -11,19 +11,21 @@ import type {
   ExecuteMessage,
   ExecuteReply,
   RpcReply,
+  ScriptToolRequest,
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import { resolveCodeExecutionLimits, validateArtifactFiles } from "./executionLimits";
 import type { ToolContext } from "@/shared/types/chat";
 import { withAbort } from "@/shared/lib/abortSignals";
+import { createScriptToolbox } from "./scriptTools";
 
 export interface ExecuteCodeOptions {
   /** Aborts the run (e.g. the user's Stop): terminates the worker and settles. */
   signal?: AbortSignal;
   /** Override the compute-stall ceiling. */
   timeoutMs?: number;
-  /** Captured run context for model calls made by the interpreter. */
-  context?: Pick<ToolContext, "model" | "invocationContext" | "agentContext" | "chatId">;
+  /** Captured run context for host calls made by the interpreter. */
+  context?: ToolContext;
 }
 
 export type BridgeRequestOptions = Pick<ExecuteCodeOptions, "signal" | "context">;
@@ -55,6 +57,10 @@ const DEFAULT_COMPUTE_STALL_MS = 120_000;
  * cold start isn't mistaken for a wedged loop. */
 const DEFAULT_STARTUP_STALL_MS = 180_000;
 
+// Host calls pause the compute watchdog. Count discovery and rejected calls
+// too, so a script cannot keep the worker alive indefinitely by retrying.
+const MAX_SCRIPT_TOOL_REQUESTS = 1000;
+
 export interface WorkerHost {
   execute(request: CodeExecutionRequest, options?: ExecuteCodeOptions): Promise<CodeExecutionResult>;
 }
@@ -64,6 +70,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   const startupStallMs = config.startupStallMs ?? DEFAULT_STARTUP_STALL_MS;
 
   let worker: Worker | null = null;
+  const workerOwners = new WeakMap<Worker, object>();
   let executionTail: Promise<CodeExecutionResult> | null = null;
   // A reusable worker is terminated after sitting idle; a new execution cancels that.
   const idleShutdown = new Debouncer(
@@ -92,29 +99,36 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
     // The worker is waiting on us, not stalled — pause its stall timer. Capture
     // the slot now so a reply that lands after teardown can't disturb the next run.
     bridge.enter();
-    let reply: RpcReply;
     try {
-      reply = { ok: true, value: await withAbort(bridge.signal!, run) };
+      const value = await withAbort(bridge.signal!, run);
+      port.postMessage({ ok: true, value } satisfies RpcReply);
     } catch (error) {
-      reply = { ok: false, error: error instanceof Error ? error.message : String(error) };
+      // Serialization failures also reach the script as catchable errors.
+      try {
+        port.postMessage({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        } satisfies RpcReply);
+      } catch {
+        // Teardown may have already closed the port.
+      }
     } finally {
       bridge.leave();
-    }
-    // Abort/teardown may close the transferred port while the main-thread RPC
-    // is still settling. A late reply must not become an unhandled rejection.
-    try {
-      port.postMessage(reply);
-    } catch {
-      // The owning run has already ended; there is no receiver left to notify.
-    } finally {
       port.close();
     }
   }
 
-  function getWorker(): Worker {
+  function getWorker(owner?: object): Worker {
     idleShutdown.cancel();
+    // A tool-enabled Python worker may retain callbacks. Reuse it only in
+    // the same model invocation, never across chats or into an editor run.
+    if (worker && workerOwners.get(worker) !== owner) {
+      worker.terminate();
+      worker = null;
+    }
     if (!worker) {
       const created = config.createWorker();
+      if (owner) workerOwners.set(created, owner);
       created.addEventListener("message", (event: MessageEvent<WorkerToMainMessage>) => {
         const message = event.data;
         // Sandboxed user code can `self.postMessage(...)` directly; ignore
@@ -145,7 +159,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
 
   function execute(request: CodeExecutionRequest, options?: ExecuteCodeOptions): Promise<CodeExecutionResult> {
     const signal = AbortSignal.any(
-      [options?.signal, options?.context?.invocationContext?.signal].filter(
+      [options?.signal, options?.context?.signal, options?.context?.invocationContext?.signal].filter(
         (source): source is AbortSignal => !!source,
       ),
     );
@@ -190,7 +204,8 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
 
     let target: Worker;
     try {
-      target = getWorker();
+      const context = options?.context;
+      target = getWorker(context?.scriptTools ? (context.invocationContext ?? context) : undefined);
     } catch (error) {
       return Promise.resolve({
         success: false,
@@ -269,8 +284,22 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         resolve(result);
       }
 
-      port1.onmessage = (event: MessageEvent<ExecuteReply>) => {
+      const tools = createScriptToolbox(options?.context ?? {}, bridgeSignal);
+      let toolRequests = 0;
+      port1.onmessage = (event: MessageEvent<ExecuteReply | ScriptToolRequest>) => {
         const reply = event.data;
+        if (reply.type === "tools-list" || reply.type === "tools-call") {
+          if (typeof reply.port?.postMessage !== "function") return;
+          if (++toolRequests > MAX_SCRIPT_TOOL_REQUESTS) {
+            reply.port.close();
+            fail(`Script exceeded the limit of ${MAX_SCRIPT_TOOL_REQUESTS} tool requests`);
+            return;
+          }
+          void replyOnPort(reply.port, bridge, async () =>
+            reply.type === "tools-list" ? tools.list() : tools.call(reply.name, reply.args),
+          );
+          return;
+        }
         if (reply.type === "started") {
           started = true;
           if (inFlight === 0) arm();

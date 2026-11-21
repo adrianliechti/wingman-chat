@@ -120,7 +120,9 @@ export function CanvasSidebar({
                 aria-label={item.status === "error" ? "Failed generation" : "Generating media"}
                 className={cn(
                   "relative aspect-square overflow-hidden rounded-xl",
-                  active ? "ring-2 ring-blue-500 dark:ring-blue-400" : "ring-1 ring-black/8 dark:ring-white/10",
+                  active
+                    ? "non-webkit:ring-2 non-webkit:ring-blue-500 non-webkit:dark:ring-blue-400"
+                    : "ring-1 ring-black/8 dark:ring-white/10",
                 )}
               >
                 <button
@@ -173,7 +175,9 @@ export function CanvasSidebar({
                 aria-selected={active}
                 className={cn(
                   "group relative aspect-square overflow-hidden rounded-xl bg-neutral-200/60 dark:bg-neutral-800/60",
-                  active ? "ring-2 ring-blue-500 dark:ring-blue-400" : "ring-1 ring-black/8 dark:ring-white/10",
+                  active
+                    ? "non-webkit:ring-2 non-webkit:ring-blue-500 non-webkit:dark:ring-blue-400"
+                    : "ring-1 ring-black/8 dark:ring-white/10",
                 )}
               >
                 <button type="button" onClick={() => select(image.id)} title={label} className="press block size-full">

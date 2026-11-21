@@ -26,7 +26,10 @@ test.afterEach(async () => {
   await Promise.all(handlers.splice(0).map((handler) => handler.close()));
 });
 
-async function setup(page: Page, mode: "plain" | "form" | "url" | "url-hold" | "url-form" | "hold" = "plain") {
+async function setup(
+  page: Page,
+  mode: "plain" | "form" | "url" | "url-hold" | "url-form" | "hold" | "script" = "plain",
+) {
   const requests: { input: unknown; action?: string; content?: unknown; details?: unknown }[] = [];
   let release: (() => void) | undefined;
   let holdDiscovery = false;
@@ -104,6 +107,12 @@ async function setup(page: Page, mode: "plain" | "form" | "url" | "url-hold" | "
           requestState: "consent-state",
         });
       }
+      if (mode === "script")
+        return {
+          content: [{ type: "text", text: "Detailed source records" }],
+          structuredContent: { counts: [2, 3] },
+          _meta: { private: "widget details" },
+        };
       return {
         content: [
           { type: "text", text: response.kind === "elicit" ? `Consent: ${response.action}` : "Research evidence" },
@@ -113,7 +122,9 @@ async function setup(page: Page, mode: "plain" | "form" | "url" | "url-hold" | "
     return server;
   });
   handlers.push(handler);
-  await page.route("**/config.json", (route) => route.fulfill({ json: { models: [] } }));
+  await page.route("**/config.json", (route) =>
+    route.fulfill({ json: { models: [], ...(mode === "script" && { artifacts: {} }) } }),
+  );
   await page.context().route("https://example.test/consent", (route) => route.fulfill({ body: "Connected" }));
   await page.route("**/fixture-mcp", async (route) => {
     const request = route.request();
@@ -153,6 +164,62 @@ async function start(page: Page) {
   await expect(page.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
   return page.evaluate(() => window.chatE2E.state().chatId!);
 }
+
+const scripts = {
+  python: `target = next(t["name"] for t in await tools.list() if "web_research" in t["name"])
+result = await tools.call(target, {"instructions": "Count entries"})
+print(sum(result["counts"]))`,
+  javascript: `const target = (await tools.list()).find(t => t.name.includes("web_research"));
+const result = await tools.call(target.name, { instructions: "Count entries" });
+return result.counts.reduce((sum, n) => sum + n, 0);`,
+  bash: `set -eo pipefail
+target=$(tools list | jq -r '.[] | select(.name | contains("web_research")) | .name')
+printf '%s' '{"instructions":"Count entries"}' | tools call "$target" | jq '.counts | add'`,
+};
+
+for (const [language, code] of Object.entries(scripts)) {
+  test(`execute_script calls the approved MCP tool from ${language} and returns only its aggregate`, async ({
+    page,
+  }) => {
+    const server = await setup(page, "script");
+    await page.evaluate(() => window.chatE2E.send("Count the entries"));
+    await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
+    await page.evaluate((args) => window.chatE2E.callTool(0, "execute_script", args), { language, code });
+    const allow = page.getByRole("button", { name: "Allow", exact: true });
+    await expect(allow).toBeVisible();
+    await expect(page.getByText("Count entries", { exact: true })).toBeVisible();
+    expect(server.requests).toHaveLength(0);
+    await allow.click();
+    await page.waitForFunction(() => window.chatE2E.state().calls.length === 2);
+    const input = await page.evaluate(() => window.chatE2E.state().calls[1].input);
+    expect(input.filter((message) => message.role === "tool").map((message) => message.content)).toEqual(["5"]);
+    expect(server.requests.map(({ input }) => input)).toEqual([{ instructions: "Count entries" }]);
+    await page.evaluate(() => window.chatE2E.finish(1, "Five entries"));
+    await expect(page.getByTestId("messages")).toContainText("Five entries");
+  });
+}
+
+test("execute_script can handle an MCP denial and read a selected skill resource", async ({ page }) => {
+  const server = await setup(page, "script");
+  await page.evaluate(() => window.setChatSkills(true));
+  await page.evaluate(() => window.chatE2E.send("Use the local check if research is declined"));
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
+  const code = `import json
+try:
+    await tools.call(${JSON.stringify(toolName)}, {"instructions": "Find a check"})
+except RuntimeError as error:
+    local = await tools.call("read_skill_resource", {"skill": "fixture:reports", "path": "scripts/check.py"})
+    print(str(error), json.loads(local)["content"])`;
+  await page.evaluate((code) => window.chatE2E.callTool(0, "execute_script", { language: "python", code }), code);
+  await page.getByRole("button", { name: "Decline", exact: true }).click();
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 2);
+  const input = await page.evaluate(() => window.chatE2E.state().calls[1].input);
+  expect(input.findLast((message) => message.role === "tool")?.content).toBe(
+    "MCP tool request was declined print('verified')",
+  );
+  expect(server.requests).toHaveLength(0);
+  await page.evaluate(() => window.chatE2E.finish(1, "Used the local check"));
+});
 
 async function reloadChat(page: Page, id: string) {
   await page.evaluate(() => window.chatE2E.flush());

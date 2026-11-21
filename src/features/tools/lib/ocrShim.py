@@ -18,4 +18,4 @@ async def ocr(path):
     Returns:
         The extracted text as a string.
     """
-    return await _wingman_ocr(_os.path.abspath(str(path)))
+    return await _wingman_ocr(_os.fsdecode(path))

@@ -10,6 +10,7 @@ import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileCont
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import type { RasterizedPage } from "@/shared/lib/pdf";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
+import { bridgeArtifactPath } from "./bridgePaths";
 import {
   BoundedOutput,
   CodeExecutionLimitError,
@@ -27,7 +28,7 @@ import type {
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
-import { callMainThread, describeError } from "./interpreterRpc";
+import { callMainThread, describeError, scriptToolClient } from "./interpreterRpc";
 
 // Typed view of the worker global scope (project compiles against the DOM lib,
 // not the webworker lib).
@@ -113,18 +114,21 @@ function toBytes(data: unknown): Uint8Array {
 // Path-normalized byte access over the VFS, shared by the `vfs` helper and the
 // AI bridges. `writeBytes` returns the normalized key.
 function vfsAccess(vfs: Vfs, limits: ReturnType<typeof resolveCodeExecutionLimits>) {
-  const requireKey = (path: string): string => {
-    const key = normalizePath(path);
-    if (!key) throw new Error(`invalid path: ${path}`);
+  const readFile = (path: string) => {
+    const key = bridgeArtifactPath(path);
+    const entry = vfs.get(key);
+    if (!entry) throw new Error(`file not found: ${path}`);
+    return { path: key, data: entry.bytes };
+  };
+  const checkOutput = (key: string): string => {
+    for (const existing of vfs.keys()) {
+      if (existing.startsWith(`${key}/`)) throw new Error(`Output path is a directory: ${key}`);
+      if (key.startsWith(`${existing}/`)) throw new Error(`Output parent is a file: ${existing}`);
+    }
     return key;
   };
-  const readBytes = (path: string): Uint8Array => {
-    const entry = vfs.get(requireKey(path));
-    if (!entry) throw new Error(`file not found: ${path}`);
-    return entry.bytes;
-  };
-  const writeBytes = (path: string, data: unknown, contentType?: string): string => {
-    const key = requireKey(path);
+  const writeFile = (key: string, data: unknown, contentType?: string): string => {
+    checkOutput(key);
     const bytes = toBytes(data);
     if (!vfs.has(key) && vfs.size + 1 > limits.maxFiles) {
       throw new CodeExecutionLimitError(`Interpreter filesystem has more than ${limits.maxFiles} files`);
@@ -146,16 +150,19 @@ function vfsAccess(vfs: Vfs, limits: ReturnType<typeof resolveCodeExecutionLimit
     vfs.set(key, { bytes, contentType: ct, dirty: true });
     return key;
   };
-  return { requireKey, readBytes, writeBytes };
+  return { readFile, prepareOutput: (path: string) => checkOutput(bridgeArtifactPath(path)), writeFile };
 }
 
 // The `vfs` helper handed to user code. Inputs are normalized so "data.csv",
 // "/data.csv", and "/home/user/data.csv" all resolve to the same file.
 function buildVfs(vfs: Vfs, limits: ReturnType<typeof resolveCodeExecutionLimits>) {
-  const { requireKey, readBytes, writeBytes } = vfsAccess(vfs, limits);
+  const { readFile, writeFile } = vfsAccess(vfs, limits);
+  const readBytes = (path: string): Uint8Array => readFile(path).data;
+  const writeBytes = (path: string, data: unknown, contentType?: string): string =>
+    writeFile(bridgeArtifactPath(path), data, contentType);
   return {
     list: (): string[] => [...vfs.keys()].sort(),
-    exists: (path: string): boolean => vfs.has(requireKey(path)),
+    exists: (path: string): boolean => vfs.has(bridgeArtifactPath(path)),
     readBytes,
     readText: (path: string): string => decoder.decode(readBytes(path)),
     read: (path: string): string => decoder.decode(readBytes(path)),
@@ -166,7 +173,7 @@ function buildVfs(vfs: Vfs, limits: ReturnType<typeof resolveCodeExecutionLimits
       writeBytes(path, String(text), contentType ?? "text/plain"),
     writeJSON: (path: string, value: unknown): string =>
       writeBytes(path, JSON.stringify(value, null, 2), "application/json"),
-    remove: (path: string): boolean => vfs.delete(requireKey(path)),
+    remove: (path: string): boolean => vfs.delete(bridgeArtifactPath(path)),
   };
 }
 
@@ -270,39 +277,42 @@ function sql(query: string, params?: unknown[]): Promise<unknown> {
  * bind to that run's VFS.
  */
 function buildBridges(vfs: Vfs, limits: ReturnType<typeof resolveCodeExecutionLimits>) {
-  const { readBytes, writeBytes } = vfsAccess(vfs, limits);
+  const { readFile, prepareOutput, writeFile } = vfsAccess(vfs, limits);
   return {
     ocr: (path: string): Promise<string> =>
-      callMain<string>((port) => ({ type: "ocr-request", data: readBytes(path), path, port })),
+      callMain<string>((port) => ({ type: "ocr-request", ...readFile(path), port })),
     vision: (path: string, prompt?: string): Promise<string> =>
-      callMain<string>((port) => ({ type: "vision-request", data: readBytes(path), path, prompt, port })),
+      callMain<string>((port) => ({ type: "vision-request", ...readFile(path), prompt, port })),
     transcribe: (path: string): Promise<string> =>
-      callMain<string>((port) => ({ type: "transcribe-request", data: readBytes(path), path, port })),
+      callMain<string>((port) => ({ type: "transcribe-request", ...readFile(path), port })),
     // Arg order mirrors the Python helpers: translate(text, lang) and
     // translateFile(input, lang, output).
     translate: (text: string, lang: string): Promise<string> =>
       callMain<string>((port) => ({ type: "translate-text-request", lang, text, port })),
     translateFile: async (input: string, lang: string, output: string): Promise<string> => {
+      const file = readFile(input);
+      const destination = prepareOutput(output);
       const data = await callMain<Uint8Array>((port) => ({
         type: "translate-file-request",
         lang,
-        data: readBytes(input),
-        path: input,
+        ...file,
         port,
       }));
-      return writeBytes(output, data);
+      return writeFile(destination, data);
     },
     synthesize: async (text: string, output: string, voice?: string): Promise<string> => {
+      const destination = prepareOutput(output);
       const data = await callMain<Uint8Array>((port) => ({ type: "synthesize-request", text, voice, port }));
-      return writeBytes(output, data);
+      return writeFile(destination, data);
     },
     render: async (
       prompt: string,
       output: string,
-      inputs: string[] = [],
+      inputs?: string | string[] | null,
       options?: ImageRenderOptions,
     ): Promise<string> => {
-      const renderInputs = inputs.map((path) => ({ data: readBytes(path), path }));
+      const renderInputs = (typeof inputs === "string" ? [inputs] : (inputs ?? [])).map(readFile);
+      const destination = prepareOutput(output);
       const data = await callMain<Uint8Array>((port) => ({
         type: "render-request",
         prompt,
@@ -310,21 +320,22 @@ function buildBridges(vfs: Vfs, limits: ReturnType<typeof resolveCodeExecutionLi
         options,
         port,
       }));
-      return writeBytes(output, data);
+      return writeFile(destination, data);
     },
     // Render PDF pages to PNG via pdf.js on the main thread; returns the written
     // paths. The runtime has no in-process rasterizer, so this is the only path
     // from a PDF page to pixels.
     rasterizePdf: async (path: string, options?: { scale?: number; pages?: number[] }): Promise<string[]> => {
+      const file = readFile(path);
       const rendered = await callMain<RasterizedPage[]>((port) => ({
         type: "pdf-rasterize-request",
-        data: readBytes(path),
+        data: file.data,
         pages: options?.pages,
         scale: options?.scale,
         port,
       }));
-      const stem = path.replace(/\.pdf$/i, "");
-      return rendered.map(({ page, data }) => writeBytes(`${stem}-${page}.png`, data));
+      const stem = file.path.replace(/\.pdf$/i, "");
+      return rendered.map(({ page, data }) => writeFile(`${stem}-${page}.png`, data));
     },
   };
 }
@@ -481,7 +492,11 @@ const LAZY_GLOBALS: { name: string; test: RegExp; load: () => Promise<unknown> }
   { name: "jsPDF", test: /\bjsPDF\b/, load: async () => (await import("jspdf")).jsPDF },
 ];
 
-async function executeJs(request: CodeExecutionRequest, onStarted?: () => void): Promise<CodeExecutionResult> {
+async function executeJs(
+  request: CodeExecutionRequest,
+  port: MessagePort,
+  onStarted?: () => void,
+): Promise<CodeExecutionResult> {
   patchNetwork();
   const { files = {} } = request;
   // Function bodies do not accept a file's hashbang. Keep its newline so error
@@ -512,7 +527,7 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
   // declare locals named `render`, `translate`, … without a duplicate-parameter
   // SyntaxError. Removed in finally.
   const g = globalThis as Record<string, unknown>;
-  const bridges: Record<string, unknown> = { llm, sql, ...buildBridges(vfs, limits) };
+  const bridges: Record<string, unknown> = { llm, sql, tools: scriptToolClient(port), ...buildBridges(vfs, limits) };
   Object.assign(g, bridges);
 
   try {
@@ -579,7 +594,7 @@ ctx.addEventListener("message", (event) => {
       }
     };
     // executeJs never throws — errors come back as { success: false }.
-    const result = await executeJs(request, signalStarted);
+    const result = await executeJs(request, port, signalStarted);
     try {
       port.postMessage({ type: "result", result } satisfies ExecuteReply);
     } catch (error) {

@@ -7,6 +7,7 @@ import type { ElicitationResult } from "@/shared/types/elicitation";
 import { MCPClient } from "./mcp";
 import { mcpToolName } from "./mcpToolNames";
 import { mcpAgentToolName } from "@/features/tools/lib/mcpAgent";
+import { createScriptToolbox } from "@/features/tools/lib/scriptTools";
 
 const transportFactory = vi.hoisted(() => ({ create: undefined as (() => Transport) | undefined }));
 vi.mock("@modelcontextprotocol/client", async (original) => ({
@@ -134,12 +135,49 @@ describe("MCP discovery and call ownership with the real SDK", () => {
         ["search", "write"].map((name) => mcpToolName("any", name)),
       );
       expect(agent.subagent?.tools.every((tool) => !tool.needsApproval)).toBe(true);
+      expect(createScriptToolbox({ scriptTools: provider.chat!.tools }, new AbortController().signal).list()).toEqual(
+        [],
+      );
       const elicit = vi.fn();
       await agent.subagent!.tools[0].execute({}, { context: { elicit }, emitCustomEvent() {} });
       expect(call).toHaveBeenCalledExactlyOnceWith("search");
       expect(elicit).not.toHaveBeenCalled();
     },
   );
+
+  it("validates nested tool arguments and asks for live approval even inside an interruptible chat run", async () => {
+    provider = new MCPClient("test", "https://example.test/mcp", "Test", "Test", undefined, undefined, {
+      mode: "individual",
+    });
+    list.mockResolvedValue({
+      tools: [
+        {
+          name: "search",
+          inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+        },
+      ],
+    });
+    await provider.connect();
+    const elicit = vi.fn().mockResolvedValueOnce({ action: "decline" }).mockResolvedValue({ action: "accept" });
+    const setError = vi.fn();
+    const signal = new AbortController().signal;
+    const tools = createScriptToolbox({ scriptTools: provider.tools, interruptible: true, elicit, setError }, signal);
+    const name = mcpToolName("test", "search");
+    const args = { query: "public records" };
+    await expect(tools.call(name, { query: 2 })).rejects.toThrow();
+    expect(elicit).not.toHaveBeenCalled();
+    await expect(tools.call(name, args)).rejects.toThrow("declined");
+    expect(elicit).toHaveBeenCalledWith(
+      expect.objectContaining({ approval: expect.objectContaining({ input: args }) }),
+      { signal },
+    );
+    expect(call).not.toHaveBeenCalled();
+    call.mockResolvedValueOnce({ content: [{ type: "text", text: "Source unavailable" }], isError: true });
+    await expect(tools.call(name, args)).rejects.toThrow("Source unavailable");
+    expect(setError).not.toHaveBeenCalled();
+    expect(await tools.call(name, args)).toBe("done");
+    expect(call).toHaveBeenCalledTimes(2);
+  });
 
   it("preserves task-required calls and reads their completed payload", async () => {
     capabilities = { tools: {}, tasks: { requests: { tools: { call: {} } } } };

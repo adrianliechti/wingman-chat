@@ -382,6 +382,21 @@ export class MCPClient implements ToolProvider {
       tool.title ??
       (tool.annotations as { title?: string } | undefined)?.title ??
       getToolDisplayName(tool.name);
+    const invoke = async (args: Record<string, unknown>, context?: ToolContext) => {
+      if (needsApproval && !context?.interruptible) await this.approve(tool, title, args, context);
+      annotateMcpSpan(this.url, this.id, tool.name, context);
+      const result = await this.callTool(client, { name: tool.name, arguments: args }, context);
+      context?.signal?.throwIfAborted();
+      if (result.isError) {
+        context?.setError?.({
+          code: "MCP_TOOL_ERROR",
+          message:
+            result.content?.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n") ||
+            `MCP tool "${tool.name}" returned an error`,
+        });
+      }
+      return result;
+    };
     return {
       name: mcpToolName(this.id, tool.name),
       telemetry: { serverId: this.id, serverName: this.name, pluginId: this.pluginId },
@@ -391,20 +406,17 @@ export class MCPClient implements ToolProvider {
       inputSchema: z.fromJSONSchema(flattenToolSchema(tool.inputSchema as Record<string, unknown>)),
       ...presentation,
       title,
+      script: {
+        outputSchema: tool.outputSchema,
+        execute: async (args, context) => {
+          const result = await invoke(args, context);
+          if (result.structuredContent !== undefined) return result.structuredContent;
+          return result.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
+        },
+      },
       execute: async (args, execution) => {
         const context = execution?.context;
-        if (needsApproval && !context?.interruptible) await this.approve(tool, title, args, context);
-        annotateMcpSpan(this.url, this.id, tool.name, context);
-        const result = await this.callTool(client, { name: tool.name, arguments: args }, context);
-        context?.signal?.throwIfAborted();
-        if (result.isError) {
-          context?.setError?.({
-            code: "MCP_TOOL_ERROR",
-            message:
-              result.content?.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n") ||
-              `MCP tool "${tool.name}" returned an error`,
-          });
-        }
+        const result = await invoke(args, context);
         if (resourceUri) {
           const ui = tool._meta?.ui as { defaultDisplayMode?: string } | undefined;
           if (execution?.emitCustomEvent) {

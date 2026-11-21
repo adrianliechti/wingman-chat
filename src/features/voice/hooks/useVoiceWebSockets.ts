@@ -103,6 +103,7 @@ export function useVoiceWebSockets(
               ...factory?.(identity),
               runId: identity.runId,
               signal,
+              ...(tool.name === "execute_script" && { scriptTools: tools }),
               setMeta: (next) => {
                 if (!signal.aborted) meta = { ...meta, ...next };
               },

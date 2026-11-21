@@ -137,6 +137,16 @@ export type Tool = Omit<WorkspaceTool, "inputSchema"> & {
   // Providers include native skill schemas and dynamically discovered MCP schemas.
   inputSchema: SchemaInput;
   execute: NonNullable<WorkspaceTool["execute"]>;
+  /** Callable while execute_script holds the workspace lock. These tools handle
+   * live approvals and must not re-enter the interpreter or the artifact store.
+   * Use true for approval-free text tools. Supply an adapter when a tool
+   * handles live approvals or returns structured results. */
+  script?:
+    | true
+    | {
+        outputSchema?: Record<string, unknown>;
+        execute(args: Record<string, unknown>, context: ToolContext): Promise<unknown>;
+      };
   title?: string;
   icon?: string;
   /** The user reviews the `prompt` once before an isolated agent starts. */
@@ -228,6 +238,8 @@ export interface ToolContext {
   runId?: string;
   invocationContext?: AgentRunContext;
   signal?: AbortSignal;
+  /** Model tool catalog captured for this execute_script call. Host-side only. */
+  scriptTools?: readonly Tool[];
   /** Native chat tools can pause and receive an answer on their resumed execution. */
   interruptible?: boolean;
   inputResponse?: { status: "resolved"; payload: unknown } | { status: "cancelled" };

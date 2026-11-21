@@ -1,7 +1,7 @@
 import { Download, Pause, Play } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { exportFilename } from "../lib/exportImage";
-import { formatTime, songColors, WAVEFORM_BARS } from "../lib/song";
+import { formatTime, WAVEFORM_BARS } from "../lib/song";
 import type { Image } from "../types/canvas";
 import { useSwipe, type SwipeDirection } from "../hooks/useSwipe";
 import { cn } from "@/shared/lib/cn";
@@ -47,7 +47,6 @@ export function SongPlayer({ image, onSwipe }: SongPlayerProps) {
   const duration = image.duration ?? measured;
   const progress = duration ? Math.min(1, time / duration) : 0;
   const label = image.title || image.prompt || "Song";
-  const [from, to] = songColors(image.prompt);
   const bars = image.peaks?.length ? image.peaks : FLAT_BARS;
 
   const toggle = () => {
@@ -90,15 +89,13 @@ export function SongPlayer({ image, onSwipe }: SongPlayerProps) {
   };
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center p-4 pb-16" {...swipe}>
-      <div className="flex max-h-full w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl shadow-black/10 ring-1 ring-black/5 dark:bg-neutral-900 dark:ring-white/10">
-        <div
-          className="relative shrink-0 px-5 pt-12 pb-5 text-white"
-          style={{ backgroundImage: `linear-gradient(135deg, ${from}, ${to})` }}
-        >
-          <div className="pointer-events-none absolute top-2 left-2 rounded-md bg-black/30 px-2 py-1 text-xs font-medium backdrop-blur-sm">
-            Song
-          </div>
+    <div className="relative flex min-h-0 min-w-0 flex-1 justify-center p-4 pb-16" {...swipe}>
+      <section
+        aria-label="Song player"
+        className="grid min-h-0 w-full max-w-xl grid-cols-1 grid-rows-[minmax(0,2fr)_auto_minmax(0,3fr)] overflow-hidden"
+      >
+        <div className="row-start-2 px-5 py-3 sm:py-4">
+          <div className="mb-3 text-xs font-medium text-neutral-500 dark:text-neutral-400">Song</div>
           <div
             role="slider"
             tabIndex={0}
@@ -118,15 +115,17 @@ export function SongPlayer({ image, onSwipe }: SongPlayerProps) {
             }}
             // Dragging along the waveform seeks; it must not also page to the next item.
             onTouchStart={(event) => event.stopPropagation()}
-            className="flex h-24 cursor-pointer touch-none items-center gap-0.5 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
+            className="flex h-[clamp(2rem,14dvh,6rem)] cursor-pointer touch-none items-center gap-0.5 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-neutral-500 dark:focus-visible:outline-neutral-400"
           >
             {bars.map((peak, index) => (
               <span
                 // The bars are positional and never reorder.
                 key={index}
                 className={cn(
-                  "min-w-0 flex-1 rounded-full bg-white",
-                  (index + 0.5) / bars.length <= progress ? "opacity-100" : "opacity-40",
+                  "min-w-0 flex-1 rounded-full",
+                  (index + 0.5) / bars.length <= progress
+                    ? "bg-neutral-800 dark:bg-neutral-200"
+                    : "bg-neutral-400 dark:bg-neutral-500",
                 )}
                 style={{ height: `${Math.max(4, peak * 100)}%` }}
               />
@@ -139,7 +138,7 @@ export function SongPlayer({ image, onSwipe }: SongPlayerProps) {
               disabled={!url}
               aria-label={playing ? "Pause" : "Play"}
               title={playing ? "Pause" : "Play"}
-              className="press flex size-11 shrink-0 items-center justify-center rounded-full bg-white text-neutral-900 shadow-sm disabled:opacity-50"
+              className="press flex size-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-900 enabled:hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-100 dark:enabled:hover:bg-neutral-700"
             >
               {playing ? (
                 <Pause size={18} fill="currentColor" />
@@ -147,18 +146,26 @@ export function SongPlayer({ image, onSwipe }: SongPlayerProps) {
                 <Play size={18} fill="currentColor" className="translate-x-px" />
               )}
             </button>
-            <span className="text-sm tabular-nums">
+            <span className="text-sm text-neutral-600 tabular-nums dark:text-neutral-300">
               {formatTime(time)} / {formatTime(duration)}
             </span>
-            {image.model && <span className="ml-auto truncate text-xs text-white/80">{modelName(image.model)}</span>}
+            {image.model && (
+              <span className="ml-auto truncate text-xs text-neutral-500 dark:text-neutral-400">
+                {modelName(image.model)}
+              </span>
+            )}
           </div>
         </div>
         {image.prompt && (
-          <p className="min-h-0 overflow-y-auto px-5 py-4 text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap text-neutral-600 dark:text-neutral-300">
+          <section
+            aria-label="Song text"
+            tabIndex={0}
+            className="row-start-3 max-h-full min-h-0 self-start overflow-y-auto overscroll-y-contain border-t border-black/5 px-5 py-4 text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap text-neutral-600 focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-neutral-400 dark:border-white/10 dark:text-neutral-300"
+          >
             {image.prompt}
-          </p>
+          </section>
         )}
-      </div>
+      </section>
       {/* No captions exist for generated music; the lyrics, when given, are the prompt above. */}
       <audio
         ref={audio}

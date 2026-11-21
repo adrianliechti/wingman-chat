@@ -20,5 +20,5 @@ async def synthesize(text, output, voice=None):
         The path of the written audio file.
     """
     return await _wingman_synthesize(
-        str(text), _os.path.abspath(str(output)), None if voice is None else str(voice)
+        str(text), _os.fsdecode(output), None if voice is None else str(voice)
     )

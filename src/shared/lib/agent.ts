@@ -383,6 +383,7 @@ export async function* streamRun(
               runId,
               invocationContext: execution.context,
               signal,
+              ...(tool.name === "execute_script" && { scriptTools: tools }),
               agentContext: telemetry.toolContext(call.id),
               setMeta,
               setError: (next) => {

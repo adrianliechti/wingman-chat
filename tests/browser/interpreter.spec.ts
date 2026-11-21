@@ -613,6 +613,200 @@ for (const runtime of ["executeJavaScript", "executePython"] as const) {
   });
 }
 
+test("Python transcribes workspace MP3s by artifact path on the first call", async ({ page, browserName }) => {
+  const uploads: string[] = [];
+  await page.route("**/config.json", (route) => route.fulfill({ json: { stt: { model: "stt-test" } } }));
+  await page.route("**/api/v1/audio/transcriptions", (route) => {
+    uploads.push(route.request().postData() ?? "");
+    return route.fulfill({ json: { text: "Test transcript" } });
+  });
+  await openFixture(page);
+  const [transcribed, missing] = await page.evaluate(async () => {
+    await window.interpreterE2E.initializeLlm();
+    const song = { content: `data:audio/mpeg;base64,${btoa("workspace audio")}`, contentType: "audio/mpeg" };
+    return window.interpreterE2E.runScripts(
+      "python-transcribe-paths",
+      [
+        {
+          language: "python",
+          code: `from pathlib import Path
+print(await transcribe("/recordings/song.mp3"))
+print(await transcribe("recordings/song.mp3"))
+print(await transcribe("/home/user/recordings/song.mp3"))
+temp = Path("/tmp/song.mp3")
+temp.write_bytes(b"temporary audio")
+try:
+    print(await transcribe(temp))
+    print(await transcribe("artifact:/tmp/song.mp3"))
+finally:
+    temp.unlink()`,
+        },
+        { language: "python", code: 'await transcribe("/missing.mp3")' },
+      ],
+      { "/recordings/song.mp3": song, "/tmp/song.mp3": song },
+    );
+  });
+  expect(transcribed.success, transcribed.error).toBe(true);
+  expect(transcribed.output).toBe(Array(5).fill("Test transcript").join("\n"));
+  expect(missing.success).toBe(false);
+  expect(missing.error).toContain("transcribe: cannot read file: /missing.mp3");
+  expect(uploads).toHaveLength(5);
+  for (const upload of uploads) expect(upload).toContain("Content-Type: audio/mpeg");
+  // WebKit's intercepted multipart body omits the uploaded file bytes.
+  if (browserName === "chromium") {
+    for (const upload of uploads.slice(0, 3)) expect(upload).toContain("workspace audio");
+    expect(uploads[3]).toContain("temporary audio");
+    expect(uploads[4]).toContain("workspace audio");
+  }
+});
+
+test("file-backed helpers resolve workspace paths before reading or calling services", async ({ page }) => {
+  const extractions: string[] = [];
+  let syntheses = 0;
+  await page.route("**/config.json", (route) => route.fulfill({ json: { extractor: {}, tts: { model: "tts-test" } } }));
+  await page.route("**/api/v1/extract", (route) => {
+    extractions.push(route.request().postData() ?? "");
+    return route.fulfill({ body: "Test extraction", contentType: "text/plain" });
+  });
+  await page.route("**/api/v1/audio/speech", (route) => {
+    syntheses++;
+    return route.fulfill({ body: Buffer.from([1, 2, 3]), contentType: "audio/wav" });
+  });
+  await openFixture(page);
+  const results = await page.evaluate(async () => {
+    await window.interpreterE2E.initializeLlm();
+    return window.interpreterE2E.runScripts(
+      "file-helper-paths",
+      [
+        {
+          language: "python",
+          code: `from pathlib import Path
+print(await ocr(Path("/input/Quarter 3 scan.pdf")))
+print(await synthesize("Example", "/output/python.wav"))`,
+        },
+        { language: "bash", code: 'ocr -o /output/bash.txt "sandbox:/input/Quarter 3 scan.pdf"' },
+        {
+          language: "javascript",
+          code: `console.log(await ocr(" /home/user/input/Quarter 3 scan.pdf "));
+console.log(await synthesize("Example", "artifact:/output/javascript.wav"));`,
+        },
+        { language: "python", code: 'await synthesize("Invalid", "/input/Quarter 3 scan.pdf/child.wav")' },
+        { language: "bash", code: 'ocr -o /output "/input/Quarter 3 scan.pdf"' },
+        { language: "javascript", code: 'await synthesize("Invalid", "/output")' },
+        { language: "python", code: 'await ocr("/input/quarter 3 scan.pdf")' },
+        { language: "bash", code: 'ocr "/input/quarter 3 scan.pdf"' },
+        { language: "javascript", code: 'await ocr("/input/quarter 3 scan.pdf");' },
+      ],
+      { "/input/Quarter 3 scan.pdf": { content: "data:application/pdf;base64,AQID", contentType: "application/pdf" } },
+    );
+  });
+  const [python, bash, javascript, ...failures] = results;
+  for (const result of [python, bash, javascript]) expect(result.success, result.error).toBe(true);
+  expect(python.output).toBe("Test extraction\n/home/user/output/python.wav");
+  expect(javascript.output).toBe("Test extraction\n/output/javascript.wav");
+  expect(javascript.files?.["/output/python.wav"].content).toMatch(/base64,AQID$/);
+  expect(javascript.files?.["/output/bash.txt"].content).toBe("Test extraction");
+  expect(javascript.files?.["/output/javascript.wav"].content).toMatch(/base64,AQID$/);
+  for (const result of failures) expect(result.success, result.output).toBe(false);
+  expect(failures[0].error).toContain("output");
+  for (const result of failures.slice(1, 3)) expect(result.error).toContain("Output path is a directory");
+  for (const result of failures.slice(3)) {
+    expect(result.error).toContain('Could not open "/input/quarter 3 scan.pdf"');
+    expect(result.error).toContain("/input/Quarter 3 scan.pdf");
+  }
+  expect(extractions).toHaveLength(3);
+  for (const request of extractions) expect(request).toContain("Content-Type: application/pdf");
+  expect(syntheses).toBe(2);
+});
+
+test("Python changes files and directories between workspace snapshots in a reused worker", async ({ page }) => {
+  await openFixture(page);
+  const results = await page.evaluate(async () => {
+    return [
+      await window.interpreterE2E.executePython({
+        code: 'from pathlib import Path\nPath("reports/empty/nested").mkdir(parents=True)\nprint(Path("reports/old.txt").read_text())',
+        files: { "/reports/old.txt": { content: "original" } },
+      }),
+      await window.interpreterE2E.executePython({
+        code: 'from pathlib import Path\nprint(Path("reports").read_text())',
+        files: { "/reports": { content: "replacement" } },
+      }),
+      await window.interpreterE2E.executePython({
+        code: 'from pathlib import Path\nprint(Path("reports/new.txt").read_text())',
+        files: { "/reports/new.txt": { content: "restored" } },
+      }),
+    ];
+  });
+  for (const result of results) expect(result.success, result.error).toBe(true);
+  expect(results.map((result) => result.output)).toEqual(["original", "replacement", "restored"]);
+  expect(results.map((result) => Object.keys(result.files ?? {}))).toEqual([
+    ["/reports/old.txt"],
+    ["/reports"],
+    ["/reports/new.txt"],
+  ]);
+});
+
+test("PDF bridge outputs use the resolved source name and actual page numbers in both runtimes", async ({ page }) => {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF();
+  doc.addPage();
+  const content = `data:application/pdf;base64,${Buffer.from(doc.output("arraybuffer")).toString("base64")}`;
+  await openFixture(page);
+  const [javascript, python] = await page.evaluate(
+    (content) =>
+      window.interpreterE2E.runScripts(
+        "rasterized-pages-with-aliases",
+        [
+          {
+            language: "javascript",
+            code: `return JSON.stringify(await rasterizePdf(" sandbox://home//user/reports/Quarter 3.PDF#page=2 ", {pages: [2, 2], scale: 0.25}));`,
+          },
+          {
+            language: "python",
+            code: `import json
+from pathlib import Path
+outputs = await rasterize_pdf("/reports/Quarter 3.PDF", scale=0.25, pages=1)
+assert Path(outputs[0]).read_bytes().startswith(b"\\x89PNG")
+print(json.dumps(outputs))`,
+          },
+        ],
+        { "/reports/Quarter 3.PDF": { content, contentType: "application/pdf" } },
+      ),
+    content,
+  );
+  expect(javascript.success, javascript.error).toBe(true);
+  expect(python.success, python.error).toBe(true);
+  expect(JSON.parse(javascript.output)).toEqual(["/reports/Quarter 3-2.png"]);
+  expect(JSON.parse(python.output)).toEqual(["/home/user/reports/Quarter 3-1.png"]);
+  expect(Object.keys(python.files ?? {}).sort()).toEqual([
+    "/reports/Quarter 3-1.png",
+    "/reports/Quarter 3-2.png",
+    "/reports/Quarter 3.PDF",
+  ]);
+  for (const number of [1, 2]) {
+    expect(python.files?.[`/reports/Quarter 3-${number}.png`].content).toMatch(/^data:image\/png;base64,iVBOR/);
+  }
+});
+
+test("JavaScript rechecks a bridge destination if the VFS changes during the request", async ({ page }) => {
+  await page.route("**/config.json", (route) => route.fulfill({ json: { tts: { model: "tts-test" } } }));
+  await page.route("**/api/v1/audio/speech", (route) =>
+    route.fulfill({ body: Buffer.from([1, 2, 3]), contentType: "audio/wav" }),
+  );
+  await openFixture(page);
+  const result = await page.evaluate(async () => {
+    await window.interpreterE2E.initializeLlm();
+    return window.interpreterE2E.executeJavaScript({
+      code: `const pending = synthesize("Example", "/out/result.wav");
+vfs.write("/out", "keep this file");
+return pending.catch((error) => error.message);`,
+    });
+  });
+  expect(result.success, result.error).toBe(true);
+  expect(result.output).toBe("Output parent is a file: /out");
+  expect(result.files).toEqual({ "/out": { content: "keep this file", contentType: "text/plain" } });
+});
+
 test("finished Python executions cannot make delayed LLM calls during the next execution", async ({ page }) => {
   const requests: string[] = [];
   await page.route("**/config.json", (route) => route.fulfill({ json: { vision: {} } }));

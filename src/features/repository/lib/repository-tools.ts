@@ -180,5 +180,8 @@ export function createRepositoryTools(
   };
   const readTools = createReadonlyFileTools(source, fileOptions);
   const resolvedById = new Map(resolved.map((file) => [file.id, file]));
-  return [...readTools, createSearchTool(queryChunks, resolvedById, defaultResults)];
+  return [...readTools, createSearchTool(queryChunks, resolvedById, defaultResults)].map((tool) => ({
+    ...tool,
+    script: true,
+  }));
 }

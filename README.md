@@ -37,8 +37,8 @@ conversations, retrieval over your own files, and a library of reusable skills.
 - **In-browser code interpreters** — one `execute_script` tool for sandboxed Python (Pyodide), JavaScript,
   and Bash (just-bash) workers, sharing artifact files and selected skill resources. File scripts select
   their runtime by shebang or extension; inline code specifies `language`. Bundled libraries and
-  Bash pipelines cover data, document, media and text processing. The model writes and runs real code; charts, files, and results
-  land back in the workspace.
+  Bash pipelines cover data, document, media and text processing. Scripts can call enabled tools,
+  including MCP servers, to combine results and save the output as an artifact.
 - **Web search & browsing** for grounded, up-to-date answers.
   Research tools batch and reuse retrieval, and select relevant passages from long pages.
   See [research benchmarks](docs/research-benchmarks.md) for repeatable quality and tool-usage comparisons.
@@ -69,6 +69,13 @@ and download. Browse, preview, and iterate on artifacts side-by-side with the ch
 Python includes DuckDB, pandas and PyArrow for local analysis and file generation. JavaScript exposes
 Apache Arrow as the `arrow` global. Python and JavaScript can also query saved workspace files through
 `await sql(...)`; HTML previews use `wingman.duckdb`. Libraries load on demand from the bundled assets.
+
+In a chat or voice run, Python and JavaScript can inspect `await tools.list()` and invoke
+`await tools.call(name, args)` with a listed name and an argument object. Bash provides
+`tools list` and `tools call NAME 'JSON'`. For example, a script can page through a tracker,
+count open issues by owner, and print only the totals. MCP calls return structured data when
+available and otherwise return text. Servers configured for individual approval prompt for
+each call. Chat uses the reviewed agent prompt for servers configured for delegated approval.
 
 | Capability                                 | Python interpreter                                | JavaScript interpreter                               | HTML preview                                      |
 | ------------------------------------------ | ------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------- |
