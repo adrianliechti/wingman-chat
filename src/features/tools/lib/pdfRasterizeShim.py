@@ -31,5 +31,5 @@ async def rasterize_pdf(path, scale=2.0, pages=None):
         "scale": float(scale),
         "pages": [int(p) for p in pages] if pages is not None else None,
     }
-    result = await _wingman_rasterize_pdf(_os.path.abspath(str(path)), _json.dumps(options))
+    result = await _wingman_rasterize_pdf(_os.fsdecode(path), _json.dumps(options))
     return _json.loads(result)

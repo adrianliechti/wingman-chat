@@ -18,11 +18,4 @@ async def transcribe(path):
     Returns:
         The transcribed text as a string.
     """
-    path = str(path)
-    resolved = "/" + _os.path.abspath(path).lstrip("/")
-    if _os.path.isabs(path) and not resolved.startswith("/home/user/") and not _os.path.exists(resolved):
-        # Artifact paths shown in chat are rooted at the workspace mount.
-        artifact_path = "/home/user" + resolved
-        if _os.path.isfile(artifact_path):
-            resolved = artifact_path
-    return await _wingman_transcribe(resolved)
+    return await _wingman_transcribe(_os.fsdecode(path))
