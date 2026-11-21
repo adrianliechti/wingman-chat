@@ -152,7 +152,8 @@ languages: [en, de, fr, it, es]
 
 ### Canvas
 
-A focused surface for generating and iterating on images.
+A focused surface for generating and iterating on images, short videos, and songs. Songs come from a
+music model such as Google Lyria 3.5: describe one, bring your own lyrics, or ask for an instrumental.
 
 ### Skills library
 

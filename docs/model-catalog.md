@@ -75,6 +75,22 @@ loading also wins over the late response.
 Speech calls use their configured model or backend default. They do not choose
 the first model in the catalogue. See [voice lifecycle](voice-lifecycle.md).
 
+Music models are synthesizers, because the gateway serves them on
+`/v1/audio/speech`. A synthesizer whose `supportedFormats` is exactly `["mp3"]`
+is a music model: Canvas offers it for songs, and read-aloud never picks it as
+its default. Lyria IDs get this profile on their own; an opaque alias needs it
+configured:
+
+```json
+{ "id": "music", "name": "Music", "type": "synthesizer", "supportedFormats": ["mp3"] }
+```
+
+Canvas opens on its create page, which shows Image, Video, and Song tabs once
+the inventory spans more than one of them; its model menu lists the selected
+tab's models. A renderer whose `supportedFormats` is exactly `["mp4"]` is a video
+model; every other renderer is an image model. The page starts on
+`renderer.model` when configured, otherwise on the first image model.
+
 ## Model replacements
 
 Add `replaces` to the target entry in `models.yaml` (or `config.models`) to move
@@ -254,6 +270,21 @@ hidden; an unset aspect ratio leaves the choice to the model. Edits take up to
 five reference images. Flash has the same controls at a lower price. The profile
 matches `mai-image-2.7` and `mai-image-2-7`, with or without `-flash`. MAI Image
 2.6 has no background parameter and keeps the generic profile.
+
+[Lyria 3.5](https://aistudio.google.com/docs/music-generation) (`lyria-3.5`,
+reviewed November 21, 2026) takes one text prompt and returns a complete MP3.
+It has no parameters for length, vocals, or lyrics, so Canvas writes each into
+the prompt: the description, then `Length: about …` and
+`Instrumental only, no vocals.` where chosen, then the user's lyrics beneath a
+`Lyrics:` header with `[Verse]`-style section tags, as the
+[prompt guide](https://aistudio.google.com/docs/lyria-prompt-guide) lays them
+out. Google documents the length only as "a couple of minutes"; the offered
+lengths of 30 seconds and 1, 2, and 3 minutes are requests, not guarantees, and
+`supportedDurations` (in seconds) replaces them or, as `[]`, hides the picker.
+Upstream also returns the lyrics as text and accepts up to ten reference
+images; the gateway's speech endpoint passes neither, so Canvas shows the
+prompt as the song's text and sends no references. Other Lyria versions are
+treated as music models without a length picker.
 
 Compaction thresholds are operational budgets that leave room for output and
 recovery. They are not advertised context-window sizes. Small/local deployments

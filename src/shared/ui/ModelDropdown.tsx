@@ -164,6 +164,11 @@ export interface ModelDropdownProps {
   /** Extra single-select flyout submenus, rendered below the model list (after effort). */
   submenus?: SubmenuConfig[];
   /**
+   * Lets the panel grow to the room on screen before its list scrolls, for a
+   * list that should show whole. Without it a long list scrolls at a fixed height.
+   */
+  fitScreen?: boolean;
+  /**
    * When set, the panel opens on a slider across these presets, above the
    * featured models; the full model list stays one level down.
    */
@@ -876,6 +881,7 @@ function ModelDropdownRoot({
   effort,
   verbosity,
   submenus,
+  fitScreen,
   presets,
   trigger,
 }: ModelDropdownProps) {
@@ -900,9 +906,10 @@ function ModelDropdownRoot({
       shift({ padding: 8 }),
       size({
         apply({ availableHeight, elements }) {
-          // Cap the panel so a long model list scrolls instead of stretching tall.
-          // The slider sits above the list, so the cap grows by its height.
-          const cap = PANEL_MAX_HEIGHT + (hasPresets ? SLIDER_HEIGHT : 0);
+          // Cap the panel so a long model list scrolls instead of stretching tall,
+          // unless the list is meant to show whole. The slider sits above the
+          // list, so the cap grows by its height.
+          const cap = fitScreen ? Number.POSITIVE_INFINITY : PANEL_MAX_HEIGHT + (hasPresets ? SLIDER_HEIGHT : 0);
           elements.floating.style.setProperty("--panel-max-h", `${Math.min(availableHeight, cap)}px`);
         },
         padding: 8,

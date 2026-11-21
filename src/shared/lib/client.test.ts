@@ -395,6 +395,29 @@ describe("raw request lifetime", () => {
     expect(body.get("frame_duration_ms")).toBeNull();
   });
 
+  it("asks the speech endpoint for an MP3 song and keeps the gateway's content type", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("song", { headers: { "content-type": "audio/mpeg" } }));
+    const prompt = "Warm folk ballad\n\nLyrics:\n\n[Verse]\nWalking home";
+    const blob = await new Client().generateSong("lyria-3.5", prompt);
+    expect(blob.type).toBe("audio/mpeg");
+    expect(await blob.text()).toBe("song");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls.at(-1)!;
+    expect(new URL(url).pathname).toBe("/api/v1/audio/speech");
+    expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
+    expect(JSON.parse(init.body)).toEqual({ model: "lyria-3.5", input: prompt, response_format: "mp3" });
+  });
+
+  it("does not repeat a failed song request and rejects an empty prompt", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: "lyria: music generation failed" } }), { status: 502 }),
+    );
+    await expect(new Client().generateSong("lyria-3.5", "A song")).rejects.toThrow("lyria: music generation failed");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await expect(new Client().generateSong("lyria-3.5", "  ")).rejects.toThrow("The song prompt cannot be empty");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   function stalledBody(status = 200) {
     fetchMock.mockImplementationOnce(
       async (_url: URL, options: RequestInit) =>

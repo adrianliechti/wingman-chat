@@ -567,6 +567,26 @@ export class Client {
     return new Blob([bytes], { type: result.contentType ?? "audio/wav" });
   }
 
+  /**
+   * Compose a song with a music model. The prompt carries everything the
+   * model can be told: style, length, and any lyrics under section tags. The
+   * gateway serves music on the speech endpoint and returns the finished MP3.
+   */
+  async generateSong(model: string, prompt: string, requestOptions: ClientRequestOptions = {}): Promise<Blob> {
+    if (!prompt.trim()) throw new Error("The song prompt cannot be empty");
+    // A full song takes minutes and a repeated request is billed again, so
+    // this goes around the speech SDK and its automatic retries. The blob
+    // keeps the gateway's own content type instead of one implied by the request.
+    return this.postRaw(
+      "/api/v1/audio/speech",
+      JSON.stringify({ ...(model && { model }), input: prompt, response_format: "mp3" }),
+      (resp) => resp.blob(),
+      { "Content-Type": "application/json" },
+      600_000,
+      requestOptions,
+    );
+  }
+
   async speakText(
     model: string,
     input: string,

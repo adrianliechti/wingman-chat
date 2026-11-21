@@ -50,6 +50,11 @@ async function open(page: Page, query = "") {
   await page.goto(`/tests/browser/fixtures/react-ui.html${query}`, { waitUntil: "domcontentloaded" });
 }
 
+/** Canvas opens on its create page; earlier work is picked from the filmstrip. */
+async function pickFromStrip(page: Page, name: string) {
+  await page.getByRole("option", { name }).getByRole("button", { name }).click();
+}
+
 for (const existingChat of [false, true]) {
   for (const repeats of [1, 300]) {
     for (const submit of ["Enter", "button"] as const) {
@@ -519,6 +524,7 @@ test("Canvas generates into the filmstrip, develops on the GPU and keeps the rec
   await page.waitForTimeout(500);
   await page.evaluate(() => window.reactUiE2E.flush());
   await page.reload();
+  await pickFromStrip(page, prompt);
   await expect(page.locator(`canvas[aria-label="${prompt}"]`)).toBeVisible();
   await expect(page.getByRole("slider", { name: "Exposure", exact: true })).toHaveValue("1.5");
 });
@@ -602,6 +608,7 @@ test("Canvas keeps a live adjustment when switching photos immediately", async (
   await expect(value).toHaveValue("1.75");
   await page.evaluate(() => window.reactUiE2E.flush());
   await page.reload();
+  await pickFromStrip(page, second);
   await expect(value).toHaveValue("1.75");
 });
 
@@ -736,6 +743,7 @@ test("Canvas flatten remains atomic after switching photos and previews the orig
   await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
   await page.evaluate(() => window.reactUiE2E.flush());
   await page.reload();
+  await pickFromStrip(page, title);
   await expect(exposure).toHaveValue("0");
   await expect.poll(size).toEqual([64, 48]);
 });
@@ -1687,6 +1695,152 @@ test("composer can send an attachment without typed text", async ({ page }) => {
   await expect(send).toHaveCount(0);
 });
 
+test("Canvas composes a song from a style and lyrics, plays it and restores it after reload", async ({ page }) => {
+  test.setTimeout(60_000);
+  page.setDefaultTimeout(15_000);
+  await page.addInitScript(() =>
+    Object.defineProperty(window, "showSaveFilePicker", { value: undefined, configurable: true }),
+  );
+  const style = `Warm folk ballad ${Date.now()}`;
+  await open(page, "?canvas&song");
+  await page.getByRole("button", { name: "New creation" }).first().click();
+  // The create page is on the stage as soon as Canvas opens.
+  const dialog = page.getByRole("region", { name: "New song" });
+  await expect(dialog).toBeVisible();
+  // One kind of model needs no tabs. A music model takes text only: no references, aspect or image styles.
+  await expect(dialog.getByRole("radiogroup", { name: "Create" })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Reference", exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("radiogroup", { name: "Aspect ratio" })).toHaveCount(0);
+  await expect(dialog.getByRole("radio", { name: "Describe", exact: true })).toBeChecked();
+  await expect(dialog.getByRole("textbox", { name: "Lyrics" })).toHaveCount(0);
+  const generate = dialog.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeDisabled();
+
+  // Switching the mode swaps the fields without resizing the page.
+  const height = () => dialog.evaluate((element: HTMLElement) => element.offsetHeight);
+  const described = await height();
+  await dialog.getByRole("radio", { name: "Instrumental", exact: true }).click();
+  expect(await height()).toBe(described);
+  await dialog.getByRole("radio", { name: "Lyrics", exact: true }).click();
+  expect(await height()).toBe(described);
+  const lyrics = dialog.getByRole("textbox", { name: "Lyrics" });
+  await dialog.getByRole("button", { name: "[Verse]", exact: true }).click();
+  await expect(lyrics).toHaveValue("[Verse]\n");
+  await expect(lyrics).toBeFocused();
+  await page.keyboard.type("Walking home");
+  await dialog.getByRole("button", { name: "[Chorus]", exact: true }).click();
+  await page.keyboard.type("We keep moving on");
+  await expect(lyrics).toHaveValue("[Verse]\nWalking home\n\n[Chorus]\nWe keep moving on");
+  // Lyrics alone are enough; the style is optional.
+  await expect(generate).toBeEnabled();
+  await dialog.getByRole("textbox", { name: "Style" }).fill(style);
+  await dialog.getByRole("button", { name: "Lyria", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Duration/ }).hover();
+  await page.getByRole("menuitemradio", { name: "2 min", exact: true }).click();
+  await generate.click();
+
+  const prompt = `${style}\n\nLength: about 2 minutes.\n\nLyrics:\n\n[Verse]\nWalking home\n\n[Chorus]\nWe keep moving on`;
+  // Only the selected song mounts a player, also when an earlier run left songs in the library.
+  const audio = page.locator("audio");
+  await expect(audio).toHaveAttribute("aria-label", prompt);
+  expect(await page.evaluate(() => window.reactUiE2E.state().songs)).toEqual([{ model: "lyria-3.5", prompt }]);
+  await expect(page.getByText("We keep moving on", { exact: false }).first()).toBeVisible();
+
+  // The waveform is the seek bar, with the decoded length as its range.
+  const seek = page.getByRole("slider", { name: "Seek" });
+  await expect(seek).toHaveAttribute("aria-valuemax", "1");
+  await expect(seek).toHaveAttribute("aria-valuetext", "0:00 of 0:01");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.played.length)).toBeGreaterThan(0);
+  await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await seek.focus();
+  await page.keyboard.press("End");
+  await expect(seek).toHaveAttribute("aria-valuenow", "1");
+  await page.keyboard.press("Home");
+  await expect(seek).toHaveAttribute("aria-valuenow", "0");
+
+  const bytes = await audio.evaluate(async (element: HTMLAudioElement) =>
+    Array.from(new Uint8Array(await (await fetch(element.src)).arrayBuffer())),
+  );
+  expect(bytes.length).toBeGreaterThan(1000);
+  // Canvas reopens on its create page, with the song one click away in the strip.
+  await page.reload();
+  await expect(page.getByRole("region", { name: /^New / })).toBeVisible();
+  await expect(audio).toHaveCount(0);
+  await page.getByRole("option", { name: style }).getByRole("button").first().click();
+  await expect(audio).toHaveAttribute("aria-label", prompt);
+  await expect(page.getByRole("slider", { name: "Seek" })).toHaveAttribute("aria-valuemax", "1");
+  const restored = await audio.evaluate(async (element: HTMLAudioElement) =>
+    Array.from(new Uint8Array(await (await fetch(element.src)).arrayBuffer())),
+  );
+  expect(restored).toEqual(bytes);
+  // The library tile shows the cover drawn from the stored waveform.
+  const tile = page.getByRole("listbox", { name: "Images, videos and songs" }).getByRole("option", { selected: true });
+  await expect(tile.locator("img")).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
+  await expect(tile.getByRole("button", { name: "Delete song", exact: true })).toBeAttached();
+
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download", exact: true }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toMatch(/^warm-folk-ballad-.*\.mp3$/);
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  expect(Buffer.concat(chunks)).toEqual(Buffer.from(bytes));
+});
+
+test("Canvas offers image, video and song as tabs, each with its own models", async ({ page }) => {
+  await open(page, "?canvas&song&mixed");
+  const dialog = page.getByRole("region", { name: /^New (image|video|song)$/ });
+  const title = dialog.getByRole("heading");
+  const tabs = dialog.getByRole("radiogroup", { name: "Create" });
+  // The catalogue lists music, then video, then images; the page still opens on its first tab.
+  await expect(title).toHaveText("New image");
+  await expect(tabs.getByRole("radio")).toHaveText(["Image", "Video", "Song"]);
+  await expect(tabs.getByRole("radio", { name: "Image", exact: true })).toBeChecked();
+  const height = () => dialog.evaluate((element: HTMLElement) => element.offsetHeight);
+  const imageHeight = await height();
+
+  // The model menu lists this kind's models only, and shows them whole instead of scrolling.
+  const images = ["Painter", "Flare", "Nano Banana", "MAI Image", "MAI Image Flash", "Flux", "Imagen", "DALL-E"];
+  await dialog.getByRole("button", { name: "Painter", exact: true }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitemradio")).toHaveText(images);
+  await menu.getByRole("menuitemradio", { name: "Flare", exact: true }).click();
+  // Flare adds five option rows under the list, the tallest this menu gets.
+  await dialog.getByRole("button", { name: "Flare", exact: true }).click();
+  await expect(menu.getByRole("menuitem", { name: /^Complexity/ })).toBeInViewport({ ratio: 1 });
+  const list = menu.locator(".overflow-y-auto").first();
+  expect(await list.evaluate((element) => element.scrollHeight - element.clientHeight)).toBe(0);
+  // Picking a row closes the menu again.
+  await menu.getByRole("menuitemradio", { name: "Flare", exact: true }).click();
+  await expect(menu).toHaveCount(0);
+
+  // Switching the kind swaps the form and the menu's models without resizing the page.
+  await tabs.getByRole("radio", { name: "Song", exact: true }).click();
+  await expect(title).toHaveText("New song");
+  await expect(dialog.getByRole("radio", { name: "Describe", exact: true })).toBeChecked();
+  await expect(dialog.getByRole("button", { name: "Reference", exact: true })).toHaveCount(0);
+  expect(await height()).toBe(imageHeight);
+  await dialog.getByRole("button", { name: "Lyria", exact: true }).click();
+  await expect(menu.getByRole("menuitemradio")).toHaveText(["Lyria"]);
+  await menu.getByRole("menuitemradio", { name: "Lyria", exact: true }).click();
+  await expect(menu).toHaveCount(0);
+
+  await tabs.getByRole("radio", { name: "Video", exact: true }).click();
+  await expect(title).toHaveText("New video");
+  await expect(dialog.getByRole("button", { name: "Omni", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: "Describe", exact: true })).toHaveCount(0);
+  expect(await height()).toBe(imageHeight);
+
+  // A tab comes back to the model chosen there.
+  await tabs.getByRole("radio", { name: "Image", exact: true }).click();
+  await expect(title).toHaveText("New image");
+  await expect(dialog.getByRole("button", { name: "Flare", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("radiogroup", { name: "Aspect ratio" })).toBeVisible();
+  expect(await height()).toBe(imageHeight);
+});
+
 test("Canvas generates video, downloads its bytes and restores playback after reload", async ({ page }) => {
   test.setTimeout(60_000);
   page.setDefaultTimeout(15_000);
@@ -1719,6 +1873,7 @@ test("Canvas generates video, downloads its bytes and restores playback after re
   );
   expect(bytes.length).toBeGreaterThan(100);
   await page.reload();
+  await pickFromStrip(page, prompt);
   await expect(video).toBeVisible();
   await expect
     .poll(() => video.evaluate((element: HTMLVideoElement) => [element.videoWidth, element.videoHeight]))

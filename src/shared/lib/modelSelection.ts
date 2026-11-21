@@ -1,5 +1,6 @@
 import { getConfig } from "@/shared/config";
 import { fetchModelCatalog } from "@/shared/lib/modelCatalog";
+import { isSongModel } from "@/shared/lib/models";
 import type { Model, ModelType } from "@/shared/types/chat";
 
 /**
@@ -10,11 +11,14 @@ import type { Model, ModelType } from "@/shared/types/chat";
  */
 export function pickModel(models: readonly Model[], configured: string | undefined, type: ModelType): string {
   if (configured) return configured;
-  return models.find((model) => model.type === type && !isLiveTranscriber(model, type))?.id ?? "";
+  return (
+    models.find((model) => model.type === type && !isLiveTranscriber(model, type) && !isSongModel(model))?.id ?? ""
+  );
 }
 
 // Live transcribers (gpt-live-transcribe, gemini-3.5-transcribe-live) are typed
 // "realtime" but cannot hold a voice conversation, so never default to one.
+// Music models are synthesizers that would sing a message instead of reading it.
 function isLiveTranscriber(model: Model, type: ModelType): boolean {
   return type === "realtime" && /transcri/i.test(model.id);
 }

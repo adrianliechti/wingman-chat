@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Image } from "../types/canvas";
 import { loadImage, removeImage, storeImage } from "./imageStorage";
 import { DEFAULTS } from "./recipe";
+import { songPoster } from "./song";
 
 const memory = vi.hoisted(() => new Map<string, unknown>());
 vi.mock("@/shared/lib/persistence", () => ({ withPersistenceLock: (_key: string, run: () => unknown) => run() }));
@@ -62,5 +63,60 @@ describe("Canvas video persistence", () => {
     expect(await (await loadImage(video.id))?.blob?.text()).toBe("mp4-video-bytes");
     await removeImage(video.id);
     expect(await loadImage(video.id)).toBeUndefined();
+  });
+});
+
+describe("Canvas song persistence", () => {
+  it("reloads the MP3, length and waveform, and redraws the cover instead of storing it", async () => {
+    const peaks = [0.2, 1, 0.6];
+    const song: Image = {
+      id: "song",
+      model: "lyria-3.5",
+      prompt: "Warm folk ballad",
+      created: new Date("2026-11-21"),
+      updated: null,
+      data: songPoster(peaks, "Warm folk ballad"),
+      blob: new Blob(["mp3-song-bytes"], { type: "audio/mpeg" }),
+      contentType: "audio/mpeg",
+      duration: 123.4,
+      peaks,
+      versions: [{ id: "version1", kind: "generated", created: "2026-11-21" }],
+      recipe: DEFAULTS,
+    };
+    await storeImage(song);
+    expect([...memory.keys()].sort()).toEqual(["images/song/metadata.json", "images/song/song.mp3"]);
+    const loaded = await loadImage(song.id);
+    expect(loaded).toMatchObject({
+      contentType: "audio/mpeg",
+      duration: 123.4,
+      peaks,
+      model: song.model,
+      prompt: song.prompt,
+      data: song.data,
+    });
+    expect(loaded?.blob?.type).toBe("audio/mpeg");
+    expect(await loaded?.blob?.text()).toBe("mp3-song-bytes");
+    // A rename is a metadata write: the song's bytes are not needed again.
+    await storeImage({ ...loaded!, blob: undefined, title: "Ballad" });
+    const renamed = await loadImage(song.id);
+    expect(renamed?.title).toBe("Ballad");
+    expect(await renamed?.blob?.text()).toBe("mp3-song-bytes");
+    await removeImage(song.id);
+    expect(await loadImage(song.id)).toBeUndefined();
+  });
+
+  it("refuses to store a song without its audio", async () => {
+    const empty: Image = {
+      id: "empty",
+      model: "lyria-3.5",
+      prompt: "Silence",
+      created: null,
+      updated: null,
+      data: "",
+      contentType: "audio/mpeg",
+      versions: [{ id: "version1", kind: "generated", created: "2026-11-21" }],
+      recipe: DEFAULTS,
+    };
+    await expect(storeImage(empty)).rejects.toThrow("The song has no content to save");
   });
 });

@@ -132,7 +132,8 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
         "How much the renderer plans the composition before drawing, separate from quality. Lower is faster and keeps edits closer to the original; omit for the renderer default.",
       );
   }
-  const formats = (caps.supportedFormats ?? []).filter((format) => format !== "mp4");
+  // The image tool draws pictures; video and song output belong to Canvas.
+  const formats = (caps.supportedFormats ?? []).filter((format) => format === "svg" || format === "gif");
   if (formats.length) {
     const kinds = [
       formats.includes("svg") && '"svg" for a static vector illustration (logo, icon, flat art)',

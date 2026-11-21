@@ -1,18 +1,19 @@
-import { FolderOpen, ImagePlus, Info, Loader2, PlusIcon, Sparkles } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CreateImageDialog, type GenerationRequest } from "@/features/canvas/components/CreateImageDialog";
+import { ImagePlus, Loader2, PlusIcon } from "lucide-react";
+import { Activity, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CreatePanel, type GenerationRequest } from "@/features/canvas/components/CreatePanel";
 import { Editor } from "@/features/canvas/components/Editor";
 import { CanvasSidebar } from "@/features/canvas/components/CanvasSidebar";
 import { Filmstrip } from "@/features/canvas/components/Filmstrip";
+import { SongPlayer } from "@/features/canvas/components/SongPlayer";
 import { Viewer } from "@/features/canvas/components/Viewer";
 import { useImageStyles } from "@/features/canvas/hooks/useImageStyles";
-import { newVersion, useImages } from "@/features/canvas/hooks/useImages";
-import { useRendererModels } from "@/features/canvas/hooks/useRendererModels";
+import { type NewImage, newVersion, useImages } from "@/features/canvas/hooks/useImages";
+import { useCanvasModels } from "@/features/canvas/hooks/useRendererModels";
 import { useSwipe, type SwipeDirection } from "@/features/canvas/hooks/useSwipe";
-import { fileTitle, imageDimensions, imageFiles, viewOnlyFormat } from "@/features/canvas/lib/images";
+import { fileTitle, imageDimensions, imageFiles, mediaNoun, viewOnlyFormat } from "@/features/canvas/lib/images";
+import { asMp3, songMetadata, songPoster } from "@/features/canvas/lib/song";
 import { videoMetadata } from "@/features/canvas/lib/video";
-import { isVideoRenderer } from "@/shared/lib/models";
-import { aspectRatioValue } from "@/features/canvas/lib/rendererOptions";
+import { aspectRatioValue, creationKind } from "@/features/canvas/lib/rendererOptions";
 import type { Image, PendingGeneration } from "@/features/canvas/types/canvas";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
@@ -23,35 +24,9 @@ import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
 import { navButtonClassName } from "@/shared/ui/actionButton";
-import type { Model } from "@/shared/types/chat";
+import type { Model, RenderFormat } from "@/shared/types/chat";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
-
-function CanvasBackground() {
-  const mask = "radial-gradient(ellipse at center, black 40%, transparent 85%)";
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 overflow-hidden"
-      style={{ WebkitMaskImage: mask, maskImage: mask }}
-    >
-      <div
-        className="absolute inset-0 dark:hidden"
-        style={{
-          backgroundImage: "radial-gradient(rgb(0 0 0 / 0.08) 1px, transparent 1px)",
-          backgroundSize: "22px 22px",
-        }}
-      />
-      <div
-        className="absolute inset-0 hidden dark:block"
-        style={{
-          backgroundImage: "radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px)",
-          backgroundSize: "22px 22px",
-        }}
-      />
-    </div>
-  );
-}
 
 function loadDisclaimer() {
   try {
@@ -70,6 +45,40 @@ interface PendingItem extends PendingGeneration {
 
 type CreateImage = ReturnType<typeof useImages>["createImage"];
 
+type GeneratedMedia = Pick<NewImage, "data" | "width" | "height" | "duration" | "peaks" | "blob" | "contentType">;
+
+/** A song: the length and vocals are already part of the prompt, which is all a music model takes. */
+async function generateSong(request: GenerationRequest): Promise<GeneratedMedia> {
+  const blob = asMp3(await getConfig().client.generateSong(request.model.id, request.prompt));
+  if (!blob?.size) throw new Error("The music model did not return an MP3 song");
+  const { duration, peaks } = await songMetadata(blob);
+  return { data: songPoster(peaks, request.prompt), duration, peaks, blob, contentType: blob.type };
+}
+
+/** An image or video from the renderer, with the pixels or poster the library shows. */
+async function renderMedia(
+  request: GenerationRequest,
+  format: Exclude<RenderFormat, "mp3"> | null,
+): Promise<GeneratedMedia> {
+  const blob = await getConfig().client.render(request.model.id, request.prompt, request.references, {
+    aspectRatio: request.selection.aspect ?? undefined,
+    quality: request.selection.quality ?? undefined,
+    resolution: request.selection.resolution ?? undefined,
+    background: request.selection.background ?? undefined,
+    complexity: request.selection.complexity ?? undefined,
+    format: format ?? undefined,
+    durationSeconds: request.selection.durationSeconds ?? undefined,
+    frameCount: request.selection.frameCount ?? undefined,
+    frameDurationMs: request.selection.frameDurationMs ?? undefined,
+  });
+  if (format !== "mp4") {
+    const [data, size] = await Promise.all([readAsDataURL(blob), imageDimensions(blob)]);
+    return { data, ...size };
+  }
+  if (blob.type !== "video/mp4") throw new Error("The renderer did not return an MP4 video");
+  return { ...(await videoMetadata(blob)), blob, contentType: blob.type };
+}
+
 /** Run one generation; reports back through the callbacks so the page stays declarative. */
 async function runGeneration(
   request: GenerationRequest,
@@ -78,29 +87,12 @@ async function runGeneration(
   onError: (message: string) => void,
 ) {
   try {
-    const client = getConfig().client;
-    const blob = await client.render(request.model.id, request.prompt, request.references, {
-      aspectRatio: request.selection.aspect ?? undefined,
-      quality: request.selection.quality ?? undefined,
-      resolution: request.selection.resolution ?? undefined,
-      background: request.selection.background ?? undefined,
-      complexity: request.selection.complexity ?? undefined,
-      format: request.selection.format ?? undefined,
-      durationSeconds: request.selection.durationSeconds ?? undefined,
-      frameCount: request.selection.frameCount ?? undefined,
-      frameDurationMs: request.selection.frameDurationMs ?? undefined,
-    });
-    const video = request.selection.format === "mp4";
-    if (video && blob.type !== "video/mp4") throw new Error("The renderer did not return an MP4 video");
-    const { data, ...size } = video
-      ? await videoMetadata(blob)
-      : await Promise.all([readAsDataURL(blob), imageDimensions(blob)]).then(([data, size]) => ({ data, ...size }));
+    const { format } = request.selection;
+    const media = await (format === "mp3" ? generateSong(request) : renderMedia(request, format));
     const image = await createImage({
       prompt: request.prompt,
       model: request.model.id,
-      data,
-      ...size,
-      ...(video && { blob, contentType: blob.type }),
+      ...media,
       versions: [newVersion("generated", request.prompt, request.model.id)],
     });
     onDone(image);
@@ -137,23 +129,23 @@ export function CanvasPage() {
   const { setSidebarContent } = useSidebar();
   const compact = !useBreakpoint("md");
   const { images, isLoaded, createImage, updateImage, deleteImage } = useImages();
-  const models = useRendererModels();
+  const models = useCanvasModels();
   const { styles, prompts: stylePrompts } = useImageStyles();
   const disclaimer = useMemo(() => loadDisclaimer(), []);
 
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingItem[]>([]);
-  const [createOpen, setCreateOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Pick an initial model once the list loads: the configured renderer, else the first.
+  // Pick an initial model once the list loads: the configured renderer, else
+  // the first image model, so the create panel opens on its first tab.
   useEffect(() => {
     if (selectedModel || models.length === 0) return;
     const configured = models.find((model) => model.id === config.renderer?.model);
-    setSelectedModel(configured ?? models[0]);
+    setSelectedModel(configured ?? models.find((model) => creationKind(model) === "image") ?? models[0]);
   }, [models, selectedModel, config.renderer?.model]);
 
   const selectedImage = useMemo(
@@ -164,14 +156,17 @@ export function CanvasPage() {
     () => (selectedId ? (pending.find((item) => item.id === selectedId) ?? null) : null),
     [pending, selectedId],
   );
+  // Vector, animated, video and song items are shown as they are; the rest open in the editor.
+  const selectedFormat = selectedImage ? viewOnlyFormat(selectedImage.data, selectedImage.contentType) : null;
+  // AI retouch in the editor needs an image model, whatever the panel last created with.
+  const imageModel =
+    creationKind(selectedModel) === "image"
+      ? selectedModel
+      : (models.find((model) => creationKind(model) === "image") ?? null);
 
-  // Keep a sensible selection: the newest image when nothing (or something
-  // deleted) is selected, and nothing once the library is empty.
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (selectedImage || selectedPending) return;
-    setSelectedId(images[0]?.id ?? pending[0]?.id ?? null);
-  }, [isLoaded, images, pending, selectedImage, selectedPending]);
+  // With nothing selected the stage shows the create panel. Canvas opens on it,
+  // and a selection whose item is gone (deleted, dismissed) falls back to it.
+  const creating = !selectedImage && !selectedPending;
 
   const openPhotos = useCallback(
     (files: File[]) => {
@@ -204,7 +199,9 @@ export function CanvasPage() {
         createImage,
         (image) => {
           setPending((current) => current.filter((existing) => existing.id !== id));
-          setSelectedId((current) => (current === id || current === null ? image.id : current));
+          // Follow the result only while its placeholder is still on the stage; someone
+          // already writing the next prompt, or looking at older work, stays there.
+          setSelectedId((current) => (current === id ? image.id : current));
         },
         (message) => {
           notify.error("Generation failed", message);
@@ -234,18 +231,25 @@ export function CanvasPage() {
   const removeImage = useCallback(
     async (id: string) => {
       const image = images.find((existing) => existing.id === id);
+      const noun = mediaNoun(image ? viewOnlyFormat(image.data, image.contentType) : null);
       const confirmed = await confirm({
-        title: image?.contentType === "video/mp4" ? "Delete this video?" : "Delete this image?",
+        title: `Delete this ${noun}?`,
         message: image?.title || image?.prompt || "The image and its adjustments will be removed.",
         confirmLabel: "Delete",
         danger: true,
       });
-      if (confirmed) deleteImage(id);
+      if (!confirmed) return;
+      if (id === selectedId) {
+        // Step to the neighbour in the strip, or to the create panel after the last one.
+        const index = images.findIndex((existing) => existing.id === id);
+        setSelectedId(images[index + 1]?.id ?? images[index - 1]?.id ?? null);
+      }
+      deleteImage(id);
     },
-    [images, deleteImage],
+    [images, selectedId, deleteImage],
   );
 
-  const openCreate = useCallback(() => setCreateOpen(true), []);
+  const openCreate = useCallback(() => setSelectedId(null), []);
   const openPhotoPicker = useCallback(() => fileInputRef.current?.click(), []);
 
   // Phones browse the library from the drawer; desktop keeps the filmstrip.
@@ -316,7 +320,7 @@ export function CanvasPage() {
   const isDragging = useDropZone(containerRef, openPhotos);
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
-      if (createOpen) return;
+      // A paste into the prompt adds a reference there; anywhere else it opens the photo.
       const target = event.target;
       if (target instanceof HTMLElement && ["INPUT", "TEXTAREA"].includes(target.tagName)) return;
       const files = imageFiles(event.clipboardData?.items ?? ([] as File[]));
@@ -327,9 +331,7 @@ export function CanvasPage() {
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [createOpen, openPhotos]);
-
-  const empty = isLoaded && images.length === 0 && pending.length === 0;
+  }, [openPhotos]);
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden pt-(--app-topbar) pb-(--safe-bottom)">
@@ -345,101 +347,61 @@ export function CanvasPage() {
           </div>
         )}
 
-        {empty ? (
-          <div className="relative flex flex-1 flex-col items-center justify-center gap-6 p-6 text-center">
-            <CanvasBackground />
-            <div className="relative flex max-w-md flex-col items-center gap-4">
-              <div className="rounded-2xl bg-white/70 p-4 text-neutral-500 shadow-sm ring-1 ring-black/5 dark:bg-neutral-900/70 dark:text-neutral-400 dark:ring-white/10">
-                <Sparkles size={28} />
-              </div>
-              <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Create images and videos</h1>
-              <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                Generate an image or video from a prompt, or open a photo to adjust light, color, and effects.
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={openCreate}
-                  autoFocus
-                  className="flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
-                >
-                  <PlusIcon size={16} />
-                  New creation
-                </button>
-                <button
-                  type="button"
-                  onClick={openPhotoPicker}
-                  disabled={importing}
-                  className="flex items-center gap-2 rounded-xl border border-neutral-300 bg-white/70 px-4 py-2 text-sm font-medium text-neutral-700 shadow-sm transition-colors hover:bg-white disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900/70 dark:text-neutral-200 dark:hover:bg-neutral-800"
-                >
-                  {importing ? <Loader2 size={16} className="animate-spin" /> : <FolderOpen size={16} />}
-                  Open photo
-                </button>
-              </div>
-              {disclaimer && (
-                <div className="flex items-start gap-2 pt-2 text-left text-xs text-neutral-500 dark:text-neutral-400">
-                  <Info size={14} className="mt-0.5 shrink-0" />
-                  <div>{disclaimer}</div>
-                </div>
-              )}
-            </div>
+        {/* The create page stays mounted behind a selected item, so a half-written
+            prompt is still there on the way back. */}
+        <Activity mode={creating ? "visible" : "hidden"}>
+          <div className="flex min-h-0 flex-1 flex-col justify-center">
+            <CreatePanel
+              models={models}
+              model={selectedModel}
+              onSelectModel={setSelectedModel}
+              styles={styles}
+              stylePrompts={stylePrompts}
+              onGenerate={startGeneration}
+              disclaimer={disclaimer}
+              // A phone would raise its keyboard over the form on every visit.
+              autoFocus={!compact}
+            />
           </div>
+        </Activity>
+
+        {selectedImage && selectedFormat === "mp3" ? (
+          <SongPlayer key={selectedImage.id} image={selectedImage} onSwipe={onSwipe} />
+        ) : selectedImage && selectedFormat ? (
+          <Viewer key={selectedImage.id} image={selectedImage} onSwipe={onSwipe} />
+        ) : selectedImage ? (
+          <Editor
+            key={selectedImage.id}
+            image={selectedImage}
+            updateImage={updateImage}
+            model={imageModel}
+            compact={compact}
+            onSwipe={onSwipe}
+          />
         ) : (
-          <>
-            {selectedImage && viewOnlyFormat(selectedImage.data, selectedImage.contentType) ? (
-              <Viewer key={selectedImage.id} image={selectedImage} onSwipe={onSwipe} />
-            ) : selectedImage ? (
-              <Editor
-                key={selectedImage.id}
-                image={selectedImage}
-                updateImage={updateImage}
-                model={
-                  isVideoRenderer(selectedModel)
-                    ? (models.find((model) => !isVideoRenderer(model)) ?? null)
-                    : selectedModel
-                }
-                compact={compact}
-                onSwipe={onSwipe}
-              />
-            ) : (
-              <div className="flex min-h-0 flex-1 items-center justify-center p-4" {...placeholderSwipe}>
-                {selectedPending ? (
-                  <GeneratingPlaceholder item={selectedPending} onRetry={retryPending} onDismiss={dismissPending} />
-                ) : (
-                  !isLoaded && <Loader2 size={24} className="animate-spin text-neutral-400" />
-                )}
-              </div>
-            )}
-            {!compact && (
-              <Filmstrip
-                images={images}
-                pending={pending}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                onDelete={(id) => void removeImage(id)}
-                onDismissPending={dismissPending}
-                onRetryPending={retryPending}
-                onNew={openCreate}
-                onOpenPhoto={openPhotoPicker}
-                importing={importing}
-              />
-            )}
-          </>
+          selectedPending && (
+            <div className="flex min-h-0 flex-1 items-center justify-center p-4" {...placeholderSwipe}>
+              <GeneratingPlaceholder item={selectedPending} onRetry={retryPending} onDismiss={dismissPending} />
+            </div>
+          )
+        )}
+
+        {!compact && (
+          <Filmstrip
+            images={images}
+            pending={pending}
+            selectedId={selectedId}
+            creating={creating}
+            onSelect={setSelectedId}
+            onDelete={(id) => void removeImage(id)}
+            onDismissPending={dismissPending}
+            onRetryPending={retryPending}
+            onNew={openCreate}
+            onOpenPhoto={openPhotoPicker}
+            importing={importing}
+          />
         )}
       </main>
-
-      <CreateImageDialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        models={models}
-        model={selectedModel}
-        onSelectModel={setSelectedModel}
-        styles={styles}
-        stylePrompts={stylePrompts}
-        onGenerate={startGeneration}
-        onOpenPhoto={openPhotoPicker}
-        disclaimer={disclaimer}
-      />
 
       <input
         ref={fileInputRef}

@@ -361,6 +361,31 @@ export function withRendererFallback(model: Model): Model {
   };
 }
 
+/**
+ * A synthesizer that composes music from a prompt instead of reading text
+ * aloud. Canvas offers these for songs; speech helpers never default to one.
+ */
+export function isSongModel(model: Model | null | undefined): boolean {
+  return model?.supportedFormats?.length === 1 && model.supportedFormats[0] === "mp3";
+}
+
+/**
+ * Mark Google Lyria as a music model unless config says otherwise. Lyria has
+ * no length parameter: the lengths offered for 3.5 are asked for in the prompt,
+ * and its documentation gives "a couple of minutes" without an exact maximum.
+ * Other versions keep their own default length.
+ */
+export function withSynthesizerFallback(model: Model): Model {
+  const lowerId = model.id.toLowerCase();
+  if (!/(?:^|[^a-z0-9])lyria(?:$|[^a-z0-9])/.test(lowerId)) return model;
+  const lengths = /(?:^|[^a-z0-9])lyria-3[.-]5(?:$|[^a-z0-9])/.test(lowerId) ? [30, 60, 120, 180] : undefined;
+  return {
+    ...model,
+    supportedFormats: model.supportedFormats ?? ["mp3"],
+    supportedDurations: model.supportedDurations ?? lengths,
+  };
+}
+
 // Endpoint cues, in precedence order. A live transcriber needs WebSocket, and a
 // BGE reranker is not an embedder. Token boundaries avoid reading "clip" inside
 // an unrelated deployment alias. Generic "audio" does not imply TTS: audio chat
@@ -372,7 +397,7 @@ const MODEL_TYPE_CUES: [ModelType, RegExp][] = [
   ["reranker", /(?:^|[^a-z0-9])(?:rerank|reranker)(?:$|[^a-z0-9])/],
   ["embedder", /(?:^|[^a-z0-9])(?:embedding|embeddings|embed|bge|clip|gte|minilm)(?:$|[^a-z0-9])/],
   ["transcriber", /(?:^|[^a-z0-9])(?:stt|transcribe|whisper)(?:$|[^a-z0-9])/],
-  ["synthesizer", /(?:^|[^a-z0-9])(?:tts|eleven|elevenlabs|mai-voice|stable-audio|speech)(?:$|[^a-z0-9])/],
+  ["synthesizer", /(?:^|[^a-z0-9])(?:tts|eleven|elevenlabs|lyria|mai-voice|stable-audio|speech)(?:$|[^a-z0-9])/],
   [
     "renderer",
     /(?:^|[^a-z0-9])(?:gemini-omni|veo|sora|seedance|hailuo|wan|image|imagen|flux|dall-e|stable-diffusion|midjourney|nano-banana)(?:$|[^a-z0-9])/,
@@ -421,6 +446,7 @@ export function configureModels(models: Model[], configured: Model[]): Model[] {
     };
     if (resolved.type === "completer") return withChatFallback(resolved);
     if (resolved.type === "renderer") return withRendererFallback(resolved);
+    if (resolved.type === "synthesizer") return withSynthesizerFallback(resolved);
     return resolved;
   });
 }

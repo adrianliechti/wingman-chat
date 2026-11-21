@@ -1,21 +1,32 @@
 import { Description, Label, Radio, RadioGroup } from "@headlessui/react";
 import type { ReactNode } from "react";
+import { cn } from "@/shared/lib/cn";
 
 export function SegmentedControl<T extends string>({
   label,
+  ariaLabel,
   description,
   value,
   onChange,
   options,
+  sizing = "equal",
   disabled = false,
   invalid,
   errorId,
 }: {
   label?: string;
+  /** Names the group for assistive technology when no visible label is shown. */
+  ariaLabel?: string;
   description?: ReactNode;
   value: T;
   onChange: (value: T) => void;
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; icon?: ReactNode }[];
+  /**
+   * "equal" gives every segment the same width. "content" gives each the width
+   * of its label plus a share of what is left, for labels of uneven length that
+   * would otherwise break on a phone.
+   */
+  sizing?: "equal" | "content";
   disabled?: boolean;
   invalid?: boolean;
   errorId?: string;
@@ -26,6 +37,7 @@ export function SegmentedControl<T extends string>({
       value={value}
       onChange={onChange}
       disabled={disabled}
+      aria-label={ariaLabel}
       aria-invalid={invalid || undefined}
       aria-errormessage={errorId}
     >
@@ -46,8 +58,13 @@ export function SegmentedControl<T extends string>({
             type="button"
             key={option.value}
             value={option.value}
-            className="min-w-0 flex-1 break-words rounded-lg px-3 py-1.5 text-xs font-medium text-neutral-500 max-sm:press max-sm:rounded-full max-sm:py-2.5 max-sm:text-sm transition-colors hover:text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 data-checked:bg-white data-checked:text-neutral-900 data-checked:shadow-sm data-checked:ring-1 data-checked:ring-black/5 data-disabled:cursor-not-allowed data-disabled:opacity-50 dark:text-neutral-400 dark:hover:text-neutral-200 dark:focus-visible:ring-neutral-500/60 dark:data-checked:bg-neutral-700 dark:data-checked:text-neutral-50 dark:data-checked:ring-white/10"
+            className={cn(
+              "rounded-lg px-3 py-1.5 text-xs font-medium text-neutral-500 max-sm:press max-sm:rounded-full max-sm:py-2.5 max-sm:text-sm transition-colors hover:text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 data-checked:bg-white data-checked:text-neutral-900 data-checked:shadow-sm data-checked:ring-1 data-checked:ring-black/5 data-disabled:cursor-not-allowed data-disabled:opacity-50 dark:text-neutral-400 dark:hover:text-neutral-200 dark:focus-visible:ring-neutral-500/60 dark:data-checked:bg-neutral-700 dark:data-checked:text-neutral-50 dark:data-checked:ring-white/10",
+              sizing === "content" ? "flex-auto whitespace-nowrap" : "min-w-0 flex-1 break-words",
+              option.icon && "inline-flex items-center justify-center gap-1.5",
+            )}
           >
+            {option.icon}
             {option.label}
           </Radio>
         ))}

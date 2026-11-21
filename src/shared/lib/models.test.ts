@@ -6,6 +6,9 @@ import {
   defaultModelId,
   findModel,
   isKnownChatModel,
+  isSongModel,
+  isVideoRenderer,
+  modelFromAPI,
   modelMaxOutputTokens,
   outputTokenAllowance,
   minimalEffort,
@@ -87,6 +90,8 @@ describe("model endpoint detection", () => {
     ["mai-voice-2", "synthesizer"],
     ["eleven_multilingual_v2", "synthesizer"],
     ["gemini-2.5-flash-preview-tts", "synthesizer"],
+    ["lyria-3.5", "synthesizer"],
+    ["models/lyria-3.5", "synthesizer"],
     ["gpt-audio", "completer"],
     ["gpt-4o-audio-preview", "completer"],
     ["Qwen/Qwen2.5-Omni-7B", "completer"],
@@ -710,6 +715,44 @@ describe("sameModelSettings", () => {
     expect(sameModelSettings(luna, { ...luna, effort: "high" })).toBe(false);
     expect(sameModelSettings(luna, { ...luna, verbosity: "low" })).toBe(false);
     expect(sameModelSettings(luna, { ...luna, id: "sol" })).toBe(false);
+  });
+});
+
+describe("Lyria model mapping", () => {
+  const catalog = (id: string, configured: Model[] = []) => configureModels([modelFromAPI({ id })], configured)[0];
+
+  it("lists Lyria 3.5 as a music model with prompt-driven lengths", () => {
+    const lyria = catalog("lyria-3.5");
+    expect(lyria).toMatchObject({
+      name: "Lyria 3.5",
+      type: "synthesizer",
+      supportedFormats: ["mp3"],
+      supportedDurations: [30, 60, 120, 180],
+    });
+    expect(isSongModel(lyria)).toBe(true);
+    expect(isVideoRenderer(lyria)).toBe(false);
+  });
+
+  it("does not apply 3.5 lengths to other Lyria versions", () => {
+    const next = catalog("google/lyria-4");
+    expect(isSongModel(next)).toBe(true);
+    expect(next.supportedDurations).toBeUndefined();
+    expect(catalog("google/lyria-3.5").supportedDurations).toEqual([30, 60, 120, 180]);
+  });
+
+  it("lets configuration set the lengths or mark an alias as a music model", () => {
+    expect(catalog("lyria-3.5", [{ id: "lyria-3.5", name: "", supportedDurations: [] }]).supportedDurations).toEqual(
+      [],
+    );
+    const alias = catalog("music", [{ id: "music", name: "Music", type: "synthesizer", supportedFormats: ["mp3"] }]);
+    expect(isSongModel(alias)).toBe(true);
+  });
+
+  it("leaves speech and image models out", () => {
+    expect(isSongModel(catalog("gemini-3.8-flash-tts"))).toBe(false);
+    expect(isSongModel(catalog("gpt-image-2.6-flare"))).toBe(false);
+    expect(isSongModel(catalog("gemini-omni-1.2-flash"))).toBe(false);
+    expect(isSongModel(null)).toBe(false);
   });
 });
 

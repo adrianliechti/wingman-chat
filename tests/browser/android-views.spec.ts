@@ -178,14 +178,13 @@ for (const [name, profile] of profiles) {
       const prompt = page.getByRole("textbox", { name: "Prompt", exact: true });
       await prompt.fill("An Android landscape");
       await page.setViewportSize({ width, height: visibleHeight });
-      await withinBounds(page.locator('[id^="headlessui-dialog-panel-"]'), { bottom: visibleHeight, right: width });
+      // The create form is the page itself: it shrinks with the room the keyboard leaves.
+      await withinBounds(page.getByRole("region", { name: "New image" }), { bottom: visibleHeight, right: width });
       await withinBounds(page.getByRole("button", { name: "Generate", exact: true }), {
         bottom: visibleHeight,
         right: width,
       });
       await page.setViewportSize({ width, height });
-      await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).tap();
-      await expect(page.getByRole("dialog")).toBeHidden();
       if (width < 768) {
         await page.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).tap();
         await page.getByRole("button", { name: "Settings", exact: true }).filter({ visible: true }).tap();
