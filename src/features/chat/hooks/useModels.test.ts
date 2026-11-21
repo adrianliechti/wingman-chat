@@ -4,7 +4,7 @@ import type { Model } from "@/shared/types/chat";
 const chat: { model?: string; effort?: Model["effort"]; verbosity?: Model["verbosity"] } = {};
 vi.mock("@/shared/config", () => ({ getConfig: () => ({ chat }) }));
 
-const { getConfiguredModel, getDefaultModel } = await import("./useModels");
+const { curateChatModels, getConfiguredModel, getDefaultModel } = await import("./useModels");
 
 const storage = new Map<string, string>();
 vi.stubGlobal("localStorage", {
@@ -45,5 +45,33 @@ describe("getConfiguredModel", () => {
     expect(getDefaultModel([luna, sol])?.id).toBe("sol");
     chat.model = "luna";
     expect(getDefaultModel([luna, sol])?.id).toBe("luna");
+  });
+});
+
+describe("curateChatModels", () => {
+  const poppy: Model = { id: "poppy", name: "Poppy" };
+  const sonnet: Model = { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5" };
+  const router: Model = { id: "claude-auto", name: "Claude Auto" };
+
+  it("leaves an uncurated catalogue as it is", () => {
+    expect(curateChatModels([sonnet, router], [])).toEqual([sonnet, router]);
+    // Configured models the backend does not offer curate nothing.
+    expect(curateChatModels([sonnet, router], [{ id: "missing" }])).toEqual([sonnet, router]);
+  });
+
+  it("features configured models, keeps known ones listed and hides opaque IDs", () => {
+    expect(curateChatModels([sonnet, router, poppy], [{ id: "poppy" }])).toEqual([
+      { ...poppy, featured: true },
+      sonnet,
+      { ...router, hidden: true },
+    ]);
+  });
+
+  it("follows the configured order", () => {
+    const models = curateChatModels([sonnet, poppy], [{ id: "poppy" }, { id: "claude-sonnet-5-5" }]);
+    expect(models.map((model) => [model.id, model.featured])).toEqual([
+      ["poppy", true],
+      ["claude-sonnet-5-5", true],
+    ]);
   });
 });

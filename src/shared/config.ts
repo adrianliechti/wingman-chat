@@ -196,7 +196,7 @@ interface ChatConfig {
   classification?: ClassificationConfig;
   categories?: CategoryConfig[];
   risks?: RiskConfig[];
-  /** Replaces the model list with a slider when at least two presets are available. */
+  /** Puts a slider above the model picker's list when at least two presets are available. */
   presets?: ModelPresetConfig[];
   /** Markdown announcement shown in a dismissible dialog when opening chat. */
   announcement?: ChatAnnouncementConfig;

@@ -2,9 +2,10 @@ import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/re
 import { Check, ChevronLeft, ChevronRight, Settings2, X } from "lucide-react";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/shared/lib/cn";
+import { modelPickerTiers } from "@/shared/lib/modelPicker";
 import type { Model } from "@/shared/types/chat";
 import { EFFORT_LABEL } from "./effortLabels";
-import { PresetSlider, type ModelDropdownProps } from "./ModelDropdown";
+import { NOT_APPLICABLE, PresetSlider, type ModelDropdownProps } from "./ModelDropdown";
 
 type Effort = NonNullable<Model["effort"]>;
 type Verbosity = NonNullable<Model["verbosity"]>;
@@ -83,15 +84,22 @@ function LinkRow({
   label,
   value,
   badge,
+  disabled = false,
   onClick,
 }: {
   label: string;
   value?: string;
   badge?: string;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
-    <button type="button" onClick={onClick} className="flex min-h-14 w-full items-center gap-3 py-3 text-left">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex min-h-14 w-full items-center gap-3 py-3 text-left disabled:opacity-40"
+    >
       <span className="min-w-0 flex-1 truncate text-[17px] text-neutral-900 dark:text-neutral-50">{label}</span>
       {badge && <Badge>{badge}</Badge>}
       {value && <span className="truncate text-[17px] text-neutral-500 dark:text-neutral-400">{value}</span>}
@@ -114,10 +122,10 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
 }
 
 /**
- * Phone counterpart of ModelDropdown: a bottom sheet listing the presets (or
- * the models), with Model / Agent / Effort / Verbosity rows that push a
- * checklist page inside the same sheet behind a back button, the way the
- * native assistant apps do it.
+ * Phone counterpart of ModelDropdown: a bottom sheet with the preset slider
+ * and the quick-pick models, and Model / Agent / Effort / Verbosity rows that
+ * push a checklist page inside the same sheet behind a back button, the way
+ * the native assistant apps do it.
  */
 export function ModelSheet(props: ModelDropdownProps) {
   const {
@@ -159,11 +167,17 @@ export function ModelSheet(props: ModelDropdownProps) {
   const pop = () => setNav({ page: null, back: true });
 
   const steps = presets && presets.steps.length > 1 ? presets.steps : null;
-  const visibleModels = models.filter((m) => m.id !== "realtime" && !m.hidden);
-  const currentModel = visibleModels.find((m) => m.id === value);
+  const currentModel = models.find((m) => m.id === value);
   const activeAgent = agents?.items.find((a) => a.id === agents.value) ?? null;
 
-  const modelOptions: Option[] = visibleModels.map((m) => ({
+  // As on desktop: the root lists the quick picks, the complete list is a page
+  // of its own when there is more to it, and the slider's Auto stop is not
+  // repeated as a row. There is no Option-click here, so hidden models stay out.
+  const tiers = modelPickerTiers(models, { slider: !!steps, exclude: steps ? presets?.auto?.model.id : undefined });
+  const hasFullList = tiers.all.length > 0;
+  const inlineRealtime = !!includeRealtime && (!steps || tiers.quick.length > 0 || !hasFullList);
+
+  const toOption = (m: Model): Option => ({
     id: m.id,
     label: m.name ?? m.id,
     description: m.description,
@@ -172,26 +186,30 @@ export function ModelSheet(props: ModelDropdownProps) {
       onChange(m.id);
       close();
     },
-  }));
-  if (includeRealtime) {
-    modelOptions.unshift({
-      id: "realtime",
-      label: "Real-time Voice",
-      selected: !activeAgent && value === "realtime",
-      onSelect: () => {
-        onChange("realtime");
-        close();
-      },
-    });
-  }
+  });
+  const realtimeOption: Option = {
+    id: "realtime",
+    label: "Real-time Voice",
+    selected: !activeAgent && value === "realtime",
+    onSelect: () => {
+      onChange("realtime");
+      close();
+    },
+  };
+  const quickOptions = [...(inlineRealtime ? [realtimeOption] : []), ...tiers.quick.map(toOption)];
 
   // Every sub-view is a checklist page; the root links to them.
   const pages: Record<string, Page> = {};
-  const links: { id: string; label: string; value?: string; badge?: string }[] = [];
+  const links: { id: string; label: string; value?: string; badge?: string; disabled?: boolean }[] = [];
 
-  if (steps) {
-    pages.models = { title: "Model", options: modelOptions };
-    links.push({ id: "models", label: "Model", value: currentModel?.name ?? value });
+  if (hasFullList) {
+    pages.models = {
+      title: "Model",
+      options: [...(includeRealtime && !inlineRealtime ? [realtimeOption] : []), ...tiers.all.map(toOption)],
+    };
+    // Names the selection unless a row above already shows it.
+    const shownAbove = quickOptions.some((option) => option.id === value);
+    links.push({ id: "models", label: "Model", value: shownAbove ? undefined : (currentModel?.name ?? value) });
   }
   if (agents && agents.items.length > 0) {
     pages.agents = {
@@ -234,7 +252,10 @@ export function ModelSheet(props: ModelDropdownProps) {
     };
     links.push({ id: "agents", label: "Agent", value: activeAgent?.name ?? "None" });
   }
-  if (effort && effort.options.length > 0) {
+  if (effort && effort.options.length === 0) {
+    // No levels for this model: the row keeps its place, disabled, so the sheet does not resize.
+    links.push({ id: "effort", label: "Effort", value: NOT_APPLICABLE, disabled: true });
+  } else if (effort) {
     const current = effort.value ?? effort.defaultValue ?? null;
     pages.effort = {
       title: "Effort",
@@ -367,15 +388,16 @@ export function ModelSheet(props: ModelDropdownProps) {
                   </>
                 ) : (
                   <div className="space-y-3">
-                    {steps && presets ? (
-                      // The Faster → Smarter ladder, as on desktop; the full list sits behind "Model".
-                      // The Model and Effort rows below already name the selection, so the slider stands alone.
+                    {steps && presets && (
+                      // The Faster → Smarter ladder, as on desktop; the full list sits one page down.
+                      // The rows below already name the selection, so the slider stands alone.
                       <div className="rounded-[22px] bg-black/4 px-2 py-2 dark:bg-white/6">
                         <PresetSlider {...presets} fallbackLabel={currentModel?.name ?? value} live />
                       </div>
-                    ) : (
+                    )}
+                    {quickOptions.length > 0 && (
                       <Group>
-                        {modelOptions.map((option) => (
+                        {quickOptions.map((option) => (
                           <CheckRow key={option.id} {...option} />
                         ))}
                       </Group>
@@ -388,6 +410,7 @@ export function ModelSheet(props: ModelDropdownProps) {
                             label={link.label}
                             value={link.value}
                             badge={link.badge}
+                            disabled={link.disabled}
                             onClick={() => push(link.id)}
                           />
                         ))}

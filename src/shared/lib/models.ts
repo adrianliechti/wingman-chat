@@ -56,6 +56,8 @@ type ModelProfile = [
   defaultEffort?: ReasoningEffort,
   maxOutputTokens?: number,
 ];
+// Small 4 by version or by its dated API ID; also sets its compaction budget.
+const MISTRAL_SMALL_4 = /\bmistral-small-(?:4(?:\.0)?|2603)(?=$|[/:]|-\d)/;
 const MODEL_PROFILES: ModelProfile[] = [
   [/\bgpt-?6\.2-(?:astra|sol)(?=$|[/:]|-\d{4})/, ["low", "medium", "high", "xhigh", "max"], "medium", 128_000],
   [/\bgpt-?6\.1-sol(?=$|[/:]|-\d{4})/, ["low", "medium", "high", "xhigh", "max"], "medium", 128_000],
@@ -110,6 +112,15 @@ const MODEL_PROFILES: ModelProfile[] = [
   // Only known newer GPT-4o snapshots support this output capacity.
   [/\bgpt-?4o(?:-mini)?(?=$|[/:]|-2024[.-](?:07|08|11)-)/, undefined, undefined, 16_384],
 
+  // Mistral Large 4 always reasons. Small 4 only turns reasoning on or off, and
+  // Mistral documents no default for it. Neither has a published output limit.
+  [/\bmistral-large-4(?:\.0)?(?=$|[/:]|-\d{4})/, ["low", "medium", "high"], "high"],
+  [MISTRAL_SMALL_4, ["none", "high"]],
+
+  // Inkling 2 Small always reasons; Mini can turn reasoning off. No documented default or output limit.
+  [/\binkling-2-small(?=$|[/:]|-\d{4})/, ["low", "medium", "high"]],
+  [/\binkling-2-mini(?=$|[/:]|-\d{4})/, ["none", "low", "medium", "high"]],
+
   [/\bqwen-?3\.8(?:-|$)/, ["none", "low", "medium", "xhigh"], "xhigh"],
   [/\bdeepseek-?v4-(?:flash|pro)\b/, ["none", "low", "high", "max"], "high"],
 ];
@@ -125,6 +136,11 @@ function modelProfile(id: string): ModelProfile | undefined {
   if (modelType(id) !== "completer") return undefined;
   const normalized = normalizedModelId(id);
   return MODEL_PROFILES.find(([pattern]) => pattern.test(normalized));
+}
+
+/** Whether a chat model has a profile here, as opposed to an opaque deployment alias. */
+export function isKnownChatModel(id: string): boolean {
+  return modelProfile(id) !== undefined;
 }
 
 /** Supported effort choices where known; unknown models use the backend default. */
@@ -194,6 +210,8 @@ export function compactThreshold(id: string): number {
   if (/\bo[34]\b|\bhaiku\b|\bclaude-?[123]\b/.test(lowerId)) return 176_000;
   if (/\b(opus|sonnet)-?4(?:\.[0-5])?(?=$|[-/:])/.test(lowerId)) return 176_000;
   if (/\bgemini\b/.test(lowerId)) return 200_000;
+  // Mistral Small 4 has a 256k window, below the general budget.
+  if (MISTRAL_SMALL_4.test(lowerId)) return 176_000;
   return 272_000;
 }
 
@@ -258,6 +276,16 @@ export function rendererCapabilities(id: string): RendererCapabilities {
     return {
       qualities: ["low", "medium", "high"],
       aspectRatios: ["1:1", "3:2", "2:3"],
+      backgrounds: ["opaque", "transparent"],
+    };
+  }
+
+  // ── Microsoft MAI Image 2.7 and 2.7 Flash ── a fixed set of aspect ratios and
+  // transparent output; the image API they are served through has no quality or
+  // resolution lever. Earlier MAI Image versions keep the generic profile.
+  if (/\bmai-image-2[.-]7(?=$|[/:-])/.test(lowerId)) {
+    return {
+      aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"],
       backgrounds: ["opaque", "transparent"],
     };
   }
@@ -435,6 +463,24 @@ export function modelName(id: string): string {
 
       if (lowerWord === "openai") {
         return "OpenAI";
+      }
+
+      if (lowerWord === "deepseek") {
+        return "DeepSeek";
+      }
+
+      if (lowerWord === "vl") {
+        return "VL";
+      }
+
+      // Parameter counts and context sizes, such as 27B, 2.4T or A55B (active parameters).
+      if (/^a?\d+(?:\.\d+)?[bmkt]$/.test(lowerWord)) {
+        return lowerWord.toUpperCase();
+      }
+
+      // Qwen IDs glue the version to the family ("qwen3.8"); set it apart like the other names.
+      if (/^qwen\d/.test(lowerWord)) {
+        return `Qwen ${word.slice(4)}`;
       }
 
       return word.charAt(0).toUpperCase() + word.slice(1);

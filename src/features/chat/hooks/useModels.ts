@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
 import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
-import { defaultModelId, findModel } from "@/shared/lib/models";
+import { defaultModelId, findModel, isKnownChatModel } from "@/shared/lib/models";
 import type { Model } from "@/shared/types/chat";
 
 const STORAGE_KEY = "app_model";
@@ -100,25 +100,33 @@ function saveSelectedModel(model: Model | null) {
   }
 }
 
+/**
+ * Orders the available chat models for the pickers. Only configured chat models
+ * curate the list; a renderer-only config must not hide every chat model. With
+ * a curated list, the configured models come first as the quick picks, the
+ * other models this app has a profile for fill the full list, and opaque IDs
+ * stay reachable via Option-click.
+ */
+export function curateChatModels(available: readonly Model[], configured: readonly Pick<Model, "id">[]): Model[] {
+  const byId = new Map(available.map((model) => [model.id, model]));
+  const featured = configured.flatMap((model) => {
+    const resolved = byId.get(model.id);
+    byId.delete(model.id);
+    return resolved ? [{ ...resolved, featured: true }] : [];
+  });
+  if (!featured.length) return [...available];
+  return [
+    ...featured,
+    ...Array.from(byId.values(), (model) => (isKnownChatModel(model.id) ? model : { ...model, hidden: true })),
+  ];
+}
+
 export function useModels() {
   const config = getConfig();
   const available = useModelCatalog("completer");
   // undefined means no choice has been made yet; an explicit null is a choice too.
   const [selectedModel, setSelectedModelState] = useState<Model | null | undefined>(undefined);
-  const models = useMemo(() => {
-    const byId = new Map(available.map((model) => [model.id, model]));
-    const configured = config.models.flatMap((model) => {
-      const resolved = byId.get(model.id);
-      byId.delete(model.id);
-      return resolved ? [resolved] : [];
-    });
-    // Only configured chat models curate the chat picker. A renderer-only config
-    // must not hide every chat model. Unconfigured chat models stay reachable via
-    // Option-click when there is a curated list.
-    return configured.length
-      ? [...configured, ...Array.from(byId.values(), (model) => ({ ...model, hidden: true }))]
-      : available;
-  }, [available, config.models]);
+  const models = useMemo(() => curateChatModels(available, config.models), [available, config.models]);
 
   // Restore once, without overwriting a choice made while loading (including
   // realtime), or changing an active chat's model/effort on background refresh.

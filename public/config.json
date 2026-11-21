@@ -48,7 +48,7 @@
     }
   ],
   "chat": {
-    "model": "claude-sonnet-5-5",
+    "model": "poppy",
     "effort": "medium",
     "classification": {
       "model": "gpt-6-luna",
@@ -229,12 +229,29 @@
     ]
   },
   "_telemetry": {},
-  "_models": [
+  "models": [
     {
-      "id": "gpt-5.1",
-      "name": "GPT-5.1",
-      "description": "Default Model",
-      "instructions": "You are a helpful assistant."
+      "id": "poppy",
+      "name": "Poppy",
+      "effort": "medium",
+      "supportedEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    {
+      "id": "herby",
+      "name": "Herby",
+      "effort": "medium",
+      "supportedEfforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
     }
   ],
   "_tools": [

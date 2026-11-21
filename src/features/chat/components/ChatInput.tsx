@@ -39,7 +39,12 @@ const composerSendButtonClass =
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { sameModelSettings } from "@/shared/lib/models";
-import { modelPresetIndex, resolveModelPresets } from "@/shared/lib/modelPresets";
+import {
+  findAutoModel,
+  modelPresetIndex,
+  nearestModelPresetIndex,
+  resolveModelPresets,
+} from "@/shared/lib/modelPresets";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
 import type { ContentPart } from "@tanstack/ai";
@@ -90,6 +95,8 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
   const { sendMessage, stopStreaming, removeQueuedMessage } = useChatActions();
   const { models, model, setModel: onModelChange, effort, setEffort, verbosity, setVerbosity } = useChatModel();
   const presets = useMemo(() => resolveModelPresets(config.chat?.presets, models), [config.chat?.presets, models]);
+  // A backend model named "auto" routes each request itself; the slider offers it as its own stop.
+  const autoModel = useMemo(() => findAutoModel(models), [models]);
   // The configured default for new chats; the reset next to the model returns to it.
   const configuredModel = useMemo(() => getConfiguredModel(models), [models]);
   const { isResponding, queuedSends, interruptState } = useChatRunState();
@@ -861,16 +868,13 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                           }
                         : undefined
                     }
-                    effort={
-                      model?.supportedEfforts?.length
-                        ? {
-                            options: model.supportedEfforts,
-                            value: effort ?? null,
-                            defaultValue: model.defaultEffort,
-                            onChange: setEffort,
-                          }
-                        : undefined
-                    }
+                    // Always passed: a model without effort levels keeps the row, disabled.
+                    effort={{
+                      options: model?.supportedEfforts ?? [],
+                      value: effort ?? null,
+                      defaultValue: model?.defaultEffort,
+                      onChange: setEffort,
+                    }}
                     verbosity={{
                       value: verbosity ?? null,
                       defaultValue: models.find((m) => m.id === model?.id)?.verbosity,
@@ -881,10 +885,18 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
                         ? {
                             steps: presets,
                             value: modelPresetIndex(presets, model),
+                            near: nearestModelPresetIndex(presets, model),
                             onChange: (index) => {
                               const { model: next, effort, verbosity } = presets[index];
                               onModelChange({ ...next, effort, verbosity });
                             },
+                            auto: autoModel
+                              ? {
+                                  model: autoModel,
+                                  selected: model?.id === autoModel.id,
+                                  onSelect: () => onModelChange(autoModel),
+                                }
+                              : undefined,
                           }
                         : undefined
                     }

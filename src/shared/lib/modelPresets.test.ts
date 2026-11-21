@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { modelPresetIndex, resolveModelPresets } from "./modelPresets";
+import { findAutoModel, modelPresetIndex, nearestModelPresetIndex, resolveModelPresets } from "./modelPresets";
 import type { Model } from "@/shared/types/chat";
 
 const luna: Model = {
@@ -79,5 +79,45 @@ describe("modelPresetIndex", () => {
   it("returns -1 for selections outside the slider", () => {
     expect(modelPresetIndex(presets, { ...astra, effort: "low" })).toBe(-1);
     expect(modelPresetIndex(presets, null)).toBe(-1);
+  });
+});
+
+describe("nearestModelPresetIndex", () => {
+  const presets = resolveModelPresets(
+    [
+      { model: "gpt-6-luna", effort: "low" },
+      { model: "gpt-6-astra", effort: "medium" },
+      { model: "gpt-6-luna", effort: "high" },
+    ],
+    [luna, astra],
+  );
+
+  it("finds the model's step with the closest effort", () => {
+    expect(nearestModelPresetIndex(presets, { ...luna, effort: "none" })).toBe(0);
+    expect(nearestModelPresetIndex(presets, { ...luna, effort: "high" })).toBe(2);
+    expect(nearestModelPresetIndex(presets, { ...astra, effort: "high" })).toBe(1);
+  });
+
+  it("prefers the earlier step on a tie and uses the default effort when none is set", () => {
+    // Luna defaults to medium, midway between its low and high steps.
+    expect(nearestModelPresetIndex(presets, luna)).toBe(0);
+  });
+
+  it("returns -1 when the model has no step", () => {
+    expect(nearestModelPresetIndex(presets, plain)).toBe(-1);
+    expect(nearestModelPresetIndex(presets, null)).toBe(-1);
+  });
+
+  it("takes the model's first step when there is no effort to compare", () => {
+    const steps = resolveModelPresets([{ model: "gpt-6-luna" }, { model: "plain" }, { model: "plain" }], [luna, plain]);
+    expect(nearestModelPresetIndex(steps, plain)).toBe(1);
+  });
+});
+
+describe("findAutoModel", () => {
+  it("finds the model with the auto ID only", () => {
+    const auto: Model = { id: "auto", name: "Auto" };
+    expect(findAutoModel([luna, auto])).toBe(auto);
+    expect(findAutoModel([luna, { id: "claude-auto", name: "Claude Auto" }])).toBeUndefined();
   });
 });
