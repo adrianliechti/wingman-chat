@@ -109,7 +109,38 @@ func (p *Provider) BackupSize(ctx context.Context) (int64, error) {
 	if item.Size < 0 {
 		return 0, errors.New("OneDrive backup: invalid backup size")
 	}
-	return item.Size, nil
+	if item.Size > 0 {
+		return item.Size, nil
+	}
+	// OneDrive updates folder sizes asynchronously, so new backups report 0.
+	return p.indexedSize(ctx)
+}
+
+func (p *Provider) indexedSize(ctx context.Context) (int64, error) {
+	state, err := p.load(ctx)
+	if err != nil {
+		return 0, err
+	}
+	s, err := sessionFrom(ctx)
+	if err != nil {
+		return 0, err
+	}
+	size := s.control.Size
+	for _, ch := range state.Chats {
+		for _, seg := range ch.Segments {
+			size += seg.Size
+		}
+	}
+	for _, obj := range state.Files {
+		size += obj.Size
+	}
+	for _, obj := range state.Blobs {
+		size += obj.Size
+	}
+	if size < 0 {
+		return 0, errors.New("OneDrive backup: invalid backup size")
+	}
+	return size, nil
 }
 func (p *Provider) GetKeystore(ctx context.Context) ([]byte, string, error) {
 	state, err := p.load(ctx)
