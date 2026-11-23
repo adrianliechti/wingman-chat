@@ -31,6 +31,7 @@ func TestStoreErrorMapping(t *testing.T) {
 		retryAfter string
 	}{
 		{store.ErrInvalidID, 400, ""},
+		{fmt.Errorf("%w: compact beyond chat head", store.ErrInvalidRequest), 400, ""},
 		{store.ErrNotFound, 404, ""},
 		{store.ErrFrameTooLarge, 413, ""},
 		{&http.MaxBytesError{Limit: 1}, 413, ""},

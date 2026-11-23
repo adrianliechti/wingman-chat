@@ -448,11 +448,20 @@ export class ChatSync {
 
     // Apply remote deletions only to baselines that existed before this listing.
     // A concurrent upload may have created or updated a chat since the request began.
+    // The server keeps tombstones, so an unlisted chat is re-uploaded rather than deleted.
     const remoteIds = new Set(remote.map((r) => r.id));
     for (const [id, head] of Object.entries(headsBeforeListing)) {
       if (remoteIds.has(id)) continue;
       await this.withChat(id, async () => {
         if (this.state.heads[id] !== head) return;
+        const baseline = this.lastSynced.get(id);
+        if (baseline && !this.deletions.has(id)) {
+          console.warn(`chatSync.pull: chat ${id} missing from backup; re-uploading local copy`);
+          await withChatTarget(id, async () => {
+            if (!(await readJson(targetPath(id))))
+              await writeLocalChatSnapshotUnlocked({ ...baseline, baseSeq: -1 }, true);
+          });
+        }
         await this.applyRemoteDeletionLocked(id);
       });
     }

@@ -195,6 +195,7 @@ var (
 	ErrKeystoreConflict  = errors.New("store: keystore etag conflict")
 	ErrObjectConflict    = errors.New("store: object etag conflict")
 	ErrInvalidID         = errors.New("store: invalid id")
+	ErrInvalidRequest    = errors.New("store: invalid request")
 	ErrFrameTooLarge     = errors.New("store: frame too large")
 	ErrDirectUnavailable = errors.New("store: direct upload unavailable")
 	ErrInvalidUpload     = errors.New("store: invalid upload metadata")

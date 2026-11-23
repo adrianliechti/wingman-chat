@@ -38,12 +38,15 @@ type Provider struct {
 
 	cache   cache
 	cleanup sync.WaitGroup
+
+	indexLoads chan struct{}
 }
 
 func New() *Provider {
 	return &Provider{
 		client: http.DefaultClient, base: graph.GraphURL, fragment: uploadFragment,
 		sweepInterval: orphanSweepInterval, sweeps: map[string]time.Time{},
+		indexLoads: make(chan struct{}, indexLoadConcurrency),
 	}
 }
 

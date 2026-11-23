@@ -632,10 +632,22 @@ it("applies remote deletion to an unchanged local chat without resurrecting it",
   await sync.saveChat(chat());
   await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
   vi.mocked(api.appendEvents).mockClear();
+  vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: 2, deleted: true, updated: "2026-01-03" }]);
   expect(await sync.pull()).toEqual([]);
   expect(await readLocalChat("chat")).toBeUndefined();
   await sync.flushPending();
   expect(api.appendEvents).not.toHaveBeenCalled();
+});
+
+it("re-uploads an unchanged local chat missing from the backup listing", async () => {
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
+  await sync.saveChat(chat());
+  await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
+  vi.mocked(api.appendEvents).mockClear();
+  expect(await sync.pull()).toMatchObject([{ id: "chat" }]);
+  expect(await readLocalChat("chat")).toMatchObject({ id: "chat" });
+  await sync.flushPending();
+  expect(api.appendEvents).toHaveBeenCalledWith("chat", 0, expect.any(Array));
 });
 
 it("recovers a pending target after a crash between history deletion and baseline persistence", async () => {

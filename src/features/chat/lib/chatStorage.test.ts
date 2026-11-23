@@ -9,7 +9,7 @@ import type { Chat } from "@/shared/types/chat";
 import { loadChat, loadChatIndex, removeChat, storeChat } from "./chatStorage";
 import { createAttachmentLoader } from "./chatAttachments";
 import { generateStoreKey } from "@/shared/lib/test-support/storeKey";
-import { encodeHistory } from "@/shared/lib/localChats";
+import { encodeHistory, readLocalChat } from "@/shared/lib/localChats";
 import { diffChat } from "@/shared/lib/chatLog";
 
 vi.mock("@/shared/lib/storeClient", () => ({
@@ -143,6 +143,32 @@ describe("chat persistence", () => {
       await expect(loadChat("chat")).rejects.toThrow("Unsupported chat record version: 99");
       expect(await loadChatIndex()).toHaveLength(1);
       expect(await opfs.readJson("chats/chat/chat.json")).toEqual(stored);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("lists other chats when an unindexed chat cannot be read", async () => {
+    await storeChat(chat("good"));
+    memory.put("chats/bad/chat.json", JSON.stringify({ ...(await opfs.extractChatBlobs(chat("bad"))), version: 99 }));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect((await loadChatIndex()).map((entry) => entry.id)).toEqual(["good"]);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("replays history whose last line was torn by a crash", async () => {
+    config.store = true;
+    const stored = await opfs.extractChatBlobs({ ...chat(), title: "survives" });
+    await opfs.writeText(
+      "chats/chat/history.jsonl",
+      encodeHistory(diffChat(null, stored), { head: 1, count: 1 }) + '{"type":"chec',
+    );
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(await readLocalChat("chat")).toMatchObject({ title: "survives" });
     } finally {
       vi.restoreAllMocks();
     }

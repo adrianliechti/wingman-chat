@@ -138,7 +138,6 @@ export async function loadChatIndex(): Promise<ChatEntry[]> {
           await completeChatIndexRepair(id);
         });
       } catch (error) {
-        if (!(error instanceof Error && error.cause instanceof SyntaxError)) throw error;
         console.warn(`Could not recover chat index entry ${id}:`, error);
       }
     }

@@ -142,8 +142,13 @@ export async function readChatHistory(id: string, known?: { head: number; chat: 
   const boundary = tail.lastIndexOf("\n");
   let checkpoint: ChatCheckpoint | undefined;
   if (start === 0 || boundary >= 0) {
-    const last = JSON.parse(tail.slice(boundary + 1)) as HistoryEntry;
-    if (last.type === "checkpoint")
+    let last: HistoryEntry | undefined;
+    try {
+      last = JSON.parse(tail.slice(boundary + 1)) as HistoryEntry;
+    } catch {
+      last = undefined;
+    }
+    if (last?.type === "checkpoint")
       checkpoint = {
         head: last.head,
         count: last.count,

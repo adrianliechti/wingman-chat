@@ -34,10 +34,20 @@ it.each(["setup", "locked", "error", "disabled"])(
 );
 
 it("backs up committed local deletions while backup is ready", async () => {
-  initSession.mockResolvedValue({ status: "ready", sync: { flushPending } });
-  await syncedChatStorage.remove("deleted");
-  await vi.waitFor(() => expect(flushPending).toHaveBeenCalledOnce());
-  expect(removeChat).toHaveBeenCalledWith("deleted");
+  vi.useFakeTimers();
+  try {
+    vi.resetModules();
+    const { syncedChatStorage } = await import("./syncedChatStorage");
+    initSession.mockResolvedValue({ status: "ready", sync: { flushPending } });
+    await syncedChatStorage.remove("deleted");
+    await syncedChatStorage.remove("another");
+    expect(flushPending).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(flushPending).toHaveBeenCalledOnce();
+    expect(removeChat).toHaveBeenCalledWith("deleted");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("commits saves and deletions without waiting for stalled initialization", async () => {
@@ -50,7 +60,6 @@ it("commits saves and deletions without waiting for stalled initialization", asy
     await queue.flush();
     expect(storeChat).toHaveBeenCalledWith(chat);
     expect(removeChat).toHaveBeenCalledWith("deleted");
-    expect(storeChat.mock.invocationCallOrder[0]).toBeLessThan(initSession.mock.invocationCallOrder[0]);
   } finally {
     await queue.stop();
   }

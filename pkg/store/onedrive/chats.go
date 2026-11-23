@@ -334,7 +334,7 @@ func (p *Provider) CompactChat(ctx context.Context, chatID string, beforeSeq int
 		return store.ErrNotFound
 	}
 	if beforeSeq > ch.Head {
-		return fmt.Errorf("OneDrive backup: compact beyond chat head")
+		return fmt.Errorf("%w: compact beyond chat head", store.ErrInvalidRequest)
 	}
 	var retained []segment
 	var removed, uploaded []string

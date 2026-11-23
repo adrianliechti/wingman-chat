@@ -45,6 +45,11 @@ type index struct {
 
 const indexAttempts = 5
 
+const (
+	maxIndexBytes        = 64 << 20
+	indexLoadConcurrency = 4
+)
+
 var errInvalidIndex = store.ErrInvalidBackup
 
 func emptyIndex() *index {
@@ -132,33 +137,56 @@ func (p *Provider) readIndex(ctx context.Context) (*index, driveItem, error) {
 		if cached := p.cache.index(drive, before); cached != nil {
 			return cached, before, nil
 		}
-		reader, err := p.open(ctx, indexName)
-		if errors.Is(err, store.ErrNotFound) {
+		state, after, err := p.fetchIndex(ctx, s, drive, before)
+		if errors.Is(err, errIndexChanged) {
 			continue
 		}
 		if err != nil {
 			return nil, driveItem{}, err
 		}
-		data, err := io.ReadAll(io.LimitReader(reader, (64<<20)+1))
-		reader.Close()
-		if err != nil {
-			return nil, driveItem{}, err
-		}
-		after, err := p.readIndexControl(ctx)
-		if err != nil {
-			return nil, driveItem{}, err
-		}
-		if drive != s.drive || before.ID != after.ID || before.ETag != after.ETag {
-			continue
-		}
-		state := emptyIndex()
-		if len(data) > 64<<20 || json.Unmarshal(data, state) != nil || state.Version != 1 || state.Chats == nil || state.Files == nil || state.Blobs == nil {
-			return nil, driveItem{}, errInvalidIndex
-		}
-		p.cache.storeIndex(drive, after, cloneIndex(state), len(data))
 		return state, after, nil
 	}
 	return nil, driveItem{}, store.ErrBackupConflict
+}
+
+var errIndexChanged = errors.New("OneDrive backup: index changed while reading")
+
+// fetchIndex bounds how many uncached indexes the pod holds in memory at once.
+func (p *Provider) fetchIndex(ctx context.Context, s *session, drive string, before driveItem) (*index, driveItem, error) {
+	select {
+	case p.indexLoads <- struct{}{}:
+		defer func() { <-p.indexLoads }()
+	case <-ctx.Done():
+		return nil, driveItem{}, ctx.Err()
+	}
+	if cached := p.cache.index(drive, before); cached != nil {
+		return cached, before, nil
+	}
+	reader, err := p.open(ctx, indexName)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, driveItem{}, errIndexChanged
+	}
+	if err != nil {
+		return nil, driveItem{}, err
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, maxIndexBytes+1))
+	reader.Close()
+	if err != nil {
+		return nil, driveItem{}, err
+	}
+	after, err := p.readIndexControl(ctx)
+	if err != nil {
+		return nil, driveItem{}, err
+	}
+	if drive != s.drive || before.ID != after.ID || before.ETag != after.ETag {
+		return nil, driveItem{}, errIndexChanged
+	}
+	state := emptyIndex()
+	if len(data) > maxIndexBytes || json.Unmarshal(data, state) != nil || state.Version != 1 || state.Chats == nil || state.Files == nil || state.Blobs == nil {
+		return nil, driveItem{}, errInvalidIndex
+	}
+	p.cache.storeIndex(drive, after, cloneIndex(state), len(data))
+	return state, after, nil
 }
 
 func (p *Provider) commit(ctx context.Context, state *index, control driveItem) error {
@@ -166,7 +194,7 @@ func (p *Provider) commit(ctx context.Context, state *index, control driveItem) 
 	if err != nil {
 		return err
 	}
-	if len(data) > 64<<20 {
+	if len(data) > maxIndexBytes {
 		return errors.New("OneDrive backup: backup index exceeds 64 MiB")
 	}
 	endpoint, err := p.objectURL(ctx, indexName)
