@@ -95,7 +95,7 @@ func casFromRequest(r *http.Request) string {
 // routes -----------------------------------------------------------------
 
 func (h *Handler) handleGetKeystore(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Cache-Control", "no-store, no-transform")
 	data, etag, err := h.store.GetKeystore(r.Context())
 	if err != nil {
 		writeStoreError(w, err)

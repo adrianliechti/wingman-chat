@@ -15,8 +15,8 @@ func TestResetBackup(t *testing.T) {
 	}
 	key := do(t, srv, "alice", "GET", "/v1/store/keystore", "", nil)
 	wantStatus(t, key, http.StatusOK)
-	if got := key.Header.Get("Cache-Control"); got != "no-store" {
-		t.Fatalf("keystore Cache-Control = %q, want no-store", got)
+	if got := key.Header.Get("Cache-Control"); got != "no-store, no-transform" {
+		t.Fatalf("keystore Cache-Control = %q, want no-store, no-transform", got)
 	}
 	headers := map[string]string{"X-Confirm-Backup-Reset": "true", "If-Match": key.Header.Get("ETag")}
 	wantStatus(t, do(t, srv, "", "DELETE", "/v1/store", "", headers), http.StatusUnauthorized)
@@ -27,8 +27,8 @@ func TestResetBackup(t *testing.T) {
 	wantStatus(t, do(t, srv, "alice", "DELETE", "/v1/store", "", headers), http.StatusPreconditionFailed)
 	missing := do(t, srv, "alice", "GET", "/v1/store/keystore", "", nil)
 	wantStatus(t, missing, http.StatusNotFound)
-	if got := missing.Header.Get("Cache-Control"); got != "no-store" {
-		t.Fatalf("missing keystore Cache-Control = %q, want no-store", got)
+	if got := missing.Header.Get("Cache-Control"); got != "no-store, no-transform" {
+		t.Fatalf("missing keystore Cache-Control = %q, want no-store, no-transform", got)
 	}
 	wantStatus(t, do(t, srv, "alice", "POST", "/v1/store/chats/chat-1234/events", event("late", "old-key"), nil), http.StatusForbidden)
 

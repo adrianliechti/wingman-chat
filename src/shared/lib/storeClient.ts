@@ -153,7 +153,7 @@ export class ServerError extends Error {
 }
 
 function unquote(s: string): string {
-  return s.replace(/^"(.*)"$/, "$1");
+  return s.replace(/^(?:W\/)?"(.*)"$/, "$1");
 }
 
 async function fetchOrThrow(input: string, init?: RequestInit): Promise<Response> {
