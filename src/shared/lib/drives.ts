@@ -36,7 +36,7 @@ export async function listDriveEntries(driveId: string, id: string = ""): Promis
   return resp.json();
 }
 
-export function getDriveContentUrl(driveId: string, id: string): string {
+function getDriveContentUrl(driveId: string, id: string): string {
   const params = new URLSearchParams({ id });
   return `/api/v1/drives/${driveId}/content?${params}`;
 }

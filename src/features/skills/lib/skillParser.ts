@@ -32,7 +32,7 @@ export interface ParsedSkill {
   resources?: SkillResource[];
 }
 
-export interface SkillValidationError {
+interface SkillValidationError {
   field: string;
   message: string;
 }

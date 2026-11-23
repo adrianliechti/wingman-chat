@@ -4,7 +4,7 @@
  * it fits, dates and timestamps become ISO strings, nested values are plain.
  */
 
-export interface DuckDbColumn {
+interface DuckDbColumn {
   name: string;
   type: string;
 }
@@ -41,8 +41,8 @@ export function toJsonValue(value: unknown, type = ""): unknown {
   return value;
 }
 
-export const DUCKDB_RESULT_MAX_ROWS = 100_000;
-export const DUCKDB_RESULT_MAX_BYTES = 16 * 1024 * 1024;
+const DUCKDB_RESULT_MAX_ROWS = 100_000;
+const DUCKDB_RESULT_MAX_BYTES = 16 * 1024 * 1024;
 
 /** Bound the JSON copy before it is sent to an artifact or interpreter. */
 export async function collectDuckDbResult(

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const ArtifactMutationSchema = z.object({
+const ArtifactMutationSchema = z.object({
   operation: z.enum(["create", "update", "move", "delete"]),
   path: z.string().min(1),
   from: z.string().optional(),
@@ -10,7 +10,7 @@ export const ArtifactMutationSchema = z.object({
   checksum: z.string().optional(),
 });
 
-export const ArtifactDeltaSchema = z.object({
+const ArtifactDeltaSchema = z.object({
   mutations: z.array(ArtifactMutationSchema),
 });
 
@@ -52,7 +52,7 @@ export function updateArtifactPaths(paths: Set<string>, mutations: ArtifactMutat
 }
 
 /** Who produced an artifact revision and why. Stored with the revision log. */
-export const RevisionOriginSchema = z.object({
+const RevisionOriginSchema = z.object({
   actor: z.enum(["assistant", "user", "system"]),
   runId: z.string().optional(),
   reason: z.enum(["create", "edit", "upload", "restore", "execution", "rename", "delete", "bridge"]).optional(),

@@ -1,6 +1,7 @@
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import type { ProxyOptions } from "vite";
 import { defineConfig } from "vite-plus";
 import { configDefaults } from "vitest/config";
 import { artifactLibrarySourcesPlugin } from "./scripts/artifact-library-sources";
@@ -10,7 +11,28 @@ import { skillsDevPlugin } from "./scripts/skills-dev";
 const src = path.resolve(import.meta.dirname, "src");
 
 const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:4242";
+const wingmanApiPrefix = process.env.WINGMAN_API_PREFIX ?? "";
 const wingmanToken = process.env.WINGMAN_TOKEN || "none";
+const wingmanUser = process.env.WINGMAN_USER || "default";
+
+// In production a reverse proxy provides the user identity; the dev proxy
+// impersonates one. OneDrive backup additionally needs WINGMAN_TOKEN to be a
+// Microsoft access token, since the backend forwards it to Graph.
+const wingmanHeaders: Record<string, string> = {
+  Authorization: `Bearer ${wingmanToken}`,
+  "X-Forwarded-User": wingmanUser,
+};
+
+const impersonate: ProxyOptions["configure"] = (proxy) => {
+  proxy.on("proxyReq", (proxyReq, req) => {
+    if (!req.headers.authorization) {
+      proxyReq.setHeader("Authorization", wingmanHeaders.Authorization);
+    }
+    if (!req.headers["x-forwarded-user"]) {
+      proxyReq.setHeader("X-Forwarded-User", wingmanHeaders["X-Forwarded-User"]);
+    }
+  });
+};
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -58,14 +80,13 @@ export default defineConfig({
         target: wingmanUrl,
         ws: true,
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/api/, ""),
-        configure: (proxy) => {
-          proxy.on("proxyReq", (proxyReq, req) => {
-            if (!req.headers.authorization) {
-              proxyReq.setHeader("Authorization", `Bearer ${wingmanToken}`);
-            }
-          });
-        },
+        rewrite: (p) => p.replace(/^\/api/, wingmanApiPrefix),
+        configure: impersonate,
+      },
+      "^/me$": {
+        target: wingmanUrl,
+        changeOrigin: true,
+        configure: impersonate,
       },
     },
   },

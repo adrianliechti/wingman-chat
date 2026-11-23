@@ -1,0 +1,318 @@
+package onedrive
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"maps"
+	"net/http"
+	"net/url"
+	"reflect"
+	"slices"
+	"time"
+
+	"github.com/adrianliechti/wingman-chat/pkg/store"
+)
+
+type object struct {
+	Name    string    `json:"name"`
+	ETag    string    `json:"etag"`
+	Size    int64     `json:"size"`
+	Updated time.Time `json:"updated"`
+}
+type segment struct {
+	object
+	First int64 `json:"first"`
+	Last  int64 `json:"last"`
+}
+type chat struct {
+	Head     int64     `json:"head"`
+	Deleted  bool      `json:"deleted,omitempty"`
+	Updated  time.Time `json:"updated"`
+	Segments []segment `json:"segments"`
+	Recent   []string  `json:"recent,omitempty"`
+}
+type index struct {
+	Generation string            `json:"generation,omitempty"`
+	Version    int               `json:"version"`
+	Keystore   []byte            `json:"keystore,omitempty"`
+	Chats      map[string]chat   `json:"chats"`
+	Files      map[string]object `json:"files"`
+	Blobs      map[string]object `json:"blobs"`
+}
+
+const indexAttempts = 5
+
+const (
+	maxIndexBytes        = 64 << 20
+	indexLoadConcurrency = 4
+)
+
+var errInvalidIndex = store.ErrInvalidBackup
+
+func emptyIndex() *index {
+	return &index{Version: 1, Chats: map[string]chat{}, Files: map[string]object{}, Blobs: map[string]object{}}
+}
+
+func cloneIndex(state *index) *index {
+	copy := *state
+	copy.Keystore = slices.Clone(state.Keystore)
+	copy.Chats = maps.Clone(state.Chats)
+	for id, ch := range copy.Chats {
+		ch.Segments = slices.Clone(ch.Segments)
+		ch.Recent = slices.Clone(ch.Recent)
+		copy.Chats[id] = ch
+	}
+	copy.Files, copy.Blobs = maps.Clone(state.Files), maps.Clone(state.Blobs)
+	return &copy
+}
+
+func (p *Provider) load(ctx context.Context) (*index, error) {
+	s, err := sessionFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Check account ownership even when the request has a cached snapshot.
+	if _, err := p.folder(ctx); err != nil {
+		return nil, err
+	}
+	if s.index != nil {
+		return s.index, nil
+	}
+	state, control, err := p.readIndex(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.index, s.snapshot, s.control = state, cloneIndex(state), control
+	return state, nil
+}
+
+// readIndexControl reads only the commit identity. Reset must also work when
+// index contents are corrupt, too large, or written by an unsupported version.
+func (p *Provider) readIndexControl(ctx context.Context) (driveItem, error) {
+	endpoint, err := p.objectURL(ctx, indexName)
+	if err != nil {
+		return driveItem{}, err
+	}
+	var item driveItem
+	err = p.jsonRequest(ctx, "GET", endpoint, nil, &item)
+	if statusIs(err, http.StatusNotFound) {
+		if s, _ := sessionFrom(ctx); s != nil && s.cachedFolder {
+			// The account folder may have been deleted or recreated since it was
+			// cached. Resolve it again before treating the backup as empty.
+			p.cache.forgetFolder(s.token)
+			s.folder, s.drive, s.cachedFolder = "", "", false
+			return p.readIndexControl(ctx)
+		}
+		return driveItem{}, nil
+	}
+	if err != nil {
+		return driveItem{}, err
+	}
+	if item.ID == "" || item.ETag == "" {
+		return driveItem{}, errors.New("OneDrive backup: missing index identity or ETag")
+	}
+	return item, nil
+}
+
+// Read metadata before and after downloading the index. Content downloads can
+// redirect to a separate host, so their HTTP ETag need not be the Graph item
+// ETag. Accept the snapshot only when the item's identity and ETag are stable.
+func (p *Provider) readIndex(ctx context.Context) (*index, driveItem, error) {
+	s, err := sessionFrom(ctx)
+	if err != nil {
+		return nil, driveItem{}, err
+	}
+	for attempt := 0; attempt < indexAttempts; attempt++ {
+		before, err := p.readIndexControl(ctx)
+		if err != nil {
+			return nil, driveItem{}, err
+		}
+		if before.ID == "" {
+			return emptyIndex(), driveItem{}, nil
+		}
+		drive := s.drive
+		if cached := p.cache.index(drive, before); cached != nil {
+			return cached, before, nil
+		}
+		state, after, err := p.fetchIndex(ctx, s, drive, before)
+		if errors.Is(err, errIndexChanged) {
+			continue
+		}
+		if err != nil {
+			return nil, driveItem{}, err
+		}
+		return state, after, nil
+	}
+	return nil, driveItem{}, store.ErrBackupConflict
+}
+
+var errIndexChanged = errors.New("OneDrive backup: index changed while reading")
+
+// fetchIndex bounds how many uncached indexes the pod holds in memory at once.
+func (p *Provider) fetchIndex(ctx context.Context, s *session, drive string, before driveItem) (*index, driveItem, error) {
+	select {
+	case p.indexLoads <- struct{}{}:
+		defer func() { <-p.indexLoads }()
+	case <-ctx.Done():
+		return nil, driveItem{}, ctx.Err()
+	}
+	if cached := p.cache.index(drive, before); cached != nil {
+		return cached, before, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, indexLoadTimeout)
+	defer cancel()
+	reader, err := p.open(ctx, indexName)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, driveItem{}, errIndexChanged
+	}
+	if err != nil {
+		return nil, driveItem{}, err
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, maxIndexBytes+1))
+	reader.Close()
+	if err != nil {
+		return nil, driveItem{}, err
+	}
+	after, err := p.readIndexControl(ctx)
+	if err != nil {
+		return nil, driveItem{}, err
+	}
+	if drive != s.drive || before.ID != after.ID || before.ETag != after.ETag {
+		return nil, driveItem{}, errIndexChanged
+	}
+	state := emptyIndex()
+	if len(data) > maxIndexBytes || json.Unmarshal(data, state) != nil || state.Version != 1 || state.Chats == nil || state.Files == nil || state.Blobs == nil {
+		return nil, driveItem{}, errInvalidIndex
+	}
+	p.cache.storeIndex(drive, after, cloneIndex(state), len(data))
+	return state, after, nil
+}
+
+func (p *Provider) commit(ctx context.Context, state *index, control driveItem) error {
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	if len(data) > maxIndexBytes {
+		return errors.New("OneDrive backup: backup index exceeds 64 MiB")
+	}
+	endpoint, err := p.objectURL(ctx, indexName)
+	if err != nil {
+		return err
+	}
+	headers := http.Header{"Content-Type": {"application/json"}}
+	if control.ETag == "" {
+		// Graph defaults to replacement on PUT. Explicit fail semantics make the
+		// first commit atomic too, including concurrent first-time key setup.
+		endpoint += ":/content?%40microsoft.graph.conflictBehavior=fail"
+		headers.Set("If-None-Match", "*")
+	} else {
+		// Address the existing item by ID, so a deleted index cannot be recreated
+		// by a stale update using its old path.
+		endpoint = p.base + "/me/drive/items/" + url.PathEscape(control.ID) + "/content"
+		headers.Set("If-Match", control.ETag)
+	}
+	res, err := p.request(ctx, "PUT", endpoint, bytes.NewReader(data), headers, true)
+	if err != nil {
+		if statusIs(err, http.StatusPreconditionFailed) || statusIs(err, http.StatusConflict) || statusIs(err, http.StatusNotFound) {
+			return store.ErrBackupConflict
+		}
+		return err
+	}
+	defer res.Body.Close()
+	var updated driveItem
+	if err := json.NewDecoder(res.Body).Decode(&updated); err != nil {
+		return err
+	}
+	if updated.ID == "" || updated.ETag == "" {
+		return errors.New("OneDrive backup: invalid index commit response")
+	}
+	s, _ := sessionFrom(ctx)
+	p.cache.storeIndex(s.drive, updated, cloneIndex(state), len(data))
+	s.control = updated
+	return nil
+}
+
+func (p *Provider) save(ctx context.Context, desired *index) error {
+	s, err := sessionFrom(ctx)
+	if err != nil {
+		return err
+	}
+	baseline := s.snapshot
+	if baseline == nil {
+		return errors.New("OneDrive backup: index not loaded")
+	}
+	current, control := baseline, s.control
+	for attempt := 0; attempt < indexAttempts; attempt++ {
+		// Protection validation happened against the request's original keystore.
+		// Never rebase that validation across a key change or a reset generation.
+		if baseline.Generation != current.Generation {
+			return store.ErrBackupConflict
+		}
+		if !bytes.Equal(baseline.Keystore, current.Keystore) {
+			if !bytes.Equal(baseline.Keystore, desired.Keystore) {
+				return store.ErrKeystoreConflict
+			}
+			return store.ErrBackupConflict
+		}
+		merged := cloneIndex(current)
+		merged.Keystore = slices.Clone(desired.Keystore)
+		if !mergeEntries(baseline.Chats, desired.Chats, current.Chats, merged.Chats) {
+			return store.ErrSeqConflict
+		}
+		if !mergeEntries(baseline.Files, desired.Files, current.Files, merged.Files) {
+			return store.ErrObjectConflict
+		}
+		if !mergeEntries(baseline.Blobs, desired.Blobs, current.Blobs, merged.Blobs) {
+			return store.ErrBackupConflict
+		}
+		err = p.commit(ctx, merged, control)
+		if err == nil {
+			// Keep the object returned by load current for callers performing multiple
+			// operations in a request, while retaining an independent baseline.
+			*desired = *merged
+			s.index, s.snapshot = desired, cloneIndex(merged)
+			return nil
+		}
+		if !errors.Is(err, store.ErrBackupConflict) {
+			return err
+		}
+		current, control, err = p.readIndex(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return store.ErrBackupConflict
+}
+
+// Apply only entries changed by this request, preserving unrelated commits.
+// A touched entry must still match the original snapshot, including existence.
+func mergeEntries[V any](before, desired, current, merged map[string]V) bool {
+	keys := make(map[string]struct{}, len(before)+len(desired))
+	for key := range before {
+		keys[key] = struct{}{}
+	}
+	for key := range desired {
+		keys[key] = struct{}{}
+	}
+	for key := range keys {
+		old, had := before[key]
+		next, has := desired[key]
+		if had == has && reflect.DeepEqual(old, next) {
+			continue
+		}
+		now, exists := current[key]
+		if had != exists || !reflect.DeepEqual(old, now) {
+			return false
+		}
+		if has {
+			merged[key] = next
+		} else {
+			delete(merged, key)
+		}
+	}
+	return true
+}

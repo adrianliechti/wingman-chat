@@ -9,9 +9,9 @@ import { type ParsedSkill, parseSkillsFromZip } from "@/features/skills/lib/skil
 import type { HubMcpServer, HubPlugin } from "./types";
 import { normalizeMcpApproval, normalizeMcpHeaders, type McpApproval } from "@/features/settings/lib/mcpConfig";
 
-export type HubErrorKind = "network" | "too-large" | "invalid";
+type HubErrorKind = "network" | "too-large" | "invalid";
 
-export class HubError extends Error {
+class HubError extends Error {
   kind: HubErrorKind;
 
   constructor(kind: HubErrorKind, message: string) {

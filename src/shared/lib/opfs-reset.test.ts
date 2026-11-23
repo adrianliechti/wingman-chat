@@ -5,6 +5,8 @@ import { PersistenceQueue, registerPersistenceQueue } from "./persistence";
 
 it("a full reset waits for an active write and prevents queued or late work from recreating data", async () => {
   const memory = new MemoryOpfs();
+  const removeItem = vi.fn();
+  vi.stubGlobal("localStorage", { getItem: () => null, setItem: vi.fn(), removeItem });
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => memory.root } });
   let release!: () => void;
   let held = false;
@@ -25,6 +27,7 @@ it("a full reset waits for an active write and prevents queued or late work from
   release();
   await Promise.all([writing, resetting]);
   expect(memory.files.size).toBe(0);
+  expect(removeItem).toHaveBeenCalledWith("wingman:workspace-owner");
   expect(() => queue.schedule("late", () => opfs.writeJson("late.json", {}))).toThrow("reset");
   await expect(opfs.writeJson("background.json", {})).rejects.toThrow("reset");
   unregister();

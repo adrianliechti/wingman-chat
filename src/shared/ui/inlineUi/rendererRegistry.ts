@@ -16,7 +16,7 @@ export interface RendererContext {
   renderText?: (markdown: string) => ReactNode;
 }
 
-export type ComponentRenderers<Props> = {
+type ComponentRenderers<Props> = {
   [Name in keyof Props]: ComponentType<
     { props: Props[Name]; change: (value: Props[Name] extends { value?: infer Value } ? Value : never) => void } & Omit<
       RendererContext,

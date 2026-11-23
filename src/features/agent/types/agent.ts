@@ -1,5 +1,3 @@
-export type { RepositoryFile } from "@/features/repository/types/repository";
-
 export interface Agent {
   id: string;
 

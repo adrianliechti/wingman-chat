@@ -36,7 +36,7 @@ export function resolveCodeExecutionLimits(limits?: CodeExecutionLimits): Requir
 }
 
 /** Size on the wire. Data URLs intentionally count their base64 expansion. */
-export function artifactFileBytes(file: ArtifactFile): number {
+function artifactFileBytes(file: ArtifactFile): number {
   return encoder.encode(file.content).byteLength;
 }
 

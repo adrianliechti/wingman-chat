@@ -19,7 +19,7 @@ export type PersonaKey =
   | "quirky"
   | "teacher";
 
-export const personas: Record<PersonaKey, string> = {
+const personas: Record<PersonaKey, string> = {
   default: personaDefault,
   candid: personaCandid,
   cynical: personaCynical,

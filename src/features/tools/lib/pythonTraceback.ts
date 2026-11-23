@@ -14,7 +14,7 @@ const MICROPIP_ADVICE_START = /^The module '.*' is included in the Pyodide distr
 const MICROPIP_ADVICE_END = /^See https:\/\/pyodide\.org\//;
 
 /** Frames that belong to the runtime, never to the script being executed. */
-export function isInternalPythonFrame(filename: string): boolean {
+function isInternalPythonFrame(filename: string): boolean {
   return (
     filename.startsWith("<wingman") || filename.includes("/_pyodide/") || /\/python\d+\.zip\/pyodide\//.test(filename)
   );

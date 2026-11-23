@@ -146,5 +146,3 @@ export function TranslatePage() {
     </div>
   );
 }
-
-export default TranslatePage;

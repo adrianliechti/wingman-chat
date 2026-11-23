@@ -13,7 +13,7 @@ import type { FileSystem } from "@/shared/types/file";
  * - Returns `null` for URLs we shouldn't rewrite (hash-only, `data:`, `blob:`,
  *   `http:`, any scheme-qualified URL).
  */
-export function resolveAssetPath(url: string, basePath: string | undefined): string | null {
+function resolveAssetPath(url: string, basePath: string | undefined): string | null {
   if (!url || url.startsWith("#")) return null;
   // Any URL with a scheme: http:, https:, data:, blob:, mailto:, ...
   if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return null;

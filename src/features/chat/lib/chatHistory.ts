@@ -72,7 +72,7 @@ export function preservedSkillMessages(messages: readonly ModelMessage[], only?:
 
 /** Drop messages before the last summary marker so API requests stay small,
  *  carrying skill instructions across as text so they survive compaction. */
-export function pruneAtSummary(messages: ModelMessage[]): ModelMessage[] {
+function pruneAtSummary(messages: ModelMessage[]): ModelMessage[] {
   const idx = messages.findLastIndex((message) => message.metadata?.kind === "summary");
   if (idx < 0) return messages;
 
@@ -88,7 +88,7 @@ export function pruneAtSummary(messages: ModelMessage[]): ModelMessage[] {
  *  They're persisted as artifacts (see useFileAttachments) so the model can
  *  re-read them; dropping the base64 from earlier turns keeps requests small.
  *  Model-bound copy only — stored/displayed messages keep their images. */
-export function stripHistoryImages(messages: ModelMessage[]): ModelMessage[] {
+function stripHistoryImages(messages: ModelMessage[]): ModelMessage[] {
   const lastUserIndex = messages.findLastIndex(isUserPrompt);
   if (lastUserIndex <= 0) return messages; // nothing earlier to strip
 

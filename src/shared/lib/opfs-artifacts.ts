@@ -58,7 +58,7 @@ function artifactRevisionPath(chatId: string, path: string, revision: string): s
 }
 
 /** Byte size of stored content: decoded bytes for data URLs, UTF-8 bytes for text. */
-export function artifactContentByteLength(content: string): number {
+function artifactContentByteLength(content: string): number {
   return dataUrlDecodedByteLength(content) ?? new TextEncoder().encode(content).byteLength;
 }
 
@@ -363,35 +363,4 @@ export async function listArtifactEntries(chatId: string): Promise<ArtifactEntry
 
   await scanDirectory("");
   return artifacts;
-}
-
-/**
- * Load all artifacts for a chat as a FileSystem object.
- */
-export async function loadArtifacts(
-  chatId: string,
-): Promise<Record<string, { path: string; content: string; contentType?: string }>> {
-  const paths = await listArtifacts(chatId);
-  const artifacts: Record<string, { path: string; content: string; contentType?: string }> = {};
-
-  for (const path of paths) {
-    const data = await readArtifact(chatId, path);
-    if (data) {
-      artifacts[path] = { path, content: data.content, contentType: data.contentType };
-    }
-  }
-
-  return artifacts;
-}
-
-/**
- * Save all artifacts from a FileSystem object to OPFS.
- */
-export async function saveArtifacts(
-  chatId: string,
-  artifacts: Record<string, { path: string; content: string; contentType?: string }>,
-): Promise<void> {
-  for (const [path, file] of Object.entries(artifacts)) {
-    await writeArtifact(chatId, path, file.content, file.contentType);
-  }
 }

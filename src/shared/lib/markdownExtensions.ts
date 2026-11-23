@@ -15,7 +15,7 @@ import { safeHtmlExtension } from "./markdownHtml";
 import type { EmojiMode } from "./noto-emoji";
 
 /** Common paragraph/block forms omitted by TanStack's documentation profile. */
-export const blockSyntaxExtension: MarkdownExtension = {
+const blockSyntaxExtension: MarkdownExtension = {
   name: "block-syntax",
   parseBlock({ lines, index, consume, parseInline }) {
     if (/^(?: {4}|\t)/.test(lines[index])) {
@@ -66,7 +66,7 @@ export const blockSyntaxExtension: MarkdownExtension = {
   },
 };
 
-export const entityExtension: MarkdownExtension = {
+const entityExtension: MarkdownExtension = {
   name: "entities",
   inlineParser: {
     markers: "&",
@@ -142,7 +142,7 @@ function mathBlock(source: string): BlockNode {
  * backslash escapes run ahead of extension parsers. KaTeX renders the source
  * in the component; an unfinished expression stays literal text.
  */
-export const mathExtension: MarkdownExtension = {
+const mathExtension: MarkdownExtension = {
   name: "math",
   parseBlock({ lines, index, consume }) {
     const opening = /^ {0,3}(\${2,})([^$]*)$/.exec(lines[index]);
@@ -176,7 +176,7 @@ export { hideUnfinishedLink, normalizeMathAliases, prepareMarkdownSource } from 
 const SHORTCODE = /^:([a-z0-9_+-]+):/i;
 
 /** `:smile:` becomes the emoji character; unknown names stay literal. */
-export const emojiShortcodeExtension: MarkdownExtension = {
+const emojiShortcodeExtension: MarkdownExtension = {
   name: "emoji-shortcodes",
   inlineParser: {
     markers: ":",
@@ -258,7 +258,7 @@ function mapInlineText(nodes: InlineNode[], map: (text: string) => InlineNode[])
  * Noto Emoji font for other sequences. Drop VS16 only for Noto, because it can
  * force a colour fallback; swatches and native mode keep the exact sequence.
  */
-export function notoEmojiExtension(mode: EmojiMode): MarkdownExtension {
+function notoEmojiExtension(mode: EmojiMode): MarkdownExtension {
   return {
     name: "noto-emoji",
     // The React renderer reads `className` from the node; HTML output needs a real attribute.
@@ -303,7 +303,7 @@ export function notoEmojiExtension(mode: EmojiMode): MarkdownExtension {
 // ── Line breaks ────────────────────────────────────────────────────────────
 
 /** A single newline inside a paragraph is a line break, as chat readers expect. */
-export const breaksExtension: MarkdownExtension = {
+const breaksExtension: MarkdownExtension = {
   name: "breaks",
   transformInline(nodes) {
     return mapInlineText(nodes, (value) => {
@@ -324,7 +324,7 @@ const EMAIL = /^[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d](?:[a-z\d-]*[a-z\d])?(?:\.[a-z\d
 const EMAIL_CHARACTER = /[\w.!#$%&'*+/=?^`{|}~@-]/;
 
 /** Explicit autolinks, bare web addresses and email, with punctuation left outside. */
-export const autolinkExtension: MarkdownExtension = {
+const autolinkExtension: MarkdownExtension = {
   name: "autolink",
   inlineParser: {
     markers: "<abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_",

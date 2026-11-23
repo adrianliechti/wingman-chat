@@ -10,7 +10,7 @@
  * pure helpers.
  */
 
-export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export type Scope = Record<string, unknown>;
 
@@ -129,7 +129,7 @@ function tokenize(source: string): Token[] {
 
 // ── Parser ─────────────────────────────────────────────────────────────────
 
-export type Node =
+type Node =
   | { type: "literal"; value: JsonValue }
   | { type: "ident"; name: string }
   | { type: "member"; object: Node; property: string }
@@ -368,7 +368,7 @@ function tokenText(token: Token): string {
 const parseCache = new Map<string, Node>();
 const MAX_PARSE_CACHE = 500;
 
-export function parseExpression(source: string): Node {
+function parseExpression(source: string): Node {
   const cached = parseCache.get(source);
   if (cached) return cached;
   const node = new Parser(tokenize(source)).parse();
@@ -754,11 +754,7 @@ function lookup(scope: Scope, name: string): unknown {
 
 // ── Evaluator ──────────────────────────────────────────────────────────────
 
-export function evaluateNode(
-  node: Node,
-  scope: Scope,
-  budget: EvaluationBudget = { remaining: 100_000, depth: 0 },
-): unknown {
+function evaluateNode(node: Node, scope: Scope, budget: EvaluationBudget = { remaining: 100_000, depth: 0 }): unknown {
   spend(budget);
   if (budget.depth >= 100) throw new ExpressionError("Expression is nested too deeply");
   budget.depth++;
@@ -875,7 +871,7 @@ export function evaluate(source: string, scope: Scope): unknown {
 
 // ── Templates ──────────────────────────────────────────────────────────────
 
-export function isTemplate(value: unknown): value is string {
+function isTemplate(value: unknown): value is string {
   return typeof value === "string" && value.includes("{{");
 }
 

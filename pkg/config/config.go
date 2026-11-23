@@ -43,6 +43,7 @@ func loadConfigFiles(cfg *Config) {
 	loadDrives(cfg)
 	loadYAML("backgrounds.yaml", &cfg.Backgrounds)
 
+	loadBackup(cfg)
 	loadYAMLPtr("chat.yaml", &cfg.Chat)
 	loadYAMLPtr("translator.yaml", &cfg.Translator)
 	loadYAMLPtr("vision.yaml", &cfg.Vision)
@@ -57,14 +58,29 @@ func loadDrives(cfg *Config) {
 	loadYAML("drives.yaml", &cfg.Drives)
 
 	for _, drive := range cfg.Drives {
-		if auth := drive.Auth; auth != nil {
-			// Expand after parsing to preserve quotes and newlines in secrets.
-			auth.Issuer = os.ExpandEnv(auth.Issuer)
-			auth.ClientID = os.ExpandEnv(auth.ClientID)
-			auth.ClientSecret = os.ExpandEnv(auth.ClientSecret)
-			auth.Scope = os.ExpandEnv(auth.Scope)
-		}
+		expandAuth(drive.Auth)
 	}
+}
+
+func loadBackup(cfg *Config) {
+	loadYAMLPtr("backup.yaml", &cfg.Backup)
+
+	if cfg.Backup != nil {
+		expandAuth(cfg.Backup.Auth)
+		cfg.Backup.DirectUploadKey = os.ExpandEnv(cfg.Backup.DirectUploadKey)
+	}
+}
+
+// expandAuth expands after parsing to preserve quotes and newlines in secrets.
+func expandAuth(auth *DriveAuth) {
+	if auth == nil {
+		return
+	}
+
+	auth.Issuer = os.ExpandEnv(auth.Issuer)
+	auth.ClientID = os.ExpandEnv(auth.ClientID)
+	auth.ClientSecret = os.ExpandEnv(auth.ClientSecret)
+	auth.Scope = os.ExpandEnv(auth.Scope)
 }
 
 // loadLinks reads the ordered account-menu links from links.yaml. The old
@@ -171,6 +187,25 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Chat = ensurePtr(cfg.Chat)
 		cfg.Chat.Compaction = ensurePtr(cfg.Chat.Compaction)
 		cfg.Chat.Compaction.Threshold = *v
+	}
+
+	if provider := os.Getenv("BACKUP_PROVIDER"); provider != "" {
+		cfg.Backup = ensurePtr(cfg.Backup)
+		cfg.Backup.Provider = provider
+	}
+	if cfg.Backup != nil {
+		if v := envPositiveInt("BACKUP_UPLOADS", nil); v != nil {
+			cfg.Backup.Uploads = *v
+		}
+		if cfg.Backup.Provider == "" {
+			cfg.Backup.Provider = "local"
+		}
+		if cfg.Backup.Provider != "onedrive" {
+			cfg.Backup.DirectUploadKey = ""
+		} else if key := os.Getenv("BACKUP_DIRECT_UPLOAD_KEY"); key != "" {
+			cfg.Backup.DirectUploadKey = key
+		}
+		cfg.Backup.DirectUpload = cfg.Backup.DirectUploadKey != ""
 	}
 
 	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)

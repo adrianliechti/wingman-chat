@@ -1,10 +1,12 @@
 package server
 
 import (
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/adrianliechti/wingman-chat/pkg/config"
 	"github.com/adrianliechti/wingman-chat/pkg/server/api"
@@ -13,6 +15,7 @@ import (
 	"github.com/adrianliechti/wingman-chat/pkg/server/me"
 	"github.com/adrianliechti/wingman-chat/pkg/server/otel"
 	"github.com/adrianliechti/wingman-chat/pkg/server/public"
+	storesrv "github.com/adrianliechti/wingman-chat/pkg/server/store"
 )
 
 func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.FS, skillsDir string) http.Handler {
@@ -29,6 +32,19 @@ func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.
 	if len(cfg.Drives) > 0 {
 		drive.New(cfg.Drives).Attach(mux, prefix)
 	}
+
+	provider, middleware, err := backupProvider(cfg)
+	if err != nil {
+		panic(fmt.Errorf("store: %w", err))
+	}
+	// Keep store traffic local even when backups are disabled or no route matches.
+	storePath := strings.TrimRight(prefix, "/") + "/v1/store"
+	storeMux := http.NewServeMux()
+	if provider != nil {
+		storesrv.New(provider, middleware).LimitUploads(cfg.Backup.Uploads).Attach(storeMux, storePath)
+	}
+	mux.Handle(storePath, storeMux)
+	mux.Handle(storePath+"/", storeMux)
 
 	if info, err := os.Stat(skillsDir); err == nil && info.IsDir() {
 		library.NewSkills(skillsDir).Attach(mux)

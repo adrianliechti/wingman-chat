@@ -11,10 +11,11 @@ import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk
 import { BatchSpanProcessor, StackContextManager, TracerProvider } from "@opentelemetry/sdk-trace";
 
 import { installClassificationMetrics } from "@/shared/lib/classificationMetrics";
+import { ONE_DRIVE_UPLOAD_URL } from "@/shared/lib/directUpload";
 
 // Provider requests carry explicit model/tool context. Automatic fetch tracing
 // would overwrite their traceparent with an unrelated browser HTTP span.
-const IGNORE_URLS = [/\/telemetry\//, /\/api\/v1(?:\/|$)/];
+const IGNORE_URLS = [/\/telemetry\//, /\/api\/v1(?:\/|$)/, ONE_DRIVE_UPLOAD_URL];
 
 export function initTelemetry(serviceName: string) {
   const resource = defaultResource().merge(

@@ -18,6 +18,7 @@ import { streamChatWithUiRepair } from "../lib/inlineUiRepair";
 import { getErrorInfo, isAbortError } from "@/shared/lib/errors";
 import { artifactRefPart, isUserPrompt, messageText, textMetadata, updateToolResultMeta } from "@/shared/lib/messages";
 import { compactThreshold } from "@/shared/lib/models";
+import { beginChatBackupPause, finishChatBackupPause, finishStoppedChatBackups } from "@/shared/lib/chatBackupActivity";
 import { notify } from "@/shared/lib/notify";
 import { captureRequestContext } from "@/shared/lib/requestContext";
 import type { Chat, Model } from "@/shared/types/chat";
@@ -40,6 +41,10 @@ interface Session {
   sidecar: RunSidecar;
   native: UIMessage[];
   hydrated: ChatPersistedState | null;
+  /** Backup sequence the live transcript derives from; see Chat.baseSeq. */
+  baseSeq?: number;
+  /** The record messages this runtime last loaded or saved. */
+  persisted?: UIMessage[];
   interrupts: ChatInterruptState | null;
   toolWaiters: Set<() => void>;
   pendingSends: Map<string, () => void>;
@@ -102,6 +107,7 @@ export function useChatRun({
     storageOwnerRef.current = session;
     return () => {
       storageOwnerRef.current = null;
+      void finishStoppedChatBackups(session.id);
       for (const resolve of session.toolWaiters) resolve();
       session.toolWaiters.clear();
     };
@@ -168,6 +174,7 @@ export function useChatRun({
       const active = () => chatIdRef.current === id && !signal?.aborted;
       const runFs = artifactsEnabled ? resolveArtifactFileSystem(fsRef.current, id) : null;
       const startLength = conversation.length;
+      const releaseBackup = beginChatBackupPause(id);
       try {
         if (active()) setRunPhase("thinking");
         updateChat(id, () => ({}));
@@ -280,6 +287,7 @@ export function useChatRun({
         });
       } finally {
         releaseMemory?.();
+        await finishChatBackupPause(releaseBackup);
       }
     },
     [
@@ -340,6 +348,8 @@ export function useChatRun({
         if (!saved) return null;
         session.hydrated = { messages: saved.messages, resume: saved.resume };
         session.native = saved.messages;
+        session.persisted = saved.messages;
+        session.baseSeq = saved.baseSeq;
         return session.hydrated;
       },
       setItem: (_key, state) => {
@@ -361,16 +371,28 @@ export function useChatRun({
         )
           return;
         session.hydrated = null;
-        updateChat(session.id, () => ({ messages: session.sidecar.apply(state.messages), resume: state.resume }), {
-          preserveDates: true,
-        });
+        // Carry the transcript's own base: the record may already hold another device's newer copy.
+        updateChat(
+          session.id,
+          () => {
+            const messages = session.sidecar.apply(state.messages);
+            session.persisted = messages;
+            return { messages, resume: state.resume, baseSeq: session.baseSeq };
+          },
+          { preserveDates: true },
+        );
       },
       removeItem: () => {
         if (storageOwnerRef.current !== session) return;
         session.native = [];
         const saved = getChat(session.id);
         if (saved && (saved.messages.length || saved.resume))
-          updateChat(session.id, () => ({ messages: [], resume: undefined, metadata: undefined }));
+          updateChat(session.id, () => ({
+            messages: [],
+            resume: undefined,
+            metadata: undefined,
+            baseSeq: session.baseSeq,
+          }));
       },
     },
     onChunk: (chunk) => {
@@ -423,6 +445,22 @@ export function useChatRun({
     }
   }, [ai.messages, ai.queue, session]);
   const isResponding = ai.isLoading || !!streamingMessage;
+  // Follow another device's newer copy of the open chat while this one is idle,
+  // so the next send extends it instead of creating a conflicted copy.
+  const record = chatId === session.id ? getChat(session.id) : undefined;
+  const busy = isResponding || ai.interrupts.length > 0 || ai.queue.length > 0;
+  useEffect(() => {
+    if (!record || storageOwnerRef.current !== session || !session.persisted) return;
+    if ((record.baseSeq ?? 0) <= (session.baseSeq ?? 0)) return;
+    if (record.messages !== session.persisted) {
+      if (busy) return;
+      session.hydrated = { messages: record.messages, resume: record.resume };
+      session.native = record.messages;
+      session.persisted = record.messages;
+      ai.setMessages(record.messages);
+    }
+    session.baseSeq = record.baseSeq;
+  }, [record, busy, session, ai]);
   const status: ChatContextType["status"] =
     pendingElicitation || ai.interrupts.length
       ? "waiting"
@@ -456,68 +494,73 @@ export function useChatRun({
       deletedPaths?: string[],
       onAccepted?: (chatId: string) => void,
     ) => {
-      const { id, chat: chatObj, fs: chatFs } = await getOrCreateChat();
-      if (!chatObj) {
-        throw new Error(`Chat ${id} not found`);
-      }
-      // Deferred chat-input attachments: now that the chat (and its fs) exist,
-      // write them into the workspace before the turn so the model can read
-      // them via the artifacts tools (artifacts was enabled at attach time).
-      let resolvedMessage = message;
-      if (artifactFiles?.length) {
+      const releaseBackup = beginChatBackupPause(session.id);
+      try {
+        const { id, chat: chatObj, fs: chatFs } = await getOrCreateChat();
+        if (!chatObj) {
+          throw new Error(`Chat ${id} not found`);
+        }
+        // Deferred chat-input attachments: now that the chat (and its fs) exist,
+        // write them into the workspace before the turn so the model can read
+        // them via the artifacts tools (artifacts was enabled at attach time).
+        let resolvedMessage = message;
+        if (artifactFiles?.length) {
+          try {
+            const ingestion = await chatFs.ingestFiles(artifactFiles, {
+              origin: { actor: "user", reason: "upload" },
+            });
+            const revisions = Object.fromEntries(
+              ingestion.mutations.map((mutation) => [mutation.path, mutation.revision]),
+            );
+            resolvedMessage = promoteArtifactReferences(message, ingestion.pathMap, revisions);
+          } catch (error) {
+            console.error("Failed to add attachments transactionally:", error);
+            notify.error("Attachments failed", "No files were added. Resolve the workspace conflict and try again.");
+            throw error;
+          }
+        }
+
+        // Delete requested artifact paths from chat FS (best-effort).
+        if (deletedPaths && deletedPaths.length > 0) {
+          try {
+            await Promise.all(
+              deletedPaths.map(async (p) => {
+                try {
+                  await chatFs.deleteFileWithDelta(p, { origin: { actor: "user", reason: "delete" } });
+                } catch (err) {
+                  console.error(`Failed to delete artifact ${p}:`, err);
+                  throw err;
+                }
+              }),
+            );
+          } catch (err) {
+            console.error("One or more attachment deletions failed:", err);
+            notify.error(
+              "Failed to delete attachments",
+              "One or more attachments couldn't be removed from the workspace.",
+            );
+          }
+        }
+        if (!getChat(id) || chatIdRef.current !== id || session.id !== id)
+          throw new Error("Conversation changed before the message was sent. Your draft was kept.");
+        if (historyOverride) {
+          // An edited turn replaces itself and everything after it in the live transcript.
+          const cut = session.native.findIndex((native) => native.id === resolvedMessage.id);
+          setMessages(cut >= 0 ? session.native.slice(0, cut) : historyOverride);
+        }
+        if (onAccepted) session.pendingSends.set(resolvedMessage.id, () => onAccepted(id));
         try {
-          const ingestion = await chatFs.ingestFiles(artifactFiles, {
-            origin: { actor: "user", reason: "upload" },
+          await sendNativeMessage({
+            id: resolvedMessage.id,
+            content: resolvedMessage.parts as ContentPart[],
+            metadata: resolvedMessage.metadata,
           });
-          const revisions = Object.fromEntries(
-            ingestion.mutations.map((mutation) => [mutation.path, mutation.revision]),
-          );
-          resolvedMessage = promoteArtifactReferences(message, ingestion.pathMap, revisions);
         } catch (error) {
-          console.error("Failed to add attachments transactionally:", error);
-          notify.error("Attachments failed", "No files were added. Resolve the workspace conflict and try again.");
+          session.pendingSends.delete(resolvedMessage.id);
           throw error;
         }
-      }
-
-      // Delete requested artifact paths from chat FS (best-effort).
-      if (deletedPaths && deletedPaths.length > 0) {
-        try {
-          await Promise.all(
-            deletedPaths.map(async (p) => {
-              try {
-                await chatFs.deleteFileWithDelta(p, { origin: { actor: "user", reason: "delete" } });
-              } catch (err) {
-                console.error(`Failed to delete artifact ${p}:`, err);
-                throw err;
-              }
-            }),
-          );
-        } catch (err) {
-          console.error("One or more attachment deletions failed:", err);
-          notify.error(
-            "Failed to delete attachments",
-            "One or more attachments couldn't be removed from the workspace.",
-          );
-        }
-      }
-      if (!getChat(id) || chatIdRef.current !== id || session.id !== id)
-        throw new Error("Conversation changed before the message was sent. Your draft was kept.");
-      if (historyOverride) {
-        // An edited turn replaces itself and everything after it in the live transcript.
-        const cut = session.native.findIndex((native) => native.id === resolvedMessage.id);
-        setMessages(cut >= 0 ? session.native.slice(0, cut) : historyOverride);
-      }
-      if (onAccepted) session.pendingSends.set(resolvedMessage.id, () => onAccepted(id));
-      try {
-        await sendNativeMessage({
-          id: resolvedMessage.id,
-          content: resolvedMessage.parts as ContentPart[],
-          metadata: resolvedMessage.metadata,
-        });
-      } catch (error) {
-        session.pendingSends.delete(resolvedMessage.id);
-        throw error;
+      } finally {
+        await finishChatBackupPause(releaseBackup);
       }
     },
     [getOrCreateChat, getChat, chatIdRef, session, setMessages, sendNativeMessage],
@@ -528,10 +571,16 @@ export function useChatRun({
     if (session.interrupts?.resuming || session.interrupts?.interrupts.length) return;
     const retry = retryHistory(session.native);
     if (!retry) return;
-    setMessages(retry.history);
-    await append(retry.resend);
+    const releaseBackup = beginChatBackupPause(session.id);
+    try {
+      setMessages(retry.history);
+      await append(retry.resend);
+    } finally {
+      await finishChatBackupPause(releaseBackup);
+    }
   }, [chatIdRef, session, isLoading, ai.isHydrating, setMessages, append]);
 
+  // TanStack rebuilds this list as messages stream; keep action subscribers stable.
   const subagentsRef = useRef(ai.subagents);
   useLayoutEffect(() => {
     subagentsRef.current = ai.subagents;
@@ -539,10 +588,11 @@ export function useChatRun({
   const stopStreaming = useCallback(() => {
     for (const subagent of subagentsRef.current) subagent.stop?.();
     stop();
+    void finishStoppedChatBackups(threadId);
     clearElicitation();
     setStreamingMessage(null);
     setRunPhase("idle");
-  }, [stop, clearElicitation]);
+  }, [threadId, stop, clearElicitation]);
   const setVoiceToolCall = useCallback(
     (name: string | null, callId?: string) => {
       const id = chatIdRef.current;
