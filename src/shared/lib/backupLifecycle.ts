@@ -5,6 +5,8 @@ export const WORKSPACE_OWNER_KEY = "wingman:workspace-owner";
 export const BACKUP_RESET_KEY = "wingman:backup-reset";
 export const REOPEN_BACKUP_SETTINGS_KEY = "wingman:reopen-backup-settings";
 export const BACKUP_GENERATION_KEY = "wingman:backup-generation";
+/** Holds the generation that wiped local storage; peers must drop, not flush, their pending saves. */
+export const STORAGE_RESET_KEY = "wingman:storage-reset";
 
 /** Local workspace was bound to a different account ID than the signed-in one. */
 export class WorkspaceOwnerError extends Error {
@@ -29,9 +31,11 @@ export function isBackupSessionCurrent(): boolean {
   );
 }
 
-export function invalidateBackupSessions(): void {
+export function invalidateBackupSessions(storageWiped = false): void {
   if (typeof localStorage === "undefined") return;
-  localStorage.setItem(BACKUP_GENERATION_KEY, crypto.randomUUID());
+  const next = crypto.randomUUID();
+  if (storageWiped) localStorage.setItem(STORAGE_RESET_KEY, next);
+  localStorage.setItem(BACKUP_GENERATION_KEY, next);
 }
 
 export function markBackupReset(userId: string, target: ResetTarget): void {

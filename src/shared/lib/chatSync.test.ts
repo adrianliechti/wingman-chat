@@ -75,6 +75,67 @@ beforeEach(() => {
   vi.mocked(api.headBlob).mockResolvedValue(true);
 });
 
+it("uploads a newer native save written without an outbox after the chat was backed up", async () => {
+  const dek = await generateStoreKey();
+  const first = await ChatSync.create({ userId: "user", accountId: "user", dek });
+  await first.saveChat(chat());
+  await vi.waitFor(async () => expect(await readJson("chats/chat/target.json")).toBeUndefined());
+  const edited = { ...chat(), title: "edited by another build", updated: new Date("2026-01-03") };
+  await writeJson("chats/chat/chat.json", await extractChatBlobs(edited));
+  vi.mocked(api.appendEvents).mockClear();
+
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek });
+  await sync.flushPending();
+
+  expect(api.appendEvents).toHaveBeenCalledWith("chat", 1, expect.any(Array));
+  expect((await readChatHistory("chat"))?.chat).toMatchObject({ title: edited.title });
+  expect(await readJson("chats/chat/target.json")).toBeUndefined();
+});
+
+it("keeps the pre-migration record when turning on backup converts an older chat", async () => {
+  const legacy = {
+    id: "chat",
+    title: "old format",
+    created: "2026-01-01T00:00:00.000Z",
+    updated: "2026-01-02T00:00:00.000Z",
+    messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+  };
+  memory.put("chats/chat/chat.json", JSON.stringify(legacy));
+  await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
+  expect(await readJson("chats/chat/chat.legacy.json")).toEqual(legacy);
+  expect(await readJson("chats/chat/chat.json")).toHaveProperty("version");
+});
+
+it("flushes only announced chats between full scans", async () => {
+  await stashPendingTarget({ ...chat(), id: "a" });
+  await stashPendingTarget({ ...chat(), id: "b" });
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
+  await sync.flushPending();
+  const reads: string[] = [];
+  memory.beforeRead = async (path) => {
+    reads.push(path);
+  };
+  await stashPendingTarget({ ...chat(), id: "a", title: "edited" });
+  await sync.flushPending();
+  expect(reads.some((path) => path.startsWith("chats/a/"))).toBe(true);
+  expect(reads.some((path) => path.startsWith("chats/b/"))).toBe(false);
+});
+
+it("does not immediately re-flush a chat whose outbox changed without an announcement", async () => {
+  const sync = await ChatSync.create({ userId: "user", accountId: "user", dek: await generateStoreKey() });
+  await sync.flushPending();
+  const stored = await extractChatBlobs(chat());
+  vi.mocked(api.appendEvents).mockImplementationOnce(async (_id, seq, events) => {
+    memory.put("chats/chat/target.json", JSON.stringify({ ...stored, title: "unannounced" }));
+    return { newSeq: seq + events.length };
+  });
+  await sync.saveChat(chat());
+  await vi.waitFor(() => expect(api.appendEvents).toHaveBeenCalledOnce());
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(api.appendEvents).toHaveBeenCalledOnce();
+  expect(await readJson("chats/chat/target.json")).toMatchObject({ title: "unannounced" });
+});
+
 it("retries only the chat whose batch append conflicted", async () => {
   await stashPendingTarget({ ...chat(), id: "chat-conflict" });
   await stashPendingTarget({ ...chat(), id: "chat-ready" });

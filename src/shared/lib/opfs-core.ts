@@ -429,6 +429,11 @@ export async function deleteDirectory(path: string): Promise<void> {
   });
 }
 
+/** Another tab is wiping storage; later writes from this tab would survive the wipe. */
+export function fenceStorage(): void {
+  storageReset = true;
+}
+
 /**
  * Clear all OPFS storage.
  */
@@ -436,8 +441,8 @@ export async function clearAll(): Promise<void> {
   storageReset = true;
   // Fence every sync engine (here and in peer tabs) before the tree disappears;
   // otherwise they would replay the local deletions against the online backup.
-  invalidateBackupSessions();
-  await forgetBackup();
+  invalidateBackupSessions(true);
+  await forgetBackup().catch((error) => console.warn("Couldn't forget this browser's backup access:", error));
   await stopPersistence();
   await Promise.allSettled(activeWrites);
   await withPersistenceLock("opfs-tree", async () => {

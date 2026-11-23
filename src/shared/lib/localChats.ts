@@ -5,9 +5,11 @@ import { decodeLines, encodeLines, replayLog, type LogEntry } from "./chatLog";
 import { rehydrateChatBlobs, restoreChatManifest, type StoredChat } from "./opfs-chat";
 import {
   deleteFile,
+  fileExists,
   listDirectories,
   listFiles,
   readBlob,
+  readFileMetadata,
   readJson,
   upsertIndexEntry,
   writeJson,
@@ -21,13 +23,69 @@ export const withChatTarget = <T>(chatId: string, operation: () => Promise<T>) =
   withPersistenceLock(`chat-target:${encodeURIComponent(chatId)}`, operation);
 /** The native local snapshot is kept in both local-only and online modes. */
 export const localChatPath = (chatId: string) => `chats/${chatId}/chat.json`;
+/** The pre-migration record, retained with its attachments so a lossy migration can be redone. */
+export const legacyChatPath = (id: string) => `chats/${id}/chat.legacy.json`;
+
+/**
+ * Older transcripts and fields migrate on read; the next save writes the
+ * current record over the old file. Keep the original once before that can
+ * happen, because conversion drops what it cannot read.
+ * Failing to keep the copy is logged, not fatal: the chat still opens.
+ */
+export async function keepLegacyRecord(id: string, raw: LegacyStoredChat | StoredChat): Promise<void> {
+  try {
+    if (await fileExists(legacyChatPath(id))) return;
+    await writeJson(legacyChatPath(id), raw);
+  } catch (error) {
+    console.warn(`Could not keep the pre-migration record of chat ${id}:`, error);
+  }
+}
+
+/** Written when this browser first starts backup engines. */
+export const BACKUP_ACCOUNT_FILE = "_sync/backup.json";
+
+/** Saves only need an outbox once this browser has started backing up. */
+export function isBackupActivated(): Promise<boolean> {
+  return fileExists(BACKUP_ACCOUNT_FILE);
+}
+
+const withoutBase = ({ baseSeq: _base, ...chat }: StoredChat) => chat;
+
+/**
+ * The pending target, unless a newer native snapshot was written without it
+ * (an older build, or a save before backup started). The pending commit writes
+ * both with the same content, so only a differing, later chat.json wins. It
+ * keeps the target's base, because its edits were made on top of it.
+ */
+export async function readPendingTarget(
+  id: string,
+  knownLocal?: StoredChat | LegacyStoredChat,
+): Promise<StoredChat | undefined> {
+  const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
+  if (!target) return undefined;
+  const pending = normalizeStoredChat(target);
+  const local = knownLocal ?? (await readJson<StoredChat | LegacyStoredChat>(localChatPath(id)));
+  if (!local) return pending;
+  const native = withoutBase(normalizeStoredChat(local));
+  if (JSON.stringify(native) === JSON.stringify(withoutBase(pending))) return pending;
+  const [targetFile, localFile] = await Promise.all([
+    readFileMetadata(targetPath(id)),
+    readFileMetadata(localChatPath(id)),
+  ]);
+  if ((localFile?.lastModified ?? 0) <= (targetFile?.lastModified ?? 0)) return pending;
+  return pending.baseSeq === undefined ? native : { ...native, baseSeq: pending.baseSeq };
+}
 
 /** Read the local mirror without a DEK — logs and pending targets are
  *  plaintext locally; the PIN only protects the server copies. Lets the
  *  UI show chats while the session is still locked. */
-export async function readLocalChat(id: string, hydrateBlobs = true): Promise<Chat | undefined> {
-  let stored = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
-  if (!stored) stored = await readJson<StoredChat | LegacyStoredChat>(localChatPath(id));
+export async function readLocalChat(
+  id: string,
+  hydrateBlobs = true,
+  knownLocal?: StoredChat | LegacyStoredChat,
+): Promise<Chat | undefined> {
+  let stored: StoredChat | LegacyStoredChat | undefined = await readPendingTarget(id, knownLocal);
+  if (!stored) stored = knownLocal ?? (await readJson<StoredChat | LegacyStoredChat>(localChatPath(id)));
   if (!stored) {
     stored = (await readChatHistory(id))?.chat ?? undefined;
   }
@@ -47,13 +105,19 @@ export async function readLocalMirror(hydrateBlobs = true): Promise<Chat[]> {
 
 /** Share the snapshot commit with native local storage and its durable outbox. */
 export function writeLocalChatSnapshot(stored: StoredChat, pending: boolean): Promise<void> {
-  return withChatTarget(stored.id, () => writeLocalChatSnapshotUnlocked(stored, pending));
+  return withChatTarget(stored.id, async () => {
+    if (pending) return writeLocalChatSnapshotUnlocked(stored, true);
+    // Without an outbox this is the same commit as before backups; skip the repair marker.
+    await writeJson(localChatPath(stored.id), stored);
+    await storeChatIndexEntry(stored);
+  });
 }
 
 export function writeLocalChatSnapshotUnlocked(stored: StoredChat, pending: boolean): Promise<void> {
   return withChatIndexUpdate(stored.id, async () => {
     if (pending) {
       await writeJson(targetPath(stored.id), stored);
+      announceOutbox(stored.id);
       // The target is already durable if the native snapshot fails afterward.
       await storeChatIndexEntry(stored);
       await writeJson(localChatPath(stored.id), stored);
@@ -62,6 +126,35 @@ export function writeLocalChatSnapshotUnlocked(stored: StoredChat, pending: bool
       await storeChatIndexEntry(stored);
     }
   });
+}
+
+// Outbox notifications -----------------------------------------------------
+
+const outboxListeners = new Set<(chatId: string) => void>();
+let outboxChannel: BroadcastChannel | null | undefined;
+
+function channel(): BroadcastChannel | null {
+  if (outboxChannel !== undefined) return outboxChannel;
+  outboxChannel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("wingman:chat-outbox");
+  // Node (tests) would otherwise keep the process alive for the channel.
+  (outboxChannel as { unref?: () => void } | null)?.unref?.();
+  outboxChannel?.addEventListener("message", (event: MessageEvent<unknown>) => {
+    if (typeof event.data !== "string") return;
+    for (const listener of outboxListeners) listener(event.data);
+  });
+  return outboxChannel;
+}
+
+function announceOutbox(chatId: string): void {
+  for (const listener of outboxListeners) listener(chatId);
+  channel()?.postMessage(chatId);
+}
+
+/** Tells sync engines (in any tab) which chats need a flush, so a flush need not scan every chat. */
+export function onOutboxWrite(listener: (chatId: string) => void): () => void {
+  channel();
+  outboxListeners.add(listener);
+  return () => outboxListeners.delete(listener);
 }
 
 // Retention ----------------------------------------------------------------

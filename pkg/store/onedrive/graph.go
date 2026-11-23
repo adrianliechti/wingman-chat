@@ -26,6 +26,26 @@ const uploadChunk = 10 * 1024 * 1024
 // the backend's stable connection uses large fragments.
 const uploadFragment = 160 * 320 * 1024 // 50 MiB
 
+// Streaming downloads have no overall limit, so a stalled Graph connection
+// must not hold pod-wide index or upload slots indefinitely.
+const (
+	responseHeaderTimeout = time.Minute
+	jsonRequestTimeout    = 3 * time.Minute
+	uploadRequestTimeout  = 5 * time.Minute
+	indexLoadTimeout      = 3 * time.Minute
+)
+
+type cancelBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b cancelBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.cancel()
+	return err
+}
+
 type graphError struct {
 	status     int
 	retryAfter time.Duration
@@ -68,16 +88,23 @@ func (p *Provider) request(ctx context.Context, method, endpoint string, body io
 			// Do not let http.Client close the spool file before a retry.
 			input = struct{ io.Reader }{body}
 		}
-		req, err := http.NewRequestWithContext(ctx, method, endpoint, input)
+		attemptCtx, cancel := context.WithCancel(ctx)
+		if body != nil {
+			attemptCtx, cancel = context.WithTimeout(ctx, uploadRequestTimeout)
+		}
+		req, err := http.NewRequestWithContext(attemptCtx, method, endpoint, input)
 		if err != nil {
+			cancel()
 			return nil, errors.New("OneDrive backup: invalid request")
 		}
 		if body != nil {
 			size, err := body.Seek(0, io.SeekEnd)
 			if err != nil {
+				cancel()
 				return nil, err
 			}
 			if _, err := body.Seek(0, io.SeekStart); err != nil {
+				cancel()
 				return nil, err
 			}
 			req.ContentLength = size
@@ -89,12 +116,22 @@ func (p *Provider) request(ctx context.Context, method, endpoint string, body io
 		if auth {
 			session, err := sessionFrom(ctx)
 			if err != nil {
+				cancel()
 				return nil, err
 			}
 			req.Header.Set("Authorization", "Bearer "+session.token)
 		}
+		var headerTimer *time.Timer
+		if body == nil {
+			headerTimer = time.AfterFunc(responseHeaderTimeout, cancel)
+		}
 		res, err := p.client.Do(req)
+		if headerTimer != nil && !headerTimer.Stop() && err == nil {
+			res.Body.Close()
+			err = context.DeadlineExceeded
+		}
 		if err != nil {
+			cancel()
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
@@ -103,11 +140,13 @@ func (p *Provider) request(ctx context.Context, method, endpoint string, body io
 			return nil, errors.New("OneDrive backup: connection failed")
 		}
 		if res.StatusCode >= 200 && res.StatusCode < 300 {
+			res.Body = cancelBody{res.Body, cancel}
 			return res, nil
 		}
 		status := res.StatusCode
 		wait := retryAfter(res.Header.Get("Retry-After"))
 		res.Body.Close()
+		cancel()
 		// A 5xx can arrive after a Graph write committed. Replaying its CAS
 		// would turn that uncertainty into a false conflict and allow cleanup
 		// to delete published data. Let the sync protocol reconcile instead.
@@ -134,6 +173,8 @@ func (p *Provider) request(ctx context.Context, method, endpoint string, body io
 }
 
 func (p *Provider) jsonRequest(ctx context.Context, method, endpoint string, input, output any) error {
+	ctx, cancel := context.WithTimeout(ctx, jsonRequestTimeout)
+	defer cancel()
 	var body io.ReadSeeker
 	if input != nil {
 		data, err := json.Marshal(input)

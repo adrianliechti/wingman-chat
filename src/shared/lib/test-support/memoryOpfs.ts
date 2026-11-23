@@ -6,6 +6,10 @@ export class MemoryOpfs {
   beforeRead?: (path: string) => Promise<void>;
   aborted: string[] = [];
   closed: string[] = [];
+  /** Give each write a later lastModified instead of the fixed default. */
+  tickMtimes = false;
+  private readonly mtimes = new Map<string, number>();
+  private clock = 1000;
 
   readonly root = this.directory("");
 
@@ -17,12 +21,16 @@ export class MemoryOpfs {
     this.beforeRead = undefined;
     this.aborted = [];
     this.closed = [];
+    this.tickMtimes = false;
+    this.mtimes.clear();
+    this.clock = 1000;
   }
 
   put(path: string, content: string | Blob) {
     const parts = path.split("/");
     for (let i = 1; i < parts.length; i++) this.directories.add(parts.slice(0, i).join("/"));
     this.files.set(path, typeof content === "string" ? new Blob([content]) : content);
+    if (this.tickMtimes) this.mtimes.set(path, ++this.clock);
   }
 
   private directory(path: string): FileSystemDirectoryHandle {
@@ -84,7 +92,7 @@ export class MemoryOpfs {
         const blob = this.files.get(path);
         if (!blob) throw new DOMException("Missing file", "NotFoundError");
         // OPFS does not retain the MIME type supplied when writing a Blob.
-        return new File([blob], path.split("/").at(-1)!, { lastModified: 1000 });
+        return new File([blob], path.split("/").at(-1)!, { lastModified: this.mtimes.get(path) ?? 1000 });
       },
       createWritable: async (options?: { keepExistingData?: boolean }) => {
         let staged = options?.keepExistingData ? this.files.get(path)! : new Blob();

@@ -162,6 +162,8 @@ func (p *Provider) fetchIndex(ctx context.Context, s *session, drive string, bef
 	if cached := p.cache.index(drive, before); cached != nil {
 		return cached, before, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, indexLoadTimeout)
+	defer cancel()
 	reader, err := p.open(ctx, indexName)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, driveItem{}, errIndexChanged

@@ -38,6 +38,22 @@ it("flushes the final local write before allowing backup and keeps nested reques
   }
 });
 
+it("skips the persistence flush when no backup is running", async () => {
+  const save = vi.fn(async () => {});
+  const queue = new PersistenceQueue(vi.fn(), 60_000);
+  const unregister = registerPersistenceQueue(queue);
+  const release = beginChatBackupPause("chat");
+  try {
+    queue.schedule("chat", save);
+    await finishChatBackupPause(release);
+    expect(save).not.toHaveBeenCalled();
+    expect(isChatBackupPaused("chat")).toBe(false);
+  } finally {
+    unregister();
+    await queue.stop();
+  }
+});
+
 it("a stopped request cannot release a newer request's backup hold", async () => {
   const old = beginChatBackupPause("chat");
   const stopped = finishStoppedChatBackups("chat");

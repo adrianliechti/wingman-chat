@@ -42,6 +42,11 @@ export async function finishStoppedChatBackups(id: string): Promise<void> {
 
 /** Preserve frequent local saves; publish the final durable state after completion/stop/error. */
 export async function finishChatBackupPause(release: () => void): Promise<void> {
+  // Without a running backup there is nothing to publish; queued saves finish on their own schedule.
+  if (listeners.size === 0) {
+    release();
+    return;
+  }
   try {
     await flushPersistence();
   } catch (error) {

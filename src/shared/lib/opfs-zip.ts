@@ -12,7 +12,7 @@ import { fileExists, getDirectory, getRoot } from "./opfs-core";
 import { saveZip, generateZipBlob } from "./zipStreams";
 import { flushForBackup, withPersistenceLock } from "./persistence";
 import { STORAGE_COLLECTIONS } from "./opfs-index";
-import { withChatTarget } from "./localChats";
+import { readPendingTarget, withChatTarget } from "./localChats";
 import { readZipFiles, restoreFiles, type RestoreResult } from "./opfs-restore";
 export { rebuildFolderIndex } from "./opfs-index";
 
@@ -64,8 +64,10 @@ export async function addDirectoryToZip(handle: FileSystemDirectoryHandle, zipFo
     if (entryHandle.kind === "file") {
       // A failed native write can leave a newer, durable outbox snapshot.
       const pending = /^chats\/[^/]+$/.test(path) && name === "chat.json" && (await fileExists(`${path}/target.json`));
-      const source = pending ? await handle.getFileHandle("target.json") : (entryHandle as FileSystemFileHandle);
-      const bytes = await readFileForZip(handle, source, childPath);
+      const chat = pending ? await readPendingTarget(path.slice("chats/".length)) : undefined;
+      const bytes = chat
+        ? new TextEncoder().encode(JSON.stringify(chat))
+        : await readFileForZip(handle, entryHandle as FileSystemFileHandle, childPath);
       if (bytes !== undefined) zipFolder.file(name, bytes);
     } else {
       const subFolder = zipFolder.folder(name);

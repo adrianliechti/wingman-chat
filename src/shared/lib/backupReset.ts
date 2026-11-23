@@ -1,10 +1,12 @@
 import { resetLocalBackupState } from "./chatSync";
-import { flushPersistence, withPersistenceLock } from "./persistence";
+import { BACKUP_ACCOUNT_FILE } from "./localChats";
+import { flushPersistence, stopPersistence, withPersistenceLock } from "./persistence";
 import { fetchMe, getKeystore, resetBackup, ServerError, type ResetTarget } from "./storeClient";
-import { readJson, writeJson } from "./opfs-core";
+import { fenceStorage, readJson, writeJson } from "./opfs-core";
 import {
   BACKUP_GENERATION_KEY,
   BACKUP_RESET_KEY,
+  STORAGE_RESET_KEY,
   WORKSPACE_OWNER_KEY,
   WorkspaceOwnerError,
   invalidateBackupSessions,
@@ -18,6 +20,11 @@ import { forgetBackup } from "./rememberedBackup";
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (event) => {
     if (event.key === BACKUP_GENERATION_KEY && event.newValue !== event.oldValue) {
+      if (event.newValue && event.newValue === localStorage.getItem(STORAGE_RESET_KEY)) {
+        fenceStorage();
+        void stopPersistence().finally(() => window.location.reload());
+        return;
+      }
       void flushPersistence()
         .then(() => window.location.reload())
         .catch((error) => {
@@ -110,8 +117,6 @@ export async function adoptLocalWorkspace(): Promise<void> {
   });
   window.location.reload();
 }
-
-const BACKUP_ACCOUNT_FILE = "_sync/backup.json";
 
 /** Record which backup the local sync tracking refers to. Called when engines start. */
 export function recordBackupAccount(accountId: string): Promise<void> {

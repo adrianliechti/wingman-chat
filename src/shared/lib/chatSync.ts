@@ -26,14 +26,17 @@ import {
   chatRetentionCutoff,
   completeChatIndexRepair,
   encodeHistory,
+  keepLegacyRecord,
   readChatHistory,
   targetPath,
   localChatPath,
+  onOutboxWrite,
+  readPendingTarget,
   withChatTarget,
   writeLocalChatSnapshot,
   writeLocalChatSnapshotUnlocked,
 } from "./localChats";
-import { normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
+import { isLegacyStoredChat, normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
 import type { Chat } from "@/shared/types/chat";
 import { applyEntries, chunkEntries, decodeLines, diffChat, encodeLines, type LogEntry, replayLog } from "./chatLog";
 import * as api from "./storeClient";
@@ -72,6 +75,8 @@ interface SyncState {
 /** Threshold of entries that triggers an automatic compaction. Keeps fresh
  *  devices' first pull bounded; the snapshot is paid for once per N saves. */
 const COMPACT_THRESHOLD = 50;
+
+const FULL_SCAN_INTERVAL_MS = 60_000;
 
 interface PendingDeletion {
   id: string;
@@ -227,7 +232,7 @@ export async function resetLocalBackupState(): Promise<void> {
     // Native saves use this lock even while backup is disabled or resetting.
     // Preserve the snapshot and remove its old baseline as one operation.
     await withChatTarget(id, async () => {
-      const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
+      const target = await readPendingTarget(id);
       const history = await readText(historyPath(id));
       const stored =
         target ??
@@ -316,6 +321,9 @@ export class ChatSync {
   private deletions = new Map<string, PendingDeletion>();
   private flushing = false;
   private flushAgain = false;
+  /** Chats whose outbox changed since the last flush, announced by saves in any tab. */
+  private dirty = new Set<string>();
+  private lastFullScan = 0;
   /** A conflict resolution changed chats the UI shows. */
   private viewChanged = false;
   // Attachments are immutable and content-addressed, so one confirmation per
@@ -350,6 +358,7 @@ export class ChatSync {
     }
     const sync = new ChatSync(opts.userId, opts.accountId, opts.dek, state, opts.retentionDays);
     await sync.hydrateFromOpfs();
+    onOutboxWrite((id) => sync.dirty.add(id));
     await sync.refreshDeletions();
     sync.setActivity({});
     return sync;
@@ -536,7 +545,7 @@ export class ChatSync {
       // Native saves do not take the network lock. Recheck their durable target
       // under its own lock before expiring a chat inspected earlier in this pull.
       if (retentionCutoff) {
-        const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
+        const target = await readPendingTarget(chatId);
         const versions = [target, this.lastSynced.get(chatId)].filter((stored) => stored != null);
         if (
           !versions.length ||
@@ -577,18 +586,31 @@ export class ChatSync {
     }
     this.flushAgain = false;
     this.flushing = true;
+    // Announcements can be missed (closed tab, no BroadcastChannel); a periodic full scan catches up.
+    const fullScan = Date.now() - this.lastFullScan >= FULL_SCAN_INTERVAL_MS;
+    const dirty = this.dirty;
+    this.dirty = new Set();
     try {
-      await this.syncKnownChats();
+      if (fullScan) {
+        this.lastFullScan = Date.now();
+        await this.syncKnownChats(true);
+      }
       // Local saves need no initialized engine; adopt their durable outbox now.
-      for (const id of await listDirectories("chats")) {
+      for (const id of fullScan ? await listDirectories("chats") : dirty) {
+        if (isChatBackupPaused(id)) {
+          this.dirty.add(id);
+          continue;
+        }
         await withChatTarget(id, async () => {
-          const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
-          if (target) this.pendingTargets.set(id, normalizeStoredChat(target));
+          const target = await readPendingTarget(id);
+          if (target) this.pendingTargets.set(id, target);
           else this.pendingTargets.delete(id);
         });
       }
       await this.refreshDeletions();
     } catch (error) {
+      for (const id of dirty) this.dirty.add(id);
+      if (fullScan) this.lastFullScan = 0;
       this.flushing = false;
       this.setActivity({ lastError: errorMessage(error) });
       throw error;
@@ -597,6 +619,7 @@ export class ChatSync {
     const chats = Array.from(this.pendingTargets.keys()).filter(
       (id) => !isChatBackupPaused(id) && !this.deletions.has(id),
     );
+    const attempted = new Set([...chats, ...deletes.map((del) => del.id)]);
     const progress = this.progress.begin("backup", deletes.length + chats.length);
     let failed = false;
     try {
@@ -646,12 +669,17 @@ export class ChatSync {
       for (const l of this.remoteChangeListeners) l(chats);
     }
 
-    // Work that arrived mid-flush was skipped by the re-entrancy guard.
+    // Work that arrived mid-flush was skipped by the re-entrancy guard. A chat
+    // this pass already attempted waits for a new save or the next tick, so a
+    // target that never compares equal cannot spin.
     if (
       this.flushAgain ||
       (!failed &&
-        ([...this.pendingTargets.keys()].some((id) => !isChatBackupPaused(id) && !this.deletions.has(id)) ||
-          [...this.deletions.values()].some((entry) => !isChatBackupPaused(entry.id))))
+        ([...this.dirty].some((id) => !isChatBackupPaused(id)) ||
+          [...this.pendingTargets.keys()].some(
+            (id) => !attempted.has(id) && !isChatBackupPaused(id) && !this.deletions.has(id),
+          ) ||
+          [...this.deletions.values()].some((entry) => !attempted.has(entry.id) && !isChatBackupPaused(entry.id))))
     ) {
       void this.flushPending();
     }
@@ -683,13 +711,16 @@ export class ChatSync {
     for (const id of ids) {
       await this.withChat(id, () =>
         withChatTarget(id, async () => {
-          const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(id));
+          const target = await readPendingTarget(id);
           if (!(await fileExists(historyPath(id)))) {
             // A pending edit takes precedence over an older local-only record.
             const flat = await readJson<StoredChat | LegacyStoredChat>(`chats/${id}.json`);
-            const local = target ?? (await readJson<StoredChat | LegacyStoredChat>(localChatPath(id))) ?? flat;
+            const native = target ? undefined : await readJson<StoredChat | LegacyStoredChat>(localChatPath(id));
+            const local = target ?? native ?? flat;
             if (local) {
-              const stored = normalizeStoredChat({ ...local, id });
+              const record = { ...local, id };
+              const stored = normalizeStoredChat(record);
+              if (native && (isLegacyStoredChat(native) || stored !== record)) await keepLegacyRecord(id, native);
               this.pendingTargets.set(id, stored);
               await writeLocalChatSnapshotUnlocked(stored, true);
               if (flat) {
@@ -702,11 +733,27 @@ export class ChatSync {
           }
           const chat = this.lastSynced.get(id);
           if (target) {
-            const stored = normalizeStoredChat(target);
-            this.pendingTargets.set(id, stored);
-            await writeLocalChatSnapshotUnlocked(stored, true);
-          } else if (!(await fileExists(localChatPath(id))) && chat) {
-            await writeLocalChatSnapshotUnlocked(this.withBase(id, chat), false);
+            this.pendingTargets.set(id, target);
+            await writeLocalChatSnapshotUnlocked(target, true);
+            return;
+          }
+          const local = await readJson<StoredChat | LegacyStoredChat>(localChatPath(id));
+          if (!local) {
+            if (chat) await writeLocalChatSnapshotUnlocked(this.withBase(id, chat), false);
+            return;
+          }
+          // A save without the outbox (another build, or before backup started) is newer than the backup.
+          const stored = normalizeStoredChat({ ...local, id });
+          if (
+            chat &&
+            (stored.updated ? Date.parse(stored.updated) : 0) > (chat.updated ? Date.parse(chat.updated) : 0)
+          ) {
+            const pending = {
+              ...stored,
+              baseSeq: typeof stored.baseSeq === "number" ? stored.baseSeq : this.headSeq(id),
+            };
+            this.pendingTargets.set(id, pending);
+            await writeLocalChatSnapshotUnlocked(pending, true);
           }
         }),
       );
@@ -714,22 +761,25 @@ export class ChatSync {
   }
 
   /** Adopt chats another tab created and forget ones it deleted. */
-  private async syncKnownChats(): Promise<void> {
+  private async syncKnownChats(skipPaused = false): Promise<void> {
     const ids = new Set(await listDirectories("chats"));
     for (const id of new Set([...this.lastSynced.keys(), ...this.pendingTargets.keys()])) {
       if (ids.has(id)) continue;
       this.lastSynced.delete(id);
       this.pendingTargets.delete(id);
     }
+    // One state read per scan; reloadChat only consults this chat's entries, which its lock protects.
+    const known = { disk: await loadState() };
     for (const id of ids) {
-      await this.withChat(id, async () => {});
+      if (skipPaused && isChatBackupPaused(id)) continue;
+      await this.withChat(id, async () => {}, known);
     }
   }
 
   /** Re-read one chat's baseline and pending target from OPFS. Another tab may
    *  have advanced either since this tab last looked. */
-  private async reloadChat(chatId: string): Promise<void> {
-    const disk = await loadState();
+  private async reloadChat(chatId: string, known?: { disk: SyncState | undefined }): Promise<void> {
+    const disk = known ? known.disk : await loadState();
     const owned = disk?.userId === this.userId;
     const previous = this.lastSynced.get(chatId);
     const history = await readChatHistory(
@@ -754,8 +804,8 @@ export class ChatSync {
     if (history?.chat) this.lastSynced.set(chatId, history.chat);
     else this.lastSynced.delete(chatId);
     await withChatTarget(chatId, async () => {
-      const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
-      if (target) this.pendingTargets.set(chatId, normalizeStoredChat(target));
+      const target = await readPendingTarget(chatId);
+      if (target) this.pendingTargets.set(chatId, target);
       else {
         this.pendingTargets.delete(chatId);
         if (history?.chat && head !== disk?.heads[chatId]) {
@@ -787,11 +837,11 @@ export class ChatSync {
 
   /** Serialize network sync per chat across tabs. Each run starts from the
    *  baseline on disk, since another tab may have posted or pulled meanwhile. */
-  private withChat<T>(chatId: string, fn: () => Promise<T>): Promise<T> {
+  private withChat<T>(chatId: string, fn: () => Promise<T>, known?: { disk: SyncState | undefined }): Promise<T> {
     return withPersistenceLock(
       `chat-sync:${encodeURIComponent(this.userId)}:${encodeURIComponent(chatId)}`,
       async () => {
-        await this.reloadChat(chatId);
+        await this.reloadChat(chatId, known);
         return fn();
       },
     );
@@ -918,9 +968,9 @@ export class ChatSync {
   /** Replace an older local copy with the newer backup instead of truncating it. */
   private async adoptBaseline(chatId: string, target: StoredChat, baseline: StoredChat): Promise<void> {
     await withChatTarget(chatId, async () => {
-      const current = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
+      const current = await readPendingTarget(chatId);
       if (current && JSON.stringify(current) !== JSON.stringify(target)) {
-        this.pendingTargets.set(chatId, normalizeStoredChat(current));
+        this.pendingTargets.set(chatId, current);
         return;
       }
       await writeLocalChatSnapshotUnlocked(this.withBase(chatId, baseline), false);
@@ -961,17 +1011,17 @@ export class ChatSync {
    *  flush was in flight (in this or another tab), in which case it must flush again. */
   private async clearPendingTarget(chatId: string, flushed: StoredChat): Promise<void> {
     await withChatTarget(chatId, async () => {
-      const current = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
+      const current = await readPendingTarget(chatId);
       if (!current) {
         this.pendingTargets.delete(chatId);
       } else if (JSON.stringify(current) === JSON.stringify(flushed)) {
         // A prior save may have committed the outbox but failed its native
         // projection. Keep the outbox until that snapshot is durable too.
-        await writeLocalChatSnapshotUnlocked(normalizeStoredChat(current), false);
+        await writeLocalChatSnapshotUnlocked(current, false);
         await deleteFile(targetPath(chatId));
         this.pendingTargets.delete(chatId);
       } else {
-        this.pendingTargets.set(chatId, normalizeStoredChat(current));
+        this.pendingTargets.set(chatId, current);
       }
     });
     this.setActivity({});
@@ -1114,11 +1164,11 @@ export class ChatSync {
     await withDeletionLock(this.userId, chatId, async () => {
       if (await readJson(deletePath(this.userId, chatId))) return;
       await withChatTarget(chatId, async () => {
-        const target = await readJson<StoredChat | LegacyStoredChat>(targetPath(chatId));
+        const target = await readPendingTarget(chatId);
         if (target) {
           // The pending edit recreates the chat; its workspace files go with it.
           await writeJson(keepPath(this.userId, chatId), keepMarker(chatId, "reupload"));
-          this.pendingTargets.set(chatId, normalizeStoredChat(target));
+          this.pendingTargets.set(chatId, target);
           await deleteFile(historyPath(chatId));
         } else {
           // The chat is gone everywhere; an earlier marker must not revive its files.

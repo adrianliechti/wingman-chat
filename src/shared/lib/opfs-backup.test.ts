@@ -47,6 +47,7 @@ it("exports native chat snapshots without device sync tracking and imports them 
   expect(zip.file("chats/chat/history.jsonl")).toBeNull();
   expect(Object.keys(zip.files).some((path) => path.startsWith("_sync/"))).toBe(false);
   memory.put("chats/chat/target.json", storedChat("chat", { title: "stale" }));
+  memory.put("_sync/backup.json", JSON.stringify({ accountId: "account" }));
   const result = await restoreFiles(
     new Map([
       ["chats/chat/chat.json", new Blob([snapshot])],
@@ -60,6 +61,14 @@ it("exports native chat snapshots without device sync tracking and imports them 
     baseSeq: -1,
   });
   expect(await opfs.readText("_sync/state.json")).toBe("private baselines");
+});
+
+it("drops a stale outbox instead of creating one when importing chats without backup", async () => {
+  const snapshot = storedChat("chat", { title: "imported" });
+  memory.put("chats/chat/target.json", storedChat("chat", { title: "stale" }));
+  await restoreFiles(new Map([["chats/chat/chat.json", new Blob([snapshot])]]));
+  expect(await opfs.readJson("chats/chat/target.json")).toBeUndefined();
+  expect(await opfs.readJson("chats/chat/chat.json")).toMatchObject({ title: "imported" });
 });
 
 it("holds the chat snapshot through export while sync acknowledges and clears its outbox", async () => {

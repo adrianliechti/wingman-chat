@@ -9,7 +9,7 @@ import type { Chat } from "@/shared/types/chat";
 import { loadChat, loadChatIndex, removeChat, storeChat } from "./chatStorage";
 import { createAttachmentLoader } from "./chatAttachments";
 import { generateStoreKey } from "@/shared/lib/test-support/storeKey";
-import { encodeHistory, readLocalChat } from "@/shared/lib/localChats";
+import { encodeHistory, readLocalChat, readPendingTarget } from "@/shared/lib/localChats";
 import { diffChat } from "@/shared/lib/chatLog";
 
 vi.mock("@/shared/lib/storeClient", () => ({
@@ -30,9 +30,11 @@ const chat = (id = "chat"): Chat => ({
   messages: [],
 });
 const image = (value = "YWJj", name?: string) => mediaFromDataUrl(`data:image/jpeg;base64,${value}`, name);
+const activateBackup = () => memory.put("_sync/backup.json", JSON.stringify({ accountId: "account" }));
 
 beforeEach(() => {
   memory.reset();
+  memory.tickMtimes = true;
   config.chat.retentionDays = 0;
   config.store = false;
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => memory.root } });
@@ -69,6 +71,7 @@ describe("chat persistence", () => {
 
   it("preserves a native save made while backup tracking is being reset", async () => {
     config.store = true;
+    activateBackup();
     const value = { ...chat(), title: "before reset" };
     await storeChat(value);
     await opfs.writeText("chats/chat/history.jsonl", "");
@@ -177,6 +180,7 @@ describe("chat persistence", () => {
     "reads only metadata at startup with online backup %s and resolves attachments on demand",
     async (online) => {
       config.store = online;
+      if (online) activateBackup();
       const value = chat();
       value.messages = [userMessage([image()])];
       await storeChat(value);
@@ -225,33 +229,51 @@ describe("chat persistence", () => {
     expect(await loadChat("healthy", false)).toMatchObject({ id: "healthy" });
   });
 
-  it.each([false, true])(
-    "repairs an interrupted metadata update with online backup %s without scanning healthy transcripts",
-    async (online) => {
-      config.store = online;
-      const original = { ...chat(), title: "original" };
-      await storeChat(original);
-      await storeChat(chat("healthy"));
-      const updated = { ...original, title: "updated", projectId: "project", updated: new Date(Date.now() + 1000) };
-      memory.beforeWrite = async (path) => {
-        if (path === "chats/index.json") throw new Error("index write failed");
-      };
-      await expect(storeChat(updated)).rejects.toThrow("index write failed");
-      memory.beforeWrite = undefined;
-      const reads: string[] = [];
-      memory.beforeRead = async (path) => {
-        reads.push(path);
-      };
-      expect((await loadChatIndex()).find((entry) => entry.id === original.id)).toMatchObject({
-        title: updated.title,
-        projectId: updated.projectId,
-        updated: updated.updated,
-      });
-      expect(reads.some((path) => path.startsWith("chats/healthy/"))).toBe(false);
-      expect(await opfs.listFiles("_sync/chat-index")).toEqual([]);
-      expect(await loadChat(original.id, false)).toMatchObject(updated);
-    },
-  );
+  it("repairs an interrupted metadata update with online backup without scanning healthy transcripts", async () => {
+    config.store = true;
+    activateBackup();
+    const original = { ...chat(), title: "original" };
+    await storeChat(original);
+    await storeChat(chat("healthy"));
+    const updated = { ...original, title: "updated", projectId: "project", updated: new Date(Date.now() + 1000) };
+    memory.beforeWrite = async (path) => {
+      if (path === "chats/index.json") throw new Error("index write failed");
+    };
+    await expect(storeChat(updated)).rejects.toThrow("index write failed");
+    memory.beforeWrite = undefined;
+    const reads: string[] = [];
+    memory.beforeRead = async (path) => {
+      reads.push(path);
+    };
+    expect((await loadChatIndex()).find((entry) => entry.id === original.id)).toMatchObject({
+      title: updated.title,
+      projectId: updated.projectId,
+      updated: updated.updated,
+    });
+    expect(reads.some((path) => path.startsWith("chats/healthy/"))).toBe(false);
+    expect(await opfs.listFiles("_sync/chat-index")).toEqual([]);
+    expect(await loadChat(original.id, false)).toMatchObject(updated);
+  });
+
+  it("saves local-only chats without an outbox or index repair marker", async () => {
+    config.store = true;
+    const writes: string[] = [];
+    memory.beforeWrite = async (path) => {
+      writes.push(path);
+    };
+    await storeChat(chat());
+    expect(writes).toEqual(["chats/chat/chat.json", "chats/index.json"]);
+  });
+
+  it("prefers a newer native save over an outbox left by an earlier backup build", async () => {
+    const pending = { ...(await opfs.extractChatBlobs({ ...chat(), title: "stale outbox" })), baseSeq: 3 };
+    memory.put("chats/chat/target.json", JSON.stringify(pending));
+    memory.put("chats/chat/history.jsonl", "");
+    const edited = { ...chat(), title: "edited without backup" };
+    await storeChat(edited);
+    expect(await loadChat(edited.id)).toMatchObject({ title: edited.title });
+    expect(await readPendingTarget(edited.id)).toMatchObject({ title: edited.title, baseSeq: 3 });
+  });
 
   it("round-trips the native record: identities, usage, phases, resume, metadata and rich tool output", async () => {
     const value = chat();
@@ -533,6 +555,8 @@ it("does not resurrect stale chat index entries after an online deletion", async
 });
 
 it("recovers a local edit from the shared pending target if the native save fails", async () => {
+  config.store = true;
+  activateBackup();
   const value = chat();
   await storeChat(value);
   await stashPendingTarget(value);
@@ -551,6 +575,7 @@ it.each([false, true])(
   "keeps an uploaded local edit after a failed native save with engine restart %s",
   async (restart) => {
     config.store = true;
+    activateBackup();
     vi.mocked(api.appendEvents).mockImplementation(async (_id, seq, events) => ({ newSeq: seq + events.length }));
     vi.mocked(api.headBlob).mockResolvedValue(true);
     const dek = await generateStoreKey();

@@ -2,6 +2,9 @@ import { stashPendingDeletion } from "@/shared/lib/chatSync";
 import {
   chatRetentionCutoff,
   completeChatIndexRepair,
+  isBackupActivated,
+  keepLegacyRecord,
+  legacyChatPath,
   pendingChatIndexRepairs,
   readChatHistory,
   readLocalChat,
@@ -29,11 +32,7 @@ export async function storeChat(chat: Chat): Promise<void> {
     const stored = await opfs.extractChatBlobs(chat);
     // Commit the shared pending target first so interrupted native writes
     // remain recoverable locally and when online sync resumes.
-    const pending = Boolean(
-      getConfig().store ||
-      (await opfs.fileExists(`chats/${chat.id}/history.jsonl`)) ||
-      (await opfs.fileExists(`chats/${chat.id}/target.json`)),
-    );
+    const pending = Boolean(getConfig().store) && (await isBackupActivated());
     await writeLocalChatSnapshot(stored, pending);
     // Cleanup follows the durable commit. An unreadable recovery record must
     // leave all blobs intact; cleanup failure is not a failed save.
@@ -66,28 +65,11 @@ export function removeChat(id: string): Promise<void> {
   return withPersistenceLock("collection:chats", () => removeChatFiles(id));
 }
 
-/** The pre-migration record, retained with its attachments so a lossy migration can be redone. */
-export const legacyChatPath = (id: string) => `chats/${id}/chat.legacy.json`;
-
-/**
- * Older transcripts and fields migrate on read; the next save writes the
- * current record over the old file. Keep the original once before that can
- * happen, because conversion drops what it cannot read.
- * Failing to keep the copy is logged, not fatal: the chat still opens.
- */
-async function keepLegacyRecord(id: string, raw: LegacyStoredChat | opfs.StoredChat): Promise<void> {
-  try {
-    if (await opfs.fileExists(legacyChatPath(id))) return;
-    await opfs.writeJson(legacyChatPath(id), raw);
-  } catch (error) {
-    console.warn(`Could not keep the pre-migration record of chat ${id}:`, error);
-  }
-}
+export { legacyChatPath };
 
 export async function loadChat(id: string, hydrateBlobs = true): Promise<Chat | undefined> {
-  const raw =
-    (await opfs.readJson<opfs.StoredChat | LegacyStoredChat>(`chats/${id}/chat.json`)) ??
-    (await opfs.readJson<opfs.StoredChat | LegacyStoredChat>(`chats/${id}.json`));
+  const native = await opfs.readJson<opfs.StoredChat | LegacyStoredChat>(`chats/${id}/chat.json`);
+  const raw = native ?? (await opfs.readJson<opfs.StoredChat | LegacyStoredChat>(`chats/${id}.json`));
   if (!raw || typeof raw !== "object") return readLocalChat(id, hydrateBlobs);
   const version: unknown = raw.version;
   if (version !== undefined && version !== opfs.STORED_CHAT_VERSION)
@@ -96,13 +78,10 @@ export async function loadChat(id: string, hydrateBlobs = true): Promise<Chat | 
   const stored = normalizeStoredChat(record);
   if (isLegacyStoredChat(raw) || stored !== record) await keepLegacyRecord(id, raw);
   if (!opfs.isStoredChat(stored)) throw new Error(`Invalid chat record: ${id}`);
-  if ((await opfs.fileExists(`chats/${id}/history.jsonl`)) || (await opfs.fileExists(`chats/${id}/target.json`))) {
-    const mirror = await readLocalChat(id, hydrateBlobs);
-    if (
-      mirror &&
-      ((await opfs.fileExists(`chats/${id}/target.json`)) ||
-        (mirror.updated?.getTime() ?? 0) > (stored.updated ? Date.parse(stored.updated) : 0))
-    )
+  const pending = await opfs.fileExists(`chats/${id}/target.json`);
+  if (pending || (await opfs.fileExists(`chats/${id}/history.jsonl`))) {
+    const mirror = await readLocalChat(id, hydrateBlobs, native);
+    if (mirror && (pending || (mirror.updated?.getTime() ?? 0) > (stored.updated ? Date.parse(stored.updated) : 0)))
       return mirror;
   }
   return hydrateBlobs ? opfs.rehydrateChatBlobs(stored) : opfs.restoreChatManifest(stored);

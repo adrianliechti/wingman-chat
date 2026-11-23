@@ -15,6 +15,7 @@ import { withArtifactWorkspaceLock } from "@/features/artifacts/lib/workspaceCoo
 import type { IndexEntry } from "./opfs-core";
 import { writeFileChanges } from "./opfs-transaction";
 import { isStoredChat } from "./opfs-chat";
+import { isBackupActivated } from "./localChats";
 import { rebuildFolderIndexUnlocked, STORAGE_COLLECTIONS } from "./opfs-index";
 import { migrateImportedRecords, normalizeBundledSkills, prepareAgentFileImport } from "./opfs-import";
 import { isJunkZipEntry } from "./opfs-zip";
@@ -307,13 +308,16 @@ export async function restoreFiles(
     // Imported snapshots replace a conversation locally and enter its outbox.
     // An old pending target must not hide the newly imported native record.
     // Their backup origin is unknown here, so sync must not let them truncate newer work.
+    const outbox = await isBackupActivated();
     for (const [path, blob] of files) {
       if (!blob || !/^chats\/[^/]+\/chat\.json$/.test(path)) continue;
+      const target = path.replace(/chat\.json$/, "target.json");
+      if (!outbox) {
+        changes.set(target, undefined);
+        continue;
+      }
       const record = JSON.parse(await blob.text()) as Record<string, unknown>;
-      changes.set(
-        path.replace(/chat\.json$/, "target.json"),
-        new Blob([JSON.stringify({ ...record, baseSeq: -1 })], { type: "application/json" }),
-      );
+      changes.set(target, new Blob([JSON.stringify({ ...record, baseSeq: -1 })], { type: "application/json" }));
     }
     for (const path of removals) changes.set(path, undefined);
     await prepareAgentFileImport(changes);
