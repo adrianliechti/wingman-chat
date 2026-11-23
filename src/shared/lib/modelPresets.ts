@@ -43,3 +43,36 @@ export function modelPresetIndex(presets: readonly ModelPreset[], model: Model |
       preset.verbosity === model.verbosity,
   );
 }
+
+const EFFORT_ORDER: readonly ReasoningEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/**
+ * Where a selection that matches no preset still sits on the slider: the step
+ * for the same model whose effort is closest, the earlier one on a tie. -1 when
+ * the model has no step at all.
+ */
+export function nearestModelPresetIndex(presets: readonly ModelPreset[], model: Model | null | undefined) {
+  if (!model) return -1;
+  const rank = (effort: ReasoningEffort | undefined) => (effort ? EFFORT_ORDER.indexOf(effort) : -1);
+  const target = rank(model.effort ?? model.defaultEffort);
+  let nearest = -1;
+  let distance = Infinity;
+  presets.forEach((preset, index) => {
+    if (preset.model.id !== model.id) return;
+    const step = rank(preset.effort ?? preset.model.defaultEffort);
+    // Without an effort on either side there is nothing to compare; the first step wins.
+    const gap = target < 0 || step < 0 ? 0 : Math.abs(step - target);
+    if (gap < distance) {
+      nearest = index;
+      distance = gap;
+    }
+  });
+  return nearest;
+}
+
+/** A backend model with this ID picks the model itself; the slider offers it as its own stop. */
+export const AUTO_MODEL_ID = "auto";
+
+export function findAutoModel(models: readonly Model[]) {
+  return models.find((model) => model.id === AUTO_MODEL_ID);
+}

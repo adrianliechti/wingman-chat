@@ -18,7 +18,8 @@ export type ImageResolution = "512" | "1K" | "2K" | "4K";
 export type ImageBackground = "opaque" | "transparent";
 /** Image-generation output beyond the default raster image: vector SVG or animated GIF. */
 export type ImageFormat = "svg" | "gif";
-export type RenderFormat = ImageFormat | "mp4";
+/** Canvas output beyond the default raster image: vector or animated images, video, or a song. */
+export type RenderFormat = ImageFormat | "mp4" | "mp3";
 export type RenderResolution = ImageResolution | "360p" | "720p" | "1080p";
 /** How much an image model plans before rendering, separate from quality (GPT Image 2.6). */
 export type ImageComplexity = "low" | "medium" | "high";
@@ -38,6 +39,12 @@ export type Model = {
 
   instructions?: string;
 
+  /**
+   * One of the deployment's configured chat models. Pickers offer these first,
+   * as quick picks ahead of the full list.
+   */
+  featured?: boolean;
+  /** Left out of pickers unless asked for (Option-click on the trigger). */
   hidden?: boolean;
 
   /**
@@ -70,9 +77,12 @@ export type Model = {
   supportedResolutions?: RenderResolution[];
   /** Background modes beyond the always-available "auto" default (opaque/transparent). */
   supportedBackgrounds?: ImageBackground[];
-  /** Output formats beyond the default raster image; text-to-image only (no reference images). */
+  /**
+   * Output formats beyond the default raster image; text-to-image only (no reference images).
+   * Exactly `["mp4"]` marks a video model, exactly `["mp3"]` a music model.
+   */
   supportedFormats?: RenderFormat[];
-  /** Video durations offered in whole seconds; unset uses the model default. */
+  /** Video or song lengths offered in whole seconds; unset uses the model default. */
   supportedDurations?: number[];
   /** Planning levels before rendering, separate from quality. */
   supportedComplexities?: ImageComplexity[];
@@ -127,6 +137,16 @@ export type Tool = Omit<WorkspaceTool, "inputSchema"> & {
   // Providers include native skill schemas and dynamically discovered MCP schemas.
   inputSchema: SchemaInput;
   execute: NonNullable<WorkspaceTool["execute"]>;
+  /** Callable while execute_script holds the workspace lock. These tools handle
+   * live approvals and must not re-enter the interpreter or the artifact store.
+   * Use true for approval-free text tools. Supply an adapter when a tool
+   * handles live approvals or returns structured results. */
+  script?:
+    | true
+    | {
+        outputSchema?: Record<string, unknown>;
+        execute(args: Record<string, unknown>, context: ToolContext): Promise<unknown>;
+      };
   title?: string;
   icon?: string;
   /** The user reviews the `prompt` once before an isolated agent starts. */
@@ -218,6 +238,8 @@ export interface ToolContext {
   runId?: string;
   invocationContext?: AgentRunContext;
   signal?: AbortSignal;
+  /** Model tool catalog captured for this execute_script call. Host-side only. */
+  scriptTools?: readonly Tool[];
   /** Native chat tools can pause and receive an answer on their resumed execution. */
   interruptible?: boolean;
   inputResponse?: { status: "resolved"; payload: unknown } | { status: "cancelled" };

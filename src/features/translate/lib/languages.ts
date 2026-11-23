@@ -25,11 +25,6 @@ export interface TranslatorProvider {
   languages: string[];
 }
 
-export interface SelectOption {
-  value: string;
-  label: string;
-}
-
 export const supportedProviders = (): TranslatorProvider[] => {
   try {
     const translator = getConfig().translator;
@@ -101,23 +96,3 @@ export const providerForFile = (file: File, current: string): string | undefined
   if (isSupportedFile(file, current)) return current;
   return providers.find((provider) => fileMatchesTypeList(file.name, file.type, provider.files))?.id;
 };
-
-/** Register of address: the one control every translation service offers (DeepL formality, Google formal/casual). */
-export const formalityOptions = (): SelectOption[] => [
-  { value: "", label: "As written" },
-  { value: "formal", label: "Formal" },
-  { value: "informal", label: "Informal" },
-];
-
-/** How the translation reads; orthogonal to formality, so the two combine without conflict. */
-export const styleOptions = (): SelectOption[] => [
-  { value: "", label: "As written" },
-  { value: "plain", label: "Plain language" },
-  { value: "professional", label: "Professional" },
-  { value: "natural", label: "Natural" },
-  { value: "technical", label: "Technical" },
-];
-
-/** Keeps a stored option value only when it is still offered. */
-export const knownOption = (options: SelectOption[], value: string | undefined): string =>
-  value && options.some((option) => option.value === value) ? value : "";

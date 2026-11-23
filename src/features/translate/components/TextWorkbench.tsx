@@ -7,7 +7,6 @@ import {
   Paperclip,
   PenLine,
   RotateCcw,
-  ScanText,
   Sparkles,
   Upload,
   X,
@@ -29,7 +28,7 @@ import { PlayButton } from "@/shared/ui/PlayButton";
 import { SelectorMenu } from "@/shared/ui/SelectorMenu";
 import { useTextSelection, type TextSelectionSnapshot } from "@/shared/ui/selection/useTextSelection";
 import { type Alternatives, AlternativesPopover } from "./AlternativesPopover";
-import { PANE_INSET_CLASS, PANE_LABEL_CLASS, PaneHeader } from "./PaneHeader";
+import { PANE_INSET_CLASS, PaneHeader } from "./PaneHeader";
 import { LanguagePicker } from "./LanguagePicker";
 
 interface TextWorkbenchProps {
@@ -42,7 +41,7 @@ interface TextWorkbenchProps {
 const FOOTER_CLASS = `flex h-11 shrink-0 items-center gap-1 pr-3 ${PANE_INSET_CLASS}`;
 // Negative margin: the icon, not the hover background, sits on the pane's inset.
 const ATTACH_BUTTON_CLASS =
-  "-ml-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-black/5 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-white/5 dark:hover:text-neutral-200";
+  "-ml-2 inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-neutral-700 transition-colors hover:bg-black/5 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-white/5 dark:hover:text-neutral-100";
 const ICON_BUTTON_CLASS =
   "rounded p-1.5 text-neutral-500 transition-colors hover:bg-black/5 hover:text-neutral-800 disabled:pointer-events-none disabled:opacity-40 dark:text-neutral-400 dark:hover:bg-white/5 dark:hover:text-neutral-200";
 
@@ -88,8 +87,6 @@ export function TextWorkbench({ onPickFiles, onPickDrive }: TextWorkbenchProps) 
     addFiles,
   } = useTranslate();
   const job = active?.kind === "text" ? active : null;
-  const maxTextLength = config.translator?.maxTextLength;
-  const overLimit = maxTextLength != null && draft.sourceText.length > maxTextLength;
 
   // Phones while typing: the keyboard halves the screen, so the source takes all
   // of it and the translation waits behind "Done" (or the return key).
@@ -117,6 +114,58 @@ export function TextWorkbench({ onPickFiles, onPickDrive }: TextWorkbenchProps) 
     />
   );
 
+  // With drives configured the button offers them; otherwise it opens the file picker itself.
+  const fileHint = fileTypeHint(files.length ? files : acceptedFiles);
+  const attach =
+    acceptedFiles.length === 0 ? null : config.drives.length > 0 ? (
+      <DropdownMenu
+        anchor="bottom start"
+        trigger={
+          <MenuButton className={ATTACH_BUTTON_CLASS}>
+            <Paperclip size={15} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
+            <span className="truncate">Translate a document</span>
+          </MenuButton>
+        }
+      >
+        <DropdownMenuItem icon={<Upload size={15} />} description={fileHint} onClick={onPickFiles}>
+          Upload
+        </DropdownMenuItem>
+        {config.drives.map((drive) => (
+          <DropdownMenuItem
+            key={drive.id}
+            icon={<DriveIcon drive={drive} size={15} />}
+            onClick={() => onPickDrive(drive)}
+          >
+            {drive.name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenu>
+    ) : (
+      <button
+        type="button"
+        onClick={onPickFiles}
+        className={ATTACH_BUTTON_CLASS}
+        title={`Translate a ${fileHint} file`}
+      >
+        <Paperclip size={15} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
+        <span className="truncate">Translate a document</span>
+      </button>
+    );
+
+  // A way to start over, once there is text. A text over the translator's limit
+  // is reported in the translation pane, so the header carries no counter.
+  const sourceMeta = draft.sourceText ? (
+    <button
+      type="button"
+      onClick={() => setSourceText("")}
+      className={ICON_BUTTON_CLASS}
+      title="Clear text"
+      aria-label="Clear text"
+    >
+      <X size={14} />
+    </button>
+  ) : undefined;
+
   const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const pasted = Array.from(event.clipboardData.files);
     if (pasted.length === 0) return;
@@ -132,14 +181,8 @@ export function TextWorkbench({ onPickFiles, onPickDrive }: TextWorkbenchProps) 
           aria-label="Source text"
           className={cn("flex min-h-0 min-w-0 flex-1 flex-col", !focused && "max-md:flex-none")}
         >
-          {!focused && (
-            <PaneHeader>
-              <span className={PANE_LABEL_CLASS} title="The source language is detected automatically">
-                <ScanText size={15} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
-                <span className="truncate">Detect language</span>
-              </span>
-            </PaneHeader>
-          )}
+          {/* The header says what can go in this pane: text below, or a whole document. */}
+          {!focused && <PaneHeader actions={sourceMeta}>{attach}</PaneHeader>}
           <textarea
             ref={sourceRef}
             value={draft.sourceText}
@@ -171,74 +214,12 @@ export function TextWorkbench({ onPickFiles, onPickDrive }: TextWorkbenchProps) 
                 "max-md:max-h-[calc(var(--app-height)*0.4)] max-md:min-h-28 max-md:flex-none max-md:field-sizing-content",
             )}
           />
-          <div className={FOOTER_CLASS} onPointerDown={focused ? keepFocus : undefined}>
-            {focused && picker}
-            {/* With drives configured the button offers them; otherwise it opens the file picker itself. */}
-            {!focused &&
-              acceptedFiles.length > 0 &&
-              (config.drives.length > 0 ? (
-                <DropdownMenu
-                  anchor="top start"
-                  trigger={
-                    <MenuButton className={ATTACH_BUTTON_CLASS}>
-                      <Paperclip size={14} />
-                      Translate a document
-                    </MenuButton>
-                  }
-                >
-                  <DropdownMenuItem
-                    icon={<Upload size={15} />}
-                    description={fileTypeHint(files.length ? files : acceptedFiles)}
-                    onClick={onPickFiles}
-                  >
-                    Upload
-                  </DropdownMenuItem>
-                  {config.drives.map((drive) => (
-                    <DropdownMenuItem
-                      key={drive.id}
-                      icon={<DriveIcon drive={drive} size={15} />}
-                      onClick={() => onPickDrive(drive)}
-                    >
-                      {drive.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenu>
-              ) : (
-                <button
-                  type="button"
-                  onClick={onPickFiles}
-                  className={ATTACH_BUTTON_CLASS}
-                  title={`Translate a ${fileTypeHint(files.length ? files : acceptedFiles)} file`}
-                >
-                  <Paperclip size={14} />
-                  Translate a document
-                </button>
-              ))}
-            <div className="ml-auto flex items-center gap-1">
-              {draft.sourceText && (
-                <>
-                  <span
-                    className={cn(
-                      "text-xs tabular-nums",
-                      overLimit ? "text-red-600 dark:text-red-400" : "text-neutral-400 dark:text-neutral-500",
-                    )}
-                    title={maxTextLength != null ? `Up to ${maxTextLength.toLocaleString()} characters` : undefined}
-                  >
-                    {draft.sourceText.length.toLocaleString()}
-                    {maxTextLength != null && ` / ${maxTextLength.toLocaleString()}`}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSourceText("")}
-                    className={ICON_BUTTON_CLASS}
-                    title="Clear text"
-                    aria-label="Clear text"
-                  >
-                    <X size={14} />
-                  </button>
-                </>
-              )}
-              {focused && (
+          {/* Phones while typing: the controls dock above the keyboard instead of the header. */}
+          {focused && (
+            <div className={FOOTER_CLASS} onPointerDown={keepFocus}>
+              {picker}
+              <div className="ml-auto flex items-center gap-1">
+                {sourceMeta}
                 <button
                   type="button"
                   onClick={finishEditing}
@@ -246,9 +227,9 @@ export function TextWorkbench({ onPickFiles, onPickDrive }: TextWorkbenchProps) 
                 >
                   Done
                 </button>
-              )}
+              </div>
             </div>
-          </div>
+          )}
         </section>
 
         <div
@@ -334,9 +315,70 @@ function TranslationResult({
 
   const idle = !job || (!text && !running && job.status !== "error");
 
+  // Formality and style, offered once there is a translation to apply them to. Each
+  // button names its setting until a choice is made, then shows the choice. Formality
+  // is left out for a target language without a formal and an informal address.
+  const tunable = !!job && (!!text || running);
+  const formality = formalityOptions.find((option) => option.value && option.value === job?.formality);
+  const style = styleOptions.find((option) => option.value && option.value === job?.style);
+  const tuning = (anchor: "bottom start" | "top start") => (
+    <>
+      {formalityOptions.length > 0 && (
+        <SelectorMenu
+          icon={<Handshake size={14} />}
+          label={formality?.label ?? "Formality"}
+          options={formalityOptions}
+          value={formality?.value ?? ""}
+          onSelect={setFormality}
+          anchor={anchor}
+        />
+      )}
+      <SelectorMenu
+        icon={<PenLine size={14} />}
+        label={style?.label ?? "Style"}
+        options={styleOptions}
+        value={style?.value ?? ""}
+        onSelect={setStyle}
+        anchor={anchor}
+      />
+    </>
+  );
+
   return (
-    <section aria-label="Translation" className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", className)}>
-      <PaneHeader>{header}</PaneHeader>
+    <section
+      aria-label="Translation"
+      className={cn("@container relative flex min-h-0 min-w-0 flex-1 flex-col", className)}
+    >
+      {/* Everything that acts on the translation sits in its header: the language and, with
+          room for them, how it should read on the left; reading and copying it on the right. */}
+      <PaneHeader
+        actions={
+          job && text ? (
+            <>
+              {refined && (
+                <button
+                  type="button"
+                  onClick={() => revertRefinement(job.id)}
+                  disabled={running || !!refining}
+                  className={ICON_BUTTON_CLASS}
+                  title="Back to the translation without refinements"
+                  aria-label="Back to the translation"
+                >
+                  <RotateCcw size={14} />
+                </button>
+              )}
+              {config.tts && <PlayButton text={text} className="size-3.5" buttonClassName={ICON_BUTTON_CLASS} />}
+              <CopyButton text={text} className="size-3.5" buttonClassName={ICON_BUTTON_CLASS} />
+            </>
+          ) : undefined
+        }
+      >
+        {/* Full width, so the picker measures its room against the row and not against itself. */}
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          {header}
+          {tunable && <div className="hidden items-center @lg:flex">{tuning("bottom start")}</div>}
+        </div>
+      </PaneHeader>
       <div className="relative min-h-0 flex-1 overflow-y-auto">
         {idle ? (
           <div className="flex h-full items-center justify-center p-6">
@@ -403,7 +445,10 @@ function TranslationResult({
       )}
 
       {job && text && (
-        <form onSubmit={submitInstruction} className={`flex shrink-0 items-center gap-2 pr-3 pb-1 ${PANE_INSET_CLASS}`}>
+        <form
+          onSubmit={submitInstruction}
+          className={`flex shrink-0 items-center gap-2 pr-3 pb-1 @lg:pb-3 ${PANE_INSET_CLASS}`}
+        >
           <Sparkles size={14} className="shrink-0 text-violet-500" aria-hidden="true" />
           <input
             value={instruction}
@@ -425,43 +470,10 @@ function TranslationResult({
         </form>
       )}
 
-      {job && (text || running) && (
-        <div className={FOOTER_CLASS}>
-          <span className="-ml-1">
-            <SelectorMenu
-              icon={<Handshake size={14} />}
-              label={
-                (job.formality && formalityOptions.find((option) => option.value === job.formality)?.label) ||
-                "Formality"
-              }
-              options={formalityOptions}
-              onSelect={setFormality}
-              anchor="top start"
-            />
-          </span>
-          <SelectorMenu
-            icon={<PenLine size={14} />}
-            label={(job.style && styleOptions.find((option) => option.value === job.style)?.label) || "Style"}
-            options={styleOptions}
-            onSelect={setStyle}
-            anchor="top start"
-          />
-          <div className="ml-auto flex items-center gap-1 pr-1">
-            {refined && (
-              <button
-                type="button"
-                onClick={() => revertRefinement(job.id)}
-                disabled={running || !!refining}
-                className={ICON_BUTTON_CLASS}
-                title="Back to the translation without refinements"
-                aria-label="Back to the translation"
-              >
-                <RotateCcw size={14} />
-              </button>
-            )}
-            {text && config.tts && <PlayButton text={text} className="h-4 w-4" />}
-            {text && <CopyButton text={text} className="h-4 w-4" />}
-          </div>
+      {/* A pane too narrow for them in the header, as on a phone, keeps them at the bottom. */}
+      {tunable && (
+        <div className={cn(FOOTER_CLASS, "@lg:hidden")}>
+          <div className="-ml-1 flex items-center">{tuning("top start")}</div>
         </div>
       )}
 

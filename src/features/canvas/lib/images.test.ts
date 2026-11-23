@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { imageDimensions, viewOnlyFormat } from "./images";
+import { imageDimensions, mediaNoun, viewOnlyFormat } from "./images";
 
 describe("canvas images", () => {
   it("routes vector and animated images to the viewer", () => {
@@ -9,6 +9,14 @@ describe("canvas images", () => {
     expect(viewOnlyFormat("data:image/png;base64,iVBOR")).toBeNull();
     expect(viewOnlyFormat("")).toBeNull();
     expect(viewOnlyFormat("data:image/jpeg;base64,cG9zdGVy", "video/mp4")).toBe("mp4");
+  });
+
+  it("tells a song by its stored type, not by its SVG cover", () => {
+    expect(viewOnlyFormat("data:image/svg+xml;base64,PHN2Zy8+", "audio/mpeg")).toBe("mp3");
+    expect(mediaNoun(viewOnlyFormat("", "audio/mpeg"))).toBe("song");
+    expect(mediaNoun("mp4")).toBe("video");
+    expect(mediaNoun("svg")).toBe("image");
+    expect(mediaNoun(null)).toBe("image");
   });
 
   it("measures SVG from its markup instead of decoding it", async () => {

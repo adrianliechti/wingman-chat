@@ -73,6 +73,15 @@ export function validateArtifactFiles(
       );
     }
   }
+
+  for (const path of normalizedPaths) {
+    for (let slash = path.indexOf("/", 1); slash !== -1; slash = path.indexOf("/", slash + 1)) {
+      const parent = path.slice(0, slash);
+      if (normalizedPaths.has(parent)) {
+        throw new CodeExecutionLimitError(`${label} contains both a file at ${parent} and a file inside it: ${path}`);
+      }
+    }
+  }
 }
 
 function utf8Prefix(value: string, maxBytes: number): { text: string; bytes: number } {

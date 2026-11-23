@@ -421,7 +421,7 @@ export function useSkillBuilderProvider(): ToolProvider {
       description: "Create and edit skills",
       icon: PenTool,
       instructions: skillBuilderPrompt || undefined,
-      tools,
+      tools: tools.map((tool) => ({ ...tool, script: true as const })),
     };
   }, [skills, getSkill, addSkill, updateSkillInLibrary, removeSkill, currentAgent, updateAgent, getAgent]);
 }

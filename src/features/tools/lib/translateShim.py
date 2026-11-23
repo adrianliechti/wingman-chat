@@ -38,5 +38,5 @@ async def translate_file(input, lang, output):
         The path of the written file.
     """
     return await _wingman_translate_file(
-        str(lang), _os.path.abspath(str(output)), _os.path.abspath(str(input))
+        str(lang), _os.fsdecode(output), _os.fsdecode(input)
     )

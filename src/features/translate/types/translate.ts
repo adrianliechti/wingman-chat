@@ -24,9 +24,9 @@ export interface Translation {
   /** Platform translator id; "" lets the platform pick its default. */
   provider: string;
   targetLang: string;
-  /** "formal" | "informal" | "" (as written). */
+  /** "formal" | "informal" | "" (automatic). Applied only where the target language has the distinction. */
   formality: string;
-  /** "plain" | "professional" | "natural" | "technical" | "" (as written). */
+  /** "simple" | "business" | "academic" | "casual" | "" (automatic). */
   style: string;
 
   /** Text jobs: what the user typed. */

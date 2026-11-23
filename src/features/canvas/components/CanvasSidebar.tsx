@@ -1,5 +1,5 @@
 import { AlertCircle, FolderOpen, Images, Loader2, PanelRightOpen, PlusIcon, RotateCw, X } from "lucide-react";
-import { viewOnlyFormat } from "../lib/images";
+import { mediaNoun, viewOnlyFormat } from "../lib/images";
 import type { Image, PendingGeneration } from "../types/canvas";
 import { cn } from "@/shared/lib/cn";
 import { useSidebar } from "@/shell/hooks/useSidebar";
@@ -104,12 +104,12 @@ export function CanvasSidebar({
           <div className="flex flex-col items-center gap-2 px-4 pt-16 text-center">
             <Images size={22} className="text-neutral-300 dark:text-neutral-600" />
             <p className="text-xs leading-relaxed text-neutral-400 dark:text-neutral-500">
-              Images and videos you create or open are kept here.
+              Images, videos and songs you create or open are kept here.
             </p>
           </div>
         )}
 
-        <div role="listbox" aria-label="Images and videos" className="grid grid-cols-2 gap-2 pt-1">
+        <div role="listbox" aria-label="Images, videos and songs" className="grid grid-cols-2 gap-2 pt-1">
           {pending.map((item) => {
             const active = item.id === selectedId;
             return (
@@ -120,7 +120,9 @@ export function CanvasSidebar({
                 aria-label={item.status === "error" ? "Failed generation" : "Generating media"}
                 className={cn(
                   "relative aspect-square overflow-hidden rounded-xl",
-                  active ? "ring-2 ring-blue-500 dark:ring-blue-400" : "ring-1 ring-black/8 dark:ring-white/10",
+                  active
+                    ? "non-webkit:ring-2 non-webkit:ring-blue-500 non-webkit:dark:ring-blue-400"
+                    : "ring-1 ring-black/8 dark:ring-white/10",
                 )}
               >
                 <button
@@ -173,7 +175,9 @@ export function CanvasSidebar({
                 aria-selected={active}
                 className={cn(
                   "group relative aspect-square overflow-hidden rounded-xl bg-neutral-200/60 dark:bg-neutral-800/60",
-                  active ? "ring-2 ring-blue-500 dark:ring-blue-400" : "ring-1 ring-black/8 dark:ring-white/10",
+                  active
+                    ? "non-webkit:ring-2 non-webkit:ring-blue-500 non-webkit:dark:ring-blue-400"
+                    : "ring-1 ring-black/8 dark:ring-white/10",
                 )}
               >
                 <button type="button" onClick={() => select(image.id)} title={label} className="press block size-full">
@@ -187,7 +191,7 @@ export function CanvasSidebar({
                 {/* Always visible: there is no hover on the phones this grid is for. */}
                 <button
                   type="button"
-                  aria-label={format === "mp4" ? "Delete video" : "Delete image"}
+                  aria-label={`Delete ${mediaNoun(format)}`}
                   title="Delete"
                   onClick={(event) => {
                     event.stopPropagation();

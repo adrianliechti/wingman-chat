@@ -12,6 +12,7 @@ import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTy
 import type { RasterizedPage } from "@/shared/lib/pdf";
 import { normalizeArtifactPath, SANDBOX_HOME } from "@/shared/lib/sandbox";
 import ASYNCIO_SHIM from "./asyncioShim.py?raw";
+import { bridgeInputPaths, bridgeOutputPath } from "./bridgePaths";
 import DUCKDB_SCOPE from "./duckdbScope.py?raw";
 import {
   BoundedOutput,
@@ -32,7 +33,7 @@ import type {
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
-import { callMainThread, describeError } from "./interpreterRpc";
+import { callMainThread, describeError, scriptToolClient } from "./interpreterRpc";
 import { formatPythonTraceback } from "./pythonTraceback";
 import { loadPythonPackages } from "./pythonPackages";
 import LLM_SHIM from "./llmShim.py?raw";
@@ -42,6 +43,7 @@ import PYTHON_SCRIPTS from "./pythonScripts.py?raw";
 import RENDER_SHIM from "./renderShim.py?raw";
 import SQL_SHIM from "./sqlShim.py?raw";
 import SYNTHESIZE_SHIM from "./synthesizeShim.py?raw";
+import TOOLS_SHIM from "./toolsShim.py?raw";
 import TRANSCRIBE_SHIM from "./transcribeShim.py?raw";
 import TRANSLATE_SHIM from "./translateShim.py?raw";
 import VISION_SHIM from "./visionShim.py?raw";
@@ -152,10 +154,18 @@ function artifactFsPath(path: string): string {
   return `${SANDBOX_HOME}${normalized}`;
 }
 
-function writeFileToPyodide(pyodide: PyodideInterface, path: string, file: ArtifactFile): void {
-  const fsPath = artifactFsPath(path);
+function writeFileToPyodide(pyodide: PyodideInterface, fsPath: string, file: ArtifactFile): void {
+  if (pyodide.FS.analyzePath(fsPath, true).exists) {
+    const stat = pyodide.FS.lstat(fsPath);
+    if (pyodide.FS.isDir(stat.mode)) {
+      clearDirectory(pyodide, fsPath);
+      pyodide.FS.rmdir(fsPath);
+    } else if (pyodide.FS.isLink(stat.mode)) {
+      pyodide.FS.unlink(fsPath);
+    }
+  }
   const dir = fsPath.substring(0, fsPath.lastIndexOf("/"));
-  if (dir) ensureDir(pyodide, dir);
+  pyodide.FS.mkdirTree(dir);
 
   if (isDataUrl(file.content) || (file.contentType && !isTextContentType(file.contentType))) {
     const parsed = dataUrlToBytes(file.content);
@@ -174,22 +184,17 @@ function syncFilesToPyodide(pyodide: PyodideInterface, files: ArtifactFiles): vo
     clearDirectory(pyodide, SANDBOX_HOME);
     prev = {};
   }
-  ensureDir(pyodide, SANDBOX_HOME);
+  pyodide.FS.mkdirTree(SANDBOX_HOME);
 
   for (const path of Object.keys(prev)) {
-    if (!(path in files)) {
-      try {
-        pyodide.FS.unlink(artifactFsPath(path));
-      } catch {
-        // Already gone (e.g. removed by the previous run).
-      }
-    }
+    const fsPath = `${SANDBOX_HOME}${path}`;
+    if (!(path in files) && pyodide.FS.analyzePath(fsPath, true).exists) pyodide.FS.unlink(fsPath);
   }
 
   for (const [path, file] of Object.entries(files)) {
     const before = prev[path];
     if (before && before.content === file.content && before.contentType === file.contentType) continue;
-    writeFileToPyodide(pyodide, path, file);
+    writeFileToPyodide(pyodide, `${SANDBOX_HOME}${path}`, file);
   }
 }
 
@@ -346,12 +351,14 @@ const USER_SHIMS = [
   TRANSLATE_SHIM,
   PDF_RASTERIZE_SHIM,
   SQL_SHIM,
+  TOOLS_SHIM,
 ];
 
 async function installExecutionHelpers(
   pyodide: PyodideInterface,
   signal: AbortSignal,
   globals: PyodideInterface["globals"],
+  port: MessagePort,
 ): Promise<void> {
   // Python tasks can retain their globals after runPythonAsync returns. Bind
   // bridges to this execution so delayed work cannot borrow the next run's
@@ -363,6 +370,11 @@ async function installExecutionHelpers(
     });
   };
   setBridge("_wingman_llm", requestLlm);
+  const tools = scriptToolClient(port, signal);
+  setBridge("_wingman_list_tools", async () => JSON.stringify(await tools.list()));
+  setBridge("_wingman_call_tool", async (name: string, args: string) =>
+    JSON.stringify(await tools.call(name, JSON.parse(args))),
+  );
   setBridge("_wingman_ocr", (path: string) => requestOcr(pyodide, path));
   setBridge("_wingman_vision", (path: string, prompt: string | null) => requestVision(pyodide, path, prompt));
   setBridge("_wingman_render", (prompt: string, output: string, inputsJson: string, optionsJson: string | null) =>
@@ -417,8 +429,11 @@ function loadPyodide(): Promise<PyodideInterface> {
   return pyodideReady;
 }
 
-async function executeCode(request: CodeExecutionRequest, onStarted?: () => void): Promise<CodeExecutionResult> {
-  const { files = {} } = request;
+async function executeCode(
+  request: CodeExecutionRequest,
+  port: MessagePort,
+  onStarted?: () => void,
+): Promise<CodeExecutionResult> {
   let maxOutputBytes = DEFAULT_CODE_EXECUTION_LIMITS.maxOutputBytes;
   // Declared outside the try so a failed run still returns what it printed.
   let captured: BoundedOutput | undefined;
@@ -427,7 +442,11 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
     const limits = resolveCodeExecutionLimits(request.limits);
     maxOutputBytes = limits.maxOutputBytes;
     captured = new BoundedOutput(maxOutputBytes);
-    validateArtifactFiles(files, limits, "Interpreter input filesystem");
+    const inputFiles = request.files ?? {};
+    validateArtifactFiles(inputFiles, limits, "Interpreter input filesystem");
+    const files = Object.fromEntries(
+      Object.entries(inputFiles).map(([path, file]) => [normalizeArtifactPath(path)!, file]),
+    );
     const pyodide = await loadPyodide();
 
     let code = request.code.replace(/^\uFEFF/, "");
@@ -440,11 +459,11 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
       }
     }
 
+    syncFilesToPyodide(pyodide, files);
     pyodide.FS.chdir(SANDBOX_HOME);
     pyodide.runPython("import os; os.environ.clear(); os.environ.update(_wingman_base_environ)", {
       filename: "<wingman-setup>",
     });
-    syncFilesToPyodide(pyodide, files);
     const filename = request.path ? artifactFsPath(request.path) : undefined;
     await ensurePackagesLoaded(pyodide, code, filename);
 
@@ -458,7 +477,7 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
       scope = scriptScope!(filename, JSON.stringify(request.args ?? []));
       globals = scope.namespace;
       // Attribute proxies are borrowed from scope; retain their owner until cleanup.
-      await installExecutionHelpers(pyodide, executionController.signal, globals);
+      await installExecutionHelpers(pyodide, executionController.signal, globals, port);
       if (pyodide.loadedPackages.duckdb) {
         closeDuckDb = pyodide.runPython(DUCKDB_SCOPE, { globals, filename: "<wingman-duckdb>" }) as typeof closeDuckDb;
       }
@@ -508,14 +527,6 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
   }
 }
 
-function ensureDir(pyodide: PyodideInterface, dir: string): void {
-  try {
-    pyodide.FS.mkdirTree(dir);
-  } catch {
-    // Already exists.
-  }
-}
-
 function clearDirectory(pyodide: PyodideInterface, dir: string): void {
   let entries: string[];
   try {
@@ -526,7 +537,7 @@ function clearDirectory(pyodide: PyodideInterface, dir: string): void {
 
   for (const entry of entries) {
     const fullPath = `${dir}/${entry}`;
-    const stat = pyodide.FS.stat(fullPath);
+    const stat = pyodide.FS.lstat(fullPath);
 
     if (pyodide.FS.isDir(stat.mode)) {
       clearDirectory(pyodide, fullPath);
@@ -560,30 +571,43 @@ function requestLlm(prompt: string, optionsJson?: string | null): Promise<string
   return callMain<string>((port) => ({ type: "llm-request", prompt, options, port }));
 }
 
-function readWorkerFile(pyodide: PyodideInterface, path: string, helper: string): Uint8Array {
+function readWorkerFile(pyodide: PyodideInterface, path: string, helper: string): RenderInput {
+  const resolved = bridgeInputPaths(path, pyodide.FS.cwd()).find(
+    (candidate) => pyodide.FS.analyzePath(candidate).exists,
+  );
+  if (!resolved) throw new Error(`${helper}: cannot read file: ${path}`);
   try {
-    return pyodide.FS.readFile(path) as Uint8Array;
+    return { path: resolved, data: pyodide.FS.readFile(resolved) as Uint8Array };
   } catch {
     throw new Error(`${helper}: cannot read file: ${path}`);
   }
 }
 
-function writeWorkerFile(pyodide: PyodideInterface, path: string, data: Uint8Array): void {
-  const dir = path.substring(0, path.lastIndexOf("/"));
-  if (dir) ensureDir(pyodide, dir);
-  pyodide.FS.writeFile(path, data);
+function prepareWorkerOutput(pyodide: PyodideInterface, path: string): string {
+  const output = bridgeOutputPath(path, pyodide.FS.cwd());
+  if (pyodide.FS.analyzePath(output).exists && pyodide.FS.isDir(pyodide.FS.stat(output).mode)) {
+    throw new Error(`Output path is a directory: ${output}`);
+  }
+  const parent = output.slice(0, output.lastIndexOf("/"));
+  try {
+    pyodide.FS.mkdirTree(parent);
+    if (pyodide.FS.isDir(pyodide.FS.stat(parent).mode)) return output;
+  } catch {
+    // A file earlier in the path can prevent the directory from being created.
+  }
+  throw new Error(`Cannot create the parent directory for output: ${output}`);
 }
 
 /** Bridge behind the Python `ocr` helper (ocrShim.py); reads file bytes from the FS, runs the backend extractor on the main thread. */
 async function requestOcr(pyodide: PyodideInterface, path: string): Promise<string> {
-  const data = readWorkerFile(pyodide, path, "ocr");
-  return callMain<string>((port) => ({ type: "ocr-request", data, path, port }));
+  const file = readWorkerFile(pyodide, path, "ocr");
+  return callMain<string>((port) => ({ type: "ocr-request", ...file, port }));
 }
 
 /** Bridge behind the Python `vision` helper (visionShim.py); reads image bytes from the FS, runs a vision model on the main thread. */
 async function requestVision(pyodide: PyodideInterface, path: string, prompt: string | null): Promise<string> {
-  const data = readWorkerFile(pyodide, path, "vision");
-  return callMain<string>((port) => ({ type: "vision-request", data, path, prompt: prompt ?? undefined, port }));
+  const file = readWorkerFile(pyodide, path, "vision");
+  return callMain<string>((port) => ({ type: "vision-request", ...file, prompt: prompt ?? undefined, port }));
 }
 
 /** Bridge behind the Python `render` helper (renderShim.py); reads inputs from the FS, writes the rendered image back to `output`. */
@@ -594,10 +618,8 @@ async function requestRenderImage(
   inputsJson: string,
   optionsJson?: string | null,
 ): Promise<string> {
-  const inputs: RenderInput[] = (JSON.parse(inputsJson) as string[]).map((path) => ({
-    data: readWorkerFile(pyodide, path, "render"),
-    path,
-  }));
+  const inputs = (JSON.parse(inputsJson) as string[]).map((path) => readWorkerFile(pyodide, path, "render"));
+  const destination = prepareWorkerOutput(pyodide, output);
 
   let options: ImageRenderOptions | undefined;
   if (optionsJson) {
@@ -609,8 +631,8 @@ async function requestRenderImage(
   }
 
   const data = await callMain<Uint8Array>((port) => ({ type: "render-request", prompt, inputs, options, port }));
-  writeWorkerFile(pyodide, output, data);
-  return output;
+  pyodide.FS.writeFile(destination, data);
+  return destination;
 }
 
 /** Bridge behind the Python `synthesize` helper (synthesizeShim.py); writes the backend's WAV audio back to `output`. */
@@ -620,20 +642,21 @@ async function requestSynthesize(
   output: string,
   voice: string | null,
 ): Promise<string> {
+  const destination = prepareWorkerOutput(pyodide, output);
   const data = await callMain<Uint8Array>((port) => ({
     type: "synthesize-request",
     text,
     voice: voice ?? undefined,
     port,
   }));
-  writeWorkerFile(pyodide, output, data);
-  return output;
+  pyodide.FS.writeFile(destination, data);
+  return destination;
 }
 
 /** Bridge behind the Python `transcribe` helper (transcribeShim.py); reads audio bytes from the FS, runs backend speech-to-text. */
 async function requestTranscribe(pyodide: PyodideInterface, path: string): Promise<string> {
-  const data = readWorkerFile(pyodide, path, "transcribe");
-  return callMain<string>((port) => ({ type: "transcribe-request", data, path, port }));
+  const file = readWorkerFile(pyodide, path, "transcribe");
+  return callMain<string>((port) => ({ type: "transcribe-request", ...file, port }));
 }
 
 /** Bridge behind the Python `translate` helper (translateShim.py), resolved by the main thread. */
@@ -663,16 +686,16 @@ async function requestTranslateFile(
   output: string,
   input: string,
 ): Promise<string> {
-  const data = readWorkerFile(pyodide, input, "translate");
+  const file = readWorkerFile(pyodide, input, "translate_file");
+  const destination = prepareWorkerOutput(pyodide, output);
   const result = await callMain<Uint8Array>((port) => ({
     type: "translate-file-request",
     lang,
-    data,
-    path: input,
+    ...file,
     port,
   }));
-  writeWorkerFile(pyodide, output, result);
-  return output;
+  pyodide.FS.writeFile(destination, result);
+  return destination;
 }
 
 /**
@@ -685,7 +708,7 @@ async function requestRasterizePdf(
   path: string,
   optionsJson: string | null,
 ): Promise<string> {
-  const data = readWorkerFile(pyodide, path, "rasterize_pdf");
+  const file = readWorkerFile(pyodide, path, "rasterize_pdf");
   let pages: number[] | undefined;
   let scale: number | undefined;
   if (optionsJson) {
@@ -699,15 +722,15 @@ async function requestRasterizePdf(
   }
   const rendered = await callMain<RasterizedPage[]>((port) => ({
     type: "pdf-rasterize-request",
-    data,
+    data: file.data,
     pages,
     scale,
     port,
   }));
-  const stem = path.replace(/\.pdf$/i, "");
+  const stem = file.path.replace(/\.pdf$/i, "");
   const paths = rendered.map(({ page, data: png }) => {
-    const output = `${stem}-${page}.png`;
-    writeWorkerFile(pyodide, output, png);
+    const output = prepareWorkerOutput(pyodide, `${stem}-${page}.png`);
+    pyodide.FS.writeFile(output, png);
     return output;
   });
   return JSON.stringify(paths);
@@ -729,7 +752,7 @@ ctx.addEventListener("message", (event) => {
       }
     };
     // executeCode never throws — errors come back as { success: false }.
-    const result = await executeCode(request, signalStarted);
+    const result = await executeCode(request, port, signalStarted);
     try {
       port.postMessage({ type: "result", result } satisfies ExecuteReply);
     } catch (error) {

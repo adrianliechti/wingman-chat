@@ -395,6 +395,29 @@ describe("raw request lifetime", () => {
     expect(body.get("frame_duration_ms")).toBeNull();
   });
 
+  it("asks the speech endpoint for an MP3 song and keeps the gateway's content type", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("song", { headers: { "content-type": "audio/mpeg" } }));
+    const prompt = "Warm folk ballad\n\nLyrics:\n\n[Verse]\nWalking home";
+    const blob = await new Client().generateSong("lyria-3.5", prompt);
+    expect(blob.type).toBe("audio/mpeg");
+    expect(await blob.text()).toBe("song");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls.at(-1)!;
+    expect(new URL(url).pathname).toBe("/api/v1/audio/speech");
+    expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
+    expect(JSON.parse(init.body)).toEqual({ model: "lyria-3.5", input: prompt, response_format: "mp3" });
+  });
+
+  it("does not repeat a failed song request and rejects an empty prompt", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: "lyria: music generation failed" } }), { status: 502 }),
+    );
+    await expect(new Client().generateSong("lyria-3.5", "A song")).rejects.toThrow("lyria: music generation failed");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await expect(new Client().generateSong("lyria-3.5", "  ")).rejects.toThrow("The song prompt cannot be empty");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   function stalledBody(status = 200) {
     fetchMock.mockImplementationOnce(
       async (_url: URL, options: RequestInit) =>
@@ -1009,9 +1032,13 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
   it("preserves replacement tokens in custom rewrite instructions", async () => {
     const instruction = "Keep the regex replacement tokens $&, $`, $', and $$ verbatim.";
     fetchMock.mockResolvedValueOnce(finished(response([textItem('{"rewrittenText":"Rewritten"}')])));
-    expect(await new Client().rewriteText("model", "Original", { lang: "en", instruction, source: "$1 & $2" })).toBe(
-      "Rewritten",
-    );
+    expect(
+      await new Client().rewriteText("model", "Original", {
+        lang: "en",
+        instructions: [instruction],
+        source: "$1 & $2",
+      }),
+    ).toBe("Rewritten");
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(request.instructions).toContain(instruction);
     expect(request.instructions).toContain("<source>\n$1 & $2\n</source>");
@@ -1022,16 +1049,18 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
   it("preserves regional spelling returned by the rewrite model", async () => {
     const rewrittenText = "Die Straße führt zum großen Gebäude.";
     fetchMock.mockResolvedValueOnce(finished(response([textItem(JSON.stringify({ rewrittenText }))])));
-    expect(await new Client().rewriteText("model", "Eine Straße", { lang: "de-DE", formality: "formal" })).toBe(
-      rewrittenText,
-    );
+    const instructions = ["Formal address: address the reader as “Sie” throughout.", "Business writing."];
+    expect(await new Client().rewriteText("model", "Eine Straße", { lang: "de-DE", instructions })).toBe(rewrittenText);
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(request.instructions).toContain("German (Germany)");
-    expect(request.instructions).toContain("polite form of address");
+    // Each requested revision is its own line of the prompt, and the text may not leave its language.
+    expect(request.instructions).toContain(`- ${instructions[0]}\n- ${instructions[1]}`);
+    expect(request.instructions).toContain("never translate it into another language");
   });
 
   it("returns the text untouched when no revision is requested", async () => {
     expect(await new Client().rewriteText("model", "Unchanged", { lang: "de" })).toBe("Unchanged");
+    expect(await new Client().rewriteText("model", "Unchanged", { lang: "de", instructions: [" "] })).toBe("Unchanged");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

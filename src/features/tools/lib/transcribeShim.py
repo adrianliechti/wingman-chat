@@ -12,9 +12,10 @@ async def transcribe(path):
     network round trip to a remote service — pass the whole file in one call.
 
     Args:
-        path: Path to the audio file in the sandbox filesystem.
+        path: Workspace artifact path (e.g. "/recordings/song.mp3") or a path
+            in the Python sandbox filesystem.
 
     Returns:
         The transcribed text as a string.
     """
-    return await _wingman_transcribe(_os.path.abspath(str(path)))
+    return await _wingman_transcribe(_os.fsdecode(path))

@@ -290,6 +290,17 @@ Resource resolution happens after mounting the selected files; an existing
 artifact at the same path retains precedence. Mounted resource files are removed
 from the committed snapshot, so execution does not edit the skill bundle.
 
+During model runs, `execute_script` captures the caller's filtered tool catalog.
+`tools.list()` and `tools.call(name, args)` in Python and JavaScript, and the
+Bash `tools` command, use the execution's private message port. The host
+validates arguments and runs calls in submission order so live approvals and
+MCP elicitations have a single owner. Each script gets 1,000 tool requests,
+including discovery. The script receives MCP structured results or text and
+returns its own output to the model.
+Repository, project read and skill tools can also be called this way. Tools
+that acquire the workspace lock use the direct chat path. Scripts access their
+mounted files through the runtime's filesystem. An editor Run has an empty tool catalog.
+
 Python file scripts receive `__file__`, their own `__main__` module, `sys.argv`,
 and sibling imports. The loader inspects the entry script and its static local
 imports for bundled dependencies before execution; it does not execute modules
@@ -320,7 +331,7 @@ and their first description sentence). TanStack supplies schemas on demand,
 executes discovered tools, and restores discoveries from saved history. Built-in
 workspace tools remain eager. Discovery adds a model round trip the first time a
 tool is needed, counted as one native model iteration. Realtime voice continues
-to receive full tool definitions; isolated interpreter calls receive no tools.
+to receive full tool definitions. The interpreter's isolated `llm()` requests have an empty tool catalog.
 
 Text-only results retain TanStack's JSON string representation across storage
 round trips, so discovery does not require an application cache. Media results
@@ -495,7 +506,7 @@ Direct voice tools retain live confirmations. A delegated text run that pauses
 for native input or approval asks the user to continue in chat; the one-shot
 voice adapter cannot present and resume that child interrupt.
 
-The remaining optional integrations include native memory storage and code mode.
+The remaining optional TanStack integrations include native memory storage and its separate Code Mode runtime.
 Modern MCP input-required
 resume still needs a separate integration: the public raw `callTool` API does
 not accept input responses, while native tool execution normalizes away the full

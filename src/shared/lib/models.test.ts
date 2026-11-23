@@ -5,6 +5,10 @@ import {
   defaultEffort,
   defaultModelId,
   findModel,
+  isKnownChatModel,
+  isSongModel,
+  isVideoRenderer,
+  modelFromAPI,
   modelMaxOutputTokens,
   outputTokenAllowance,
   minimalEffort,
@@ -86,6 +90,8 @@ describe("model endpoint detection", () => {
     ["mai-voice-2", "synthesizer"],
     ["eleven_multilingual_v2", "synthesizer"],
     ["gemini-2.5-flash-preview-tts", "synthesizer"],
+    ["lyria-3.5", "synthesizer"],
+    ["models/lyria-3.5", "synthesizer"],
     ["gpt-audio", "completer"],
     ["gpt-4o-audio-preview", "completer"],
     ["Qwen/Qwen2.5-Omni-7B", "completer"],
@@ -131,6 +137,22 @@ describe("model display names", () => {
   it("keeps full names and unrelated vendors unchanged", () => {
     expect(modelName("anthropic.claude-sonnet-4-5")).toBe("Anthropic Claude Sonnet 4.5");
     expect(shortModelName("google.gemini-3-pro")).toBe("Google Gemini 3 Pro");
+  });
+
+  it("sets the version apart from the Qwen family name", () => {
+    expect(modelName("qwen3.8")).toBe("Qwen 3.8");
+    expect(modelName("qwen3.8-max")).toBe("Qwen 3.8 Max");
+    expect(modelName("qwen3.8-omni-flash")).toBe("Qwen 3.8 Omni Flash");
+    expect(modelName("qwen-plus")).toBe("Qwen Plus");
+  });
+
+  it("spells vendor names, acronyms and parameter counts the usual way", () => {
+    expect(modelName("deepseek-v4-pro")).toBe("DeepSeek V4 Pro");
+    expect(modelName("nemotron-3.5-super-vl")).toBe("Nemotron 3.5 Super VL");
+    expect(modelName("qwen3.8-27b")).toBe("Qwen 3.8 27B");
+    expect(modelName("nemotron-3-ultra-550b-a55b")).toBe("Nemotron 3 Ultra 550B A55B");
+    // A trailing letter that is not a size unit stays as it is.
+    expect(modelName("gpt-4o")).toBe("GPT 4o");
   });
 });
 
@@ -219,6 +241,91 @@ describe("model output budgets", () => {
     );
     expect(models[0].maxOutputTokens).toBe(128_000);
     expect(models[1]).toMatchObject({ maxOutputTokens: 10_000, outputTokenBudget: 9_000 });
+  });
+});
+
+describe("known chat models", () => {
+  it("recognises models with a profile, including provider-qualified aliases", () => {
+    for (const id of [
+      "gpt-6.2-sol",
+      "claude-sonnet-5-5",
+      "bedrock-haiku-5-5",
+      "gemini-4-neon",
+      "qwen3.8-max",
+      "mistral-large-4",
+      "mistral-small-4",
+    ]) {
+      expect(isKnownChatModel(id)).toBe(true);
+    }
+  });
+
+  it("does not recognise opaque aliases, routers or other endpoint types", () => {
+    for (const id of ["poppy", "claude-auto", "gpt-auto", "auto", "grok-4.7", "text-embedding-3-large"]) {
+      expect(isKnownChatModel(id)).toBe(false);
+    }
+  });
+});
+
+describe("Inkling 2 profiles", () => {
+  it("offers Small's levels without none, since its reasoning is mandatory", () => {
+    for (const id of ["inkling-2-small", "thinkingmachines/inkling-2-small"]) {
+      expect(supportedEfforts(id)).toEqual(["low", "medium", "high"]);
+      expect(defaultEffort(id)).toBeUndefined();
+      expect(minimalEffort(id)).toBe("low");
+      expect(isKnownChatModel(id)).toBe(true);
+    }
+  });
+
+  it("lets Mini turn reasoning off", () => {
+    for (const id of ["inkling-2-mini", "thinkingmachines/inkling-2-mini"]) {
+      expect(supportedEfforts(id)).toEqual(["none", "low", "medium", "high"]);
+      expect(defaultEffort(id)).toBeUndefined();
+      expect(minimalEffort(id)).toBe("none");
+      expect(isKnownChatModel(id)).toBe(true);
+    }
+  });
+
+  it("names them and does not extend to the first Inkling generation or other sizes", () => {
+    expect(modelName("inkling-2-small")).toBe("Inkling 2 Small");
+    expect(modelName("inkling-2-mini")).toBe("Inkling 2 Mini");
+    expect(modelMaxOutputTokens("inkling-2-mini")).toBeUndefined();
+    expect(compactThreshold("inkling-2-small")).toBe(272_000);
+    for (const id of ["inkling", "inkling-small", "inkling-2", "inkling-2-small-pro", "inkling-3-small"]) {
+      expect(supportedEfforts(id)).toBeUndefined();
+    }
+  });
+});
+
+describe("Mistral 4 profiles", () => {
+  it("offers Large 4's three levels with high as the default", () => {
+    for (const id of ["mistral-large-4", "mistral-large-4-0", "mistralai/mistral-large-4-0"]) {
+      expect(supportedEfforts(id)).toEqual(["low", "medium", "high"]);
+      expect(defaultEffort(id)).toBe("high");
+      expect(minimalEffort(id)).toBe("low");
+      expect(compactThreshold(id)).toBe(272_000);
+    }
+  });
+
+  it("offers Small 4 reasoning on or off, without a default, inside its 256k window", () => {
+    for (const id of ["mistral-small-4", "mistral-small-2603", "mistralai/mistral-small-2603"]) {
+      expect(supportedEfforts(id)).toEqual(["none", "high"]);
+      expect(defaultEffort(id)).toBeUndefined();
+      expect(minimalEffort(id)).toBe("none");
+      expect(compactThreshold(id)).toBe(176_000);
+    }
+  });
+
+  it("states no output limit, so the provider default applies", () => {
+    expect(modelMaxOutputTokens("mistral-large-4")).toBeUndefined();
+    expect(modelMaxOutputTokens("mistral-small-4")).toBeUndefined();
+  });
+
+  it("does not extend to other Mistral versions, aliases or endpoints", () => {
+    for (const id of ["mistral-large-latest", "mistral-large-3", "mistral-large-4-1", "mistral-small-2503"]) {
+      expect(supportedEfforts(id)).toBeUndefined();
+      expect(isKnownChatModel(id)).toBe(false);
+    }
+    expect(isKnownChatModel("mistral-embed")).toBe(false);
   });
 });
 
@@ -543,6 +650,27 @@ describe("configured model catalogue", () => {
   });
 
   it.each([
+    "mai-image-2-7",
+    "mai-image-2.7",
+    "mai-image-2.7-flash",
+    "MAI-Image-2.7-Flash",
+    "microsoft/mai-image-2.7-flash-20261117",
+  ])("offers MAI Image 2.7's aspect ratios and transparency, without other levers, for %s", (id) => {
+    expect(modelType(id)).toBe("renderer");
+    expect(rendererCapabilities(id)).toEqual({
+      aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"],
+      backgrounds: ["opaque", "transparent"],
+    });
+  });
+
+  it("names the MAI Image 2.7 models and leaves other versions on the generic profile", () => {
+    expect(modelName("mai-image-2-7")).toBe("MAI Image 2.7");
+    expect(modelName("mai-image-2.7-flash")).toBe("MAI Image 2.7 Flash");
+    expect(rendererCapabilities("mai-image-2.6").backgrounds).toBeUndefined();
+    expect(rendererCapabilities("mai-image-2-70").backgrounds).toBeUndefined();
+  });
+
+  it.each([
     ["gemini-nano-banana-2.1", ["1K", "2K", "4K"]],
     ["google/gemini-nano-banana-2.1", ["1K", "2K", "4K"]],
     ["gemini-3.1-flash-lite-image", ["1K"]],
@@ -587,6 +715,44 @@ describe("sameModelSettings", () => {
     expect(sameModelSettings(luna, { ...luna, effort: "high" })).toBe(false);
     expect(sameModelSettings(luna, { ...luna, verbosity: "low" })).toBe(false);
     expect(sameModelSettings(luna, { ...luna, id: "sol" })).toBe(false);
+  });
+});
+
+describe("Lyria model mapping", () => {
+  const catalog = (id: string, configured: Model[] = []) => configureModels([modelFromAPI({ id })], configured)[0];
+
+  it("lists Lyria 3.5 as a music model with prompt-driven lengths", () => {
+    const lyria = catalog("lyria-3.5");
+    expect(lyria).toMatchObject({
+      name: "Lyria 3.5",
+      type: "synthesizer",
+      supportedFormats: ["mp3"],
+      supportedDurations: [30, 60, 120, 180],
+    });
+    expect(isSongModel(lyria)).toBe(true);
+    expect(isVideoRenderer(lyria)).toBe(false);
+  });
+
+  it("does not apply 3.5 lengths to other Lyria versions", () => {
+    const next = catalog("google/lyria-4");
+    expect(isSongModel(next)).toBe(true);
+    expect(next.supportedDurations).toBeUndefined();
+    expect(catalog("google/lyria-3.5").supportedDurations).toEqual([30, 60, 120, 180]);
+  });
+
+  it("lets configuration set the lengths or mark an alias as a music model", () => {
+    expect(catalog("lyria-3.5", [{ id: "lyria-3.5", name: "", supportedDurations: [] }]).supportedDurations).toEqual(
+      [],
+    );
+    const alias = catalog("music", [{ id: "music", name: "Music", type: "synthesizer", supportedFormats: ["mp3"] }]);
+    expect(isSongModel(alias)).toBe(true);
+  });
+
+  it("leaves speech and image models out", () => {
+    expect(isSongModel(catalog("gemini-3.8-flash-tts"))).toBe(false);
+    expect(isSongModel(catalog("gpt-image-2.6-flare"))).toBe(false);
+    expect(isSongModel(catalog("gemini-omni-1.2-flash"))).toBe(false);
+    expect(isSongModel(null)).toBe(false);
   });
 });
 

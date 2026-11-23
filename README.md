@@ -37,8 +37,8 @@ conversations, retrieval over your own files, and a library of reusable skills.
 - **In-browser code interpreters** — one `execute_script` tool for sandboxed Python (Pyodide), JavaScript,
   and Bash (just-bash) workers, sharing artifact files and selected skill resources. File scripts select
   their runtime by shebang or extension; inline code specifies `language`. Bundled libraries and
-  Bash pipelines cover data, document, media and text processing. The model writes and runs real code; charts, files, and results
-  land back in the workspace.
+  Bash pipelines cover data, document, media and text processing. Scripts can call enabled tools,
+  including MCP servers, to combine results and save the output as an artifact.
 - **Web search & browsing** for grounded, up-to-date answers.
   Research tools batch and reuse retrieval, and select relevant passages from long pages.
   See [research benchmarks](docs/research-benchmarks.md) for repeatable quality and tool-usage comparisons.
@@ -69,6 +69,13 @@ and download. Browse, preview, and iterate on artifacts side-by-side with the ch
 Python includes DuckDB, pandas and PyArrow for local analysis and file generation. JavaScript exposes
 Apache Arrow as the `arrow` global. Python and JavaScript can also query saved workspace files through
 `await sql(...)`; HTML previews use `wingman.duckdb`. Libraries load on demand from the bundled assets.
+
+In a chat or voice run, Python and JavaScript can inspect `await tools.list()` and invoke
+`await tools.call(name, args)` with a listed name and an argument object. Bash provides
+`tools list` and `tools call NAME 'JSON'`. For example, a script can page through a tracker,
+count open issues by owner, and print only the totals. MCP calls return structured data when
+available and otherwise return text. Servers configured for individual approval prompt for
+each call. Chat uses the reviewed agent prompt for servers configured for delegated approval.
 
 | Capability                                 | Python interpreter                                | JavaScript interpreter                               | HTML preview                                      |
 | ------------------------------------------ | ------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------- |
@@ -124,8 +131,9 @@ including live transcription.
 ### Translate
 
 A workspace for translating text and whole documents. Text translates as you type; a formality
-(formal or informal address) and a style (plain, professional, natural, technical) revise the
-translation against the source, a free instruction refines it, and any selected passage offers alternatives. Drop one or more
+(formal or informal address, offered for target languages that have one, such as "Sie" and "du") and
+a style (simple, business, academic, casual) revise the translation against the source, a free
+instruction refines it, and any selected passage offers alternatives. Drop one or more
 documents (PDF, Word, PowerPoint, Excel, Markdown, text) to translate each into the chosen language;
 the original and the translation open side by side in the same viewers the artifacts drawer uses, and
 the translation downloads in the original format. Translators that return text for documents (the AI
@@ -152,7 +160,8 @@ languages: [en, de, fr, it, es]
 
 ### Canvas
 
-A focused surface for generating and iterating on images.
+A focused surface for generating and iterating on images, short videos, and songs. Songs come from a
+music model such as Google Lyria 3.5: describe one, bring your own lyrics, or ask for an instrumental.
 
 ### Skills library
 

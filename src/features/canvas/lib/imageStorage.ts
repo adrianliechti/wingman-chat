@@ -1,5 +1,6 @@
 import type { Image, ImageVersion } from "../types/canvas";
 import { DEFAULTS, normalizeRecipe } from "./recipe";
+import { songPoster } from "./song";
 import * as opfs from "@/shared/lib/opfs";
 import { withPersistenceLock } from "@/shared/lib/persistence";
 
@@ -21,6 +22,7 @@ interface StoredImageMeta {
   /** MIME type of image.png's bytes; opened photos keep their own encoding. */
   contentType?: string;
   duration?: number;
+  peaks?: number[];
   versions?: ImageVersion[];
   recipe?: unknown;
 }
@@ -29,6 +31,11 @@ interface StoredImageMeta {
 // /images/{id}/metadata.json           metadata, recipe, version list
 // /images/{id}/image.png               current version's pixels
 // /images/{id}/versions/{versionId}.png superseded versions
+// /images/{id}/video.mp4 + poster.jpg  a video instead of pixels
+// /images/{id}/song.mp3                a song instead of pixels
+
+/** Video and songs keep their bytes in one binary file instead of editable pixels. */
+const MEDIA_FILES: Record<string, string> = { "video/mp4": "video.mp4", "audio/mpeg": "song.mp3" };
 
 const LEGACY_VERSION_ID = "v1";
 
@@ -57,6 +64,7 @@ export function hydrateImage(id: string, meta: StoredImageMeta, data: string): I
     height: meta.height,
     contentType: meta.contentType,
     duration: meta.duration,
+    peaks: meta.peaks,
     versions,
     recipe: meta.recipe === undefined ? DEFAULTS : normalizeRecipe(meta.recipe),
   };
@@ -81,14 +89,16 @@ async function writeImage(image: Image): Promise<void> {
     // is a small metadata write. The superseded pixels move to versions/ so
     // the history can be revisited.
     let contentType = existing?.contentType;
-    const video = image.contentType === "video/mp4";
-    if (video && previousId !== nextId) {
-      if (!image.blob?.size) throw new Error("The video has no content to save");
-      await opfs.writeBlob(`${imagePath}/video.mp4`, image.blob);
-      if (image.data) await opfs.writeBlob(`${imagePath}/poster.jpg`, opfs.dataUrlToBlob(image.data));
-      contentType = "video/mp4";
+    const mediaFile = image.contentType ? MEDIA_FILES[image.contentType] : undefined;
+    if (mediaFile && previousId !== nextId) {
+      const video = image.contentType === "video/mp4";
+      if (!image.blob?.size) throw new Error(`The ${video ? "video" : "song"} has no content to save`);
+      await opfs.writeBlob(`${imagePath}/${mediaFile}`, image.blob);
+      // A song's cover is redrawn from its stored waveform; only video keeps a poster file.
+      if (video && image.data) await opfs.writeBlob(`${imagePath}/poster.jpg`, opfs.dataUrlToBlob(image.data));
+      contentType = image.contentType;
     }
-    if (!video && previousId !== nextId) {
+    if (!mediaFile && previousId !== nextId) {
       if (existing && previousId && image.versions.some((version) => version.id === previousId)) {
         const previous = await opfs.readBlob(`${imagePath}/image.png`);
         if (previous) await opfs.writeBlob(`${imagePath}/versions/${previousId}.png`, previous);
@@ -113,6 +123,7 @@ async function writeImage(image: Image): Promise<void> {
       height: image.height,
       contentType,
       duration: image.duration,
+      peaks: image.peaks,
       versions: image.versions,
       recipe: image.recipe,
     };
@@ -157,6 +168,14 @@ export async function loadImage(id: string): Promise<Image | undefined> {
       return {
         ...hydrateImage(id, meta, poster ? await opfs.blobToDataUrl(poster, "image/jpeg") : ""),
         blob: new Blob([video], { type: "video/mp4" }),
+      };
+    }
+    if (meta.contentType === "audio/mpeg") {
+      const song = await opfs.readBlob(`${imagePath}/song.mp3`);
+      if (!song) throw new Error("Stored song is missing");
+      return {
+        ...hydrateImage(id, meta, songPoster(meta.peaks ?? [], meta.prompt)),
+        blob: new Blob([song], { type: "audio/mpeg" }),
       };
     }
     // Legacy files used .bin instead of .png. Stamp image/png so a legacy

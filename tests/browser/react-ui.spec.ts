@@ -1,4 +1,4 @@
-import { expect, test as base, type Page } from "@playwright/test";
+import { expect, test as base, type Locator, type Page } from "@playwright/test";
 import { mcpToolName } from "../../src/features/settings/lib/mcpToolNames";
 import { isolateOpfs } from "./helpers/opfs";
 
@@ -48,6 +48,11 @@ async function open(page: Page, query = "") {
     }),
   );
   await page.goto(`/tests/browser/fixtures/react-ui.html${query}`, { waitUntil: "domcontentloaded" });
+}
+
+/** Canvas opens on its create page; earlier work is picked from the filmstrip. */
+async function pickFromStrip(page: Page, name: string) {
+  await page.getByRole("option", { name }).getByRole("button", { name }).click();
 }
 
 for (const existingChat of [false, true]) {
@@ -519,6 +524,7 @@ test("Canvas generates into the filmstrip, develops on the GPU and keeps the rec
   await page.waitForTimeout(500);
   await page.evaluate(() => window.reactUiE2E.flush());
   await page.reload();
+  await pickFromStrip(page, prompt);
   await expect(page.locator(`canvas[aria-label="${prompt}"]`)).toBeVisible();
   await expect(page.getByRole("slider", { name: "Exposure", exact: true })).toHaveValue("1.5");
 });
@@ -602,6 +608,7 @@ test("Canvas keeps a live adjustment when switching photos immediately", async (
   await expect(value).toHaveValue("1.75");
   await page.evaluate(() => window.reactUiE2E.flush());
   await page.reload();
+  await pickFromStrip(page, second);
   await expect(value).toHaveValue("1.75");
 });
 
@@ -736,6 +743,7 @@ test("Canvas flatten remains atomic after switching photos and previews the orig
   await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
   await page.evaluate(() => window.reactUiE2E.flush());
   await page.reload();
+  await pickFromStrip(page, title);
   await expect(exposure).toHaveValue("0");
   await expect.poll(size).toEqual([64, 48]);
 });
@@ -1687,6 +1695,224 @@ test("composer can send an attachment without typed text", async ({ page }) => {
   await expect(send).toHaveCount(0);
 });
 
+test("Canvas composes a song from a style and lyrics, plays it and restores it after reload", async ({ page }) => {
+  test.setTimeout(60_000);
+  page.setDefaultTimeout(15_000);
+  await page.addInitScript(() =>
+    Object.defineProperty(window, "showSaveFilePicker", { value: undefined, configurable: true }),
+  );
+  const style = `Warm folk ballad ${Date.now()}`;
+  await open(page, "?canvas&song");
+  await page.getByRole("button", { name: "New creation" }).first().click();
+  // The create page is on the stage as soon as Canvas opens.
+  const dialog = page.getByRole("region", { name: "New song" });
+  await expect(dialog).toBeVisible();
+  // One kind of model needs no tabs. A music model takes text only: no references, aspect or image styles.
+  await expect(dialog.getByRole("radiogroup", { name: "Create" })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Reference", exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("radiogroup", { name: "Aspect ratio" })).toHaveCount(0);
+  await expect(dialog.getByRole("radio", { name: "Describe", exact: true })).toBeChecked();
+  await expect(dialog.getByRole("textbox", { name: "Lyrics" })).toHaveCount(0);
+  const generate = dialog.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeDisabled();
+
+  const promptField = dialog.getByRole("textbox", { name: "Prompt" });
+  const promptBox = dialog.getByRole("radiogroup", { name: "Song input" }).locator("..");
+  await promptField.focus();
+  await promptField.blur();
+  const restingBorder = await promptBox.evaluate((element) => getComputedStyle(element).borderTopColor);
+  const expectStableBorder = async (field: typeof promptField) => {
+    await field.focus();
+    await expect(field).toHaveCSS("border-top-width", "0px");
+    await expect(field).toHaveCSS("outline-style", "none");
+    await expect(promptBox).toHaveCSS("border-top-color", restingBorder);
+  };
+  await expectStableBorder(promptField);
+
+  // Switching the mode swaps the fields without resizing the page.
+  const height = () => dialog.evaluate((element: HTMLElement) => element.offsetHeight);
+  const described = await height();
+  await dialog.getByRole("radio", { name: "Instrumental", exact: true }).click();
+  expect(await height()).toBe(described);
+  await expectStableBorder(promptField);
+  await dialog.getByRole("radio", { name: "Lyrics", exact: true }).click();
+  expect(await height()).toBe(described);
+  await expectStableBorder(dialog.getByRole("textbox", { name: "Style" }));
+  const lyrics = dialog.getByRole("textbox", { name: "Lyrics" });
+  await expectStableBorder(lyrics);
+  await dialog.getByRole("button", { name: "[Verse]", exact: true }).click();
+  await expect(lyrics).toHaveValue("[Verse]\n");
+  await expect(lyrics).toBeFocused();
+  await page.keyboard.type("Walking home");
+  await dialog.getByRole("button", { name: "[Chorus]", exact: true }).click();
+  await page.keyboard.type("We keep moving on");
+  await expect(lyrics).toHaveValue("[Verse]\nWalking home\n\n[Chorus]\nWe keep moving on");
+  // Lyrics alone are enough; the style is optional.
+  await expect(generate).toBeEnabled();
+  await dialog.getByRole("textbox", { name: "Style" }).fill(style);
+  await dialog.getByRole("button", { name: "Lyria", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Duration/ }).hover();
+  await page.getByRole("menuitemradio", { name: "2 min", exact: true }).click();
+  await generate.click();
+
+  const prompt = `${style}\n\nLength: about 2 minutes.\n\nLyrics:\n\n[Verse]\nWalking home\n\n[Chorus]\nWe keep moving on`;
+  // Only the selected song mounts a player, also when an earlier run left songs in the library.
+  const audio = page.locator("audio");
+  await expect(audio).toHaveAttribute("aria-label", prompt);
+  expect(await page.evaluate(() => window.reactUiE2E.state().songs)).toEqual([{ model: "lyria-3.5", prompt }]);
+  await expect(page.getByText("We keep moving on", { exact: false }).first()).toBeVisible();
+
+  // The waveform is the seek bar, with the decoded length as its range.
+  const seek = page.getByRole("slider", { name: "Seek" });
+  await expect(seek).toHaveAttribute("aria-valuemax", "1");
+  await expect(seek).toHaveAttribute("aria-valuetext", "0:00 of 0:01");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.played.length)).toBeGreaterThan(0);
+  await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await seek.focus();
+  await page.keyboard.press("End");
+  await expect(seek).toHaveAttribute("aria-valuenow", "1");
+  await page.keyboard.press("Home");
+  await expect(seek).toHaveAttribute("aria-valuenow", "0");
+
+  const bytes = await audio.evaluate(async (element: HTMLAudioElement) =>
+    Array.from(new Uint8Array(await (await fetch(element.src)).arrayBuffer())),
+  );
+  expect(bytes.length).toBeGreaterThan(1000);
+  // Canvas reopens on its create page, with the song one click away in the strip.
+  await page.reload();
+  await expect(page.getByRole("region", { name: /^New / })).toBeVisible();
+  await expect(audio).toHaveCount(0);
+  await page.getByRole("option", { name: style }).getByRole("button").first().click();
+  await expect(audio).toHaveAttribute("aria-label", prompt);
+  await expect(page.getByRole("slider", { name: "Seek" })).toHaveAttribute("aria-valuemax", "1");
+  const restored = await audio.evaluate(async (element: HTMLAudioElement) =>
+    Array.from(new Uint8Array(await (await fetch(element.src)).arrayBuffer())),
+  );
+  expect(restored).toEqual(bytes);
+  // The library tile shows the cover drawn from the stored waveform.
+  const tile = page.getByRole("listbox", { name: "Images, videos and songs" }).getByRole("option", { selected: true });
+  await expect(tile.locator("img")).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
+  await expect(tile.getByRole("button", { name: "Delete song", exact: true })).toBeAttached();
+
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download", exact: true }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toMatch(/^warm-folk-ballad-.*\.mp3$/);
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  expect(Buffer.concat(chunks)).toEqual(Buffer.from(bytes));
+});
+
+test("Canvas keeps song controls in place while long lyrics scroll", async ({ page, browserName }) => {
+  await page.setViewportSize({ width: 1024, height: 600 });
+  await open(page, "?canvas&song");
+  const create = page.getByRole("region", { name: "New song" });
+  const player = page.getByRole("region", { name: "Song player" });
+  const text = player.getByRole("region", { name: "Song text" });
+  const seek = player.getByRole("slider", { name: "Seek" });
+  const download = page.getByRole("button", { name: "Download", exact: true });
+  const library = page.getByRole("listbox", { name: "Images, videos and songs" });
+  await expect(library.getByRole("button", { name: "New creation" })).toHaveCSS(
+    "border-top-style",
+    browserName === "webkit" ? "dashed" : "solid",
+  );
+  const generate = async (lyrics: string) => {
+    await create.getByRole("radio", { name: "Lyrics", exact: true }).click();
+    await create.getByRole("textbox", { name: "Lyrics" }).fill(lyrics);
+    await create.getByRole("button", { name: "Generate", exact: true }).click();
+    await expect(text).toBeVisible();
+  };
+  const positions = () => Promise.all([seek.boundingBox(), download.boundingBox()]);
+
+  await generate("A short song");
+  await expect(seek).toBeInViewport();
+  await expect(download).toBeInViewport();
+  const shortPositions = await positions();
+  await page.getByRole("button", { name: "New creation" }).first().click();
+  await generate(Array.from({ length: 60 }, (_, i) => `Line ${i + 1} of the song`).join("\n"));
+  await expect(text).toContainText("Line 60 of the song");
+  expect(await positions()).toEqual(shortPositions);
+  await expect(player).toHaveCSS("border-radius", "0px");
+  await expect(player).toHaveCSS("box-shadow", "none");
+  const tile = library.getByRole("option", { selected: true });
+  if (browserName === "webkit") await expect(tile).toHaveCSS("box-shadow", "none");
+  else await expect(tile).not.toHaveCSS("box-shadow", "none");
+
+  for (const viewport of [
+    { width: 1024, height: 600 },
+    { width: 390, height: 500 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(seek).toBeInViewport();
+    const before = await positions();
+    const [waveform] = before;
+    const stage = await player.boundingBox();
+    const relativeCenter = (waveform!.y + waveform!.height / 2 - stage!.y) / stage!.height;
+    expect(relativeCenter).toBeGreaterThan(0.35);
+    expect(relativeCenter).toBeLessThan(0.6);
+    await text.evaluate((element) => (element.scrollTop = 0));
+    await text.hover();
+    await page.mouse.wheel(0, 500);
+    await expect.poll(() => text.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    expect(await positions()).toEqual(before);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  }
+});
+
+test("Canvas offers image, video and song as tabs, each with its own models", async ({ page }) => {
+  await open(page, "?canvas&song&mixed");
+  const dialog = page.getByRole("region", { name: /^New (image|video|song)$/ });
+  const title = dialog.getByRole("heading");
+  const tabs = dialog.getByRole("radiogroup", { name: "Create" });
+  // The catalogue lists music, then video, then images; the page still opens on its first tab.
+  await expect(title).toHaveText("New image");
+  await expect(tabs.getByRole("radio")).toHaveText(["Image", "Video", "Song"]);
+  await expect(tabs.getByRole("radio", { name: "Image", exact: true })).toBeChecked();
+  const height = () => dialog.evaluate((element: HTMLElement) => element.offsetHeight);
+  const imageHeight = await height();
+
+  // The model menu lists this kind's models only, and shows them whole instead of scrolling.
+  const images = ["Painter", "Flare", "Nano Banana", "MAI Image", "MAI Image Flash", "Flux", "Imagen", "DALL-E"];
+  await dialog.getByRole("button", { name: "Painter", exact: true }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitemradio")).toHaveText(images);
+  await menu.getByRole("menuitemradio", { name: "Flare", exact: true }).click();
+  // Flare adds five option rows under the list, the tallest this menu gets.
+  await dialog.getByRole("button", { name: "Flare", exact: true }).click();
+  await expect(menu.getByRole("menuitem", { name: /^Complexity/ })).toBeInViewport({ ratio: 1 });
+  const list = menu.locator(".overflow-y-auto").first();
+  expect(await list.evaluate((element) => element.scrollHeight - element.clientHeight)).toBe(0);
+  // Picking a row closes the menu again.
+  await menu.getByRole("menuitemradio", { name: "Flare", exact: true }).click();
+  await expect(menu).toHaveCount(0);
+
+  // Switching the kind swaps the form and the menu's models without resizing the page.
+  await tabs.getByRole("radio", { name: "Song", exact: true }).click();
+  await expect(title).toHaveText("New song");
+  await expect(dialog.getByRole("radio", { name: "Describe", exact: true })).toBeChecked();
+  await expect(dialog.getByRole("button", { name: "Reference", exact: true })).toHaveCount(0);
+  expect(await height()).toBe(imageHeight);
+  await dialog.getByRole("button", { name: "Lyria", exact: true }).click();
+  await expect(menu.getByRole("menuitemradio")).toHaveText(["Lyria"]);
+  await menu.getByRole("menuitemradio", { name: "Lyria", exact: true }).click();
+  await expect(menu).toHaveCount(0);
+
+  await tabs.getByRole("radio", { name: "Video", exact: true }).click();
+  await expect(title).toHaveText("New video");
+  await expect(dialog.getByRole("button", { name: "Omni", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: "Describe", exact: true })).toHaveCount(0);
+  expect(await height()).toBe(imageHeight);
+
+  // A tab comes back to the model chosen there.
+  await tabs.getByRole("radio", { name: "Image", exact: true }).click();
+  await expect(title).toHaveText("New image");
+  await expect(dialog.getByRole("button", { name: "Flare", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("radiogroup", { name: "Aspect ratio" })).toBeVisible();
+  expect(await height()).toBe(imageHeight);
+});
+
 test("Canvas generates video, downloads its bytes and restores playback after reload", async ({ page }) => {
   test.setTimeout(60_000);
   page.setDefaultTimeout(15_000);
@@ -1719,6 +1945,7 @@ test("Canvas generates video, downloads its bytes and restores playback after re
   );
   expect(bytes.length).toBeGreaterThan(100);
   await page.reload();
+  await pickFromStrip(page, prompt);
   await expect(video).toBeVisible();
   await expect
     .poll(() => video.evaluate((element: HTMLVideoElement) => [element.videoWidth, element.videoHeight]))
@@ -1735,4 +1962,166 @@ test("Canvas generates video, downloads its bytes and restores playback after re
   const chunks: Buffer[] = [];
   for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
   expect(Buffer.concat(chunks)).toEqual(Buffer.from(bytes));
+});
+
+test("Translate keeps its controls in the pane headers and only refinement under the result", async ({ page }) => {
+  await page.route("**/config.json", (route) =>
+    route.fulfill({
+      json: {
+        models: [],
+        navigation: true,
+        artifacts: {},
+        tts: { model: "fixture" },
+        translator: {
+          model: "fixture",
+          providers: [
+            { id: "deepl", name: "DeepL" },
+            { id: "llm", name: "Language model" },
+          ],
+          files: [".pdf", ".docx"],
+          languages: ["de", "en"],
+          maxTextLength: 5000,
+        },
+      },
+    }),
+  );
+  await page.route("**/api/v1/translate", (route) =>
+    route.fulfill({ contentType: "text/plain", body: "Guten Morgen zusammen." }),
+  );
+  // German has a formal and an informal address, so the formality setting is offered.
+  await page.addInitScript(() => localStorage.setItem("translate_preferences", JSON.stringify({ targetLang: "de" })));
+  await page.goto("/tests/browser/fixtures/react-ui.html", { waitUntil: "domcontentloaded" });
+  await page.getByRole("link", { name: "Translate", exact: true }).click();
+  const edge = (locator: Locator, side: "top" | "bottom") =>
+    locator.evaluate((element, which) => Math.round(element.getBoundingClientRect()[which]), side);
+
+  // The source header offers a document where the static "Detect language" label was.
+  const source = page.getByRole("region", { name: "Source text" });
+  const input = source.getByRole("textbox", { name: "Text to translate" });
+  await expect(page.getByText("Detect language")).toHaveCount(0);
+  const attach = source.getByRole("button", { name: "Translate a document" });
+  expect(await edge(attach, "bottom")).toBeLessThanOrEqual(await edge(input, "top"));
+  const chooser = page.waitForEvent("filechooser");
+  await attach.click();
+  await chooser;
+
+  await input.fill("Good morning everyone.");
+  await input.press("ControlOrMeta+Enter");
+  const translation = page.getByRole("region", { name: "Translation" });
+  const result = translation.getByText("Guten Morgen zusammen.", { exact: true });
+  await expect(result).toBeVisible();
+  // The way to clear the text sits in that header too, without a character counter.
+  expect(await edge(source.getByRole("button", { name: "Clear text" }), "bottom")).toBeLessThanOrEqual(
+    await edge(input, "top"),
+  );
+  await expect(source.getByText(/\d+ \/ 5,000/)).toHaveCount(0);
+
+  // Everything that acts on the translation is above it, on the language's row.
+  const formality = translation.getByRole("button", { name: "Formality", exact: true });
+  const copy = translation.getByRole("button", { name: /^Copy to clipboard/ });
+  const above = [
+    translation.getByRole("button", { name: "Target language" }),
+    formality,
+    translation.getByRole("button", { name: "Style", exact: true }),
+    translation.getByRole("button", { name: "Play message", exact: true }),
+    copy,
+  ];
+  for (const control of above) {
+    await expect(control).toBeVisible();
+    expect(await edge(control, "bottom")).toBeLessThanOrEqual(await edge(result, "top"));
+  }
+  // With room in the row, the language button names its translator in full.
+  const translator = above[0].getByText("· DeepL", { exact: true });
+  await expect(translator).toBeVisible();
+  expect(await translator.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+  // Under it there is only the field to refine it.
+  const refine = translation.getByRole("textbox", { name: "Refine the translation" });
+  expect(await edge(refine, "top")).toBeGreaterThanOrEqual(await edge(result, "bottom"));
+  await expect(translation.getByRole("button")).toHaveCount(above.length + 1);
+
+  // A pane too narrow for that row keeps formality and style at the bottom; copy stays on top.
+  await input.blur();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(formality).toBeVisible();
+  expect(await edge(formality, "top")).toBeGreaterThanOrEqual(await edge(result, "bottom"));
+  expect(await edge(copy, "bottom")).toBeLessThanOrEqual(await edge(result, "top"));
+  expect(await edge(attach, "bottom")).toBeLessThanOrEqual(await edge(input, "top"));
+});
+
+test("Translate offers formality where the language has it, explains each choice and remembers it", async ({
+  page,
+}) => {
+  const rewrites = () => page.evaluate(() => window.reactUiE2E.state().rewrites);
+  await page.route("**/config.json", (route) =>
+    route.fulfill({
+      json: {
+        models: [],
+        navigation: true,
+        artifacts: {},
+        translator: { model: "fixture", files: [], languages: ["de", "en"] },
+      },
+    }),
+  );
+  await page.route("**/api/v1/translate", (route) =>
+    route.fulfill({ contentType: "text/plain", body: "Wie geht es dir?" }),
+  );
+  await page.addInitScript(() => localStorage.setItem("translate_preferences", JSON.stringify({ targetLang: "de" })));
+  await page.goto("/tests/browser/fixtures/react-ui.html", { waitUntil: "domcontentloaded" });
+  await page.getByRole("link", { name: "Translate", exact: true }).click();
+  const input = page.getByRole("textbox", { name: "Text to translate" });
+  await input.fill("How are you?");
+  await input.press("ControlOrMeta+Enter");
+  const translation = page.getByRole("region", { name: "Translation" });
+  await expect(translation.getByText("Wie geht es dir?", { exact: true })).toBeVisible();
+  // Nothing chosen: the translation is shown as the translator returned it, without a second request.
+  expect(await rewrites()).toHaveLength(0);
+
+  // The menu says what each choice means in German and marks the current one.
+  await translation.getByRole("button", { name: "Formality", exact: true }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    /^Automatic\s*Follows the original text$/,
+    /^Formal\s*Addresses the reader as “Sie”$/,
+    /^Informal\s*Addresses the reader as “du”$/,
+  ]);
+  await expect(menu.locator(".font-semibold")).toHaveText("Automatic");
+  await menu.getByRole("menuitem", { name: /^Formal/ }).click();
+  await expect(translation.getByText("Wie geht es Ihnen?", { exact: true })).toBeVisible();
+  expect(await rewrites()).toEqual([[expect.stringContaining("address the reader as “Sie” throughout")]]);
+  // The button now shows the choice instead of the setting's name.
+  const formal = translation.getByRole("button", { name: "Formal", exact: true });
+  await expect(formal).toBeVisible();
+  await formal.click();
+  await expect(menu.locator(".font-semibold")).toHaveText("Formal");
+  await page.keyboard.press("Escape");
+
+  await translation.getByRole("button", { name: "Style", exact: true }).click();
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    /^Automatic\s*Keeps the style of the original$/,
+    /^Simple\s*Short sentences and everyday words$/,
+    /^Business\s*Polished and professional$/,
+    /^Academic\s*Objective and precise$/,
+    /^Casual\s*Relaxed and conversational$/,
+  ]);
+  await page.keyboard.press("Escape");
+
+  // English has no formal and informal address: the control goes away and nothing is rewritten.
+  await translation.getByRole("button", { name: "Target language" }).click();
+  await page.getByRole("option", { name: /^English/ }).click();
+  await expect(translation.getByText("Wie geht es dir?", { exact: true })).toBeVisible();
+  await expect(translation.getByRole("button", { name: "Style", exact: true })).toBeVisible();
+  await expect(formal).toHaveCount(0);
+  await expect(translation.getByRole("button", { name: "Formality", exact: true })).toHaveCount(0);
+  expect(await rewrites()).toHaveLength(1);
+
+  // Back in German the choice is still there, and it is kept for the next visit.
+  await translation.getByRole("button", { name: "Target language" }).click();
+  await page.getByRole("option", { name: /^German/ }).click();
+  await expect(translation.getByText("Wie geht es Ihnen?", { exact: true })).toBeVisible();
+  await expect(formal).toBeVisible();
+  expect(await rewrites()).toHaveLength(2);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("translate_preferences") ?? "{}"))).toMatchObject({
+    targetLang: "de",
+    formality: "formal",
+  });
 });

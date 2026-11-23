@@ -6,7 +6,7 @@ import type {
   RenderResolution,
   Model,
 } from "@/shared/types/chat";
-import { isVideoRenderer } from "@/shared/lib/models";
+import { isSongModel, isVideoRenderer } from "@/shared/lib/models";
 import type { SubmenuConfig } from "@/shared/ui/ModelDropdown";
 
 /** Aspect-ratio option metadata; only those the selected model supports are shown. */
@@ -73,6 +73,25 @@ export const SPEED_OPTIONS = [
   { value: "400", label: "Slow", description: "400 ms per frame" },
 ];
 
+/** What a Canvas model creates; it decides the create page's form and the item's viewer. */
+export type CreationKind = "image" | "video" | "song";
+
+export function creationKind(model: Model | null | undefined): CreationKind {
+  return isVideoRenderer(model) ? "video" : isSongModel(model) ? "song" : "image";
+}
+
+/** The kinds in the order the create page offers them as tabs. */
+export const CREATION_KINDS: { value: CreationKind; label: string }[] = [
+  { value: "image", label: "Image" },
+  { value: "video", label: "Video" },
+  { value: "song", label: "Song" },
+];
+
+/** "15s" for a clip, "2 min" for a song. */
+export function durationLabel(seconds: number): string {
+  return seconds >= 60 && seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds}s`;
+}
+
 /** Numeric width / height for an aspect like "16:9"; null when unparsable. */
 export function aspectRatioValue(aspect: string | null | undefined): number | null {
   if (!aspect) return null;
@@ -86,7 +105,7 @@ export interface RenderSelection {
   resolution: RenderResolution | null;
   background: ImageBackground | null;
   complexity: ImageComplexity | null;
-  /** SVG or GIF output; null is the default editable PNG. */
+  /** SVG, GIF, video or song output; null is the default editable PNG. */
   format: RenderFormat | null;
   frameCount: number | null;
   frameDurationMs: number | null;
@@ -110,8 +129,14 @@ export function constrainSelection(model: Model | null, selection: RenderSelecti
   if (!model) return selection;
   const keep = <T extends string>(value: T | null, supported?: readonly T[]) =>
     value && supported?.includes(value) ? value : null;
-  const format = isVideoRenderer(model) ? "mp4" : keep(selection.format, model.supportedFormats);
+  // A video or music model has one output; image models choose among theirs.
+  const format = isVideoRenderer(model)
+    ? "mp4"
+    : isSongModel(model)
+      ? "mp3"
+      : keep(selection.format, model.supportedFormats);
   const video = format === "mp4";
+  const timed = video || format === "mp3";
   const gif = format === "gif";
   return {
     aspect: keep(selection.aspect, model.supportedAspectRatios),
@@ -124,7 +149,7 @@ export function constrainSelection(model: Model | null, selection: RenderSelecti
     frameCount: gif ? selection.frameCount : null,
     frameDurationMs: gif ? selection.frameDurationMs : null,
     durationSeconds:
-      video && selection.durationSeconds !== null && model.supportedDurations?.includes(selection.durationSeconds)
+      timed && selection.durationSeconds !== null && model.supportedDurations?.includes(selection.durationSeconds)
         ? selection.durationSeconds
         : null,
   };
@@ -135,7 +160,7 @@ export const supportedAspects = (model: Model | null) =>
 
 /**
  * Flyout submenus for the format / quality / resolution / background /
- * complexity levers the model supports, plus the GIF frame levers. Aspect has its own picker in the dialog, so it is left out here.
+ * complexity levers the model supports, plus the GIF frame levers. Aspect has its own picker on the create page, so it is left out here.
  */
 export function rendererSubmenus(
   model: Model | null,
@@ -153,10 +178,10 @@ export function rendererSubmenus(
   },
 ): SubmenuConfig[] {
   const submenus: SubmenuConfig[] = [];
+  const fixedFormat = isVideoRenderer(model) || isSongModel(model);
   const formats = FORMAT_OPTIONS.filter(
     (option) =>
-      (option.value === "png" && !isVideoRenderer(model)) ||
-      model?.supportedFormats?.includes(option.value as RenderFormat),
+      (option.value === "png" && !fixedFormat) || model?.supportedFormats?.includes(option.value as RenderFormat),
   );
   if (formats.length > 1) {
     submenus.push({
@@ -224,11 +249,11 @@ export function rendererSubmenus(
       defaultLabel: "Auto",
     });
   }
-  if (video && model?.supportedDurations?.length) {
+  if ((video || selection.format === "mp3") && model?.supportedDurations?.length) {
     submenus.push({
       icon: icons.duration ?? icons.speed,
       label: "Duration",
-      options: model.supportedDurations.map((seconds) => ({ value: String(seconds), label: `${seconds}s` })),
+      options: model.supportedDurations.map((seconds) => ({ value: String(seconds), label: durationLabel(seconds) })),
       value: selection.durationSeconds === null ? null : String(selection.durationSeconds),
       onChange: (value) => onChange({ ...selection, durationSeconds: value === null ? null : Number(value) }),
       allowDeselect: true,

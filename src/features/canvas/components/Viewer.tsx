@@ -9,7 +9,7 @@ import { notify } from "@/shared/lib/notify";
 import { decodeDataURL, downloadBlob } from "@/shared/lib/utils";
 import { CHECKER, StageToolbar, TOOLBAR_BUTTON_CLASS } from "./Stage";
 
-const LABELS = { svg: "SVG", gif: "Animated GIF", mp4: "Video" } as const;
+const LABELS = { svg: "SVG", gif: "Animated GIF", mp4: "Video", mp3: "Song" } as const;
 
 /** The image's own shape scaled into the stage; null (fill the stage) while either is unknown. */
 function fitInto(available: [number, number] | null, width?: number, height?: number) {

@@ -67,7 +67,7 @@ describe("text jobs", () => {
     expect(rewriteText).toHaveBeenCalledWith(
       "writer",
       "Hallo",
-      { lang: "de", formality: "formal", style: "", source: "Hello" },
+      { lang: "de", instructions: [expect.stringContaining("“Sie”")], source: "Hello" },
       expect.anything(),
     );
     expect(current()?.resultText).toBe("Hallo!");
@@ -107,7 +107,7 @@ describe("text jobs", () => {
     expect(rewriteText).toHaveBeenCalledWith(
       "writer",
       "Hallo",
-      { lang: "de", instruction: "Swiss", source: "Hello" },
+      { lang: "de", instructions: [expect.stringContaining("Swiss")], source: "Hello" },
       expect.anything(),
     );
     expect(current()?.resultText).toBe("Grüezi");

@@ -38,12 +38,24 @@ describe("translating text", () => {
         source: "Hello",
       }),
     ).resolves.toBe("rewritten");
-    expect(rewriteText).toHaveBeenCalledWith(
-      "m",
-      "Hallo",
-      { lang: "de", formality: "formal", instruction: " shorter ", source: "Hello" },
-      { signal: undefined },
+    // One request carries the formality and the user's own instruction, which is named as the one that wins.
+    expect(rewriteText).toHaveBeenCalledOnce();
+    const [model, text, options, request] = rewriteText.mock.calls[0];
+    expect([model, text, request]).toEqual(["m", "Hallo", { signal: undefined }]);
+    expect(options).toMatchObject({ lang: "de", source: "Hello" });
+    expect(options.instructions).toHaveLength(2);
+    expect(options.instructions[0]).toContain("“Sie”");
+    expect(options.instructions[1]).toBe(
+      "Instruction from the user, which takes precedence where it conflicts with the above: shorter",
     );
+  });
+
+  it("asks for nothing when the target language has no formal and informal address", async () => {
+    rewriteText.mockClear();
+    await expect(rewrite(client, { model: "m" }, "Hello", "en", { formality: "formal" })).resolves.toBe("Hello");
+    expect(rewriteText).not.toHaveBeenCalled();
+    await rewrite(client, { model: "m" }, "Hello", "en", { formality: "formal", style: "business" });
+    expect(rewriteText.mock.calls[0][2].instructions).toEqual([expect.stringContaining("Business writing")]);
   });
 
   it("fingerprints the request, not its length alone", () => {

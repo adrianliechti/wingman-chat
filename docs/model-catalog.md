@@ -46,6 +46,19 @@ arrays hide their picker; an explicit zero compaction threshold disables
 compaction. Configured chat models determine ordering and visibility in the chat
 picker. Configuring only images does not hide chat models.
 
+With configured chat models, the picker lists those itself, below the preset
+slider when `chat.presets` defines one. Its Model row opens the full list: the
+configured models, then every other available chat model that has a profile in
+`MODEL_PROFILES`. Remaining IDs, such as routers and opaque aliases, appear only
+after Option-clicking the picker, which has no equivalent on phones. Without
+configured chat models, every available chat model is listed.
+
+A backend model with the ID `auto` is offered as the slider's first position, an
+"A" slot set slightly apart from the Faster → Smarter scale, and is not repeated
+among the configured models. A selection that matches
+no preset leaves the track empty, unless that model has a step of its own with
+another effort or verbosity; that step is then marked in a subdued style.
+
 Chat, Canvas, and image helper selection share a catalogue keyed by client and
 configuration. Concurrent reads share one request. Successful results, including
 an empty inventory, are cached for one minute. Mounted consumers refresh while
@@ -61,6 +74,22 @@ loading also wins over the late response.
 
 Speech calls use their configured model or backend default. They do not choose
 the first model in the catalogue. See [voice lifecycle](voice-lifecycle.md).
+
+Music models are synthesizers, because the gateway serves them on
+`/v1/audio/speech`. A synthesizer whose `supportedFormats` is exactly `["mp3"]`
+is a music model: Canvas offers it for songs, and read-aloud never picks it as
+its default. Lyria IDs get this profile on their own; an opaque alias needs it
+configured:
+
+```json
+{ "id": "music", "name": "Music", "type": "synthesizer", "supportedFormats": ["mp3"] }
+```
+
+Canvas opens on its create page, which shows Image, Video, and Song tabs once
+the inventory spans more than one of them; its model menu lists the selected
+tab's models. A renderer whose `supportedFormats` is exactly `["mp4"]` is a video
+model; every other renderer is an image model. The page starts on
+`renderer.model` when configured, otherwise on the first image model.
 
 ## Model replacements
 
@@ -183,6 +212,29 @@ own supported efforts instead of inheriting a vendor profile.
 - [DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/): V4's
   distinct levels are low/high/max, plus none to disable thinking in Responses.
   Hosted providers can differ; use config overrides for their supported levels.
+- [Inkling 2 Small](https://openrouter.ai/thinkingmachines/inkling-2-small) and
+  [Inkling 2 Mini](https://openrouter.ai/thinkingmachines/inkling-2-mini)
+  (Thinking Machines; reviewed November 21, 2026): no vendor or OpenRouter page
+  documents their effort levels, so the profile comes from requests through the
+  gateway and OpenRouter. Small rejects none ("Reasoning is mandatory for this
+  endpoint and cannot be disabled") and offers low, medium, high. Mini accepts
+  none, which returned no reasoning tokens, plus low, medium, high. Both also
+  accepted minimal and xhigh, which are left out until documented; a deployment
+  can add them through `supportedEfforts`. No default is preselected. Both list a
+  1,048,576-token context window; no output limit is assumed. The first Inkling
+  generation has no profile.
+- [Mistral reasoning](https://docs.mistral.ai/inference/conversations/reasoning)
+  (reviewed November 21, 2026): [Mistral Large 4](https://docs.mistral.ai/models/mistral-large-4-0)
+  (`mistral-large-4`, `mistral-large-4-0`) has low, medium, high (default). It
+  always reasons, so none, minimal, xhigh, and max are rejected.
+  [Mistral Small 4](https://docs.mistral.ai/models/mistral-small-4-0-26-03)
+  (`mistral-small-2603`) has only none and high, and Mistral documents no
+  default, so no level is preselected and an unset chat sends no level. The gateway
+  forwards the chosen level unchanged as `reasoning_effort` on Mistral's chat
+  completions endpoint. Large 4 has a 1M-token context window and Small 4 256k;
+  Small 4 therefore compacts at 176,000 tokens. Mistral publishes no output
+  limit for either, so no output budget is sent unless one is configured. Other
+  Mistral versions and the `-latest` aliases do not inherit these profiles.
 
 Image profiles reflect the gateway's `/render` implementation as well as vendor
 capabilities. [GPT Image 2.5 Sunburst and Flare](https://developers.openai.com/api/docs/guides/image-generation#size-and-quality-options)
@@ -206,6 +258,33 @@ without 512px. Nano Banana 2.1, 3.1 Flash Image, and
 (`gemini-3.1-flash-lite-image`, 1K only) expose the gateway's additional
 1:4, 4:1, 1:8, and 8:1 aspect ratios. These image models stay in the renderer
 picker and do not inherit chat reasoning controls.
+
+[MAI Image 2.7](https://openrouter.ai/microsoft/mai-image-2.7) and
+[MAI Image 2.7 Flash](https://openrouter.ai/microsoft/mai-image-2.7-flash)
+(reviewed November 21, 2026; preview in
+[Microsoft Foundry](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-mai-image))
+are served through OpenRouter's image API. It accepts the aspect ratios 1:1,
+4:3, 3:4, 16:9, 9:16, 3:2, and 2:3, and an opaque or transparent background.
+It has no quality, resolution, or output-format parameter, so those pickers stay
+hidden; an unset aspect ratio leaves the choice to the model. Edits take up to
+five reference images. Flash has the same controls at a lower price. The profile
+matches `mai-image-2.7` and `mai-image-2-7`, with or without `-flash`. MAI Image
+2.6 has no background parameter and keeps the generic profile.
+
+[Lyria 3.5](https://aistudio.google.com/docs/music-generation) (`lyria-3.5`,
+reviewed November 21, 2026) takes one text prompt and returns a complete MP3.
+It has no parameters for length, vocals, or lyrics, so Canvas writes each into
+the prompt: the description, then `Length: about …` and
+`Instrumental only, no vocals.` where chosen, then the user's lyrics beneath a
+`Lyrics:` header with `[Verse]`-style section tags, as the
+[prompt guide](https://aistudio.google.com/docs/lyria-prompt-guide) lays them
+out. Google documents the length only as "a couple of minutes"; the offered
+lengths of 30 seconds and 1, 2, and 3 minutes are requests, not guarantees, and
+`supportedDurations` (in seconds) replaces them or, as `[]`, hides the picker.
+Upstream also returns the lyrics as text and accepts up to ten reference
+images; the gateway's speech endpoint passes neither, so Canvas shows the
+prompt as the song's text and sends no references. Other Lyria versions are
+treated as music models without a length picker.
 
 Compaction thresholds are operational budgets that leave room for output and
 recovery. They are not advertised context-window sizes. Small/local deployments

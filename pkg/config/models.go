@@ -95,11 +95,12 @@ type Model struct {
 	Tools             *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
 
 	// Image. Formats, resolutions and aspect ratios also apply to video.
+	// Formats of exactly ["mp3"] mark a synthesizer as a music model.
 	SupportedFormats      []string `json:"supportedFormats,omitempty" yaml:"supportedFormats,omitempty"`
 	SupportedResolutions  []string `json:"supportedResolutions,omitempty" yaml:"supportedResolutions,omitempty"`
 	SupportedAspectRatios []string `json:"supportedAspectRatios,omitempty" yaml:"supportedAspectRatios,omitempty"`
 
-	// Video.
+	// Video and music, in whole seconds.
 	SupportedDurations []int `json:"supportedDurations,omitempty" yaml:"supportedDurations,omitempty"`
 }
 

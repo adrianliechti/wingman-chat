@@ -53,4 +53,13 @@ describe("code execution limits", () => {
       validateArtifactFiles({ "same.txt": { content: "x" }, "/same.txt": { content: "y" } }, limits),
     ).toThrow(/duplicate path aliases/);
   });
+
+  it("rejects a file and its descendants in the same snapshot", () => {
+    expect(() =>
+      validateArtifactFiles(
+        { "/reports/old.txt": { content: "old" }, "/home/user/reports": { content: "report" } },
+        resolveCodeExecutionLimits(),
+      ),
+    ).toThrow(/file at \/reports and a file inside it: \/reports\/old.txt/);
+  });
 });

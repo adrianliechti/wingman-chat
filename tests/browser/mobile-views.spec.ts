@@ -434,7 +434,7 @@ test("image prompt keeps Generate reachable and ignores IME confirmation", async
   expect(await page.evaluate(() => window.reactUiE2E.state().renders)).toHaveLength(0);
   await expect(input).toHaveCSS("font-size", "16px");
   await visualViewport(page, 300, 20);
-  await withinVisibleViewport(page.locator('[id^="headlessui-dialog-panel-"]'), 20, 320);
+  await withinVisibleViewport(page.getByRole("region", { name: "New image" }), 20, 320);
   await withinVisibleViewport(page.getByRole("button", { name: "Generate", exact: true }), 20, 320);
   await page.screenshot({ path: info.outputPath("image-keyboard.png") });
 });

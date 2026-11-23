@@ -1,6 +1,6 @@
 import { AlertCircle, FolderOpen, Loader2, PlusIcon, RotateCw, X } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { viewOnlyFormat } from "../lib/images";
+import { mediaNoun, viewOnlyFormat } from "../lib/images";
 import type { Image, PendingGeneration } from "../types/canvas";
 import { cn } from "@/shared/lib/cn";
 
@@ -8,6 +8,8 @@ interface FilmstripProps {
   images: Image[];
   pending: PendingGeneration[];
   selectedId: string | null;
+  /** The stage shows the create panel; the "new" tile is the current one. */
+  creating?: boolean;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onDismissPending: (id: string) => void;
@@ -27,6 +29,7 @@ export function Filmstrip({
   images,
   pending,
   selectedId,
+  creating = false,
   onSelect,
   onDelete,
   onDismissPending,
@@ -48,10 +51,21 @@ export function Filmstrip({
     <div
       ref={strip}
       role="listbox"
-      aria-label="Images and videos"
+      aria-label="Images, videos and songs"
       className="flex h-24 shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden border-t border-neutral-200/70 bg-white/50 px-3 backdrop-blur-xl dark:border-neutral-800/70 dark:bg-neutral-900/50"
     >
-      <button type="button" onClick={onNew} title="New creation" aria-label="New creation" className={ADD_TILE_CLASS}>
+      <button
+        type="button"
+        onClick={onNew}
+        title="New creation"
+        aria-label="New creation"
+        aria-pressed={creating}
+        className={cn(
+          ADD_TILE_CLASS,
+          creating &&
+            "text-blue-600 hover:text-blue-600 dark:text-blue-300 dark:hover:text-blue-300 non-webkit:border-solid non-webkit:border-blue-500 non-webkit:hover:border-blue-500 non-webkit:dark:border-blue-400 non-webkit:dark:hover:border-blue-400",
+        )}
+      >
         <PlusIcon size={20} />
       </button>
       <button
@@ -76,7 +90,9 @@ export function Filmstrip({
             aria-label={item.status === "error" ? "Failed generation" : "Generating media"}
             className={cn(
               "group relative h-16 shrink-0 overflow-hidden rounded-xl",
-              active ? "ring-2 ring-blue-500 dark:ring-blue-400" : "ring-1 ring-neutral-200 dark:ring-neutral-700",
+              active
+                ? "non-webkit:ring-2 non-webkit:ring-blue-500 non-webkit:dark:ring-blue-400"
+                : "ring-1 ring-neutral-200 dark:ring-neutral-700",
             )}
             style={{ aspectRatio: item.aspect ?? 1 }}
           >
@@ -131,7 +147,7 @@ export function Filmstrip({
             className={cn(
               "group relative h-16 shrink-0 overflow-hidden rounded-xl transition-shadow",
               active
-                ? "ring-2 ring-blue-500 shadow-md dark:ring-blue-400"
+                ? "non-webkit:shadow-md non-webkit:ring-2 non-webkit:ring-blue-500 non-webkit:dark:ring-blue-400"
                 : "ring-1 ring-neutral-200 hover:ring-neutral-400 dark:ring-neutral-700 dark:hover:ring-neutral-500",
             )}
             style={{ aspectRatio: tileAspect(image.width, image.height) }}
@@ -156,7 +172,7 @@ export function Filmstrip({
             )}
             <button
               type="button"
-              aria-label={format === "mp4" ? "Delete video" : "Delete image"}
+              aria-label={`Delete ${mediaNoun(format)}`}
               title="Delete"
               onClick={(event) => {
                 event.stopPropagation();

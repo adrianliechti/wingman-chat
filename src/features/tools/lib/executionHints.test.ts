@@ -119,6 +119,11 @@ describe("executionHints", () => {
     expect(js).not.toContain("mounted under");
   });
 
+  it("points Bash calls to Python helpers when the command is unavailable", () => {
+    const [hint] = executionHints("bash: transcribe: command not found", { language: "bash", files });
+    expect(hint).toBe("Use transcribe with top-level await in a Python execute_script call.");
+  });
+
   it.each([
     ["FileNotFoundError: No such file or directory: '/data/Q3 sales.csv'", "python", "/data/Q3 sales.csv"],
     ['FileNotFoundError: No such file or directory: "/data/Q3 sales.csv"', "python", "/data/Q3 sales.csv"],

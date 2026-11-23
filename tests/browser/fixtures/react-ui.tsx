@@ -29,7 +29,12 @@ const state = {
     mask?: number;
     markup?: number;
   }[],
+  songs: [] as { model: string; prompt: string }[],
+  rewrites: [] as string[][],
 };
+// 1.3 seconds of a 440 Hz tone: a real MP3, so decoding, playback and OPFS are exercised.
+const SONG_MP3 =
+  "//MYxAAEyF4kAABwIZu5YoIo2QxELDz2NgDtq7iFW/OqAGET//MYxAMEYFpQYAL0RgmRAXMnZBY+GJY4c9e+mt63en34ZeXY//MYxAgGqF4sAAcyLTDIfN8DQF+sBEAGBCPcyw30r02QcqVp//MYxAQDUFpsAAB0QkY70EBpblGafJX+41Y48awAjAkACUYg//MYxA0HWGI8AAdyLe7G1wxGCIHlmzMkbk0OctqqFQAQB+M5//MYxAYGOFZ2GAB0CpU7E+4gc6I3DbytjEoFv////yHvRxEG//MYxAQF2GJYAAG4JIZYECAiZn65qIRqXREKgJckVtYqGQAI//MYxAMFQFqCQAB2CqBluZV5hhYWiQUjv4/i56W9l963jPxR//MYxAUGUF5UAAY4KddNQ4lNlK0+yCQMMC3AjGKHOIV6aggC//MYxAIEqFqNoAB0JnAYc8qr7GCsCUKdrMhldp1VhnqbboF9//MYxAYDaFqMIAB0QsEDI3G3Ipr6gAnAASInZPw2opHs6oA9//MYxA8DEFqcQADwYgKFYx5m1dXlKMbHxKAvGMKKcolj92b3//MYxBkC8FqcQAGyYmoCECwKLtIBhQ5F+xDCy5kjhYcqVwjI//MYxCQDUF6QIAL0Rl4PFQmYWTH8ldijAuONHJAYI74AA0wN//MYxC0D+FaiIACwK/tfkno1VfR+rCdgBw132PiCgwDXOIgp//MYxDQDkFqEIAB0QLlT4OswkVLXeLYmu9p8gGmy8YyFN0pS//MYxDwE0FpsAAF4JbWGilAZJabKaliRXrwYEArAZfBnhDYA//MYxD8E+F5oAAP2RLxruWRhmcyCeHrtMpDYs00tEZ0bBxUA//MYxEIFGFpoAAD2JREAGYDgTYXKiVXYoYLHmwkIMMCXYxaG//MYxEQC+FqUIAK0RhssjWrF55X8KeMOGFgEY/jRqYHILkHA//MYxE8E8FaWQAByCmQ/o9HvVIjpC2wcATPKXCR6PAdkZKEm//MYxFIFiFpkAAG4JTEpKv6o0VHWfDARMN6Uy0H2ZSZMZ/JC//MYxFIFAFpsAAC4JbWOEibSAuBzG03NJhNFBnBed9ZzNdwc//MYxFUE8F5sAAceSA4QpOkFSDbqHQAJwGLWeqrxBSwHGquT//MYxFgFeFpkAAG4JbNPadVVIoGeFduAFxBjCH42yimt6u7U//MYxFkFKFpoAAG4JaDwhoZECAVIhdSBwXUrIA4o9Q0qCAkD//MYxFsE4F5sAAD4QHlus8IJpiSWmpU0oYne1YZZzDdwZrDE//MYxF4CaFaUAAGyYnGIw1ulvP9bLMyuOQBAMBwB4H9GhgsZ//MYxGsEyFqSQAB0CvC+Y3Su9YxGJTDP/YhtwXS/1Mz1Ke4u//MYxG4EAFqMYAB0Qm/48meO3K5Xf+lNeC9e28sFQV/BpUxB//MYxHUFWFpgAAG4JU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVV//MYxHYESF6RgAB0JlVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxHsDeFqMIAB0QlVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxIQFmF58AVQAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxIQJYI6YAZl4AFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxHUAAANIAcAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
 let stream = (_text: string) => {};
 let think = (_text: string) => {};
 let finish = (_text: string) => {};
@@ -191,6 +196,28 @@ if (parameters.has("panels")) {
         ? { id: "gpt-image-2.6-flare", name: "Flare", type: "renderer" as const }
         : { id: "gpt-image-1", name: "Painter", type: "renderer" as const };
     config.client.listModels = async () => [model, renderer];
+    if (parameters.has("song")) {
+      // A music model is a synthesizer to the backend; Canvas lists it beside the renderers.
+      // `mixed` adds a video renderer and a deployment's worth of image renderers,
+      // so the dialog offers all three kinds and a long image list.
+      const lyria = { id: "lyria-3.5", name: "Lyria", type: "synthesizer" as const };
+      const omni = { id: "gemini-omni-1.2-flash", name: "Omni", type: "renderer" as const };
+      const images = [
+        ["gpt-image-2.6-flare", "Flare"],
+        ["gemini-nano-banana-2.1", "Nano Banana"],
+        ["mai-image-2.7", "MAI Image"],
+        ["mai-image-2.7-flash", "MAI Image Flash"],
+        ["flux-2-pro", "Flux"],
+        ["imagen-4", "Imagen"],
+        ["dall-e-3", "DALL-E"],
+      ].map(([id, name]) => ({ id, name, type: "renderer" as const }));
+      const renderers = parameters.has("mixed") ? [omni, renderer, ...images] : [];
+      config.client.listModels = async () => [model, lyria, ...renderers];
+      config.client.generateSong = async (songModel, prompt) => {
+        state.songs.push({ model: songModel, prompt });
+        return new Blob([Uint8Array.from(atob(SONG_MP3), (c) => c.charCodeAt(0))], { type: "audio/mpeg" });
+      };
+    }
     config.client.render = async (rendererModel, prompt, images, options) => {
       // Blobs don't serialize across page.evaluate; record their sizes instead.
       const { mask, markup, ...rest } = options ?? {};
@@ -250,6 +277,13 @@ if (parameters.has("panels")) {
   }
   config.client.generateImage = (...args) => config.client.render(...args);
   config.client.generateTitle = async () => "Fixture";
+  // Revising a translation needs structured output, which the fake chat adapter lacks.
+  // Record what was asked and answer a request for the formal German address.
+  config.client.rewriteText = async (_model, text, options) => {
+    const instructions = options?.instructions ?? [];
+    state.rewrites.push(instructions);
+    return instructions.some((instruction) => instruction.includes("“Sie”")) ? "Wie geht es Ihnen?" : text;
+  };
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
   const provider = testClient(
     async (options, handler, onThinking) =>
@@ -365,6 +399,8 @@ declare global {
           mask?: number;
           markup?: number;
         }[];
+        songs: { model: string; prompt: string }[];
+        rewrites: string[][];
       };
       stream(text: string): void;
       think(text: string): void;

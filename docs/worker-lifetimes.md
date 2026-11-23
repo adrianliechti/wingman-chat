@@ -16,6 +16,9 @@ Cancellation must release resources as well as stop waiting for their results.
 | Preview session        | Mounted preview                     | Close cancels requests, drops snapshots, and unregisters that session                 |
 | Audio worklet          | Recorder/player operation           | Stop, replacement, failure, or disposal; see [voice lifecycle](voice-lifecycle.md)    |
 
+A Python worker with access to chat tools can only be reused within the same
+model invocation. Switching to another invocation or an editor run starts a fresh worker.
+
 Keep these properties when adding another worker or bridge:
 
 - Own resources as soon as they are acquired, including while initialization is pending. A failed PDF open still owns a loading task that must be destroyed.

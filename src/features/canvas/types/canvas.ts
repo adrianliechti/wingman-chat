@@ -29,10 +29,12 @@ export interface Image {
 
   /** Data URL of the current version's pixels (e.g. "data:image/png;base64,..."). */
   data: string;
-  /** Video bytes stay binary; data is its thumbnail rather than base64 video. */
+  /** Video and song bytes stay binary; data is their poster rather than base64 media. */
   blob?: Blob;
   contentType?: string;
   duration?: number;
+  /** A song's loudness envelope, 0 to 1 per bar; empty when it could not be decoded. */
+  peaks?: number[];
   width?: number;
   height?: number;
 

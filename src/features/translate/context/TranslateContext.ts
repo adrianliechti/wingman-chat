@@ -1,5 +1,6 @@
 import { createContext } from "react";
-import type { Language, SelectOption, SupportedFile, TranslatorProvider } from "../lib/languages";
+import type { Language, SupportedFile, TranslatorProvider } from "../lib/languages";
+import type { WordingOption } from "../lib/wording";
 import type { Translation } from "../types/translate";
 
 /** Composer values: the open text job's, or the unsaved draft's before a job exists. */
@@ -25,8 +26,9 @@ export interface TranslateContextType {
   files: SupportedFile[];
   /** File types any translator accepts, for pickers and drop zones. */
   acceptedFiles: SupportedFile[];
-  formalityOptions: SelectOption[];
-  styleOptions: SelectOption[];
+  /** Formality choices for the draft's target language; empty when it has no formal and informal address. */
+  formalityOptions: WordingOption[];
+  styleOptions: WordingOption[];
 
   setSourceText: (text: string) => void;
   setTargetLang: (code: string) => void;

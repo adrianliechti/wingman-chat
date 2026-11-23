@@ -10,7 +10,7 @@ const base: Translation = {
   provider: "llm",
   targetLang: "de",
   formality: "",
-  style: "professional",
+  style: "business",
   sourceText: "Hello   world\nagain",
   translatedText: "Hallo Welt",
   translatedKey: "abc",
@@ -21,7 +21,7 @@ const base: Translation = {
 describe("translation storage", () => {
   it("round-trips a text job and drops empty tone and style", () => {
     const stored = serializeTranslation(base);
-    expect(stored).toMatchObject({ title: "Hello world again", formality: undefined, style: "professional" });
+    expect(stored).toMatchObject({ title: "Hello world again", formality: undefined, style: "business" });
     expect(hydrateTranslation(stored)).toEqual(base);
   });
 
@@ -34,13 +34,16 @@ describe("translation storage", () => {
     expect(hydrateTranslation({ ...stored, status: "idle" }).status).toBe("error");
   });
 
-  it("drops option values that are no longer offered", () => {
-    const stored = { ...serializeTranslation(base), formality: "enthusiastic", style: "business" };
+  it("drops option values that are no longer offered and renames the ones that were", () => {
+    const stored = { ...serializeTranslation(base), formality: "enthusiastic", style: "technical" };
     expect(hydrateTranslation(stored)).toMatchObject({ formality: "", style: "" });
+    // "Plain language" and "Professional" became "Simple" and "Business".
     expect(hydrateTranslation({ ...stored, formality: "informal", style: "plain" })).toMatchObject({
       formality: "informal",
-      style: "plain",
+      style: "simple",
     });
+    expect(hydrateTranslation({ ...stored, style: "professional" }).style).toBe("business");
+    expect(hydrateTranslation({ ...stored, style: "casual" }).style).toBe("casual");
   });
 
   it("names documents after their file and texts after their first words", () => {

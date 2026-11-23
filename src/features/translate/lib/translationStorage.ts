@@ -1,5 +1,5 @@
 import type { StoredFile, Translation, TranslationKind, TranslationStatus } from "../types/translate";
-import { formalityOptions, knownOption, styleOptions } from "./languages";
+import { knownFormality, knownStyle } from "./wording";
 import * as opfs from "@/shared/lib/opfs";
 import { withPersistenceLock } from "@/shared/lib/persistence";
 
@@ -80,8 +80,8 @@ export function hydrateTranslation(meta: StoredTranslation): Translation {
     updated: date(meta.updated, created),
     provider: meta.provider ?? "",
     targetLang: meta.targetLang ?? "",
-    formality: knownOption(formalityOptions(), meta.formality),
-    style: knownOption(styleOptions(), meta.style),
+    formality: knownFormality(meta.formality),
+    style: knownStyle(meta.style),
     sourceText: meta.sourceText ?? "",
     sourceFile: meta.sourceFile,
     translatedText: meta.translatedText,

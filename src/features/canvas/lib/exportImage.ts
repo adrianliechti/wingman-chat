@@ -136,5 +136,5 @@ export function exportFilename(base: string | undefined, format: ExportFormat | 
     .slice(0, 60)
     .replace(/-+$/g, "");
   const extension = format === "jpeg" ? "jpg" : format;
-  return `${slug || "image"}.${extension}`;
+  return `${slug || (format === "mp3" ? "song" : "image")}.${extension}`;
 }

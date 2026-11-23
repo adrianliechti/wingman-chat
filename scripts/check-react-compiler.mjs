@@ -59,7 +59,7 @@ const targets = [
   ["src/shell/AppLayout.tsx", "AppLayout"],
   ["src/features/canvas/pages/CanvasPage.tsx", "CanvasPage"],
   ["src/features/canvas/components/Editor.tsx", "Editor"],
-  ["src/features/canvas/components/CreateImageDialog.tsx", "CreateImageDialog"],
+  ["src/features/canvas/components/CreatePanel.tsx", "CreatePanel"],
   ["src/features/canvas/components/AdjustmentSlider.tsx", "AdjustmentSlider"],
   ["src/features/translate/pages/TranslatePage.tsx", "TranslatePage"],
   ["src/features/translate/components/TextWorkbench.tsx", "TextWorkbench"],

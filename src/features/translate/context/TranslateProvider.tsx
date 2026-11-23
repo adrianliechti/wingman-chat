@@ -4,13 +4,12 @@ import {
   isSupportedFile,
   pickLanguage,
   providerForFile,
-  styleOptions,
   supportedFiles,
   supportedLanguages,
   supportedProviders,
-  formalityOptions,
   type SupportedFile,
 } from "../lib/languages";
+import { formalityOptions, knownFormality, knownStyle, styleOptions } from "../lib/wording";
 import {
   abortJob,
   CLEARED_RESULT,
@@ -37,9 +36,12 @@ const storage = { load: loadTranslations, store: storeTranslation, remove: remov
 /** Nothing is read or written while no translator is configured. */
 const noStorage = { load: async () => [] as Translation[], store: async () => {}, remove: async () => {} };
 
+/** What a new translation starts with: the choices made last time. */
 interface Preferences {
   targetLang?: string;
   provider?: string;
+  formality?: string;
+  style?: string;
 }
 
 function readPreferences(): Preferences {
@@ -69,7 +71,13 @@ function initialDraft(): TranslateDraft {
     supportedLanguages(provider).map((language) => language.code),
     preferences.targetLang,
   );
-  return { sourceText: "", targetLang, provider, formality: "", style: "" };
+  return {
+    sourceText: "",
+    targetLang,
+    provider,
+    formality: knownFormality(preferences.formality),
+    style: knownStyle(preferences.style),
+  };
 }
 
 /** File types any translator accepts, without duplicates. */
@@ -224,8 +232,13 @@ export function TranslateProvider({ children }: { children: ReactNode }) {
       const job = latest.current.active;
       if (job?.kind === "text") {
         runtime.patch(job.id, (current) => ({ ...current, ...patch }));
-        if (job.sourceText.trim()) scheduler().maybeExecute();
+        // A setting is a deliberate choice, not typing: it applies at once instead of after the typing pause.
+        if (job.sourceText.trim()) {
+          scheduler().cancel();
+          void runTextJob(runtime, job.id);
+        }
       } else if (latest.current.draft.sourceText.trim()) {
+        // No job yet: the draft with this change is only there after the next render.
         scheduler().maybeExecute();
       }
     },
@@ -315,8 +328,21 @@ export function TranslateProvider({ children }: { children: ReactNode }) {
     [changeComposer, retargetFile],
   );
 
-  const setFormality = useCallback((formality: string) => changeComposer({ formality }), [changeComposer]);
-  const setStyle = useCallback((style: string) => changeComposer({ style }), [changeComposer]);
+  // Formality and style are settings like the language: they stay for the next translation.
+  const setFormality = useCallback(
+    (formality: string) => {
+      savePreferences({ formality });
+      changeComposer({ formality });
+    },
+    [changeComposer],
+  );
+  const setStyle = useCallback(
+    (style: string) => {
+      savePreferences({ style });
+      changeComposer({ style });
+    },
+    [changeComposer],
+  );
 
   const translateNow = useCallback(() => {
     scheduler().cancel();
@@ -424,7 +450,7 @@ export function TranslateProvider({ children }: { children: ReactNode }) {
   const acceptedFiles = useMemo(() => acceptedFileTypes(), []);
   const languages = useMemo(() => supportedLanguages(composer.provider), [composer.provider]);
   const files = useMemo(() => supportedFiles(composer.provider), [composer.provider]);
-  const formalities = useMemo(() => formalityOptions(), []);
+  const formalities = useMemo(() => formalityOptions(composer.targetLang), [composer.targetLang]);
   const styles = useMemo(() => styleOptions(), []);
 
   const value: TranslateContextType = {

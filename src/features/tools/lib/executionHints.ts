@@ -1,3 +1,4 @@
+import { normalizeArtifactPath, SANDBOX_HOME } from "@/shared/lib/sandbox";
 import type { ScriptLanguage } from "./scriptLanguage";
 
 /**
@@ -65,8 +66,8 @@ export function suggestWorkspaceFiles(missingPath: string, files: string[]): str
 }
 
 function missingFileHint(rawPath: string, context: ExecutionHintContext): string {
-  const path = rawPath.trim();
-  const sandboxed = context.language === "javascript" ? path : path.replace(/^\/home\/user\/?/, "/");
+  const path = rawPath.trim().replace(/^(['"`])(.+)\1$/, "$2");
+  const artifact = normalizeArtifactPath(path);
   const suggestions = suggestWorkspaceFiles(path, context.files);
   const parts: string[] = [`Could not open "${path}" from the sandbox.`];
   if (suggestions.length) {
@@ -78,8 +79,15 @@ function missingFileHint(rawPath: string, context: ExecutionHintContext): string
   } else {
     parts.push("The workspace has no files; create the input first or ask for it.");
   }
-  if (context.language !== "javascript" && path.startsWith("/") && !path.startsWith("/home/user")) {
-    parts.push(`Artifacts are mounted under /home/user/ (artifact ${sandboxed} is /home/user${sandboxed}).`);
+  if (
+    context.language !== "javascript" &&
+    artifact &&
+    artifact !== "/" &&
+    path.startsWith("/") &&
+    path !== SANDBOX_HOME &&
+    !path.startsWith(`${SANDBOX_HOME}/`)
+  ) {
+    parts.push(`Artifacts are mounted under ${SANDBOX_HOME}/ (artifact ${artifact} is ${SANDBOX_HOME}${artifact}).`);
   }
   return parts.join(" ");
 }
@@ -120,6 +128,11 @@ const RULES: HintRule[] = [
     group: "missing-file",
     pattern: /No such file or directory: (?:'([^']+)'|"([^"]+)")/,
     hint: (match, context) => missingFileHint(match[1] ?? match[2], context),
+  },
+  {
+    group: "missing-file",
+    pattern: /(?:^|: )(?:cannot read file|file not found): ([^\r\n]+)/im,
+    hint: (match, context) => missingFileHint(match[1], context),
   },
   {
     languages: ["bash"],
@@ -202,6 +215,13 @@ const RULES: HintRule[] = [
       match[1].startsWith("python")
         ? "Bash has no Python runtime. Run Python code with execute_script and language python instead."
         : "Bash has no JavaScript runtime. Use execute_script with language javascript for standalone JavaScript; that runtime is a Web Worker with bundled globals, not Node or Deno.",
+  },
+  {
+    languages: ["bash"],
+    group: "command-not-found",
+    pattern:
+      /(?:^|: )(transcribe|synthesize|translate(?:_file)?|vision|render|rasterize_pdf): command not (?:found|available)/m,
+    hint: (match) => `Use ${match[1]} with top-level await in a Python execute_script call.`,
   },
   {
     languages: ["bash"],

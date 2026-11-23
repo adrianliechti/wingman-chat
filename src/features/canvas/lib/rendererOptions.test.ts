@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { withRendererFallback } from "@/shared/lib/models";
-import { constrainSelection, EMPTY_SELECTION, type RenderSelection, rendererSubmenus } from "./rendererOptions";
+import { withRendererFallback, withSynthesizerFallback } from "@/shared/lib/models";
+import {
+  constrainSelection,
+  creationKind,
+  durationLabel,
+  EMPTY_SELECTION,
+  type RenderSelection,
+  rendererSubmenus,
+} from "./rendererOptions";
 
 const flare = withRendererFallback({ id: "gpt-image-2.6-flare", name: "Flare" });
 const legacy = withRendererFallback({ id: "gpt-image-2.5-flare", name: "Flare 2.5" });
@@ -110,5 +117,31 @@ describe("video render selection", () => {
       durationSeconds: null,
       resolution: null,
     });
+  });
+
+  const lyria = withSynthesizerFallback({ id: "lyria-3.5", name: "Lyria 3.5", type: "synthesizer" });
+  it("selects a song for a music model and keeps only its length", () => {
+    const selection = constrainSelection(lyria, {
+      ...EMPTY_SELECTION,
+      aspect: "16:9",
+      quality: "medium",
+      resolution: "720p",
+      background: "transparent",
+      format: "gif",
+      frameCount: 16,
+      durationSeconds: 120,
+    });
+    expect(selection).toEqual({ ...EMPTY_SELECTION, format: "mp3", durationSeconds: 120 });
+    expect(labels(lyria, selection)).toEqual(["Duration"]);
+    const [duration] = rendererSubmenus(lyria, selection, () => {}, icons);
+    expect(duration.options.map((option) => option.label)).toEqual(["30s", "1 min", "2 min", "3 min"]);
+    expect(constrainSelection(lyria, { ...EMPTY_SELECTION, durationSeconds: 15 }).durationSeconds).toBeNull();
+    expect(constrainSelection(flare, selection)).toMatchObject({ format: null, durationSeconds: null });
+  });
+  it("tells what each model creates", () => {
+    expect([flare, omni, lyria, null].map(creationKind)).toEqual(["image", "video", "song", "image"]);
+  });
+  it("labels whole minutes as minutes and everything else in seconds", () => {
+    expect([15, 60, 90, 180].map(durationLabel)).toEqual(["15s", "1 min", "90s", "3 min"]);
   });
 });

@@ -1,11 +1,6 @@
-import type { RpcReply, WorkerToMainMessage } from "./interpreterProtocol";
+import type { RpcReply, ScriptToolRequest, WorkerToMainMessage } from "./interpreterProtocol";
 import { requestPortReply } from "@/shared/lib/messagePortRpc";
 
-/**
- * RPC from an interpreter worker to the main thread. Each call ships its own
- * reply port, so responses need no correlation or routing. Shared by the
- * interpreter workers — `post` is the worker's `postMessage`.
- */
 /** Error text with the message first; WebKit and Firefox stacks do not repeat it. */
 export function describeError(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
@@ -14,12 +9,32 @@ export function describeError(error: unknown): string {
   return stack.includes(message) ? stack : `${message}\n${stack}`.trim();
 }
 
-export async function callMainThread<T>(
+/** Each call transfers its own reply port to the main thread. */
+async function rpc<T>(send: (port: MessagePort) => void, signal?: AbortSignal): Promise<T> {
+  const reply = await requestPortReply<RpcReply>(send, { signal });
+  if (!reply?.ok) throw new Error(reply?.error || "The main thread could not answer this call.");
+  return reply.value as T;
+}
+
+export function callMainThread<T>(
   post: (message: WorkerToMainMessage, transfer: Transferable[]) => void,
   build: (port: MessagePort) => WorkerToMainMessage,
   signal?: AbortSignal,
 ): Promise<T> {
-  const reply = await requestPortReply<RpcReply>((port) => post(build(port), [port]), { signal });
-  if (!reply?.ok) throw new Error(reply?.error || "The main thread could not answer this call.");
-  return reply.value as T;
+  return rpc<T>((port) => post(build(port), [port]), signal);
+}
+
+export function scriptToolClient(execution: MessagePort, signal?: AbortSignal) {
+  return {
+    list: () =>
+      rpc<unknown[]>(
+        (port) => execution.postMessage({ type: "tools-list", port } satisfies ScriptToolRequest, [port]),
+        signal,
+      ),
+    call: (name: string, args: unknown = {}) =>
+      rpc<unknown>(
+        (port) => execution.postMessage({ type: "tools-call", name, args, port } satisfies ScriptToolRequest, [port]),
+        signal,
+      ),
+  };
 }

@@ -31,6 +31,7 @@ export function createProjectTools(project: Project, artifactsEnabled: boolean):
     (tool) =>
       ({
         ...tool,
+        script: true,
         display: { ...tool.display, header: (args, state) => projectToolHeader(tool.name, args, state)! },
       }) satisfies Tool,
   );

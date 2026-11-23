@@ -32,12 +32,19 @@ async function decodedSize(blob: Blob): Promise<{ width: number; height: number 
 
 /**
  * Vector and animated images are shown as they are: the photo editor would
- * rasterize an SVG and freeze a GIF on its first frame.
+ * rasterize an SVG and freeze a GIF on its first frame. Video and songs are
+ * told by their stored type, since `data` only holds their poster.
  */
 export function viewOnlyFormat(data: string, contentType?: string): RenderFormat | null {
   if (contentType === "video/mp4") return "mp4";
+  if (contentType === "audio/mpeg") return "mp3";
   const type = /^data:([^;,]+)/.exec(data)?.[1]?.toLowerCase();
   return type === "image/svg+xml" ? "svg" : type === "image/gif" ? "gif" : null;
+}
+
+/** What to call a library item in labels and confirmations. */
+export function mediaNoun(format: RenderFormat | null): "image" | "video" | "song" {
+  return format === "mp4" ? "video" : format === "mp3" ? "song" : "image";
 }
 
 export const isImageFile = (file: File) => file.type.startsWith("image/");

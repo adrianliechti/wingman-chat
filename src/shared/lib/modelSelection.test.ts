@@ -39,6 +39,16 @@ it("prefers the configured id, then the first model of the type, then the backen
   expect(pickModel(models, "", "transcriber")).toBe("");
 });
 
+it("never reads text aloud with a music model", () => {
+  const models: Model[] = [
+    { id: "lyria-3.5", name: "Lyria", type: "synthesizer", supportedFormats: ["mp3"] },
+    { id: "tts-a", name: "A", type: "synthesizer" },
+  ];
+  expect(pickModel(models, undefined, "synthesizer")).toBe("tts-a");
+  expect(pickModel(models.slice(0, 1), undefined, "synthesizer")).toBe("");
+  expect(pickModel(models, "lyria-3.5", "synthesizer")).toBe("lyria-3.5");
+});
+
 it("never defaults voice to a transcription-only live model", () => {
   const models: Model[] = [
     { id: "gpt-live-transcribe", name: "Transcribe", type: "realtime" },
