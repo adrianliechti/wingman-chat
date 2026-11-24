@@ -21,9 +21,13 @@ it("keeps overlapping restore and backup progress independent", () => {
   expect(tracker.snapshot).toEqual([]);
 });
 
-it("describes discovery separately from counted transfers", () => {
+it("distinguishes checking, an empty restore, and counted transfers", () => {
   expect(describeSyncProgress({ direction: "restore", total: null, completed: 0 }, "chats")).toBe(
-    "Preparing to restore chats…",
+    "Checking chats for updates…",
+  );
+  expect(describeSyncProgress({ direction: "restore", total: 0, completed: 0 }, "chats")).toBe("Finishing chat sync…");
+  expect(describeSyncProgress({ direction: "restore", total: 2, completed: 0 }, "chats")).toBe(
+    "Restoring chats · 0 / 2",
   );
   expect(describeSyncProgress({ direction: "backup", total: 40, completed: 12 }, "files")).toBe(
     "Backing up files · 12 / 40",

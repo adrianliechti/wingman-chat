@@ -36,7 +36,7 @@ const ACTIVE_BACKUP_DESCRIPTIONS = {
 
 const BACKUP_HEALTH_TITLES: Partial<Record<SyncHealth, string>> = {
   synced: "Everything looks fine",
-  syncing: "Backing up changes",
+  syncing: "Syncing your backup",
   pending: "Waiting to back up",
   error: "Backup needs attention",
 };
@@ -362,9 +362,7 @@ export function SyncSection({
                 resetting
                   ? "Deletion pending"
                   : active
-                    ? health === "syncing" && progress.some((item) => item.direction === "restore")
-                      ? "Restoring your backup"
-                      : (BACKUP_HEALTH_TITLES[health] ?? "Checking your backup")
+                    ? (BACKUP_HEALTH_TITLES[health] ?? "Checking your backup")
                     : status === "setup" || status === "locked"
                       ? recovering
                         ? "Ready to restore"
@@ -386,12 +384,14 @@ export function SyncSection({
                           return (
                             <span key={`${item.unit}-${item.direction}-${index}`} className="block">
                               <span className="block tabular-nums">{label}</span>
-                              <progress
-                                aria-label={label}
-                                max={item.total || 1}
-                                value={item.total === null ? undefined : item.completed}
-                                className="mt-1 block h-1.5 w-full max-w-64 overflow-hidden rounded-full accent-neutral-600 grayscale dark:accent-neutral-400"
-                              />
+                              {item.total !== 0 && (
+                                <progress
+                                  aria-label={label}
+                                  max={item.total ?? 1}
+                                  value={item.total === null ? undefined : item.completed}
+                                  className="mt-1 block h-1.5 w-full max-w-64 overflow-hidden rounded-full accent-neutral-600 grayscale dark:accent-neutral-400"
+                                />
+                              )}
                             </span>
                           );
                         })}

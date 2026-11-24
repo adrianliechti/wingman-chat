@@ -39,8 +39,11 @@ export class SyncProgressTracker {
 }
 
 export function describeSyncProgress(progress: SyncProgress, unit: "chats" | "files"): string {
+  if (progress.total === null) {
+    return progress.direction === "restore" ? `Checking ${unit} for updates…` : `Preparing to back up ${unit}…`;
+  }
+  if (progress.total === 0) return `Finishing ${unit === "chats" ? "chat" : "file"} sync…`;
+
   const action = progress.direction === "restore" ? "Restoring" : "Backing up";
-  return progress.total === null
-    ? `Preparing to ${progress.direction === "restore" ? "restore" : "back up"} ${unit}…`
-    : `${action} ${unit} · ${progress.completed} / ${progress.total}`;
+  return `${action} ${unit} · ${progress.completed} / ${progress.total}`;
 }
