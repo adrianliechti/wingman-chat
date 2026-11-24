@@ -74,8 +74,9 @@ In a chat or voice run, Python and JavaScript can inspect `await tools.list()` a
 `await tools.call(name, args)` with a listed name and an argument object. Bash provides
 `tools list` and `tools call NAME 'JSON'`. For example, a script can page through a tracker,
 count open issues by owner, and print only the totals. MCP calls return structured data when
-available and otherwise return text. Servers configured for individual approval prompt for
-each call. Chat uses the reviewed agent prompt for servers configured for delegated approval.
+available, decode text that contains a complete JSON object, and preserve other text.
+Servers configured for individual approval prompt for each call. Chat uses the reviewed agent
+prompt for servers configured for delegated approval.
 
 | Capability                                 | Python interpreter                                | JavaScript interpreter                               | HTML preview                                      |
 | ------------------------------------------ | ------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------- |

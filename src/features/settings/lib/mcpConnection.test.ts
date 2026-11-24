@@ -216,6 +216,20 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     expect(call).toHaveBeenCalledTimes(2);
   });
 
+  it.each(["{ incomplete", '["draft-123"]', "123"])(
+    "preserves MCP text that is not a complete JSON object (%s)",
+    async (text) => {
+      provider = new MCPClient("test", "https://example.test/mcp", "Test", "Test", undefined, undefined, {
+        mode: "none",
+      });
+      call.mockResolvedValue({ content: [{ type: "text", text }] });
+      await provider.connect();
+      const tools = createScriptToolbox({ scriptTools: provider.tools }, new AbortController().signal);
+
+      await expect(tools.call(mcpToolName("test", "run"), {})).resolves.toBe(text);
+    },
+  );
+
   it("preserves task-required calls and reads their completed payload", async () => {
     capabilities = { tools: {}, tasks: { requests: { tools: { call: {} } } } };
     list.mockResolvedValue({ tools: [{ ...tool("run"), execution: { taskSupport: "required" } }] });

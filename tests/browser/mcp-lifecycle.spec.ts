@@ -29,6 +29,7 @@ test.afterEach(async () => {
 async function setup(
   page: Page,
   mode: "plain" | "form" | "url" | "url-hold" | "url-form" | "hold" | "script" = "plain",
+  scriptText?: string,
 ) {
   const requests: { input: unknown; action?: string; content?: unknown; details?: unknown }[] = [];
   let release: (() => void) | undefined;
@@ -107,6 +108,7 @@ async function setup(
           requestState: "consent-state",
         });
       }
+      if (mode === "script" && scriptText !== undefined) return { content: [{ type: "text", text: scriptText }] };
       if (mode === "script")
         return {
           content: [{ type: "text", text: "Detailed source records" }],
@@ -196,6 +198,29 @@ for (const [language, code] of Object.entries(scripts)) {
     expect(server.requests.map(({ input }) => input)).toEqual([{ instructions: "Count entries" }]);
     await page.evaluate(() => window.chatE2E.finish(1, "Five entries"));
     await expect(page.getByTestId("messages")).toContainText("Five entries");
+  });
+}
+
+for (const success of [true, false]) {
+  test(`Python reads a text-only JSON MCP result with success=${success}`, async ({ page }) => {
+    const response = success ? { success, draftId: "draft-123" } : { success, error: "Draft unavailable" };
+    const server = await setup(page, "script", JSON.stringify(response));
+    await page.evaluate(() => window.chatE2E.send("Get the draft ID"));
+    await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
+    const code = `draft = await tools.call(${JSON.stringify(toolName)}, {"instructions": "Get draft"})
+if draft["success"] is True:
+    print(draft["draftId"])
+else:
+    print(draft["error"])`;
+    await page.evaluate((code) => window.chatE2E.callTool(0, "execute_script", { language: "python", code }), code);
+    await page.getByRole("button", { name: "Allow", exact: true }).click();
+    await page.waitForFunction(() => window.chatE2E.state().calls.length === 2);
+    const input = await page.evaluate(() => window.chatE2E.state().calls[1].input);
+    expect(input.findLast((message) => message.role === "tool")?.content).toBe(
+      success ? "draft-123" : "Draft unavailable",
+    );
+    expect(server.requests.map(({ input }) => input)).toEqual([{ instructions: "Get draft" }]);
+    await page.evaluate(() => window.chatE2E.finish(1, "Done"));
   });
 }
 

@@ -431,7 +431,15 @@ export class MCPClient implements ToolProvider {
         execute: async (args, context) => {
           const result = await invoke(args, context);
           if (result.structuredContent !== undefined) return result.structuredContent;
-          return result.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
+          const text = result.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
+          if (text.trimStart().startsWith("{")) {
+            try {
+              return JSON.parse(text) as Record<string, unknown>;
+            } catch {
+              // Keep returning text when it does not encode a complete JSON object.
+            }
+          }
+          return text;
         },
       },
       execute: async (args, execution) => {
