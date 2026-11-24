@@ -347,20 +347,35 @@ export class MCPClient implements ToolProvider {
               [mcpToolName(this.id, tool.name), tool],
             ]),
           );
-          const modelTools = nativeTools.filter((tool) => !isToolVisibilityAppOnly(tool));
-          this.tools = modelTools.map((tool) => this.toTool(tool, client));
+          const tools: Tool[] = [];
+          const delegatedTools: Tool[] = [];
+          for (const tool of nativeTools) {
+            if (isToolVisibilityAppOnly(tool)) continue;
+            let inputSchema: z.ZodType;
+            try {
+              inputSchema = z.fromJSONSchema(flattenToolSchema(tool.inputSchema));
+            } catch (error) {
+              console.warn(
+                `Skipping MCP tool "${tool.name}" from provider "${this.id}": failed to convert input schema`,
+                error,
+              );
+              continue;
+            }
+            tools.push(this.toTool(tool, client, inputSchema));
+            if (this.approval.mode === "delegated") delegatedTools.push(this.toTool(tool, client, inputSchema, false));
+          }
+          this.tools = tools;
           // Raw tools keep per-call approval for voice; chat reviews one prompt per isolated agent run.
-          this.chat =
-            this.approval.mode === "delegated" && this.tools.length
-              ? createMcpAgentChat({
-                  id: this.id,
-                  name: this.name,
-                  pluginId: this.pluginId,
-                  icon: this.icon,
-                  instructions: this.instructions,
-                  tools: modelTools.map((tool) => this.toTool(tool, client, false)),
-                })
-              : undefined;
+          this.chat = delegatedTools.length
+            ? createMcpAgentChat({
+                id: this.id,
+                name: this.name,
+                pluginId: this.pluginId,
+                icon: this.icon,
+                instructions: this.instructions,
+                tools: delegatedTools,
+              })
+            : undefined;
           this.onToolsChanged?.();
         }
       })
@@ -369,7 +384,12 @@ export class MCPClient implements ToolProvider {
       });
     return discovery.promise;
   }
-  private toTool(tool: MCPTool, client: NativeMCPClient, needsApproval = this.approval.mode !== "none"): Tool {
+  private toTool(
+    tool: MCPTool,
+    client: NativeMCPClient,
+    inputSchema: z.ZodType,
+    needsApproval = this.approval.mode !== "none",
+  ): Tool {
     let resourceUri: string | undefined;
     try {
       resourceUri = getToolUiResourceUri(tool);
@@ -403,7 +423,7 @@ export class MCPClient implements ToolProvider {
       needsApproval,
       icon: pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined),
       description: tool.description || "",
-      inputSchema: z.fromJSONSchema(flattenToolSchema(tool.inputSchema as Record<string, unknown>)),
+      inputSchema,
       ...presentation,
       title,
       script: {

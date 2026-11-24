@@ -4,7 +4,7 @@ import { InMemoryTransport, McpServer, Server } from "@modelcontextprotocol/serv
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { ElicitationResult } from "@/shared/types/elicitation";
-import { MCPClient } from "./mcp";
+import { flattenToolSchema, MCPClient } from "./mcp";
 import { mcpToolName } from "./mcpToolNames";
 import { mcpAgentToolName } from "@/features/tools/lib/mcpAgent";
 import { createScriptToolbox } from "@/features/tools/lib/scriptTools";
@@ -72,6 +72,43 @@ afterEach(async () => {
 });
 
 describe("MCP discovery and call ownership with the real SDK", () => {
+  it.each(["none", "delegated"] as const)("skips a tool with an unresolved input reference (%s)", async (mode) => {
+    provider = new MCPClient("test", "https://example.test/mcp", "Test", "Test", undefined, undefined, { mode });
+    const inputSchema = {
+      type: "object" as const,
+      properties: { value: { $ref: "#/$defs/DataExpressionValue" }, query: { type: "string" } },
+      anyOf: [{ required: ["value"] }, { required: ["query"] }],
+    };
+    list.mockResolvedValue({
+      tools: [
+        { name: "broken", inputSchema },
+        { name: "run", inputSchema: { ...inputSchema, $defs: { DataExpressionValue: { type: "string" } } } },
+      ],
+    });
+
+    await provider.connect();
+
+    expect(provider.isConnected()).toBe(true);
+    const name = mcpToolName("test", "run");
+    expect(provider.tools.map((tool) => tool.name)).toEqual([name]);
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(
+      'Skipping MCP tool "broken" from provider "test": failed to convert input schema',
+      expect.objectContaining({ message: "Reference not found: #/$defs/DataExpressionValue" }),
+    );
+    const raw: Record<string, unknown> = provider.toolDefinitions.get("run")!.inputSchema;
+    const args = { value: "example" };
+    expect(z.fromJSONSchema(raw).safeParse(args).success).toBe(true);
+    expect(z.fromJSONSchema(flattenToolSchema(raw)).safeParse(args).success).toBe(true);
+    const broken = provider.toolDefinitions.get("broken")!.inputSchema;
+    for (const schema of [broken, flattenToolSchema(broken)]) {
+      expect(() => z.fromJSONSchema(schema)).toThrow("Reference not found: #/$defs/DataExpressionValue");
+    }
+    const tools = mode === "delegated" ? provider.chat!.tools[0].subagent!.tools : provider.tools;
+    expect(tools.map((tool) => tool.name)).toEqual([name]);
+    await tools[0].execute(args, undefined);
+    expect(call).toHaveBeenCalledExactlyOnceWith("run");
+  });
+
   it("preserves unwrapped app output from a legacy server's named Zod object schema", async () => {
     const fixture = new McpServer(
       { name: "fixture", version: "1" },
