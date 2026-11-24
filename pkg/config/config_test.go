@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestModelReplacementsReachBrowserConfig(t *testing.T) {
+func TestHiddenModelReplacementsReachBrowserConfig(t *testing.T) {
 	previous, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -23,6 +23,7 @@ func TestModelReplacementsReachBrowserConfig(t *testing.T) {
 	})
 	if err := os.WriteFile("models.yaml", []byte(`
 - id: current
+  hidden: true
   replaces:
     - legacy
     - older
@@ -38,13 +39,14 @@ func TestModelReplacementsReachBrowserConfig(t *testing.T) {
 	var browser struct {
 		Models []struct {
 			ID       string   `json:"id"`
+			Hidden   bool     `json:"hidden"`
 			Replaces []string `json:"replaces"`
 		} `json:"models"`
 	}
 	if err := json.Unmarshal(data, &browser); err != nil {
 		t.Fatal(err)
 	}
-	if len(browser.Models) != 1 || browser.Models[0].ID != "current" ||
+	if len(browser.Models) != 1 || browser.Models[0].ID != "current" || !browser.Models[0].Hidden ||
 		!reflect.DeepEqual(browser.Models[0].Replaces, []string{"legacy", "older"}) {
 		t.Fatalf("unexpected browser config: %s", data)
 	}
