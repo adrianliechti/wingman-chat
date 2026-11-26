@@ -83,7 +83,6 @@ export function useFileAttachments({
       const work = intake.current
         .catch(() => {})
         .then(async () => {
-          await store.load(draftKey);
           if (store.get(draftKey).sending) return;
           // Normalize MIME types up front (browsers sometimes omit/guess them),
           // and dedupe names so same-named files (e.g. pasted clipboard images)

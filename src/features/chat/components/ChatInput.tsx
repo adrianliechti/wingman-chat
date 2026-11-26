@@ -153,15 +153,9 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
     }
   }, [isRealtimeViaToggle, voiceAvailable, isListening, startVoice]);
 
-  const {
-    draft,
-    loaded: savedDraftLoaded,
-    error: draftError,
-    sending: submitting,
-    update: updateDraft,
-    store: draftStore,
-  } = useComposerDraft(draftKey);
-  const draftLoaded = savedDraftLoaded && projectsLoaded;
+  const { draft, sending: submitting, update: updateDraft, store: draftStore } = useComposerDraft(draftKey);
+  useEffect(() => () => draftStore.discard(draftKey), [draftStore, draftKey]);
+  const draftLoaded = projectsLoaded;
   const content = draft.content;
   const setContent = useCallback<React.Dispatch<React.SetStateAction<string>>>(
     (edit) => {
@@ -573,14 +567,6 @@ function ChatInputBody({ draftKey, projectsLoaded }: { draftKey: string; project
 
   return (
     <>
-      {draftError && (
-        <p role="alert" className="mb-2 text-sm text-red-600">
-          Couldn’t load this draft.{" "}
-          <button type="button" className="underline" onClick={() => void draftStore.load(draftKey).catch(() => {})}>
-            Retry
-          </button>
-        </p>
-      )}
       {queuedSends.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2" aria-label="Queued messages">
           {queuedSends.map((item) => {

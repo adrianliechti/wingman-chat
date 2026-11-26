@@ -123,7 +123,6 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
     setRestoring(true);
     try {
       const key = composerDraftKey(chat.id);
-      await drafts.load(key);
       const existing = drafts.get(key).draft;
       if (
         (existing.content || existing.skills?.length || existing.attachments.length || existing.pendingFiles.length) &&

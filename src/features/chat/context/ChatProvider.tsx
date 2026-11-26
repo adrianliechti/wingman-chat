@@ -294,7 +294,7 @@ function ChatProviderBody({ children }: ChatProviderProps) {
     if (!chatItem) {
       chatItem = await createChatOnce(async () => {
         const created = await createChatHook(draftId);
-        await drafts.transfer(composerDraftKey(null, selectedProjectId), composerDraftKey(created.id));
+        drafts.transfer(composerDraftKey(null, selectedProjectId), composerDraftKey(created.id));
         updateChat(created.id, () => ({ model, projectId: project?.id, agentId: currentAgentId }));
         return { ...created, model, projectId: project?.id, agentId: currentAgentId };
       });

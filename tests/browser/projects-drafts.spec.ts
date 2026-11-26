@@ -172,7 +172,7 @@ test("a failed project save stays open and retries creation without duplicating 
   await expect(saved.getByText("retry.txt", { exact: true })).toBeVisible();
 });
 
-test("projects apply shared context, retain draft attachments, and switch to All chats on the first click", async ({
+test("projects apply shared context, discard drafts on switch, and switch to All chats on the first click", async ({
   page,
 }) => {
   await open(page);
@@ -195,17 +195,23 @@ test("projects apply shared context, retain draft attachments, and switch to All
   await expect(settings.getByText(/Recent chats/)).toHaveCount(0);
   await page.screenshot({ path: "/private/tmp/wingman-project-settings.png" });
   await settings.getByRole("button", { name: "Close project" }).click();
+  await composer(page).fill("Discarded Atlas draft");
+  await page
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles({ name: "discarded.txt", mimeType: "text/plain", buffer: Buffer.from("Discarded") });
+  await expect(page.getByTitle("discarded.txt", { exact: true })).toBeVisible();
+  await choose(page, "All chats");
+  await expect(composer(page)).toHaveValue("");
+  await composer(page).fill("General unsent draft");
+  await choose(page, "Atlas");
+  await expect(composer(page)).toHaveValue("");
+  await expect(page.getByTitle("discarded.txt", { exact: true })).toHaveCount(0);
   await composer(page).fill("Atlas unsent draft");
   await page
     .locator('input[type="file"]')
     .first()
     .setInputFiles({ name: "draft.txt", mimeType: "text/plain", buffer: Buffer.from("An unsent attachment") });
-  await expect(page.getByTitle("draft.txt", { exact: true })).toBeVisible();
-  await choose(page, "All chats");
-  await expect(composer(page)).toHaveValue("");
-  await composer(page).fill("General unsent draft");
-  await choose(page, "Atlas");
-  await expect(composer(page)).toHaveValue("Atlas unsent draft");
   await expect(page.getByTitle("draft.txt", { exact: true })).toBeVisible();
   await composer(page).press("Enter");
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
@@ -227,53 +233,16 @@ test("projects apply shared context, retain draft attachments, and switch to All
   const savedUrl = page.url();
   await choose(page, "All chats");
   await expect(page).toHaveURL(/\/chat$/);
-  await expect(composer(page)).toHaveValue("General unsent draft");
+  await expect(composer(page)).toHaveValue("");
   await page.evaluate(() => window.reactUiE2E.flush());
   await page.reload();
-  await expect(composer(page)).toHaveValue("General unsent draft");
   await sidebar(page);
   await expect(page.getByRole("button", { name: "Choose project" })).toHaveText("All chats");
   await page.goto(savedUrl);
-  await expect(composer(page)).toHaveValue("Draft in the saved chat");
+  await expect(composer(page)).toBeEnabled();
+  await expect(composer(page)).toHaveValue("");
   await sidebar(page);
   await expect(page.getByRole("button", { name: "Choose project" })).toHaveText("Atlas");
-});
-
-test("drafts survive reload with original image and file bytes", async ({ page }) => {
-  await open(page);
-  await composer(page).fill("Keep these attachments");
-  const png = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9xkAAAAASUVORK5CYII=",
-    "base64",
-  );
-  await page
-    .locator('input[type="file"]')
-    .first()
-    .setInputFiles([
-      { name: "small.png", mimeType: "image/png", buffer: png },
-      { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("Draft attachment bytes") },
-    ]);
-  await expect(page.getByTitle("notes.txt", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
-  await page.evaluate(() => window.reactUiE2E.flush());
-  await page.reload();
-  await expect(composer(page)).toHaveValue("Keep these attachments");
-  await expect(page.getByTitle("notes.txt", { exact: true })).toBeVisible();
-  const files = await page.evaluate(async () => {
-    const root = await navigator.storage.getDirectory();
-    const folder = await (
-      await (await root.getDirectoryHandle("drafts")).getDirectoryHandle("new-chat")
-    ).getDirectoryHandle("files");
-    const result: { size: number; text: string }[] = [];
-    for await (const entry of folder.values())
-      if (entry.kind === "file") {
-        const file = await (entry as FileSystemFileHandle).getFile();
-        result.push({ size: file.size, text: await file.text() });
-      }
-    return result;
-  });
-  expect(files.some((file) => file.text === "Draft attachment bytes")).toBe(true);
-  expect(files.some((file) => file.size === png.byteLength)).toBe(true);
 });
 
 test("moving and deleting projects preserves conversations and changes their context", async ({ page }) => {
@@ -302,16 +271,14 @@ test("moving and deleting projects preserves conversations and changes their con
   expect(state.instructions).not.toContain("Nova-only instructions.");
   await page.evaluate(() => window.reactUiE2E.finish("Moved successfully."));
   await expect(page.getByText("Moved successfully.", { exact: true })).toBeVisible();
-  const orionId = await page.evaluate(() => localStorage.getItem("app_project"));
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await composer(page).fill("An unsent Orion draft");
-  await expect.poll(() => opfsList(page, `drafts/new-${orionId}`)).toContain("draft.json");
   await page.getByRole("button", { name: "Choose project" }).click();
   await page.getByRole("menuitem", { name: "Project settings" }).click();
   await page.getByRole("button", { name: "Delete project", exact: true }).click();
   await page.getByRole("dialog", { name: "Delete Orion?" }).getByRole("button", { name: "Delete project" }).click();
   await expect(page.getByRole("button", { name: "Choose project" })).toHaveText("All chats");
-  await expect.poll(() => opfsList(page, `drafts/new-${orionId}`)).toBeNull();
+  await expect(composer(page)).toHaveValue("");
   expect(await page.evaluate(() => localStorage.getItem("app_project"))).toBeNull();
   await page.getByRole("complementary").getByRole("button", { name: "Fixture", exact: true }).click();
   await expect(page.getByText("Moved successfully.", { exact: true })).toBeVisible();
@@ -420,7 +387,7 @@ test("a failed chat save preserves the draft, skills and attachments for retry",
   await expect(page.getByRole("button", { name: "Remove skill draft-response" })).toHaveCount(0);
 });
 
-test("selected skills follow project drafts through switching, reload, sending and restore", async ({ page }) => {
+test("selected skills are discarded on switch and follow sending and restore", async ({ page }) => {
   await open(page, "?composer");
   await project(page, "Skills project", "Project and skill instructions should both apply.");
   await composer(page).fill("/draft");
@@ -430,9 +397,9 @@ test("selected skills follow project drafts through switching, reload, sending a
   await choose(page, "All chats");
   await expect(selection).toHaveCount(0);
   await choose(page, "Skills project");
-  await expect(selection).toBeVisible();
-  await page.evaluate(() => window.reactUiE2E.flush());
-  await page.goto("/tests/browser/fixtures/react-ui.html?composer");
+  await expect(selection).toHaveCount(0);
+  await composer(page).fill("/draft");
+  await page.getByRole("option", { name: /draft-response/ }).click();
   await expect(selection).toBeVisible();
   await expect(composer(page)).toHaveValue("");
   await page.getByRole("button", { name: "Send message", exact: true }).click();
