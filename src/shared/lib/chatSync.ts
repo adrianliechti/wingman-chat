@@ -1014,7 +1014,9 @@ export class ChatSync {
       const current = await readPendingTarget(chatId);
       if (!current) {
         this.pendingTargets.delete(chatId);
-      } else if (JSON.stringify(current) === JSON.stringify(flushed)) {
+      } else if (
+        JSON.stringify({ ...current, baseSeq: undefined }) === JSON.stringify({ ...flushed, baseSeq: undefined })
+      ) {
         // A prior save may have committed the outbox but failed its native
         // projection. Keep the outbox until that snapshot is durable too.
         await writeLocalChatSnapshotUnlocked(current, false);
@@ -1085,11 +1087,30 @@ export class ChatSync {
       // adopt its tombstone cursor before encrypting a fresh init snapshot.
       const remote = (await api.listChats()).find((meta) => meta.id === chatId);
       if (remote?.deleted) await this.applyRemoteDeletionLocked(chatId, remote.headSeq);
+      else if ((remote?.headSeq ?? 0) < this.headSeq(chatId)) await this.rewindToBackup(chatId, remote?.headSeq ?? 0);
       else await this.applyRemoteEventsLocked(chatId, this.headSeq(chatId));
       entries = await this.resolveEntries(chatId);
       if (entries.length === 0) return firstSeq;
     }
     throw new PostConflictAfterRetry();
+  }
+
+  /** The backup lost events this device confirmed, and may since hold another device's
+   *  version. Replay it from scratch; with an unknown base, a divergent one becomes a conflicted copy. */
+  private async rewindToBackup(chatId: string, head: number): Promise<void> {
+    console.warn(`chatSync: backup of ${chatId} is behind local history; re-uploading local copy`);
+    await withChatTarget(chatId, async () => {
+      const target = await readPendingTarget(chatId);
+      if (!target) return;
+      const rebased = { ...target, baseSeq: -1 };
+      await writeLocalChatSnapshotUnlocked(rebased, true);
+      this.pendingTargets.set(chatId, rebased);
+    });
+    this.lastSynced.delete(chatId);
+    this.state.heads[chatId] = 0;
+    delete this.state.remoteHeads?.[chatId];
+    if (this.state.tombstones) delete this.state.tombstones[chatId];
+    if (head > 0) await this.applyRemoteEventsLocked(chatId, 0, head);
   }
 
   /** Apply entries the server accepted to the local log, baseline and head. */

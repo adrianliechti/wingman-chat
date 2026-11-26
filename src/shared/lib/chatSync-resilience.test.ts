@@ -162,6 +162,82 @@ for (const updating of [false, true]) {
   );
 }
 
+it("re-uploads a chat whose backup lost events this device already confirmed", async () => {
+  const dek = await generateStoreKey();
+  const sync = await ChatSync.create({ userId: "alice", accountId: "alice", dek });
+  const original = chat();
+  await stashPendingTarget(original);
+  await sync.flushPending();
+  await stashPendingTarget({ ...original, messages: [...original.messages, userMessage("second message")] });
+  await sync.flushPending();
+  expect(frames).toHaveLength(2);
+
+  frames.length = 1;
+  const value = { ...original, messages: [...original.messages, userMessage("second message"), userMessage("third")] };
+  await stashPendingTarget(value);
+  let activity!: SyncActivity;
+  sync.subscribeActivity((next) => (activity = next));
+  await sync.flushPending();
+  expect(activity.lastError).toBeNull();
+  expect(await readJson("chats/chat/target.json")).toBeUndefined();
+  expect(frames).toHaveLength(2);
+
+  memory.reset();
+  await (await ChatSync.create({ userId: "alice", accountId: "alice", dek })).pull();
+  expect(await readLocalChat("chat", false)).toMatchObject(value);
+  expect((await readLocalChat("chat", false))?.messages).toHaveLength(3);
+});
+
+it("keeps another device's version as a conflicted copy when a behind backup diverged", async () => {
+  const logs = new Map<string, { id: string; seq: number; frame: string }[]>();
+  vi.mocked(api.listChats).mockImplementation(async () =>
+    [...logs].map(([id, log]) => ({ id, headSeq: log.length, updated: "2026-01-02" })),
+  );
+  vi.mocked(api.readEvents).mockImplementation(async (id, after) =>
+    (logs.get(id) ?? []).filter((frame) => frame.seq > after),
+  );
+  vi.mocked(api.appendEvents).mockImplementation(async (id, expected, events) => {
+    const log = logs.get(id) ?? [];
+    if (expected !== log.length) return null;
+    events.forEach((event) => log.push({ ...event, seq: log.length + 1 }));
+    logs.set(id, log);
+    return { newSeq: log.length };
+  });
+  const dek = await generateStoreKey();
+
+  const elsewhere = userMessage("other device");
+  const other = await ChatSync.create({ userId: "alice", accountId: "alice", dek });
+  await stashPendingTarget({ ...chat(), messages: [elsewhere] });
+  await other.flushPending();
+  const foreign = logs.get("chat")!;
+  logs.clear();
+  memory.reset();
+
+  const sync = await ChatSync.create({ userId: "alice", accountId: "alice", dek });
+  const [first, second, third] = [userMessage("first message"), userMessage("second"), userMessage("third")];
+  await stashPendingTarget({ ...chat(), messages: [first] });
+  await sync.flushPending();
+  await stashPendingTarget({ ...chat(), messages: [first, second] });
+  await sync.flushPending();
+  expect(logs.get("chat")).toHaveLength(2);
+
+  logs.set("chat", [...foreign]);
+  const value = { ...chat(), messages: [first, second, third] };
+  await stashPendingTarget(value);
+  let activity!: SyncActivity;
+  sync.subscribeActivity((next) => (activity = next));
+  await sync.flushPending();
+  expect(activity.lastError).toBeNull();
+  expect(await readJson("chats/chat/target.json")).toBeUndefined();
+
+  memory.reset();
+  await (await ChatSync.create({ userId: "alice", accountId: "alice", dek })).pull();
+  expect(await readLocalChat("chat", false)).toMatchObject(value);
+  const copies = [...logs.keys()].filter((id) => id.startsWith("conflict-"));
+  expect(copies).toHaveLength(1);
+  expect((await readLocalChat(copies[0], false))?.messages).toMatchObject([elsewhere]);
+});
+
 it.each([false, true])(
   "restarts an interrupted attachment upload (server committed: %s) before publishing its chat",
   async (committed) => {

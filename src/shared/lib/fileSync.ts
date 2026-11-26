@@ -797,9 +797,11 @@ export class FileSync {
       requireFileBackupReady();
       const remote = await api.getFile(id);
       if (!remote) {
-        // Deleted remotely but changed locally → re-create.
+        // Deleted remotely, or still listed with its contents lost → re-create.
         requireFileBackupReady();
-        const etag = await api.putFile(id, cipher, { ifNoneMatch: "*" });
+        const listed = (await api.listFiles()).find((m) => m.id === id);
+        requireFileBackupReady();
+        const etag = await api.putFile(id, cipher, listed ? { ifMatch: listed.etag } : { ifNoneMatch: "*" });
         this.state.entries[path] = { id, etag, mtime: header.mtime };
         return;
       }
@@ -877,7 +879,15 @@ export class FileSync {
     const remote = await api.getFile(id);
 
     try {
-      if (!remote) throw new Error(`File ${id} is listed in the backup but its contents are missing.`);
+      if (!remote) {
+        // A local copy re-uploads over the lost contents.
+        const path = await this.localPathFor(id, local);
+        if (path) {
+          this.dirty.add(path);
+          return;
+        }
+        throw new Error(`File ${id} is listed in the backup but its contents are missing.`);
+      }
       const { header, bytes } = await decryptFile<FileHeader>(this.dek, remote.data, this.accountId, id);
 
       // An existing local collection index always merges — adopting the
@@ -954,6 +964,21 @@ export class FileSync {
       this.applyFailures++;
       console.error(`fileSync: failed to decrypt/apply file ${id}`, err);
     }
+  }
+
+  private localIds = new WeakMap<Map<string, number>, Promise<Map<string, string>>>();
+  private async localPathFor(id: string, local: Map<string, number>): Promise<string | undefined> {
+    for (const [path, entry] of Object.entries(this.state.entries)) {
+      if (entry.id === id) return local.has(path) ? path : undefined;
+    }
+    let ids = this.localIds.get(local);
+    if (!ids) {
+      ids = Promise.all([...local.keys()].map(async (path) => [await fileIdFor(path), path] as const)).then(
+        (pairs) => new Map(pairs),
+      );
+      this.localIds.set(local, ids);
+    }
+    return (await ids).get(id);
   }
 
   private async replaceLocal(path: string, mtime: number | undefined, blob?: Blob, version?: number): Promise<boolean> {

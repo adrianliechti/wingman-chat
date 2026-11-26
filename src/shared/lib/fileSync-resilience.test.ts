@@ -85,6 +85,28 @@ it("reports a listed but missing file as an incomplete restore and retries witho
   expect(activity.progress).toEqual([]);
 });
 
+it("re-uploads a local copy over a listed file whose contents were lost", async () => {
+  const key = await generateStoreKey();
+  const path = "drafts/chat-1/draft.json";
+  const id = await idFor(path);
+  await writeText(path, "local draft");
+  remote.set(id, { data: new Uint8Array(), etag: "lost" });
+  vi.mocked(api.getFile).mockImplementation(async (fileId) =>
+    remote.get(fileId)?.etag === "lost" ? null : (remote.get(fileId) ?? null),
+  );
+  sync = await FileSync.create({ userId: "alice", accountId: "alice", dek: key });
+  sync.subscribeActivity((value) => (activity = value));
+
+  await sync.fullSync();
+  expect(activity.lastError).toBeNull();
+  expect(activity.pendingCount).toBe(0);
+  const stored = remote.get(id)!;
+  expect(stored.etag).not.toBe("lost");
+  const decoded = await decryptFile<{ path: string }>(key, stored.data, "alice", id);
+  expect(new TextDecoder().decode(decoded.bytes)).toBe("local draft");
+  expect(await readText(path)).toBe("local draft");
+});
+
 it.each([
   { path: "agents/empty.txt", bytes: new Uint8Array() },
   { path: "agents/日本語 🦉.bin", bytes: new Uint8Array([0, 255, 128, 13, 10, 0, 42]) },
