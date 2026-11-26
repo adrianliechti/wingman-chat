@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
 import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
-import { defaultModelId, findModel, isKnownChatModel } from "@/shared/lib/models";
+import { defaultModelId, findModel } from "@/shared/lib/models";
 import type { Model } from "@/shared/types/chat";
 
 const STORAGE_KEY = "app_model";
@@ -103,22 +103,18 @@ function saveSelectedModel(model: Model | null) {
 /**
  * Orders the available chat models for the pickers. Only configured chat models
  * curate the list; a renderer-only config must not hide every chat model. With
- * a curated list, the configured models come first as the quick picks, the
- * other models this app has a profile for fill the full list, and opaque IDs
- * stay reachable via Option-click.
+ * a curated list, the pickers list the configured models in their order and
+ * every other model stays reachable via Option-click.
  */
 export function curateChatModels(available: readonly Model[], configured: readonly Pick<Model, "id">[]): Model[] {
   const byId = new Map(available.map((model) => [model.id, model]));
-  const featured = configured.flatMap((model) => {
+  const curated = configured.flatMap((model) => {
     const resolved = byId.get(model.id);
     byId.delete(model.id);
-    return resolved ? [{ ...resolved, featured: true }] : [];
+    return resolved ? [resolved] : [];
   });
-  if (!featured.length) return [...available];
-  return [
-    ...featured,
-    ...Array.from(byId.values(), (model) => (isKnownChatModel(model.id) ? model : { ...model, hidden: true })),
-  ];
+  if (!curated.length) return [...available];
+  return [...curated, ...Array.from(byId.values(), (model) => ({ ...model, hidden: true }))];
 }
 
 export function useModels() {

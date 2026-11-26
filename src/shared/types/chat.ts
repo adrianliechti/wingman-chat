@@ -39,10 +39,7 @@ export type Model = {
 
   instructions?: string;
 
-  /**
-   * One of the deployment's configured chat models. Pickers offer these first,
-   * as quick picks ahead of the full list.
-   */
+  /** Listed below the model slider. */
   featured?: boolean;
   /** Left out of pickers unless asked for (Option-click on the trigger). */
   hidden?: boolean;

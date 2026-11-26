@@ -46,12 +46,12 @@ arrays hide their picker; an explicit zero compaction threshold disables
 compaction. Configured chat models determine ordering and visibility in the chat
 picker. Configuring only images does not hide chat models.
 
-With configured chat models, the picker lists those itself, below the preset
-slider when `chat.presets` defines one. Its Model row opens the full list: the
-configured models, then every other available chat model that has a profile in
-`MODEL_PROFILES`. Remaining IDs, such as routers and opaque aliases, appear only
-after Option-clicking the picker, which has no equivalent on phones. Without
-configured chat models, every available chat model is listed.
+With configured chat models, the pickers list exactly those, in their order.
+When `chat.presets` defines a slider, only models marked `featured: true` stay
+listed below it, and the Model row opens the full list one level down. Every
+other available chat model appears
+only after Option-clicking the picker, which has no equivalent on phones.
+Without configured chat models, every available chat model is listed.
 
 A backend model with the ID `auto` is offered as the slider's first position, an
 "A" slot set slightly apart from the Faster → Smarter scale, and is not repeated

@@ -59,19 +59,16 @@ describe("curateChatModels", () => {
     expect(curateChatModels([sonnet, router], [{ id: "missing" }])).toEqual([sonnet, router]);
   });
 
-  it("features configured models, keeps known ones listed and hides opaque IDs", () => {
+  it("lists configured models and hides every other one", () => {
     expect(curateChatModels([sonnet, router, poppy], [{ id: "poppy" }])).toEqual([
-      { ...poppy, featured: true },
-      sonnet,
+      poppy,
+      { ...sonnet, hidden: true },
       { ...router, hidden: true },
     ]);
   });
 
   it("follows the configured order", () => {
     const models = curateChatModels([sonnet, poppy], [{ id: "poppy" }, { id: "claude-sonnet-5-5" }]);
-    expect(models.map((model) => [model.id, model.featured])).toEqual([
-      ["poppy", true],
-      ["claude-sonnet-5-5", true],
-    ]);
+    expect(models).toEqual([poppy, sonnet]);
   });
 });

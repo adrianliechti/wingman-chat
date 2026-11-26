@@ -83,6 +83,7 @@ type Model struct {
 	Caption     string   `json:"caption,omitempty" yaml:"caption,omitempty"`
 	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
 	Hidden      bool     `json:"hidden,omitempty" yaml:"hidden,omitempty"`
+	Featured    bool     `json:"featured,omitempty" yaml:"featured,omitempty"`
 
 	// Text.
 	Instructions      string      `json:"instructions,omitempty" yaml:"instructions,omitempty"`

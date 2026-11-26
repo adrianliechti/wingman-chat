@@ -25,7 +25,7 @@ import {
   type Side,
 } from "@floating-ui/react";
 import { AlignLeft, Bot, Boxes, Check, ChevronRight, Gauge, Mic, Search, Settings2 } from "lucide-react";
-import { createContext, Fragment, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
@@ -170,7 +170,7 @@ export interface ModelDropdownProps {
   fitScreen?: boolean;
   /**
    * When set, the panel opens on a slider across these presets, above the
-   * featured models; the full model list stays one level down.
+   * featured models; the model list moves one level down.
    */
   presets?: PresetsConfig;
   /**
@@ -331,15 +331,7 @@ function ModelList({
           </>
         )}
 
-        {shown.map((m, i) => (
-          // The full list leads with the featured models; a rule sets them apart from the rest.
-          <Fragment key={m.id}>
-            {!q && i > 0 && !m.featured && shown[i - 1].featured && (
-              <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
-            )}
-            {renderModel(m)}
-          </Fragment>
-        ))}
+        {shown.map(renderModel)}
 
         {shownHidden.length > 0 && (
           <>
