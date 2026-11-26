@@ -1,3 +1,4 @@
+import { convertSchemaToJsonSchema, parseWithStandardSchema } from "@tanstack/ai";
 import { Client, type Transport } from "@modelcontextprotocol/client";
 import type { CallToolResult, ListToolsResult, ServerCapabilities, Tool } from "@modelcontextprotocol/client";
 import { InMemoryTransport, McpServer, Server } from "@modelcontextprotocol/server";
@@ -8,6 +9,8 @@ import { flattenToolSchema, MCPClient } from "./mcp";
 import { mcpToolName } from "./mcpToolNames";
 import { mcpAgentToolName } from "@/features/tools/lib/mcpAgent";
 import { createScriptToolbox } from "@/features/tools/lib/scriptTools";
+import { assistant, calls, testClient } from "@/shared/lib/test-support/ai";
+import { chatSession } from "@/shared/lib/test-support/chatSession";
 
 const transportFactory = vi.hoisted(() => ({ create: undefined as (() => Transport) | undefined }));
 vi.mock("@modelcontextprotocol/client", async (original) => ({
@@ -72,41 +75,106 @@ afterEach(async () => {
 });
 
 describe("MCP discovery and call ownership with the real SDK", () => {
-  it.each(["none", "delegated"] as const)("skips a tool with an unresolved input reference (%s)", async (mode) => {
+  it.each(["none", "delegated"] as const)("preserves unresolved input references (%s)", async (mode) => {
     provider = new MCPClient("test", "https://example.test/mcp", "Test", "Test", undefined, undefined, { mode });
     const inputSchema = {
       type: "object" as const,
       properties: { value: { $ref: "#/$defs/DataExpressionValue" }, query: { type: "string" } },
       anyOf: [{ required: ["value"] }, { required: ["query"] }],
     };
+    const externalSchema = {
+      type: "object" as const,
+      properties: { value: { $ref: "https://example.test/schema.json" } },
+    };
     list.mockResolvedValue({
       tools: [
-        { name: "broken", inputSchema },
-        { name: "run", inputSchema: { ...inputSchema, $defs: { DataExpressionValue: { type: "string" } } } },
+        { name: "unresolved", inputSchema },
+        { name: "external", inputSchema: externalSchema },
+        { name: "valid", inputSchema: { ...inputSchema, $defs: { DataExpressionValue: { type: "string" } } } },
+        { name: "unsupported", inputSchema: { type: "object", not: { type: "string" } } },
       ],
     });
 
     await provider.connect();
 
+    const names = ["unresolved", "external", "valid"].map((name) => mcpToolName("test", name));
     expect(provider.isConnected()).toBe(true);
-    const name = mcpToolName("test", "run");
-    expect(provider.tools.map((tool) => tool.name)).toEqual([name]);
-    expect(console.warn).toHaveBeenCalledExactlyOnceWith(
-      'Skipping MCP tool "broken" from provider "test": failed to convert input schema',
-      expect.objectContaining({ message: "Reference not found: #/$defs/DataExpressionValue" }),
-    );
-    const raw: Record<string, unknown> = provider.toolDefinitions.get("run")!.inputSchema;
-    const args = { value: "example" };
-    expect(z.fromJSONSchema(raw).safeParse(args).success).toBe(true);
-    expect(z.fromJSONSchema(flattenToolSchema(raw)).safeParse(args).success).toBe(true);
-    const broken = provider.toolDefinitions.get("broken")!.inputSchema;
-    for (const schema of [broken, flattenToolSchema(broken)]) {
-      expect(() => z.fromJSONSchema(schema)).toThrow("Reference not found: #/$defs/DataExpressionValue");
-    }
+    expect(provider.tools.map((tool) => tool.name)).toEqual(names);
     const tools = mode === "delegated" ? provider.chat!.tools[0].subagent!.tools : provider.tools;
-    expect(tools.map((tool) => tool.name)).toEqual([name]);
-    await tools[0].execute(args, undefined);
-    expect(call).toHaveBeenCalledExactlyOnceWith("run");
+    expect(tools.map((tool) => tool.name)).toEqual(names);
+    const advertised = { ...flattenToolSchema(inputSchema), required: [] };
+    expect(convertSchemaToJsonSchema(tools[0].inputSchema)).toEqual(advertised);
+    expect(convertSchemaToJsonSchema(tools[1].inputSchema)).toEqual({ ...externalSchema, required: [] });
+    expect(provider.toolDefinitions.get("unresolved")!.inputSchema).toEqual(inputSchema);
+    expect(parseWithStandardSchema(tools[2].inputSchema, { value: "example" })).toEqual({ value: "example" });
+    expect(() => parseWithStandardSchema(tools[2].inputSchema, { value: 42 })).toThrow("Validation failed");
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(
+      'Skipping MCP tool "unsupported" from provider "test": failed to convert input schema',
+      expect.objectContaining({ message: expect.stringContaining("not is not supported") }),
+    );
+
+    const args = { value: { expression: "42" } };
+    server.setRequestHandler("tools/call", (request) => {
+      expect(request.params.arguments).toEqual(args);
+      return call(request.params.name);
+    });
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(calls(["unresolved-call", names[0], args]))
+      .mockResolvedValueOnce(assistant("Done"));
+    const chat = chatSession(testClient(complete), [...tools]);
+    try {
+      await chat.ai.sendMessage("Run the tool");
+      expect(complete.mock.calls[0][0].tools).toContainEqual(
+        expect.objectContaining({ name: names[0], inputSchema: advertised }),
+      );
+    } finally {
+      chat.ai.dispose();
+    }
+    expect(call).toHaveBeenCalledExactlyOnceWith("unresolved");
+  });
+
+  it("discovers Modeler-shaped tools with parameter-local definitions", async () => {
+    const fixtures = [
+      ["addStructureAttribute", "attributeSpec", "DataExpressionValue", false],
+      ["addTestCases", "testcases", "DataExpressionValue", true],
+      ["modifyTestCases", "modifications", "DataExpressionValue", true],
+      ["createDecisionTable", "specification", "DecisionTableConditionSpec", false],
+    ] as const;
+    const definitions = fixtures.map<Tool>(([name, parameter, definition, array]) => {
+      const item = {
+        type: "object",
+        properties: { value: { $ref: `#/$defs/${definition}` } },
+        required: ["value"],
+      };
+      const $defs: Record<string, Record<string, string>> = {
+        [definition]: { $ref: "#/$defs/Text" },
+        Text: { type: "string" },
+      };
+      return {
+        name,
+        inputSchema: {
+          type: "object" as const,
+          required: [parameter],
+          properties: array
+            ? { [parameter]: { type: "array", items: item, $defs } }
+            : { [parameter]: { ...item, $defs } },
+        },
+      };
+    });
+    list.mockResolvedValue({ tools: definitions });
+
+    await provider.connect();
+
+    expect(provider.tools.map((tool) => tool.name)).toEqual(fixtures.map(([name]) => mcpToolName("test", name)));
+    for (const [index, { name, inputSchema }] of definitions.entries()) {
+      const raw: Record<string, unknown> = provider.toolDefinitions.get(name)!.inputSchema;
+      expect(raw).toEqual(inputSchema);
+      expect(() => z.fromJSONSchema(raw)).toThrow("Reference not found: #/$defs/");
+      expect(convertSchemaToJsonSchema(provider.tools[index].inputSchema)).toEqual(inputSchema);
+    }
+    expect(console.warn).not.toHaveBeenCalled();
+    expect(call).not.toHaveBeenCalled();
   });
 
   it("preserves unwrapped app output from a legacy server's named Zod object schema", async () => {

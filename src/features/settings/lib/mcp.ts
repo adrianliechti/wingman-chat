@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { Globe } from "lucide-react";
 import { internetToolPresentation } from "@/features/tools/lib/internetPresentation";
 import { createMcpAgentChat } from "@/features/tools/lib/mcpAgent";
@@ -38,6 +37,7 @@ import type { ElicitationSchema } from "@/shared/types/elicitation";
 import { BrowserOAuthClientProvider, McpAuthRequiredError } from "./mcpAuth";
 import { McpAuthorizationPending, mcpAuthFetch } from "./mcpAuthFetch";
 import { mcpToolName } from "./mcpToolNames";
+import { convertMcpToolSchema } from "./mcpToolSchema";
 import type { McpApproval } from "./mcpConfig";
 
 import {
@@ -351,9 +351,9 @@ export class MCPClient implements ToolProvider {
           const delegatedTools: Tool[] = [];
           for (const tool of nativeTools) {
             if (isToolVisibilityAppOnly(tool)) continue;
-            let inputSchema: z.ZodType;
+            let inputSchema: Tool["inputSchema"];
             try {
-              inputSchema = z.fromJSONSchema(flattenToolSchema(tool.inputSchema));
+              inputSchema = convertMcpToolSchema(flattenToolSchema(tool.inputSchema));
             } catch (error) {
               console.warn(
                 `Skipping MCP tool "${tool.name}" from provider "${this.id}": failed to convert input schema`,
@@ -387,7 +387,7 @@ export class MCPClient implements ToolProvider {
   private toTool(
     tool: MCPTool,
     client: NativeMCPClient,
-    inputSchema: z.ZodType,
+    inputSchema: Tool["inputSchema"],
     needsApproval = this.approval.mode !== "none",
   ): Tool {
     let resourceUri: string | undefined;
