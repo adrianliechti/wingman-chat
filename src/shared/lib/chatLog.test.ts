@@ -145,9 +145,14 @@ describe("chunkEntries", () => {
     expect(chunks).toEqual([[entry], [entry]]);
   });
 
-  it("rejects a single entry whose UTF-8 encoding cannot fit the server frame cap", () => {
-    const entry = { type: "message", ...msg("界".repeat(2 * 1024 * 1024)) } as const;
-    expect(() => chunkEntries([entry])).toThrow(/too large to sync/);
+  it("accepts an entry at the 32 MiB limit and rejects one UTF-8 byte more", () => {
+    const entry = { type: "message", ...msg(""), id: "large" } as const;
+    const budget = 32 * 1024 * 1024 - new TextEncoder().encode(JSON.stringify(entry)).byteLength - 1;
+    const content = "界".repeat(Math.floor(budget / 3)) + "x".repeat(budget % 3);
+    const atLimit = { ...entry, parts: [{ type: "text" as const, content }] };
+    expect(chunkEntries([atLimit])[0]).toHaveLength(1);
+    const overLimit = { ...entry, parts: [{ type: "text" as const, content: content + "x" }] };
+    expect(() => chunkEntries([overLimit])).toThrow(/too large to sync \(limit 32 MiB\)/);
   });
 
   it("returns nothing for an empty batch", () => {

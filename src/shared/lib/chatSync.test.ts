@@ -92,6 +92,30 @@ it("uploads a newer native save written without an outbox after the chat was bac
   expect(await readJson("chats/chat/target.json")).toBeUndefined();
 });
 
+it("uploads and restores an already pending message that exceeded the old chat entry limit", async () => {
+  const dek = await generateStoreKey();
+  const content = "x".repeat(13 * 1024 * 1024);
+  await stashPendingTarget({ ...chat(), messages: [userMessage(content), userMessage("later message")] });
+  const device = { userId: "user", accountId: "user", dek };
+  const sync = await ChatSync.create(device);
+  await sync.flushPending();
+
+  const events = vi
+    .mocked(api.appendEvents)
+    .mock.calls.flatMap(([, seq, frames]) => frames.map((frame, i) => ({ ...frame, seq: seq + i + 1 })));
+  expect(events.some(({ frame }) => frame.length > 16 * 1024 * 1024)).toBe(true);
+  expect(await readJson("chats/chat/target.json")).toBeUndefined();
+
+  memory.reset();
+  vi.mocked(api.listChats).mockResolvedValue([{ id: "chat", headSeq: events.length, updated: "2026-01-02" }]);
+  vi.mocked(api.readEvents).mockResolvedValue(events);
+  const restored = await (await ChatSync.create(device)).pull();
+  expect(restored[0]?.messages.map((message) => message.parts)).toEqual([
+    [{ type: "text", content }],
+    [{ type: "text", content: "later message" }],
+  ]);
+});
+
 it("keeps the pre-migration record when turning on backup converts an older chat", async () => {
   const legacy = {
     id: "chat",

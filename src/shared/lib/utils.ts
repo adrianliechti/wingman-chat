@@ -36,6 +36,20 @@ export function readAsDataURL(blob: Blob): Promise<string> {
   });
 }
 
+export function encodeBase64(bytes: Uint8Array): string {
+  // Native support avoids materializing a second copy as a binary string.
+  const native = (bytes as Uint8Array & { toBase64?: () => string }).toBase64;
+  if (typeof native === "function") return native.call(bytes);
+
+  // Keep the argument count below browser limits for large payloads.
+  const chunkSize = 0x8000;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    parts.push(String.fromCharCode(...bytes.subarray(i, i + chunkSize)));
+  }
+  return btoa(parts.join(""));
+}
+
 export function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
   // Native path (Safari 18.2+, Edge/Chrome 140+) — skips the intermediate
   // binary string entirely.

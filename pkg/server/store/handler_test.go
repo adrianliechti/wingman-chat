@@ -631,6 +631,29 @@ func TestFileLifecycle(t *testing.T) {
 	wantStatus(t, res, http.StatusNoContent)
 }
 
+func TestLargeChatFrameRoundTrip(t *testing.T) {
+	srv := protectedTestServer(t)
+	path := "/v1/store/chats/chat-large/events"
+	// A 32 MiB entry produces a base64 frame just under 43 MiB.
+	frame := strings.Repeat("A", 43<<20)
+	res := do(t, srv, "alice", "POST", path, event("e1", frame), map[string]string{"X-Expected-Seq": "0"})
+	wantStatus(t, res, http.StatusOK)
+
+	res = do(t, srv, "alice", "GET", path+"?fromSeq=0", "", nil)
+	wantStatus(t, res, http.StatusOK)
+	var restored struct {
+		Seq   int64
+		ID    string
+		Frame string
+	}
+	if err := json.NewDecoder(res.Body).Decode(&restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.Seq != 1 || restored.ID != "e1" || restored.Frame != frame {
+		t.Fatalf("unexpected restored event: seq=%d id=%q frame length=%d", restored.Seq, restored.ID, len(restored.Frame))
+	}
+}
+
 func TestFrameTooLarge(t *testing.T) {
 	srv := protectedTestServer(t)
 	chatID := "99999999-9999-9999-9999-999999999999"

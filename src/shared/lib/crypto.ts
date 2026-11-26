@@ -18,6 +18,10 @@
  *     Wrong AAD ⇒ decrypt fails, so frames cannot be reordered or moved.
  */
 
+import { encodeBase64 as toBase64 } from "./utils";
+
+export { toBase64 };
+
 const SALT_BYTES = 16;
 const NONCE_BYTES = 12;
 const DEK_BYTES = 32;
@@ -38,13 +42,6 @@ function bufFrom(view: Uint8Array | ArrayBuffer): Bytes {
     return out as Bytes;
   }
   return new Uint8Array(view) as Bytes;
-}
-
-// base64 (standard alphabet, to match the server's `frame` field).
-export function toBase64(bytes: Uint8Array): string {
-  let s = "";
-  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-  return btoa(s);
 }
 
 export function fromBase64(s: string): Bytes {

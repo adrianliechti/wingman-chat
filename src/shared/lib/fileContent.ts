@@ -7,7 +7,7 @@
  */
 
 import type { File } from "@/shared/types/file";
-import { decodeBase64, parseDataUrl } from "./utils";
+import { decodeBase64, encodeBase64, parseDataUrl } from "./utils";
 
 export function isDataUrl(content: string): boolean {
   return content.startsWith("data:");
@@ -47,26 +47,6 @@ export function dataUrlDecodedByteLength(dataUrl: string): number | null {
   const completeGroups = Math.floor(base64Length / 4);
   const remainder = base64Length % 4;
   return completeGroups * 3 - padding + (remainder === 2 ? 1 : remainder === 3 ? 2 : 0);
-}
-
-function encodeBase64(bytes: Uint8Array): string {
-  // Native path (Safari 18.2+, Edge/Chrome 140+) — by far the fastest and
-  // avoids materializing an intermediate binary string.
-  const native = (bytes as Uint8Array & { toBase64?: () => string }).toBase64;
-  if (typeof native === "function") {
-    return native.call(bytes);
-  }
-
-  // Fallback for older browsers: convert in chunks. Per-byte string
-  // concatenation is pathologically slow for multi-MB payloads;
-  // String.fromCharCode over subarrays stays linear while keeping the
-  // argument count well under engine limits.
-  const chunkSize = 0x8000;
-  const parts: string[] = [];
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    parts.push(String.fromCharCode(...bytes.subarray(i, i + chunkSize)));
-  }
-  return btoa(parts.join(""));
 }
 
 export function dataUrlToBytes(dataUrl: string): { mimeType: string; bytes: Uint8Array<ArrayBuffer> } | null {

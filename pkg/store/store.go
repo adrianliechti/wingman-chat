@@ -206,7 +206,7 @@ var (
 // through PutObject, not event frames. Clients chunk deltas into ~4 MiB
 // frames, but a chunk cannot split a single log entry — the headroom is
 // for one message carrying megabytes of text (pasted logs, tool results).
-const MaxFrameBytes = 16 << 20 // 16 MiB
+const MaxFrameBytes = 48 << 20 // 48 MiB
 
 // MaxObjectBytes caps one encrypted file or blob upload: the client's 256 MiB
 // plaintext limit plus headroom for per-chunk encryption overhead.

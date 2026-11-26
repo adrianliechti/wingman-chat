@@ -58,14 +58,13 @@ export function decodeLines(text: string): LogEntry[] {
   return out;
 }
 
-/** Per-frame plaintext budget. Base64 + GCM overhead keeps the resulting
- *  frame comfortably under the server's 16 MiB MaxFrameBytes. */
+/** Target size for frames containing multiple entries. */
 const MAX_FRAME_PLAINTEXT = 4 * 1024 * 1024;
 const encoder = new TextEncoder();
 
-/** Hard ceiling for a single entry: chunking cannot split one entry, and
- *  past this the encrypted frame would exceed the server's cap anyway. */
-const MAX_ENTRY_PLAINTEXT = 11 * 1024 * 1024;
+/** Leave room for the event envelope, AES-GCM and base64 within the server's 48 MiB frame cap. */
+const MAX_ENTRY_MIB = 32;
+const MAX_ENTRY_PLAINTEXT = MAX_ENTRY_MIB * 1024 * 1024;
 
 /** Split entries into runs that each fit one encrypted frame. A single
  *  oversized entry (one message with huge tool results) still gets its
@@ -77,7 +76,9 @@ export function chunkEntries(entries: LogEntry[]): LogEntry[][] {
   for (const e of entries) {
     const n = encoder.encode(JSON.stringify(e)).byteLength + 1;
     if (n > MAX_ENTRY_PLAINTEXT) {
-      throw new Error("a message is too large to sync (limit ~11 MB) — it stays on this device only");
+      throw new Error(
+        `A chat entry is too large to sync (limit ${MAX_ENTRY_MIB} MiB). This chat's changes are saved on this device.`,
+      );
     }
     if (cur.length > 0 && size + n > MAX_FRAME_PLAINTEXT) {
       out.push(cur);
