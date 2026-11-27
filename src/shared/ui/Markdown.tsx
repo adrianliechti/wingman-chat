@@ -51,6 +51,22 @@ import { SvgRenderer } from "./renderers/SvgRenderer";
 const markdownLinkClassName =
   "text-sky-700 dark:text-sky-300 underline decoration-2 underline-offset-3 decoration-sky-500/60 dark:decoration-sky-400/70 hover:text-sky-800 dark:hover:text-sky-200 hover:decoration-current focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50";
 
+const footnoteRefClassName =
+  "inline-flex h-[1.35em] min-w-[1.35em] items-center justify-center rounded-full bg-neutral-200 px-1 font-sans text-[0.8em] font-medium leading-none text-neutral-700 no-underline transition-colors hover:bg-neutral-300 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700 dark:hover:text-neutral-100";
+
+const footnoteSourceLinkClassName =
+  "font-medium text-neutral-800 no-underline decoration-neutral-400 underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 dark:text-neutral-200 dark:decoration-neutral-500";
+
+const FootnotesContext = createContext(false);
+
+const linkHostname = (url: string): string | null => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "") || null;
+  } catch {
+    return null;
+  }
+};
+
 const slugify = (children: ReactNode): string => {
   const text = extractText(children);
   return text
@@ -734,9 +750,35 @@ const markdownComponents = {
       </span>
     );
   },
+  sup: ({ children, className, ...props }) => {
+    const isFootnoteRef = Children.toArray(children).some(
+      (child) => isValidElement<object>(child) && "data-footnote-ref" in child.props,
+    );
+    return (
+      <sup className={cn(className, isFootnoteRef && "ml-0.5 top-[-0.3em] text-xs")} {...props}>
+        {children}
+      </sup>
+    );
+  },
+  section: ({ children, ...props }) => {
+    if (!("data-footnotes" in props)) return <section {...props}>{children}</section>;
+    return (
+      <section
+        {...props}
+        className="mt-5 border-t border-neutral-200 pt-3 text-sm text-neutral-600 dark:border-neutral-800 dark:text-neutral-400 [&>ol]:m-0 [&>ol]:list-none [&>ol]:p-0 [&>ol]:[counter-reset:footnote] [&>ol>li]:grid [&>ol>li]:grid-cols-[auto_minmax(0,1fr)] [&>ol>li]:items-baseline [&>ol>li]:gap-x-2.5 [&>ol>li]:py-1 [&>ol>li]:leading-6 [&>ol>li>*]:col-start-2 [&>ol>li]:[counter-increment:footnote] [&>ol>li]:before:flex [&>ol>li]:before:h-[1.125rem] [&>ol>li]:before:min-w-[1.375rem] [&>ol>li]:before:items-center [&>ol>li]:before:justify-center [&>ol>li]:before:rounded-md [&>ol>li]:before:bg-neutral-100 [&>ol>li]:before:px-1 [&>ol>li]:before:text-[0.6875rem] [&>ol>li]:before:font-semibold [&>ol>li]:before:leading-none [&>ol>li]:before:tabular-nums [&>ol>li]:before:text-neutral-500 [&>ol>li]:before:ring-1 [&>ol>li]:before:ring-inset [&>ol>li]:before:ring-neutral-200 [&>ol>li]:before:content-[counter(footnote)] dark:[&>ol>li]:before:bg-neutral-900 dark:[&>ol>li]:before:text-neutral-400 dark:[&>ol>li]:before:ring-neutral-700 [& [&_p]:leading-6_p]:my-0"
+      >
+        <div aria-hidden="true" className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500">
+          Sources
+        </div>
+        <FootnotesContext.Provider value={true}>{children}</FootnotesContext.Provider>
+      </section>
+    );
+  },
   a: function Link({ children, href, ...props }) {
     const { onOpenArtifact } = useContext(MarkdownRenderContext);
     const navigateToTarget = useContext(MarkdownNavigationContext);
+    const inFootnotes = useContext(FootnotesContext);
+    if ("data-footnote-backref" in props) return null;
     let url = href || "";
     const internalHash = getInternalHash(url);
 
@@ -776,7 +818,7 @@ const markdownComponents = {
     if (internalHash) {
       return (
         <a
-          className={markdownLinkClassName}
+          className={"data-footnote-ref" in props ? footnoteRefClassName : markdownLinkClassName}
           href={`#${internalHash}`}
           onClick={(e) => {
             e.preventDefault();
@@ -790,6 +832,20 @@ const markdownComponents = {
         >
           {children}
         </a>
+      );
+    }
+
+    if (inFootnotes) {
+      const hostname = linkHostname(url);
+      return (
+        <>
+          <a className={footnoteSourceLinkClassName} href={url} target="_blank" rel="noreferrer noopener" {...props}>
+            {children}
+          </a>
+          {hostname && !extractText(children).includes(hostname) && (
+            <span className="ml-1.5 text-xs text-neutral-500">{hostname}</span>
+          )}
+        </>
       );
     }
 

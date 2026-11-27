@@ -61,7 +61,11 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false, r
           const containerTop = scrollElement.getBoundingClientRect().top;
           const barBottom = document.querySelector("[data-app-topbar]")?.getBoundingClientRect().bottom ?? 0;
           const clearance = Math.max(TOP_CLEARANCE, barBottom - containerTop + 24);
-          target = Math.max(0, anchor.getBoundingClientRect().top - containerTop + target - clearance);
+          const naturalBottom = scrollElement.scrollHeight - spacerHeightRef.current - scrollElement.clientHeight;
+          target = Math.max(
+            0,
+            Math.min(anchor.getBoundingClientRect().top - containerTop + target - clearance, naturalBottom),
+          );
         }
       }
       if (modeRef.current === "prompt") {
