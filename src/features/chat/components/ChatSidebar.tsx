@@ -448,10 +448,9 @@ export function ChatSidebar() {
   return (
     <div className="flex flex-col h-full w-full">
       {/* Static header with buttons */}
-      {/* Same height and bottom border as the app top bar (py-2 + the 42px tab pill + 1px), so
-          the header line runs continuously across sidebar and content, and the close button
+      {/* Same height as the app top bar (py-2 + the 42px tab pill + 1px), so the close button
           here shares a baseline with the open button there when the sidebar toggles. */}
-      <div className="flex items-center px-2 py-2 md:px-1.5 md:py-1 shrink-0 h-14 md:h-[3.6875rem] gap-1 border-b border-neutral-200 dark:border-neutral-800 max-md:border-0 max-md:px-3">
+      <div className="flex items-center px-2 py-2 md:px-1.5 md:py-1 shrink-0 h-14 md:h-[3.6875rem] gap-1 max-md:px-3">
         {showSearch ? (
           // Inline field on the same inset as the rows; the header line below frames it.
           <div className="mx-1.5 flex flex-1 items-center gap-1">

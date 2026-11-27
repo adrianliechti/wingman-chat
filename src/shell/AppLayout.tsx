@@ -175,7 +175,8 @@ export function AppLayout() {
             // Phones: a solid page that starts under the status bar and slides with an iOS curve.
             "max-md:pt-(--safe-top) max-md:duration-400 max-md:ease-[cubic-bezier(0.32,0.72,0,1)]",
             showSidebar ? "translate-x-0" : "-translate-x-full",
-            hasPanelOpen && "md:shadow-2xl md:shadow-black/15 dark:md:shadow-black/50",
+            "md:border-r md:border-neutral-200 md:dark:border-neutral-800",
+            showSidebar && (hasPanelOpen ? "md:shadow-2xl md:shadow-black/15 dark:md:shadow-black/50" : "md:shadow-sm"),
           )}
           style={isDesktop ? { width: sidebarWidth } : undefined}
           onTouchStart={(e) => {
